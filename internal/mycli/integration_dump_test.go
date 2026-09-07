@@ -111,7 +111,7 @@ func TestDumpStatements(t *testing.T) {
 		},
 		{
 			name:               "DUMP TABLES specific",
-			stmt:               &DumpTablesStatement{Tables: []string{"Albums", "Singers"}},
+			stmt:               &DumpTablesStatement{Tables: []tableID{tid("Albums"), tid("Singers")}},
 			expectDDL:          false,
 			expectTables:       []string{"Singers", "Albums"}, // Should be reordered by dependency
 			expectInsertCount:  5,                             // 2 singers + 3 albums
@@ -182,7 +182,7 @@ func TestDumpTablesWithInvalidTable(t *testing.T) {
 
 	_, session := initializeWithRandomDB(t, nil, nil)
 
-	stmt := &DumpTablesStatement{Tables: []string{"NonExistentTable"}}
+	stmt := &DumpTablesStatement{Tables: []tableID{tid("NonExistentTable")}}
 	_, err := stmt.Execute(ctx, session)
 	if err == nil {
 		t.Fatalf("Expected error for non-existent table")
@@ -262,7 +262,7 @@ func TestDumpWithStreaming(t *testing.T) {
 		originalStream.GetErrStream(),
 	)
 
-	dumpStmt := &DumpTablesStatement{Tables: []string{"StreamTest"}}
+	dumpStmt := &DumpTablesStatement{Tables: []tableID{tid("StreamTest")}}
 	result, err := dumpStmt.Execute(ctx, session)
 	if err != nil {
 		t.Fatalf("Execute failed: %v", err)
@@ -344,7 +344,7 @@ func TestDumpWithForeignKeys(t *testing.T) {
 	}
 
 	// Test DUMP TABLES with FK dependencies
-	dumpStmt := &DumpTablesStatement{Tables: []string{"Concerts", "Venues", "Artists"}}
+	dumpStmt := &DumpTablesStatement{Tables: []tableID{tid("Concerts"), tid("Venues"), tid("Artists")}}
 	result, err := dumpStmt.Execute(ctx, session)
 	if err != nil {
 		t.Fatalf("Execute failed: %v", err)
@@ -527,7 +527,7 @@ func TestDumpWithGeneratedColumns(t *testing.T) {
 	}
 
 	// Execute DUMP TABLES
-	dumpStmt := &DumpTablesStatement{Tables: []string{"Users"}}
+	dumpStmt := &DumpTablesStatement{Tables: []tableID{tid("Users")}}
 	result, err := dumpStmt.Execute(ctx, session)
 	if err != nil {
 		t.Fatalf("DUMP TABLES failed: %v", err)

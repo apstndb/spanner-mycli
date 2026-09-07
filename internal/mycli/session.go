@@ -115,6 +115,9 @@ type Session struct {
 	// Invalidated on schemaGeneration change (DDL execution) and TTL expiry.
 	ddlCache ddlCacheEntry
 
+	// dumpDDLOverride replaces GetDatabaseDdlFresh in tests.
+	dumpDDLOverride func(context.Context) (*adminpb.GetDatabaseDdlResponse, error)
+
 	// featureState is the keyed per-session store for feature state contributed
 	// through the Feature seam (issue #778). Values implementing io.Closer are
 	// closed at the end of Close in reverse creation order.
@@ -468,6 +471,18 @@ func (c *ddlCacheEntry) now() time.Time {
 }
 
 const ddlCacheTTL = 30 * time.Second
+
+// GetDatabaseDdlFresh fetches schema DDL without using the 30-second cache.
+// DUMP data-catalog interleave edges use this so a stale cached parent FQN
+// cannot silently bind the wrong schema. It does not populate ddlCache.
+func (s *Session) GetDatabaseDdlFresh(ctx context.Context) (*adminpb.GetDatabaseDdlResponse, error) {
+	if s.dumpDDLOverride != nil {
+		return s.dumpDDLOverride(ctx)
+	}
+	return s.adminClient.GetDatabaseDdl(ctx, &adminpb.GetDatabaseDdlRequest{
+		Database: s.DatabasePath(),
+	})
+}
 
 // GetDatabaseDdlCached returns the cached DDL response, fetching from the API
 // only when the cache is stale (TTL expired or schema generation changed).
