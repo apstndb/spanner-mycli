@@ -15,12 +15,16 @@
 package mycli
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
 	"cloud.google.com/go/spanner"
 	"github.com/apstndb/spanner-mycli/internal/mycli/streamio"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func parentChildOtherDDL() []string {
@@ -234,7 +238,7 @@ func TestDumpCyclePreflightSameTransaction(t *testing.T) {
 	}
 }
 
-func TestDumpCyclePreflightErrorIsZeroOutput(t *testing.T) {
+func TestDumpCyclePreflightOrchestrationErrorIsZeroOutput(t *testing.T) {
 	t.Parallel()
 	skipIfShortIntegration(t)
 	_, session := initializeWithRandomDB(t, parentChildOtherDDL(), nil)
@@ -258,18 +262,87 @@ func TestDumpCyclePreflightErrorIsZeroOutput(t *testing.T) {
 	}
 }
 
-func TestDumpCycleSafetyDisabledEmitsPopulatedCycle(t *testing.T) {
+func TestDumpCycleRowQueryCanceled(t *testing.T) {
+	t.Parallel()
 	skipIfShortIntegration(t)
-	dumpCycleSafetyPreflight = false
-	t.Cleanup(func() { dumpCycleSafetyPreflight = true })
-	_, session := initializeWithRandomDB(t, parentChildOtherDDL(), []string{
-		"INSERT INTO Parent (Id) VALUES (1)",
-		"INSERT INTO Child (Id, OtherId) VALUES (1, NULL)",
-		"INSERT INTO Other (Id, ChildId) VALUES (1, 1)",
-		"UPDATE Child SET OtherId=1 WHERE Id=1",
+	for _, streaming := range []bool{false, true} {
+		t.Run(fmt.Sprintf("streaming_%v", streaming), func(t *testing.T) {
+			_, session := initializeWithRandomDB(t, parentChildOtherDDL(), nil)
+			ctx, cancel := context.WithCancel(t.Context())
+			t.Cleanup(cancel)
+			session.dumpCyclePreflightProbe = func(_ tableID, txn *spanner.ReadOnlyTransaction) error {
+				if txn == nil {
+					t.Fatal("preflight txn is nil")
+				}
+				cancel()
+				return nil
+			}
+			var buf strings.Builder
+			if streaming {
+				original := session.systemVariables.StreamManager
+				session.systemVariables.StreamManager = streamio.NewStreamManager(original.GetInStream(), &buf, original.GetErrStream())
+				defer func() { session.systemVariables.StreamManager = original }()
+			}
+			_, err := (&DumpDatabaseStatement{}).Execute(ctx, session)
+			t.Logf("row-query cancel error chain: %v", err)
+			for e := err; e != nil; e = errors.Unwrap(e) {
+				t.Logf("unwrap %T: %v grpc=%v", e, e, status.Code(e))
+			}
+			if err == nil {
+				t.Fatal("expected cancellation from the row-presence query")
+			}
+			// The Spanner client wraps the canceled context as grpc Canceled
+			// ("context canceled"). errors.Is(context.Canceled) is false on
+			// that chain; status.Code is the observed contract.
+			t.Logf("errors.Is(context.Canceled)=%v grpc=%v", errors.Is(err, context.Canceled), status.Code(err))
+			if status.Code(err) != codes.Canceled {
+				t.Fatalf("error = %v, want grpc Canceled from the row-presence query", err)
+			}
+			if streaming && buf.Len() != 0 {
+				t.Fatalf("expected zero output, got %q", buf.String())
+			}
+		})
+	}
+}
+
+func TestDumpMixedEnforcementOrdersAndReplays(t *testing.T) {
+	t.Parallel()
+	skipIfShortIntegration(t)
+	ddl := []string{
+		"CREATE TABLE A (Id INT64 NOT NULL, BId INT64) PRIMARY KEY(Id)",
+		"CREATE TABLE B (Id INT64 NOT NULL, AId INT64) PRIMARY KEY(Id)",
+		"ALTER TABLE A ADD CONSTRAINT fk_a_b_enforced FOREIGN KEY(BId) REFERENCES B(Id)",
+		"ALTER TABLE B ADD CONSTRAINT fk_b_a_informational FOREIGN KEY(AId) REFERENCES A(Id) NOT ENFORCED",
+	}
+	_, source := initializeWithRandomDB(t, ddl, []string{
+		"INSERT INTO B (Id, AId) VALUES (1, 1)",
+		"INSERT INTO A (Id, BId) VALUES (1, 1)",
 	})
-	out := dumpSQL(t, session, &DumpTablesStatement{Tables: []tableID{tid("Parent"), tid("Child"), tid("Other")}})
-	if !strings.Contains(out, "INSERT") {
-		t.Fatalf("disabled preflight should emit INSERT:\n%s", out)
+	sql := dumpSQL(t, source, &DumpTablesStatement{Tables: []tableID{tid("A"), tid("B")}})
+	aPos, bPos := strings.Index(sql, "INSERT INTO `A`"), strings.Index(sql, "INSERT INTO `B`")
+	if aPos < 0 || bPos < 0 || bPos > aPos {
+		t.Fatalf("want INSERT B before INSERT A, got %s", sql)
+	}
+	_, target := initializeWithRandomDB(t, ddl, nil)
+	parts, err := separateInput(sql)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, part := range parts {
+		text := strings.TrimSpace(part.statementWithoutComments)
+		if text == "" {
+			continue
+		}
+		stmt, err := BuildStatement(text)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := stmt.Execute(t.Context(), target); err != nil {
+			t.Fatalf("%s: %v", text, err)
+		}
+	}
+	got := dumpSQL(t, target, &DumpTablesStatement{Tables: []tableID{tid("A"), tid("B")}})
+	if !strings.Contains(got, "INSERT INTO `A`") || !strings.Contains(got, "INSERT INTO `B`") {
+		t.Fatalf("replay missing rows:\n%s", got)
 	}
 }

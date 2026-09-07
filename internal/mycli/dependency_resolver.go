@@ -30,8 +30,9 @@ type TableDependency struct {
 	InterleaveParent *tableID // set only after authoritative DDL, and only if selected
 	// FKParents are selected-table FK prerequisites used only for physical
 	// INSERT order. Self-edges are omitted because a table cannot precede
-	// itself. Ancestor-to-descendant FKs stay here but are skipped at order
-	// time so INTERLEAVE parent-first is preserved.
+	// itself. Known NOT ENFORCED FKs are omitted from this graph as well as
+	// from SafetyFKParents. Ancestor-to-descendant FKs stay here but are
+	// skipped at order time so INTERLEAVE parent-first is preserved.
 	FKParents []tableID
 	// SafetyFKParents are enforced (or unknown-enforcement) FK prerequisites
 	// including self-edges. Known NOT ENFORCED constraints are omitted.
@@ -166,14 +167,14 @@ func (dr *DependencyResolver) queryForeignKeysWithTxn(ctx context.Context, txn *
 		if _, ok := dr.tables[parent]; !ok {
 			continue
 		}
+		if isKnownNotEnforced(row.Enforced) {
+			continue
+		}
 		if parent != child && !orderSeen[[2]tableID{child, parent}] {
 			orderSeen[[2]tableID{child, parent}] = true
 			if !slices.Contains(childDep.FKParents, parent) {
 				childDep.FKParents = append(childDep.FKParents, parent)
 			}
-		}
-		if isKnownNotEnforced(row.Enforced) {
-			continue
 		}
 		if safetySeen[[2]tableID{child, parent}] {
 			continue

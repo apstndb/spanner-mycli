@@ -15,6 +15,6 @@
 package mycli
 
 // dumpCycleSafetyPreflight enables populated cyclic-SCC rejection before dump
-// output. Tests overlay this to false to prove the preflight, not the old
-// order-graph skip, is what stops the Parent/Child/Other false backup.
-var dumpCycleSafetyPreflight = true
+// output. Tests overlay this const to false to prove the preflight, not the
+// old order-graph skip, is what stops the Parent/Child/Other false backup.
+const dumpCycleSafetyPreflight = true

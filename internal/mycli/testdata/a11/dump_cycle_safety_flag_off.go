@@ -17,4 +17,4 @@ package mycli
 // Overlay replacement: skip populated cyclic-SCC rejection so the new
 // TestDumpPopulatedMutualFKCycleRejected assertion fails. Restoring only
 // the old order-graph InterleaveParent skip does not bypass safety.
-var dumpCycleSafetyPreflight = false
+const dumpCycleSafetyPreflight = false

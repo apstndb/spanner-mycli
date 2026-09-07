@@ -217,6 +217,26 @@ func TestCyclicSafetySCCs(t *testing.T) {
 	}
 }
 
+func TestMixedEnforcementDoesNotCreateOrderCycle(t *testing.T) {
+	t.Parallel()
+	a, b := tid("A"), tid("B")
+	dr := NewDependencyResolver()
+	dr.tables = map[tableID]*TableDependency{
+		a: {ID: a, FKParents: []tableID{b}, SafetyFKParents: []tableID{b}},
+		b: {ID: b},
+	}
+	if sccs := dr.cyclicSafetySCCs([]tableID{a, b}); len(sccs) != 0 {
+		t.Fatalf("enforced A->B plus omitted informational B->A must be acyclic: %v", sccs)
+	}
+	got, err := dr.GetOrderForTables([]tableID{a, b})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff([]string{"B", "A"}, fqnList(got)); diff != "" {
+		t.Fatal(diff)
+	}
+}
+
 func TestCyclicSafetySCCsAncestorReverseFK(t *testing.T) {
 	t.Parallel()
 	parent, child := tid("AParent"), tid("ZChild")
