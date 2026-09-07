@@ -30,14 +30,18 @@ func TestMCPExecuteStatementIsError(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	const metaPolicyText = "ERROR: meta commands are not supported by MCP execute_statement"
 	for _, tc := range []struct {
 		name      string
 		sql       string
 		wantError bool
+		wantText  string
 	}{
 		{name: "success HELP", sql: "HELP", wantError: false},
 		{name: "parse failure", sql: "SHOW QUERY PROFILE nope", wantError: true},
-		{name: "meta command policy", sql: `\q`, wantError: true},
+		// \q is unsupported and fails in ParseMetaCommand; \R is a supported
+		// local MetaCommandStatement that must hit the dedicated MCP guard.
+		{name: "meta command policy", sql: `\R audit`, wantError: true, wantText: metaPolicyText},
 		{name: "execution failure", sql: "SET CLI_FORMAT = 'not-a-format'", wantError: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -55,7 +59,11 @@ func TestMCPExecuteStatementIsError(t *testing.T) {
 			if result.IsError != tc.wantError {
 				t.Fatalf("IsError=%v want %v; text=%q", result.IsError, tc.wantError, text)
 			}
-			if tc.wantError {
+			if tc.wantText != "" {
+				if text != tc.wantText {
+					t.Fatalf("tool text = %q, want %q", text, tc.wantText)
+				}
+			} else if tc.wantError {
 				if !strings.HasPrefix(text, "ERROR:") {
 					t.Fatalf("error text %q, want ERROR: prefix", text)
 				}
