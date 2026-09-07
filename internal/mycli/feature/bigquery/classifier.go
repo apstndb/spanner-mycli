@@ -48,7 +48,7 @@ func bigQueryClassificationCopy(sql string) string {
 // Truncated octal/hex/unicode escapes in memefish v0.8.1 can panic with
 // runtime.Error while building a diagnostic whose end exceeds Buffer.
 // Lexer.NextToken recovers only *memefish.Error and re-panics the rest. The
-// recover here is A15-local: any panic becomes unknown/mutating. Do not reuse
+// recover here is classifier-local: any panic becomes unknown/mutating. Do not reuse
 // recoverMemefishParserPanic, which deliberately re-panics runtime.Error.
 func bigQueryStatementMutates(sql string) (mutating bool) {
 	mutating = true
