@@ -270,6 +270,7 @@ func extractStructValues(structTypefields []*sppb.StructType_Field, structValues
 }
 
 func parseMutation(table, op, s string) ([]*spanner.Mutation, error) {
+	op = canonicalMutateOperation(op)
 	if op == "DELETE" {
 		return parseDeleteMutation(table, s)
 	}

@@ -1161,9 +1161,9 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				Syntax: `MUTATE <table_fqn> DELETE ...`,
 			},
 		},
-		Pattern: regexp.MustCompile(`(?is)^MUTATE\s+(?P<table>\S+)\s+(?P<operation>INSERT|UPDATE|INSERT_OR_UPDATE|REPLACE|DELETE)\s+(?P<body>.+)$`),
+		Pattern: regexp.MustCompile(`(?is)^MUTATE(?:\s+(?P<rest>.*))?$`),
 		HandleGroups: func(groups map[string]string) (Statement, error) {
-			return &MutateStatement{Table: unquoteIdentifier(groups["table"]), Operation: groups["operation"], Body: groups["body"]}, nil
+			return parseMutateArgs(groups["rest"])
 		},
 		Completion: []fuzzyArgCompletion{{
 			PrefixPattern:  regexp.MustCompile(`(?i)^\s*MUTATE\s+(\S*)$`),

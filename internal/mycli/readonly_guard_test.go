@@ -12,6 +12,18 @@ import (
 	"github.com/apstndb/spanner-mycli/enums"
 )
 
+func mustBuildMutate(t *testing.T, sql string) Statement {
+	t.Helper()
+	stmt, err := BuildStatement(sql)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := stmt.(MutationStatement); !ok {
+		t.Fatalf("%T is not MutationStatement", stmt)
+	}
+	return stmt
+}
+
 // TestReadOnlyGuardCoversBatchStatements is the regression test for issue
 // #695: CreateDatabaseStatement, BulkDdlStatement, and BatchDMLStatement
 // declared an exported IsMutationStatement method instead of the unexported
@@ -31,6 +43,7 @@ func TestReadOnlyGuardCoversBatchStatements(t *testing.T) {
 		{desc: "SYNC PROTO BUNDLE", stmt: &SyncProtoStatement{UpsertPaths: []string{"examples.ProtoType"}}},
 		{desc: "ADD SPLIT POINTS", stmt: &AddSplitPointsStatement{}},
 		{desc: "EXPORT DATA", stmt: &ExportDataStatement{SQL: "EXPORT DATA OPTIONS (...) AS GRAPH g RETURN 1"}},
+		{desc: "MUTATE INSERT", stmt: mustBuildMutate(t, `MUTATE `+"`AuditSchema`.`Target`"+` INSERT STRUCT(1 AS Id)`)},
 	} {
 		t.Run(tt.desc, func(t *testing.T) {
 			t.Parallel()
