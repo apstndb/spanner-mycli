@@ -72,6 +72,18 @@ func (c *mcpOutputCapture) String() string {
 	return c.builder.String()
 }
 
+// mcpApplicationErrorResult is an execute_statement application failure:
+// error text in Content with IsError set, and a nil protocol/handler error so
+// the LLM can see the failure. Unknown tools remain SDK protocol errors.
+func mcpApplicationErrorResult(text string) *mcp.CallToolResult {
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{Text: text},
+		},
+		IsError: true,
+	}
+}
+
 // executeStatementHandler handles the execute_statement tool
 func executeStatementHandler(cli *Cli) func(context.Context, *mcp.CallToolRequest, ExecuteStatementArgs) (*mcp.CallToolResult, any, error) {
 	// Mutex to protect concurrent access to cli.executeStatement
@@ -102,22 +114,14 @@ func executeStatementHandler(cli *Cli) func(context.Context, *mcp.CallToolReques
 				"error", err.Error(),
 				"duration", time.Since(start))
 			// Per MCP spec, return execution errors as tool output, not protocol errors.
-			return &mcp.CallToolResult{
-				Content: []mcp.Content{
-					&mcp.TextContent{Text: fmt.Sprintf("ERROR: %v", err)},
-				},
-			}, nil, nil
+			return mcpApplicationErrorResult(fmt.Sprintf("ERROR: %v", err)), nil, nil
 		}
 
 		if _, ok := stmt.(MetaCommandStatement); ok {
 			slog.Debug("MCP request rejected meta command",
 				"duration", time.Since(start))
 			// Per MCP spec, return execution errors as tool output, not protocol errors.
-			return &mcp.CallToolResult{
-				Content: []mcp.Content{
-					&mcp.TextContent{Text: "ERROR: meta commands are not supported by MCP execute_statement"},
-				},
-			}, nil, nil
+			return mcpApplicationErrorResult("ERROR: meta commands are not supported by MCP execute_statement"), nil, nil
 		}
 
 		// Capture output without allowing one MCP call to grow memory unbounded.
@@ -130,11 +134,7 @@ func executeStatementHandler(cli *Cli) func(context.Context, *mcp.CallToolReques
 				"error", err.Error(),
 				"duration", time.Since(start))
 			// Per MCP spec, return execution errors as tool output, not protocol errors.
-			return &mcp.CallToolResult{
-				Content: []mcp.Content{
-					&mcp.TextContent{Text: fmt.Sprintf("ERROR: %v", err)},
-				},
-			}, nil, nil
+			return mcpApplicationErrorResult(fmt.Sprintf("ERROR: %v", err)), nil, nil
 		}
 
 		text := output.String()
