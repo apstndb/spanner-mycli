@@ -105,9 +105,24 @@ func TestBuildStatementMutatePrefix(t *testing.T) {
 			want:  &MutateStatement{Table: "Target", Operation: "DELETE", Body: "ALL"},
 		},
 		{
-			name:  "newline body",
+			name:  "newline separator",
 			input: "MUTATE Target INSERT\nSTRUCT(1 AS Id)",
 			want:  &MutateStatement{Table: "Target", Operation: "INSERT", Body: "STRUCT(1 AS Id)"},
+		},
+		{
+			name:  "tab separator",
+			input: "MUTATE Target DELETE\tALL",
+			want:  &MutateStatement{Table: "Target", Operation: "DELETE", Body: "ALL"},
+		},
+		{
+			name:  "internal newline and escaped literal",
+			input: "MUTATE Target INSERT STRUCT(\n\"a\\nb\" AS s)",
+			want:  &MutateStatement{Table: "Target", Operation: "INSERT", Body: "STRUCT(\n\"a\\nb\" AS s)"},
+		},
+		{
+			name:  "unicode quoted table component",
+			input: "MUTATE `名`.`表` INSERT STRUCT(1 AS Id)",
+			want:  &MutateStatement{Table: "名.表", Operation: "INSERT", Body: "STRUCT(1 AS Id)"},
 		},
 		{
 			name:  "unicode body",
@@ -127,6 +142,9 @@ func TestBuildStatementMutatePrefix(t *testing.T) {
 		{name: "three parts", input: `MUTATE a.b.c INSERT STRUCT(1 AS Id)`, errSub: "components"},
 		{name: "empty component", input: `MUTATE a..b INSERT STRUCT(1 AS Id)`, errSub: "invalid MUTATE table"},
 		{name: "adjacent quoted", input: "MUTATE A``B INSERT STRUCT(1 AS Id)", errSub: "invalid"},
+		{name: "adjacent delete bracket", input: `MUTATE Target DELETE[1]`, errSub: "whitespace after operation"},
+		{name: "adjacent delete paren", input: `MUTATE Target DELETE(1)`, errSub: "whitespace after operation"},
+		{name: "adjacent insert paren", input: `MUTATE Target INSERT(1)`, errSub: "whitespace after operation"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

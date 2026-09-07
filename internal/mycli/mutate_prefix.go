@@ -54,7 +54,14 @@ func parseMutateArgs(rest string) (*MutateStatement, error) {
 	if err != nil {
 		return nil, err
 	}
-	body := strings.TrimLeftFunc(rest[int(p.Token.End):], unicode.IsSpace)
+	suffix := rest[int(p.Token.End):]
+	if suffix == "" {
+		return nil, fmt.Errorf("MUTATE %s %s requires a body", id.FQN(), op)
+	}
+	body := strings.TrimLeftFunc(suffix, unicode.IsSpace)
+	if len(body) == len(suffix) {
+		return nil, fmt.Errorf("MUTATE requires whitespace after operation, got %q", suffix)
+	}
 	if body == "" {
 		return nil, fmt.Errorf("MUTATE %s %s requires a body", id.FQN(), op)
 	}
