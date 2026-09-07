@@ -349,7 +349,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `Export database DDL and data as SQL statements`,
 				Syntax: `DUMP DATABASE`,
-				Note:   `Exports DDL plus BASE TABLE data from the default schema and named schemas. Views and synonyms are omitted from data. Catalog, column, and row reads share one read-only transaction. Requires spanner.databases.getDdl. That admin RPC is not timestamp-bound to the dump transaction.`,
+				Note:   `Exports DDL plus BASE TABLE data from the default schema and named schemas. Views and synonyms are omitted from data. Catalog, column, and row reads share one read-only transaction. Requires spanner.databases.getDdl. That admin RPC is not timestamp-bound to the dump transaction. Populated cyclic enforced foreign-key or interleave graphs are rejected before any output (interim; empty cyclic schemas still dump). Populated all-NULL or row-acyclic members of a cyclic schema are also rejected even though sequential INSERT could restore some of those datasets.`,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^DUMP\s+DATABASE$`),
@@ -375,7 +375,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `Export specific tables as SQL INSERT statements`,
 				Syntax: `DUMP TABLES <table1> [, <table2>, ...]`,
-				Note:   `Table names are [<schema>.]<table>. Data only; no DDL. Invalid names are rejected before GetDatabaseDdl. Requires spanner.databases.getDdl only when a selected interleaved child has another selected BASE TABLE whose name matches the catalog parent basename.`,
+				Note:   `Table names are [<schema>.]<table>. Data only; no DDL. Invalid names are rejected before GetDatabaseDdl. Requires spanner.databases.getDdl only when a selected interleaved child has another selected BASE TABLE whose name matches the catalog parent basename. Populated cyclic enforced foreign-key graphs among the selected tables are rejected before any output (interim). Populated all-NULL or row-acyclic members of a cyclic schema are also rejected even though sequential INSERT could restore some of those datasets.`,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^DUMP\s+TABLES\s+(?P<tables>.+)$`),

@@ -234,6 +234,9 @@ func prepareDumpWithTxn(ctx context.Context, session *Session, mode dumpMode, sp
 	if !mode.shouldExportData() {
 		return plan, nil
 	}
+	if err := rejectPopulatedCyclicDumpSCCs(ctx, session, txn, resolver, selected); err != nil {
+		return nil, err
+	}
 	order, err := resolver.GetOrderForTables(selected)
 	if err != nil {
 		return nil, err

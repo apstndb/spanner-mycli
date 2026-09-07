@@ -28,7 +28,16 @@ type TableDependency struct {
 	ID               tableID
 	ParentBasename   string   // TABLES.PARENT_TABLE_NAME; never a schema
 	InterleaveParent *tableID // set only after authoritative DDL, and only if selected
-	FKParents        []tableID
+	// FKParents are selected-table FK prerequisites used only for physical
+	// INSERT order. Self-edges are omitted because a table cannot precede
+	// itself. Known NOT ENFORCED FKs are omitted from this graph as well as
+	// from SafetyFKParents. Ancestor-to-descendant FKs stay here but are
+	// skipped at order time so INTERLEAVE parent-first is preserved.
+	FKParents []tableID
+	// SafetyFKParents are enforced (or unknown-enforcement) FK prerequisites
+	// including self-edges. Known NOT ENFORCED constraints are omitted.
+	// This graph is not used for INSERT order.
+	SafetyFKParents []tableID
 }
 
 // catalogObject is a user-visible INFORMATION_SCHEMA.TABLES row.
@@ -59,14 +68,15 @@ type informationSchemaTableRow struct {
 }
 
 type informationSchemaFKRow struct {
-	ConstraintSchema       string `spanner:"CONSTRAINT_SCHEMA"`
-	ConstraintName         string `spanner:"CONSTRAINT_NAME"`
-	ChildSchema            string `spanner:"CHILD_SCHEMA"`
-	ChildTable             string `spanner:"CHILD_TABLE"`
-	UniqueConstraintSchema string `spanner:"UNIQUE_CONSTRAINT_SCHEMA"`
-	UniqueConstraintName   string `spanner:"UNIQUE_CONSTRAINT_NAME"`
-	ParentSchema           string `spanner:"PARENT_SCHEMA"`
-	ParentTable            string `spanner:"PARENT_TABLE"`
+	ConstraintSchema       string  `spanner:"CONSTRAINT_SCHEMA"`
+	ConstraintName         string  `spanner:"CONSTRAINT_NAME"`
+	ChildSchema            string  `spanner:"CHILD_SCHEMA"`
+	ChildTable             string  `spanner:"CHILD_TABLE"`
+	UniqueConstraintSchema string  `spanner:"UNIQUE_CONSTRAINT_SCHEMA"`
+	UniqueConstraintName   string  `spanner:"UNIQUE_CONSTRAINT_NAME"`
+	ParentSchema           string  `spanner:"PARENT_SCHEMA"`
+	ParentTable            string  `spanner:"PARENT_TABLE"`
+	Enforced               *string `spanner:"ENFORCED"`
 }
 
 func (dr *DependencyResolver) BuildDependencyGraphWithTxn(ctx context.Context, txn *spanner.ReadOnlyTransaction) error {
@@ -114,6 +124,9 @@ func (dr *DependencyResolver) queryCatalogWithTxn(ctx context.Context, txn *span
 }
 
 func (dr *DependencyResolver) queryForeignKeysWithTxn(ctx context.Context, txn *spanner.ReadOnlyTransaction) error {
+	// Join TABLE_CONSTRAINTS on qualified constraint identity so known
+	// NOT ENFORCED FKs can be omitted from the safety graph. A query error
+	// is returned; missing ENFORCED values are treated as enforced.
 	query := `
 		SELECT DISTINCT
 			rc.CONSTRAINT_SCHEMA,
@@ -123,7 +136,8 @@ func (dr *DependencyResolver) queryForeignKeysWithTxn(ctx context.Context, txn *
 			rc.UNIQUE_CONSTRAINT_SCHEMA,
 			rc.UNIQUE_CONSTRAINT_NAME,
 			kcu_parent.TABLE_SCHEMA AS PARENT_SCHEMA,
-			kcu_parent.TABLE_NAME AS PARENT_TABLE
+			kcu_parent.TABLE_NAME AS PARENT_TABLE,
+			tc.ENFORCED
 		FROM INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc
 		JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu_child
 			ON rc.CONSTRAINT_SCHEMA = kcu_child.CONSTRAINT_SCHEMA
@@ -131,20 +145,21 @@ func (dr *DependencyResolver) queryForeignKeysWithTxn(ctx context.Context, txn *
 		JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu_parent
 			ON rc.UNIQUE_CONSTRAINT_SCHEMA = kcu_parent.CONSTRAINT_SCHEMA
 			AND rc.UNIQUE_CONSTRAINT_NAME = kcu_parent.CONSTRAINT_NAME
+		LEFT JOIN INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
+			ON rc.CONSTRAINT_SCHEMA = tc.CONSTRAINT_SCHEMA
+			AND rc.CONSTRAINT_NAME = tc.CONSTRAINT_NAME
+			AND tc.CONSTRAINT_TYPE = 'FOREIGN KEY'
 		ORDER BY rc.CONSTRAINT_SCHEMA, rc.CONSTRAINT_NAME`
 
 	var rows []informationSchemaFKRow
 	if err := spanner.SelectAll(txn.Query(ctx, spanner.Statement{SQL: query}), &rows); err != nil {
 		return fmt.Errorf("failed to query foreign keys: %w", err)
 	}
-	seen := make(map[[2]tableID]bool)
+	orderSeen := make(map[[2]tableID]bool)
+	safetySeen := make(map[[2]tableID]bool)
 	for _, row := range rows {
 		child := tableID{Schema: row.ChildSchema, Name: row.ChildTable}
 		parent := tableID{Schema: row.ParentSchema, Name: row.ParentTable}
-		if seen[[2]tableID{child, parent}] {
-			continue
-		}
-		seen[[2]tableID{child, parent}] = true
 		childDep, ok := dr.tables[child]
 		if !ok {
 			continue
@@ -152,14 +167,28 @@ func (dr *DependencyResolver) queryForeignKeysWithTxn(ctx context.Context, txn *
 		if _, ok := dr.tables[parent]; !ok {
 			continue
 		}
-		if parent == child {
+		if isKnownNotEnforced(row.Enforced) {
 			continue
 		}
-		if !slices.Contains(childDep.FKParents, parent) {
-			childDep.FKParents = append(childDep.FKParents, parent)
+		if parent != child && !orderSeen[[2]tableID{child, parent}] {
+			orderSeen[[2]tableID{child, parent}] = true
+			if !slices.Contains(childDep.FKParents, parent) {
+				childDep.FKParents = append(childDep.FKParents, parent)
+			}
+		}
+		if safetySeen[[2]tableID{child, parent}] {
+			continue
+		}
+		safetySeen[[2]tableID{child, parent}] = true
+		if !slices.Contains(childDep.SafetyFKParents, parent) {
+			childDep.SafetyFKParents = append(childDep.SafetyFKParents, parent)
 		}
 	}
 	return nil
+}
+
+func isKnownNotEnforced(enforced *string) bool {
+	return enforced != nil && strings.EqualFold(*enforced, "NO")
 }
 
 func (dr *DependencyResolver) lookupExplicit(id tableID) error {
@@ -265,92 +294,190 @@ func (dr *DependencyResolver) topologicalSort(tablesToExport []tableID) ([]table
 		selected[id] = struct{}{}
 	}
 
-	var sorted []tableID
-	visited := make(map[tableID]bool)
-	visiting := make(map[tableID]bool)
-	visitPath := []tableID{}
-
-	var visit func(tableID) error
-	visit = func(id tableID) error {
-		if visited[id] {
-			return nil
+	indegree := make(map[tableID]int, len(tablesToExport))
+	children := make(map[tableID][]tableID, len(tablesToExport))
+	addOrderEdge := func(parent, child tableID) {
+		if parent == child {
+			return
 		}
-		if visiting[id] {
-			cycle := append(append([]tableID{}, visitPath...), id)
-			names := make([]string, len(cycle))
-			for i, c := range cycle {
-				names[i] = c.FQN()
-			}
-			return fmt.Errorf("circular foreign key dependency detected: %s", strings.Join(names, " -> "))
+		if _, ok := selected[parent]; !ok {
+			return
 		}
-		visiting[id] = true
-		visitPath = append(visitPath, id)
-		defer func() {
-			visitPath = visitPath[:len(visitPath)-1]
-		}()
+		if _, ok := selected[child]; !ok {
+			return
+		}
+		if slices.Contains(children[parent], child) {
+			return
+		}
+		children[parent] = append(children[parent], child)
+		indegree[child]++
+	}
 
+	for _, id := range tablesToExport {
 		dep := dr.tables[id]
 		if dep == nil {
-			return fmt.Errorf("table %s not found", id.FQN())
+			return nil, fmt.Errorf("table %s not found", id.FQN())
 		}
 		if dep.InterleaveParent != nil {
-			if _, ok := selected[*dep.InterleaveParent]; ok {
-				if err := visit(*dep.InterleaveParent); err != nil {
-					return err
-				}
-			}
+			addOrderEdge(*dep.InterleaveParent, id)
 		}
-		fkParents := append([]tableID(nil), dep.FKParents...)
-		slices.SortFunc(fkParents, func(a, b tableID) int { return a.compare(b) })
-		for _, parent := range fkParents {
-			if _, ok := selected[parent]; !ok {
-				continue
-			}
-			if parent == id {
-				continue
-			}
+		for _, parent := range dep.FKParents {
 			// Skip FK edges that point from an interleave ancestor to a
-			// selected descendant. Following them would visit the child
-			// before its INTERLEAVE parent. This is not A11 cycle restoration.
+			// selected descendant. Following them would emit the child
+			// before its INTERLEAVE parent. Safety classification uses
+			// SafetyFKParents instead; this skip is order-only.
 			if dr.hasInterleavePathBetween(id, parent) {
 				continue
 			}
-			if visiting[parent] {
-				parentDep := dr.tables[parent]
-				if dep.InterleaveParent != nil || (parentDep != nil && parentDep.InterleaveParent != nil) {
-					continue
-				}
-				if dr.hasInterleavePathBetween(parent, id) || dr.hasInterleavePathBetween(id, parent) {
-					continue
-				}
-				cycle := append(append([]tableID{}, visitPath...), parent)
-				names := make([]string, len(cycle))
-				for i, c := range cycle {
-					names[i] = c.FQN()
-				}
-				return fmt.Errorf("circular foreign key dependency detected: %s", strings.Join(names, " -> "))
-			}
-			if !visited[parent] {
-				if err := visit(parent); err != nil {
-					return err
-				}
-			}
+			addOrderEdge(parent, id)
 		}
-
-		visiting[id] = false
-		visited[id] = true
-		sorted = append(sorted, id)
-		return nil
 	}
 
-	export := append([]tableID(nil), tablesToExport...)
-	slices.SortFunc(export, func(a, b tableID) int { return a.compare(b) })
-	for _, id := range export {
-		if err := visit(id); err != nil {
-			return nil, err
+	remaining := make(map[tableID]struct{}, len(tablesToExport))
+	for _, id := range tablesToExport {
+		remaining[id] = struct{}{}
+	}
+	sorted := make([]tableID, 0, len(tablesToExport))
+	for len(remaining) > 0 {
+		var ready []tableID
+		for id := range remaining {
+			if indegree[id] == 0 {
+				ready = append(ready, id)
+			}
+		}
+		var pick tableID
+		if len(ready) > 0 {
+			slices.SortFunc(ready, func(a, b tableID) int { return a.compare(b) })
+			pick = ready[0]
+		} else {
+			// Remaining order-graph cycle: emit interleave-valid then
+			// (Schema,Name). Populated cyclic safety SCCs are rejected
+			// before the writer; this path orders empty components.
+			var cands []tableID
+			for id := range remaining {
+				dep := dr.tables[id]
+				if dep != nil && dep.InterleaveParent != nil {
+					if _, parentLeft := remaining[*dep.InterleaveParent]; parentLeft {
+						continue
+					}
+				}
+				cands = append(cands, id)
+			}
+			if len(cands) == 0 {
+				for id := range remaining {
+					cands = append(cands, id)
+				}
+			}
+			slices.SortFunc(cands, func(a, b tableID) int { return a.compare(b) })
+			pick = cands[0]
+		}
+		sorted = append(sorted, pick)
+		delete(remaining, pick)
+		for _, child := range children[pick] {
+			if _, ok := remaining[child]; ok {
+				indegree[child]--
+			}
 		}
 	}
 	return sorted, nil
+}
+
+// cyclicSafetySCCs returns selected-table strongly connected components that
+// are cyclic under interleave prerequisites and enforced/unknown FK edges.
+// A self-FK is a cyclic singleton. Known NOT ENFORCED FKs are not edges.
+func (dr *DependencyResolver) cyclicSafetySCCs(selected []tableID) [][]tableID {
+	selectedSet := make(map[tableID]struct{}, len(selected))
+	graph := make(map[tableID][]tableID, len(selected))
+	for _, id := range selected {
+		selectedSet[id] = struct{}{}
+		graph[id] = nil
+	}
+	selfLoop := make(map[tableID]bool)
+	add := func(from, to tableID) {
+		if _, ok := selectedSet[to]; !ok {
+			return
+		}
+		if from == to {
+			selfLoop[from] = true
+			return
+		}
+		if !slices.Contains(graph[from], to) {
+			graph[from] = append(graph[from], to)
+		}
+	}
+	for _, id := range selected {
+		dep := dr.tables[id]
+		if dep == nil {
+			continue
+		}
+		if dep.InterleaveParent != nil {
+			add(id, *dep.InterleaveParent)
+		}
+		for _, parent := range dep.SafetyFKParents {
+			add(id, parent)
+		}
+	}
+	for id := range graph {
+		slices.SortFunc(graph[id], func(a, b tableID) int { return a.compare(b) })
+	}
+	var cyclic [][]tableID
+	for _, scc := range stronglyConnectedTableIDs(graph, selected) {
+		if len(scc) > 1 || (len(scc) == 1 && selfLoop[scc[0]]) {
+			cyclic = append(cyclic, scc)
+		}
+	}
+	return cyclic
+}
+
+func stronglyConnectedTableIDs(graph map[tableID][]tableID, nodes []tableID) [][]tableID {
+	ordered := append([]tableID(nil), nodes...)
+	slices.SortFunc(ordered, func(a, b tableID) int { return a.compare(b) })
+	visited := make(map[tableID]bool, len(ordered))
+	var stack []tableID
+	var dfs1 func(tableID)
+	dfs1 = func(u tableID) {
+		if visited[u] {
+			return
+		}
+		visited[u] = true
+		for _, v := range graph[u] {
+			dfs1(v)
+		}
+		stack = append(stack, u)
+	}
+	for _, n := range ordered {
+		dfs1(n)
+	}
+	rev := make(map[tableID][]tableID, len(graph))
+	for u, vs := range graph {
+		for _, v := range vs {
+			rev[v] = append(rev[v], u)
+		}
+	}
+	visited = make(map[tableID]bool, len(ordered))
+	var sccs [][]tableID
+	var dfs2 func(tableID, *[]tableID)
+	dfs2 = func(u tableID, comp *[]tableID) {
+		if visited[u] {
+			return
+		}
+		visited[u] = true
+		*comp = append(*comp, u)
+		for _, v := range rev[u] {
+			dfs2(v, comp)
+		}
+	}
+	for i := len(stack) - 1; i >= 0; i-- {
+		u := stack[i]
+		if visited[u] {
+			continue
+		}
+		var comp []tableID
+		dfs2(u, &comp)
+		slices.SortFunc(comp, func(a, b tableID) int { return a.compare(b) })
+		sccs = append(sccs, comp)
+	}
+	return sccs
 }
 
 // hasInterleavePathBetween reports whether descendant is in the selected

@@ -139,6 +139,121 @@ func containsStr(s, substr string) bool {
 	return strings.Contains(s, substr)
 }
 
+func TestIsKnownNotEnforced(t *testing.T) {
+	t.Parallel()
+	no, yes := "NO", "YES"
+	if !isKnownNotEnforced(&no) {
+		t.Fatal("NO must be known not-enforced")
+	}
+	if isKnownNotEnforced(&yes) || isKnownNotEnforced(nil) {
+		t.Fatal("YES and missing ENFORCED are conservative safety edges")
+	}
+}
+
+func TestGetOrderForTablesEmptyFKCycleSucceeds(t *testing.T) {
+	t.Parallel()
+	a, b := tid("A"), tid("B")
+	dr := NewDependencyResolver()
+	dr.tables = map[tableID]*TableDependency{
+		a: {ID: a, FKParents: []tableID{b}, SafetyFKParents: []tableID{b}},
+		b: {ID: b, FKParents: []tableID{a}, SafetyFKParents: []tableID{a}},
+	}
+	got, err := dr.GetOrderForTables([]tableID{b, a})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff([]string{"A", "B"}, fqnList(got)); diff != "" {
+		t.Fatal(diff)
+	}
+}
+
+func TestCyclicSafetySCCs(t *testing.T) {
+	t.Parallel()
+	parent, child, other := tid("Parent"), tid("Child"), tid("Other")
+	dr := NewDependencyResolver()
+	dr.tables = map[tableID]*TableDependency{
+		parent: {ID: parent},
+		child: {
+			ID:               child,
+			InterleaveParent: parentPtr(parent),
+			FKParents:        []tableID{other},
+			SafetyFKParents:  []tableID{other},
+		},
+		other: {ID: other, FKParents: []tableID{child}, SafetyFKParents: []tableID{child}},
+	}
+	sccs := dr.cyclicSafetySCCs([]tableID{parent, child, other})
+	if len(sccs) != 1 {
+		t.Fatalf("sccs=%v", sccs)
+	}
+	if diff := cmp.Diff([]string{"Child", "Other"}, fqnList(sccs[0])); diff != "" {
+		t.Fatal(diff)
+	}
+	got, err := dr.GetOrderForTables([]tableID{parent, child, other})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got[0] != parent {
+		t.Fatalf("order %v, want Parent first", fqnList(got))
+	}
+
+	self := tid("Emp")
+	selfDR := NewDependencyResolver()
+	selfDR.tables = map[tableID]*TableDependency{
+		self: {ID: self, SafetyFKParents: []tableID{self}},
+	}
+	selfSCCs := selfDR.cyclicSafetySCCs([]tableID{self})
+	if len(selfSCCs) != 1 || selfSCCs[0][0] != self {
+		t.Fatalf("self scc=%v", selfSCCs)
+	}
+
+	infoA, infoB := tid("A"), tid("B")
+	info := NewDependencyResolver()
+	info.tables = map[tableID]*TableDependency{
+		infoA: {ID: infoA, FKParents: []tableID{infoB}},
+		infoB: {ID: infoB, FKParents: []tableID{infoA}},
+	}
+	if sccs := info.cyclicSafetySCCs([]tableID{infoA, infoB}); len(sccs) != 0 {
+		t.Fatalf("NOT ENFORCED-equivalent empty SafetyFKParents must not be cyclic: %v", sccs)
+	}
+}
+
+func TestMixedEnforcementDoesNotCreateOrderCycle(t *testing.T) {
+	t.Parallel()
+	a, b := tid("A"), tid("B")
+	dr := NewDependencyResolver()
+	dr.tables = map[tableID]*TableDependency{
+		a: {ID: a, FKParents: []tableID{b}, SafetyFKParents: []tableID{b}},
+		b: {ID: b},
+	}
+	if sccs := dr.cyclicSafetySCCs([]tableID{a, b}); len(sccs) != 0 {
+		t.Fatalf("enforced A->B plus omitted informational B->A must be acyclic: %v", sccs)
+	}
+	got, err := dr.GetOrderForTables([]tableID{a, b})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff([]string{"B", "A"}, fqnList(got)); diff != "" {
+		t.Fatal(diff)
+	}
+}
+
+func TestCyclicSafetySCCsAncestorReverseFK(t *testing.T) {
+	t.Parallel()
+	parent, child := tid("AParent"), tid("ZChild")
+	dr := NewDependencyResolver()
+	dr.tables = map[tableID]*TableDependency{
+		parent: {ID: parent, FKParents: []tableID{child}, SafetyFKParents: []tableID{child}},
+		child:  {ID: child, InterleaveParent: parentPtr(parent)},
+	}
+	sccs := dr.cyclicSafetySCCs([]tableID{parent, child})
+	if len(sccs) != 1 {
+		t.Fatalf("sccs=%v", sccs)
+	}
+	if diff := cmp.Diff([]string{"AParent", "ZChild"}, fqnList(sccs[0])); diff != "" {
+		t.Fatal(diff)
+	}
+}
+
 func TestAncestorFKDoesNotRejectValidInterleave(t *testing.T) {
 	t.Parallel()
 	cases := []struct {

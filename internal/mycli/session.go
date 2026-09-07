@@ -123,6 +123,10 @@ type Session struct {
 	// Tests only; must not acquire the transaction mutex.
 	dumpReadTxnProbe func(phase string, txn *spanner.ReadOnlyTransaction)
 
+	// dumpCyclePreflightProbe, if set, is invoked for each table in a cyclic
+	// safety SCC before the row-presence query. Tests only.
+	dumpCyclePreflightProbe func(id tableID, txn *spanner.ReadOnlyTransaction) error
+
 	// featureState is the keyed per-session store for feature state contributed
 	// through the Feature seam (issue #778). Values implementing io.Closer are
 	// closed at the end of Close in reverse creation order.
