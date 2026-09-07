@@ -59,6 +59,7 @@ func TestReadOnlyGuardBlocksMutatingBigQuery(t *testing.T) {
 		{desc: "EXECUTE IMMEDIATE blocked", sql: "EXECUTE IMMEDIATE 'SELECT 1'"},
 		{desc: "truncated octal blocked", sql: "SELECT \"\\0"},
 		{desc: "empty payload blocked", sql: "/* comment only */"},
+		{desc: "overlapping block comment blocked", sql: "SELECT 1 /*/ ' */; DELETE FROM `dataset.table` WHERE TRUE; -- '"},
 	} {
 		t.Run(tt.desc, func(t *testing.T) {
 			t.Parallel()
@@ -89,6 +90,7 @@ func TestReadOnlyGuardAllowsReadOnlyBigQuery(t *testing.T) {
 		{desc: "comment then SELECT", sql: "-- comment\nSELECT 1"},
 		{desc: "parenthesized SELECT", sql: "(SELECT 1)"},
 		{desc: "FROM pipe", sql: "FROM dataset.table |> SELECT *"},
+		{desc: "overlapping bytes in string", sql: "SELECT '/*/'"},
 	} {
 		t.Run(tt.desc, func(t *testing.T) {
 			t.Parallel()
@@ -124,6 +126,7 @@ func TestReadOnlyFalseReachesMissingProject(t *testing.T) {
 		{desc: "SELECT", sql: "SELECT 1"},
 		{desc: "SELECT then DELETE", sql: "SELECT 1; DELETE FROM dataset.table WHERE TRUE"},
 		{desc: "dash CR DELETE", sql: "SELECT 1; -- comment\rDELETE FROM dataset.table WHERE TRUE"},
+		{desc: "overlapping block comment", sql: "SELECT 1 /*/ ' */; DELETE FROM `dataset.table` WHERE TRUE; -- '"},
 	} {
 		t.Run(tt.desc, func(t *testing.T) {
 			t.Parallel()

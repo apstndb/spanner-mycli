@@ -31,6 +31,7 @@ func TestMCPReadOnlyGuardBigQuery(t *testing.T) {
 		missingProject = "BigQuery project not configured"
 		mutatingScript = "BIGQUERY SELECT 1; DELETE FROM dataset.table WHERE TRUE;"
 		readOnlyScript = "BIGQUERY SELECT 1;"
+		overlapScript  = "BIGQUERY SELECT 1 /*/ ' */; DELETE FROM `dataset.table` WHERE TRUE; -- '"
 	)
 
 	t.Run("READONLY mutating script", func(t *testing.T) {
@@ -58,6 +59,28 @@ func TestMCPReadOnlyGuardBigQuery(t *testing.T) {
 	t.Run("READONLY false mutating script", func(t *testing.T) {
 		session := mycli.NewSessionForTest(t)
 		got := callMCPExecuteStatement(t, session, mutatingScript)
+		if strings.Contains(got, readOnlyErr) {
+			t.Fatalf("READONLY=false wrongly blocked: %q", got)
+		}
+		if !strings.Contains(got, missingProject) {
+			t.Fatalf("got %q, want missing BigQuery project", got)
+		}
+	})
+
+	t.Run("READONLY overlapping comment", func(t *testing.T) {
+		session := mycli.NewReadOnlySessionForTest(t)
+		got := callMCPExecuteStatement(t, session, overlapScript)
+		if !strings.Contains(got, readOnlyErr) {
+			t.Fatalf("got %q, want READONLY error", got)
+		}
+		if strings.Contains(got, missingProject) {
+			t.Fatalf("overlapping comment reached feature execution: %q", got)
+		}
+	})
+
+	t.Run("READONLY false overlapping comment", func(t *testing.T) {
+		session := mycli.NewSessionForTest(t)
+		got := callMCPExecuteStatement(t, session, overlapScript)
 		if strings.Contains(got, readOnlyErr) {
 			t.Fatalf("READONLY=false wrongly blocked: %q", got)
 		}

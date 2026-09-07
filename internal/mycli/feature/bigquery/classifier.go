@@ -60,12 +60,33 @@ func bigQueryStatementMutates(sql string) (mutating bool) {
 	return !bigQueryPayloadIsReadOnly(bigQueryClassificationCopy(sql))
 }
 
+// overlappingBlockComment is the three-byte sequence memefish v0.8.1 emits as a
+// closed comment because skipCommentUntil("*/") starts at the opening slash and
+// therefore matches the overlapping "*/" inside "/*/" after one skip.
+// GoogleSQL requires a later star-slash closer (cs_comment in googlesql.tm), so
+// "/*/ ' */; DELETE ..." still contains a DELETE statement. Rejecting this
+// exact lexer comment Raw is fail-closed; it does not ban the same bytes inside
+// strings or quoted identifiers.
+const overlappingBlockComment = "/*/"
+
+func commentsHaveOverlappingBlock(comments []token.TokenComment) bool {
+	for _, c := range comments {
+		if c.Raw == overlappingBlockComment {
+			return true
+		}
+	}
+	return false
+}
+
 func bigQueryPayloadIsReadOnly(sql string) bool {
 	lex := &memefish.Lexer{File: &token.File{FilePath: "bigquery-readonly", Buffer: sql}}
 	sawQuery := false
 	atStart := true
 	for n := 0; n <= len(sql)+1; n++ {
 		if err := lex.NextToken(); err != nil {
+			return false
+		}
+		if commentsHaveOverlappingBlock(lex.Token.Comments) {
 			return false
 		}
 		switch lex.Token.Kind {

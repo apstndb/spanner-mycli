@@ -66,6 +66,14 @@ func TestBigQueryStatementMutates(t *testing.T) {
 		{desc: "unterminated comment", sql: "SELECT 1; /* x", want: true},
 		{desc: "invalid escape", sql: "SELECT '\\z'", want: true},
 		{desc: "literal CR in ordinary string", sql: "SELECT 'x\ry'", want: true},
+		{desc: "overlapping block comment hides DELETE", sql: "SELECT 1 /*/ ' */; DELETE FROM `dataset.table` WHERE TRUE; -- '", want: true},
+		{desc: "overlapping comment at EOF", sql: "SELECT 1 /*/", want: true},
+		{desc: "overlapping bytes in ordinary string", sql: "SELECT '/*/'", want: false},
+		{desc: "overlapping bytes in raw string", sql: "SELECT r'/*/'", want: false},
+		{desc: "overlapping bytes in double string", sql: "SELECT \"/*/\"", want: false},
+		{desc: "overlapping bytes in triple string", sql: "SELECT '''/*/' '''", want: false},
+		{desc: "overlapping bytes in quoted identifier", sql: "SELECT `/*/`", want: false},
+		{desc: "ordinary block comment", sql: "SELECT 1 /* x */; SELECT 2", want: false},
 	} {
 		t.Run(tt.desc, func(t *testing.T) {
 			t.Parallel()
@@ -98,12 +106,19 @@ func TestBigQueryStatementMutatesTruncatedEscapes(t *testing.T) {
 func TestBigQueryClassificationLeavesOriginalSQL(t *testing.T) {
 	t.Parallel()
 
-	sql := "SELECT 1; -- comment\rDELETE FROM t WHERE TRUE"
-	stmt := newBigQueryStatement(sql, &config{})
-	if !stmt.Classify() {
-		t.Fatal("mixed CR script must classify as mutating")
-	}
-	if stmt.SQL != sql {
-		t.Fatalf("classification mutated SQL: got %q want %q", stmt.SQL, sql)
+	for _, sql := range []string{
+		"SELECT 1; -- comment\rDELETE FROM t WHERE TRUE",
+		"SELECT 1 /*/ ' */; DELETE FROM `dataset.table` WHERE TRUE; -- '",
+	} {
+		t.Run(sql, func(t *testing.T) {
+			t.Parallel()
+			stmt := newBigQueryStatement(sql, &config{})
+			if !stmt.Classify() {
+				t.Fatal("payload must classify as mutating")
+			}
+			if stmt.SQL != sql {
+				t.Fatalf("classification mutated SQL: got %q want %q", stmt.SQL, sql)
+			}
+		})
 	}
 }
