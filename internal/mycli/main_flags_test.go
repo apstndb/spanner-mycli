@@ -580,6 +580,10 @@ func TestParseFlagsValidation(t *testing.T) {
 			name: "valid log level",
 			args: withRequiredFlags("--log-level", "INFO"),
 		},
+		{
+			name: "WARNING log level alias",
+			args: withRequiredFlags("--log-level", "WARNING"),
+		},
 
 		// Credential file tests
 		{

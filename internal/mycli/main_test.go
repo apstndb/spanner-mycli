@@ -846,7 +846,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 			// and those that are set later in run() (e.g., EnableProgressBar, WithoutAuthentication)
 			if diff := cmp.Diff(tt.want, *got,
 				cmpopts.IgnoreUnexported(systemVariables{}),
-				cmpopts.IgnoreFields(systemVariables{}, "Display.OutputTemplate", "Internal.ProtoDescriptor", "Display.EnableProgressBar", "Config.WithoutAuthentication", "Registry"), // Removed Params from here
+				cmpopts.IgnoreFields(systemVariables{}, "Display.OutputTemplate", "Internal.ProtoDescriptor", "Display.EnableProgressBar", "Config.WithoutAuthentication", "Config.EmbeddedLogLevel", "Registry"), // Removed Params from here
 				cmpopts.IgnoreFields(systemVariables{}, "Display.ParsedAnalyzeColumns", "Display.ExplainPrintSections", "Display.ParsedExplainPrintSections"),
 				cmpopts.EquateApproxTime(time.Microsecond),
 				protocmp.Transform(),
@@ -905,7 +905,8 @@ func Test_newSystemVariablesWithDefaults(t *testing.T) {
 	want := systemVariables{
 		Connection: ConnectionVars{},
 		Config: StartupConfig{
-			EnableADCPlus: true,
+			EnableADCPlus:    true,
+			EmbeddedLogLevel: slog.LevelWarn,
 		},
 		Display: DisplayVars{
 			DumpCyclicMaxBytes:   67108864,
@@ -1068,6 +1069,7 @@ func Test_createSystemVariablesFromOptions(t *testing.T) {
 				sv.Connection.Database = "test-database"
 				sv.Display.Prompt = "custom> "
 				sv.Feature.LogLevel = slog.LevelInfo
+				sv.Config.EmbeddedLogLevel = slog.LevelInfo
 				sv.Params = make(map[string]ast.Node)
 				return sv
 			}(),

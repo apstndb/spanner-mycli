@@ -65,6 +65,11 @@ type StartupConfig struct {
 	MCP                       bool   // CLI_MCP
 	SkipSystemCommand         bool   // CLI_SKIP_SYSTEM_COMMAND
 
+	// EmbeddedLogLevel is the --log-level value parsed at startup. It gates
+	// embedded runtime container lifecycle logs and is not CLI_LOG_LEVEL:
+	// --set and later SQL SET must not change it.
+	EmbeddedLogLevel slog.Level
+
 	// Credential holds the raw --credential file bytes, if any. It is the durable
 	// home for the credential (read-only, not a registered variable): features
 	// that build non-Spanner clients read it via Session.CredentialBytes(), and
@@ -186,7 +191,7 @@ type FeatureVars struct {
 	EchoInput              bool                       // CLI_ECHO_INPUT
 	AsyncDDL               bool                       // CLI_ASYNC_DDL
 	AutoConnectAfterCreate bool                       // CLI_AUTO_CONNECT_AFTER_CREATE
-	LogLevel               slog.Level                 // CLI_LOG_LEVEL
+	LogLevel               slog.Level                 // CLI_LOG_LEVEL (session-reported; runtime threshold is runtimeLogLevel when bound)
 	DatabaseDialect        databasepb.DatabaseDialect // CLI_DATABASE_DIALECT
 }
 
@@ -238,6 +243,12 @@ type systemVariables struct {
 
 	// Registry holds the system variable registry
 	Registry *VarRegistry
+
+	// runtimeLogLevel, when non-nil, is the process slog.LevelVar backing the
+	// CLI-owned default handler. Isolated fixtures leave it nil so Registry.Set
+	// does not mutate slog.Default. Bound by createSystemVariablesFromOptions
+	// before the first registry build. Do not copy a live systemVariables.
+	runtimeLogLevel *slog.LevelVar
 
 	// featureVarDefs holds the varDefs converted from feature-contributed
 	// FeatureVars (issue #778). They are registered alongside the core varDefs
@@ -339,7 +350,8 @@ func (sv *systemVariables) ProjectPath() string {
 func newSystemVariablesWithDefaults() systemVariables {
 	sv := systemVariables{
 		Config: StartupConfig{
-			EnableADCPlus: true,
+			EnableADCPlus:    true,
+			EmbeddedLogLevel: slog.LevelWarn,
 		},
 		Display: DisplayVars{
 			DumpCyclicMode:             enums.DumpCyclicModeReject,
