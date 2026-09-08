@@ -809,7 +809,7 @@ Note that transaction-level priority takes precedence over command-level priorit
 ## Transaction Tags and Request Tags
 
 You can set transaction tag using `SET TRANSACTION_TAG = "<tag>"`, and request tag using `SET STATEMENT_TAG = "<tag>"`.
-Note: `TRANSACTION_TAG` is effective only in the current transaction and `STATEMENT_TAG` is effective only in the next query.
+`TRANSACTION_TAG` is the tag for the next physical read-write transaction. After that owner starts, `SHOW VARIABLE TRANSACTION_TAG` reports the applied tag until the owner ends, then the value is cleared. `SET TRANSACTION_TAG` after a read-write transaction has started is rejected. A pending `BEGIN` does not consume the tag, so `BEGIN;` then `SET TRANSACTION_TAG` still applies. Read-only transactions do not consume it. Partitioned DML does not currently send a transaction tag. `STATEMENT_TAG` is effective only for the next statement.
 
 ```
 +------------------------------+

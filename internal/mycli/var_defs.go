@@ -296,9 +296,9 @@ var varDefs = []varDef{
 	},
 	{
 		name:  "TRANSACTION_TAG",
-		desc:  "A property of type STRING that contains the transaction tag for the next transaction.",
+		desc:  "Transaction tag for the next physical read-write transaction. After that owner starts, SHOW reports the applied tag until the owner ends. SET is rejected while a read-write transaction is active. Read-only transactions do not consume this tag. Partitioned DML does not currently send a transaction tag.",
 		scope: scopeSession,
-		bind:  func(sv *systemVariables) Variable { return StringVar(&sv.Transaction.TransactionTag) },
+		bind:  func(sv *systemVariables) Variable { return &transactionTagVar{sv: sv} },
 	},
 	{
 		name:  "STATEMENT_TAG",

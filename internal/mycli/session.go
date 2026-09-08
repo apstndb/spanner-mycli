@@ -266,6 +266,8 @@ func (h *SessionHandler) switchSession(ctx context.Context, database, role strin
 	sysVars := h.systemVariables
 	oldDatabase, oldRole := sysVars.Connection.Database, sysVars.Connection.Role
 	oldInTransaction := sysVars.inTransaction
+	oldTagView := sysVars.transactionTagView
+	oldSetTag := sysVars.setTransactionTagSlot
 	sysVars.Connection.Database = database
 	sysVars.Connection.Role = role
 
@@ -273,6 +275,8 @@ func (h *SessionHandler) switchSession(ctx context.Context, database, role strin
 		sysVars.Connection.Database = oldDatabase
 		sysVars.Connection.Role = oldRole
 		sysVars.inTransaction = oldInTransaction
+		sysVars.transactionTagView = oldTagView
+		sysVars.setTransactionTagSlot = oldSetTag
 	}
 
 	newSession, err := h.createSessionWithOpts(ctx, sysVars)
