@@ -1785,6 +1785,12 @@ MUTATE <table_fqn> DELETE KEY_RANGE({start_closed | start_open} => <tuple_struct
 
 Note: In this context, parenthesized expression and some simple literals are treated as a single field struct literal.
 
+Delete keys also accept typed `NUMERIC '1.500000001'` and
+`CAST('01234567-89ab-cdef-0123-456789abcdef' AS UUID)` values, including
+components of composite keys, key lists, and `KEY_RANGE` endpoints. Use a
+typed NUMERIC literal to retain decimal precision instead of a floating-point
+literal. Key components must follow the table's primary-key order.
+
 #### Examples of mutations
 
 Example schema
