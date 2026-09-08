@@ -227,6 +227,12 @@ type systemVariables struct {
 	// nil means no session has been created yet.
 	inTransaction func() bool
 
+	// transactionTagView and setTransactionTagSlot are bound to the live
+	// TransactionManager. nil means no session has been created yet, so the
+	// TRANSACTION_TAG slot is accessed directly.
+	transactionTagView    func() string
+	setTransactionTagSlot func(string) error
+
 	// StreamManager manages tee output functionality
 	StreamManager *streamio.StreamManager
 

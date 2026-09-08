@@ -19,6 +19,34 @@ import (
 
 var stalenessRe = regexp.MustCompile(`^\(([^:]+)(?:: (.+))?\)$`)
 
+// transactionTagVar is the dedicated TRANSACTION_TAG handler. Get reports the
+// applied physical RW tag when one exists, otherwise the next-owner slot.
+// Set writes the slot unless a physical RW owner exists.
+type transactionTagVar struct {
+	sv *systemVariables
+}
+
+func (v *transactionTagVar) Get() (string, error) {
+	if v.sv == nil {
+		return "", fmt.Errorf("variable not initialized")
+	}
+	if v.sv.transactionTagView != nil {
+		return v.sv.transactionTagView(), nil
+	}
+	return v.sv.Transaction.TransactionTag, nil
+}
+
+func (v *transactionTagVar) Set(value string) error {
+	if v.sv == nil {
+		return fmt.Errorf("variable not initialized")
+	}
+	if v.sv.setTransactionTagSlot != nil {
+		return v.sv.setTransactionTagSlot(value)
+	}
+	v.sv.Transaction.TransactionTag = value
+	return nil
+}
+
 // formatTimestampBound formats a TimestampBound for display
 func formatTimestampBound(tb *spanner.TimestampBound) string {
 	if tb == nil {

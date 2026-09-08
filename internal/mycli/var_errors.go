@@ -7,8 +7,9 @@ import (
 
 // Common errors for variable operations
 var (
-	errSetterReadOnly      = errors.New("variable is read-only")
-	errSetterInTransaction = errors.New("can't change variable when there is an active transaction")
+	errSetterReadOnly            = errors.New("variable is read-only")
+	errSetterInTransaction       = errors.New("can't change variable when there is an active transaction")
+	errTransactionTagInReadWrite = errors.New("TRANSACTION_TAG cannot be changed while a read-write transaction is active")
 )
 
 // Error types for proper error handling with errors.Is/As
