@@ -60,8 +60,17 @@ type dumpTablePlan struct {
 }
 
 type dumpPlan struct {
-	Tables []dumpTablePlan
-	DDL    []byte
+	Data []dumpDataPlan
+	DDL  []byte
+}
+
+// A data unit is either one ordinary table or one pre-encoded cyclic group.
+// Empty marks a cyclic table already scanned in the planning snapshot; its
+// legacy comment is emitted without querying that table a second time.
+type dumpDataPlan struct {
+	Table  dumpTablePlan
+	Cyclic *dumpCyclicData
+	Empty  bool
 }
 
 func executeDump(ctx context.Context, session *Session, mode dumpMode, specificTables []tableID) (*Result, error) {
@@ -238,6 +247,11 @@ func prepareDumpWithTxn(ctx context.Context, session *Session, mode dumpMode, sp
 	if !mode.shouldExportData() {
 		return plan, nil
 	}
+	if session.systemVariables.Display.DumpCyclicMode == enums.DumpCyclicModeMutate {
+		var err error
+		plan.Data, err = prepareDumpMutationUnits(ctx, session, txn, resolver, selected)
+		return plan, err
+	}
 	if err := rejectPopulatedCyclicDumpSCCs(ctx, session, txn, resolver, selected); err != nil {
 		return nil, err
 	}
@@ -250,7 +264,7 @@ func prepareDumpWithTxn(ctx context.Context, session *Session, mode dumpMode, sp
 		if err != nil {
 			return nil, fmt.Errorf("failed to get writable columns for table %s: %w", id.FQN(), err)
 		}
-		plan.Tables = append(plan.Tables, dumpTablePlan{ID: id, Columns: columns})
+		plan.Data = append(plan.Data, dumpDataPlan{Table: dumpTablePlan{ID: id, Columns: columns}})
 	}
 	return plan, nil
 }
@@ -274,10 +288,22 @@ func executeDumpBufferedWithTxn(ctx context.Context, session *Session, mode dump
 		return &Result{RenderedOutput: out.Bytes()}, nil
 	}
 	var affectedRows int
-	for _, table := range plan.Tables {
+	for _, unit := range plan.Data {
 		probeOutput()
+		if unit.Cyclic != nil {
+			if err := unit.Cyclic.writeTo(&out); err != nil {
+				return nil, fmt.Errorf("write cyclic data: %w", err)
+			}
+			affectedRows += len(unit.Cyclic.Statements)
+			continue
+		}
+		table := unit.Table
 		if len(table.Columns) == 0 {
 			fmt.Fprintf(&out, "-- Skipping table %s (no writable columns)\n", table.ID.FQN())
+			continue
+		}
+		if unit.Empty {
+			fmt.Fprintf(&out, "-- Data for table %s\n", table.ID.FQN())
 			continue
 		}
 		selectQuery := buildSelectQueryWithColumns(session.systemVariables.Feature.DatabaseDialect, table.Columns, table.ID)
@@ -344,10 +370,24 @@ func executeDumpStreamingWithTxn(ctx context.Context, session *Session, mode dum
 		return &Result{Streamed: true}, nil
 	}
 	var totalAffectedRows int
-	for _, table := range plan.Tables {
+	for _, unit := range plan.Data {
 		probeOutput()
+		if unit.Cyclic != nil {
+			if err := unit.Cyclic.writeTo(out); err != nil {
+				return nil, fmt.Errorf("write cyclic data: %w", err)
+			}
+			totalAffectedRows += len(unit.Cyclic.Statements)
+			continue
+		}
+		table := unit.Table
 		if len(table.Columns) == 0 {
 			fmt.Fprintf(out, "-- Skipping table %s (no writable columns)\n", table.ID.FQN())
+			continue
+		}
+		if unit.Empty {
+			if _, err := fmt.Fprintf(out, "-- Data for table %s\n", table.ID.FQN()); err != nil {
+				return nil, err
+			}
 			continue
 		}
 		selectQuery := buildSelectQueryWithColumns(session.systemVariables.Feature.DatabaseDialect, table.Columns, table.ID)

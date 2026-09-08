@@ -79,6 +79,25 @@ func (d *varDef) resettable() bool {
 // Note: COMMIT_RESPONSE and CLI_DIRECT_READ require special handling outside
 // the registry (see system_variables_registry.go).
 var varDefs = []varDef{
+	{
+		name:  "CLI_DUMP_CYCLIC_MODE",
+		desc:  "DUMP cyclic data policy: REJECT (default) or opt-in MUTATE (one transaction per cyclic table group). No service-quota prediction; later restore failure can leave earlier groups committed.",
+		scope: scopeSession,
+		bind:  func(sv *systemVariables) Variable { return DumpCyclicModeVar(&sv.Display.DumpCyclicMode) },
+	},
+	{
+		name:  "CLI_DUMP_CYCLIC_MAX_BYTES",
+		desc:  "Positive aggregate encoded cyclic-text retention cap for DUMP MUTATE mode. Default 67108864 (64 MiB). Not a hard heap bound or Spanner commit-size/mutation-count estimate.",
+		scope: scopeSession,
+		bind: func(sv *systemVariables) Variable {
+			return IntVar(&sv.Display.DumpCyclicMaxBytes).WithValidator(func(n int64) error {
+				if n <= 0 {
+					return fmt.Errorf("CLI_DUMP_CYCLIC_MAX_BYTES must be positive")
+				}
+				return nil
+			})
+		},
+	},
 	// === Simple boolean variables ===
 	{
 		// txnGuard: READONLY switches the transaction mode, which is meaningless

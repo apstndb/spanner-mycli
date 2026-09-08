@@ -109,6 +109,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 					LogGrpc:                   true,
 				},
 				Display: DisplayVars{
+					DumpCyclicMaxBytes:   67108864,
 					Verbose:              true,
 					Prompt:               "my-prompt> ",
 					Prompt2:              "my-prompt2> ",
@@ -179,6 +180,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 					EnableADCPlus: true,
 				},
 				Display: DisplayVars{
+					DumpCyclicMaxBytes:   67108864,
 					Prompt:               defaultPrompt,
 					Prompt2:              defaultPrompt2,
 					HistoryFile:          defaultHistoryFile(),
@@ -232,6 +234,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 					EnableADCPlus: true,
 				},
 				Display: DisplayVars{
+					DumpCyclicMaxBytes:   67108864,
 					Prompt:               defaultPrompt,
 					Prompt2:              defaultPrompt2,
 					HistoryFile:          defaultHistoryFile(),
@@ -271,6 +274,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 					EnableADCPlus: true,
 				},
 				Display: DisplayVars{
+					DumpCyclicMaxBytes:   67108864,
 					Prompt:               defaultPrompt,
 					Prompt2:              defaultPrompt2,
 					HistoryFile:          defaultHistoryFile(),
@@ -308,6 +312,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 					EnableADCPlus: true,
 				},
 				Display: DisplayVars{
+					DumpCyclicMaxBytes:   67108864,
 					Prompt:               defaultPrompt,
 					Prompt2:              defaultPrompt2,
 					HistoryFile:          defaultHistoryFile(),
@@ -345,6 +350,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 					EnableADCPlus: true,
 				},
 				Display: DisplayVars{
+					DumpCyclicMaxBytes:   67108864,
 					Prompt:               defaultPrompt,
 					Prompt2:              defaultPrompt2,
 					HistoryFile:          defaultHistoryFile(),
@@ -388,6 +394,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 					EnableADCPlus: true,
 				},
 				Display: DisplayVars{
+					DumpCyclicMaxBytes:   67108864,
 					Prompt:               defaultPrompt,
 					Prompt2:              defaultPrompt2,
 					HistoryFile:          defaultHistoryFile(),
@@ -465,6 +472,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 					EnableADCPlus: true,
 				},
 				Display: DisplayVars{
+					DumpCyclicMaxBytes:   67108864,
 					Prompt:               defaultPrompt,
 					Prompt2:              defaultPrompt2,
 					HistoryFile:          defaultHistoryFile(),
@@ -506,6 +514,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 					EnableADCPlus: true,
 				},
 				Display: DisplayVars{
+					DumpCyclicMaxBytes:   67108864,
 					Prompt:               defaultPrompt,
 					Prompt2:              defaultPrompt2,
 					HistoryFile:          defaultHistoryFile(),
@@ -548,6 +557,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 					EnableADCPlus: true,
 				},
 				Display: DisplayVars{
+					DumpCyclicMaxBytes:   67108864,
 					Prompt:               defaultPrompt,
 					Prompt2:              defaultPrompt2,
 					HistoryFile:          defaultHistoryFile(),
@@ -589,6 +599,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 					EnableADCPlus: true,
 				},
 				Display: DisplayVars{
+					DumpCyclicMaxBytes:   67108864,
 					Prompt:               defaultPrompt,
 					Prompt2:              defaultPrompt2,
 					HistoryFile:          defaultHistoryFile(),
@@ -631,6 +642,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 					EnableADCPlus: true,
 				},
 				Display: DisplayVars{
+					DumpCyclicMaxBytes:   67108864,
 					Prompt:               defaultPrompt,
 					Prompt2:              defaultPrompt2,
 					HistoryFile:          defaultHistoryFile(),
@@ -668,6 +680,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 					EnableADCPlus: true,
 				},
 				Display: DisplayVars{
+					DumpCyclicMaxBytes:   67108864,
 					Prompt:               defaultPrompt,
 					Prompt2:              defaultPrompt2,
 					HistoryFile:          defaultHistoryFile(),
@@ -703,6 +716,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 					EnableADCPlus: true,
 				},
 				Display: DisplayVars{
+					DumpCyclicMaxBytes: 67108864,
 					Prompt:             defaultPrompt,
 					Prompt2:            defaultPrompt2,
 					HistoryFile:        defaultHistoryFile(),
@@ -740,6 +754,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 					EnableADCPlus: true,
 				},
 				Display: DisplayVars{
+					DumpCyclicMaxBytes:   67108864,
 					Prompt:               defaultPrompt,
 					Prompt2:              defaultPrompt2,
 					HistoryFile:          defaultHistoryFile(),
@@ -777,6 +792,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 					EnableADCPlus: true,
 				},
 				Display: DisplayVars{
+					DumpCyclicMaxBytes:   67108864,
 					Prompt:               defaultPrompt,
 					Prompt2:              defaultPrompt2,
 					HistoryFile:          defaultHistoryFile(),
@@ -892,6 +908,7 @@ func Test_newSystemVariablesWithDefaults(t *testing.T) {
 			EnableADCPlus: true,
 		},
 		Display: DisplayVars{
+			DumpCyclicMaxBytes:   67108864,
 			Prompt:               defaultPrompt,
 			Prompt2:              defaultPrompt2,
 			HistoryFile:          defaultHistoryFile(),

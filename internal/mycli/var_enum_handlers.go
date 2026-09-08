@@ -236,6 +236,10 @@ func StreamingModeVar(ptr *enums.StreamingMode) *EnumVar[enums.StreamingMode] {
 	}
 }
 
+func DumpCyclicModeVar(ptr *enums.DumpCyclicMode) *EnumVar[enums.DumpCyclicMode] {
+	return &EnumVar[enums.DumpCyclicMode]{ptr: ptr, values: enumerValues(enums.DumpCyclicModeValues())}
+}
+
 func StyledModeVar(ptr *enums.StyledMode) *EnumVar[enums.StyledMode] {
 	return &EnumVar[enums.StyledMode]{
 		ptr:    ptr,

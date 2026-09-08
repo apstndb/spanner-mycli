@@ -386,19 +386,28 @@ func (dr *DependencyResolver) topologicalSort(tablesToExport []tableID) ([]table
 // are cyclic under interleave prerequisites and enforced/unknown FK edges.
 // A self-FK is a cyclic singleton. Known NOT ENFORCED FKs are not edges.
 func (dr *DependencyResolver) cyclicSafetySCCs(selected []tableID) [][]tableID {
+	graph := dr.selectedSafetyGraph(selected)
+	var cyclic [][]tableID
+	for _, scc := range stronglyConnectedTableIDs(graph, selected) {
+		if isCyclicTableComponent(graph, scc) {
+			cyclic = append(cyclic, scc)
+		}
+	}
+	return cyclic
+}
+
+// selectedSafetyGraph is shared by default rejection and opt-in mutation
+// grouping. Unlike physical INSERT order, it retains self and reverse-ancestor
+// FK edges. The catalog has already excluded known NOT ENFORCED constraints.
+func (dr *DependencyResolver) selectedSafetyGraph(selected []tableID) map[tableID][]tableID {
 	selectedSet := make(map[tableID]struct{}, len(selected))
 	graph := make(map[tableID][]tableID, len(selected))
 	for _, id := range selected {
 		selectedSet[id] = struct{}{}
 		graph[id] = nil
 	}
-	selfLoop := make(map[tableID]bool)
 	add := func(from, to tableID) {
 		if _, ok := selectedSet[to]; !ok {
-			return
-		}
-		if from == to {
-			selfLoop[from] = true
 			return
 		}
 		if !slices.Contains(graph[from], to) {
@@ -420,13 +429,63 @@ func (dr *DependencyResolver) cyclicSafetySCCs(selected []tableID) [][]tableID {
 	for id := range graph {
 		slices.SortFunc(graph[id], func(a, b tableID) int { return a.compare(b) })
 	}
-	var cyclic [][]tableID
-	for _, scc := range stronglyConnectedTableIDs(graph, selected) {
-		if len(scc) > 1 || (len(scc) == 1 && selfLoop[scc[0]]) {
-			cyclic = append(cyclic, scc)
+	return graph
+}
+
+func isCyclicTableComponent(graph map[tableID][]tableID, tables []tableID) bool {
+	return len(tables) > 1 || (len(tables) == 1 && slices.Contains(graph[tables[0]], tables[0]))
+}
+
+type dumpSafetyComponent struct {
+	Tables []tableID
+	Cyclic bool
+}
+
+// orderedSafetyComponents orders the condensation DAG, not individual members
+// of a cycle. A dependency entering a cycle must commit before that whole
+// component, and a dependent must follow it. Ready ties and component members
+// use qualified catalog identity; member order is not a referential guarantee.
+func (dr *DependencyResolver) orderedSafetyComponents(selected []tableID) ([]dumpSafetyComponent, error) {
+	for _, id := range selected {
+		if err := dr.lookupExplicit(id); err != nil {
+			return nil, err
 		}
 	}
-	return cyclic
+	graph := dr.selectedSafetyGraph(selected)
+	sccs := stronglyConnectedTableIDs(graph, selected)
+	slices.SortFunc(sccs, func(a, b []tableID) int { return a[0].compare(b[0]) })
+	componentOf := make(map[tableID]int, len(selected))
+	for i, scc := range sccs {
+		for _, id := range scc {
+			componentOf[id] = i
+		}
+	}
+	indegree := make([]int, len(sccs))
+	children := make([][]int, len(sccs))
+	for child, parents := range graph {
+		c := componentOf[child]
+		for _, parent := range parents {
+			p := componentOf[parent]
+			if p != c && !slices.Contains(children[p], c) {
+				children[p] = append(children[p], c)
+				indegree[c]++
+			}
+		}
+	}
+	ordered := make([]dumpSafetyComponent, 0, len(sccs))
+	for len(ordered) < len(sccs) {
+		pick := slices.Index(indegree, 0)
+		if pick == -1 {
+			return nil, fmt.Errorf("dump safety graph: condensation unexpectedly contains a cycle")
+		}
+		indegree[pick] = -1 // Already emitted; never a ready candidate again.
+		scc := sccs[pick]
+		ordered = append(ordered, dumpSafetyComponent{Tables: scc, Cyclic: isCyclicTableComponent(graph, scc)})
+		for _, child := range children[pick] {
+			indegree[child]--
+		}
+	}
+	return ordered, nil
 }
 
 func stronglyConnectedTableIDs(graph map[tableID][]tableID, nodes []tableID) [][]tableID {

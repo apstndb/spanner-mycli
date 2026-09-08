@@ -349,7 +349,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `Export database DDL and data as SQL statements`,
 				Syntax: `DUMP DATABASE`,
-				Note:   `Exports DDL plus BASE TABLE data from the default schema and named schemas. Views and synonyms are omitted from data. Catalog, column, and row reads share one read-only transaction. Requires spanner.databases.getDdl. That admin RPC is not timestamp-bound to the dump transaction. Populated cyclic enforced foreign-key or interleave graphs are rejected before any output (interim; empty cyclic schemas still dump). Populated all-NULL or row-acyclic members of a cyclic schema are also rejected even though sequential INSERT could restore some of those datasets.`,
+				Note:   `Exports DDL plus BASE TABLE data from the default schema and named schemas. Views and synonyms are omitted from data. Catalog, column, and row reads share one read-only transaction. Requires spanner.databases.getDdl; that admin RPC is not timestamp-bound to the dump transaction. CLI_DUMP_CYCLIC_MODE defaults to REJECT for populated cyclic FK/interleave groups, including all-NULL or row-acyclic data. Opt-in MUTATE pre-encodes all cyclic groups before output, then emits one unsplit transaction per populated group. No service-quota prediction or globally atomic restore; earlier work may remain committed.`,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^DUMP\s+DATABASE$`),
@@ -373,9 +373,9 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 	{
 		Descriptions: []clientSideStatementDescription{
 			{
-				Usage:  `Export specific tables as SQL INSERT statements`,
+				Usage:  `Export specific tables as SQL statements`,
 				Syntax: `DUMP TABLES <table1> [, <table2>, ...]`,
-				Note:   `Table names are [<schema>.]<table>. Data only; no DDL. Invalid names are rejected before GetDatabaseDdl. Requires spanner.databases.getDdl only when a selected interleaved child has another selected BASE TABLE whose name matches the catalog parent basename. Populated cyclic enforced foreign-key graphs among the selected tables are rejected before any output (interim). Populated all-NULL or row-acyclic members of a cyclic schema are also rejected even though sequential INSERT could restore some of those datasets.`,
+				Note:   `Table names are [<schema>.]<table>. Data only; no constraint changes or implicit inclusion of other tables. Invalid names are rejected before GetDatabaseDdl. Requires spanner.databases.getDdl only when a selected interleaved child has another selected BASE TABLE whose name matches the catalog parent basename. CLI_DUMP_CYCLIC_MODE defaults to REJECT; opt-in MUTATE pre-encodes selected cyclic groups and emits one unsplit transaction per populated group. Omitted parents and prerequisite target rows remain caller responsibilities. No service-quota prediction; earlier restore work may remain committed.`,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^DUMP\s+TABLES\s+(?P<tables>.+)$`),
