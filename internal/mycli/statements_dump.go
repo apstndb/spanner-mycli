@@ -9,6 +9,7 @@ import (
 
 	"cloud.google.com/go/spanner"
 	dbadminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
+	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spanvalue"
 	"google.golang.org/grpc/codes"
@@ -87,16 +88,17 @@ func executeDump(ctx context.Context, session *Session, mode dumpMode, specificT
 		if err != nil {
 			return nil, err
 		}
-		return writeDumpPlan(ctx, session, mode, plan, nil)
+		return writeDumpPlan(ctx, session, mode, plan, nil, nil)
 	}
 
+	dro := cloneDirectedRead(session.systemVariables.Query.DirectedRead)
 	var result *Result
 	err := session.txn.withReadOnlyTransactionOrStart(ctx, func(txn *spanner.ReadOnlyTransaction) error {
-		plan, err := prepareDumpWithTxn(ctx, session, mode, specificTables, txn)
+		plan, err := prepareDumpWithTxn(ctx, session, mode, specificTables, txn, dro)
 		if err != nil {
 			return err
 		}
-		result, err = writeDumpPlan(ctx, session, mode, plan, txn)
+		result, err = writeDumpPlan(ctx, session, mode, plan, txn, dro)
 		return err
 	})
 	if err != nil {
@@ -105,12 +107,12 @@ func executeDump(ctx context.Context, session *Session, mode dumpMode, specificT
 	return result, nil
 }
 
-func writeDumpPlan(ctx context.Context, session *Session, mode dumpMode, plan *dumpPlan, txn *spanner.ReadOnlyTransaction) (*Result, error) {
+func writeDumpPlan(ctx context.Context, session *Session, mode dumpMode, plan *dumpPlan, txn *spanner.ReadOnlyTransaction, dro *sppb.DirectedReadOptions) (*Result, error) {
 	outStream := session.outputWriter()
 	if outStream != nil && outStream != io.Discard {
-		return executeDumpStreamingWithTxn(ctx, session, mode, plan, outStream, txn)
+		return executeDumpStreamingWithTxn(ctx, session, mode, plan, outStream, txn, dro)
 	}
-	return executeDumpBufferedWithTxn(ctx, session, mode, plan, txn)
+	return executeDumpBufferedWithTxn(ctx, session, mode, plan, txn, dro)
 }
 
 // buildSelectQueryWithColumns creates a SELECT query with explicit column list.
@@ -132,7 +134,7 @@ func buildSelectQueryWithColumns(dialect dbadminpb.DatabaseDialect, columns []st
 // It excludes generated columns and other non-writable column types.
 // Returns column names in their original form, ordered by ORDINAL_POSITION.
 // NOTE: INFORMATION_SCHEMA queries cannot be used in read-write transactions.
-func getWritableColumnsWithTxn(ctx context.Context, txn *spanner.ReadOnlyTransaction, id tableID) ([]string, error) {
+func getWritableColumnsWithTxn(ctx context.Context, txn *spanner.ReadOnlyTransaction, id tableID, dro *sppb.DirectedReadOptions) ([]string, error) {
 	query := `
 		SELECT COLUMN_NAME
 		FROM INFORMATION_SCHEMA.COLUMNS
@@ -150,7 +152,7 @@ func getWritableColumnsWithTxn(ctx context.Context, txn *spanner.ReadOnlyTransac
 	}
 
 	var columns []string
-	iter := txn.Query(ctx, stmt)
+	iter := queryWithDirectedRead(ctx, txn, stmt, dro)
 	defer iter.Stop()
 
 	err := iter.Do(func(r *spanner.Row) error {
@@ -185,7 +187,7 @@ func prepareDumpSchema(ctx context.Context, session *Session) (*dumpPlan, error)
 	return &dumpPlan{DDL: ddlResult.RenderedOutput}, nil
 }
 
-func prepareDumpWithTxn(ctx context.Context, session *Session, mode dumpMode, specificTables []tableID, txn *spanner.ReadOnlyTransaction) (*dumpPlan, error) {
+func prepareDumpWithTxn(ctx context.Context, session *Session, mode dumpMode, specificTables []tableID, txn *spanner.ReadOnlyTransaction, dro *sppb.DirectedReadOptions) (*dumpPlan, error) {
 	plan := &dumpPlan{}
 	var freshDDL []string
 	var freshProto []byte
@@ -205,7 +207,7 @@ func prepareDumpWithTxn(ctx context.Context, session *Session, mode dumpMode, sp
 	}
 
 	resolver := NewDependencyResolver()
-	if err := resolver.BuildDependencyGraphWithTxn(ctx, txn); err != nil {
+	if err := resolver.BuildDependencyGraphWithTxn(ctx, txn, dro); err != nil {
 		return nil, err
 	}
 	if session.dumpReadTxnProbe != nil {
@@ -250,10 +252,10 @@ func prepareDumpWithTxn(ctx context.Context, session *Session, mode dumpMode, sp
 	}
 	if session.systemVariables.Display.DumpCyclicMode == enums.DumpCyclicModeMutate {
 		var err error
-		plan.Data, err = prepareDumpMutationUnits(ctx, session, txn, resolver, selected)
+		plan.Data, err = prepareDumpMutationUnits(ctx, session, txn, resolver, selected, dro)
 		return plan, err
 	}
-	if err := rejectPopulatedCyclicDumpSCCs(ctx, session, txn, resolver, selected); err != nil {
+	if err := rejectPopulatedCyclicDumpSCCs(ctx, session, txn, resolver, selected, dro); err != nil {
 		return nil, err
 	}
 	order, err := resolver.GetOrderForTables(selected)
@@ -261,7 +263,7 @@ func prepareDumpWithTxn(ctx context.Context, session *Session, mode dumpMode, sp
 		return nil, err
 	}
 	for _, id := range order {
-		columns, err := getWritableColumnsWithTxn(ctx, txn, id)
+		columns, err := getWritableColumnsWithTxn(ctx, txn, id, dro)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get writable columns for table %s: %w", id.FQN(), err)
 		}
@@ -270,7 +272,7 @@ func prepareDumpWithTxn(ctx context.Context, session *Session, mode dumpMode, sp
 	return plan, nil
 }
 
-func executeDumpBufferedWithTxn(ctx context.Context, session *Session, mode dumpMode, plan *dumpPlan, txn *spanner.ReadOnlyTransaction) (*Result, error) {
+func executeDumpBufferedWithTxn(ctx context.Context, session *Session, mode dumpMode, plan *dumpPlan, txn *spanner.ReadOnlyTransaction, dro *sppb.DirectedReadOptions) (*Result, error) {
 	var out bytes.Buffer
 	probed := false
 	probeOutput := func() {
@@ -308,7 +310,7 @@ func executeDumpBufferedWithTxn(ctx context.Context, session *Session, mode dump
 			continue
 		}
 		selectQuery := buildSelectQueryWithColumns(session.systemVariables.Feature.DatabaseDialect, table.Columns, table.ID)
-		dataResult, dumpOutput, err := executeDumpTableIntoBuffer(ctx, session, txn, selectQuery, table.ID.FQN())
+		dataResult, dumpOutput, err := executeDumpTableIntoBuffer(ctx, session, txn, selectQuery, table.ID.FQN(), dro)
 		if err != nil {
 			return nil, fmt.Errorf("export table %s: %w", table.ID.FQN(), err)
 		}
@@ -335,7 +337,7 @@ func writeCapturedDumpOutput(out io.Writer, output string) error {
 	return err
 }
 
-func executeDumpTableIntoBuffer(ctx context.Context, session *Session, txn *spanner.ReadOnlyTransaction, selectQuery, table string) (*Result, string, error) {
+func executeDumpTableIntoBuffer(ctx context.Context, session *Session, txn *spanner.ReadOnlyTransaction, selectQuery, table string, dro *sppb.DirectedReadOptions) (*Result, string, error) {
 	var buf bytes.Buffer
 	// SQL export is a non-table format and streams into the temporary
 	// per-statement output below; that capture is what makes this DUMP path
@@ -344,7 +346,7 @@ func executeDumpTableIntoBuffer(ctx context.Context, session *Session, txn *span
 	err := session.withOutput(outputContext{w: &buf}, func() error {
 		var err error
 		result, err = executeSQLWithFormatAndTxn(ctx, session, txn, selectQuery,
-			enums.DisplayModeSQLInsert, enums.StreamingModeTrue, table)
+			enums.DisplayModeSQLInsert, enums.StreamingModeTrue, table, dro)
 		return err
 	})
 	return result, buf.String(), err
@@ -353,7 +355,7 @@ func executeDumpTableIntoBuffer(ctx context.Context, session *Session, txn *span
 // executeDumpStreamingWithTxn writes dump output directly to out.
 // Callers that export data must pass the same read-only transaction used
 // for catalog preflight. SCHEMA has no data txn.
-func executeDumpStreamingWithTxn(ctx context.Context, session *Session, mode dumpMode, plan *dumpPlan, out io.Writer, txn *spanner.ReadOnlyTransaction) (*Result, error) {
+func executeDumpStreamingWithTxn(ctx context.Context, session *Session, mode dumpMode, plan *dumpPlan, out io.Writer, txn *spanner.ReadOnlyTransaction, dro *sppb.DirectedReadOptions) (*Result, error) {
 	probed := false
 	probeOutput := func() {
 		if session.dumpReadTxnProbe != nil && !probed {
@@ -394,7 +396,7 @@ func executeDumpStreamingWithTxn(ctx context.Context, session *Session, mode dum
 		selectQuery := buildSelectQueryWithColumns(session.systemVariables.Feature.DatabaseDialect, table.Columns, table.ID)
 		fmt.Fprintf(out, "-- Data for table %s\n", table.ID.FQN())
 		dataResult, err := executeSQLWithFormatAndTxn(ctx, session, txn, selectQuery,
-			enums.DisplayModeSQLInsert, enums.StreamingModeTrue, table.ID.FQN())
+			enums.DisplayModeSQLInsert, enums.StreamingModeTrue, table.ID.FQN(), dro)
 		if err != nil {
 			return nil, fmt.Errorf("failed to export table %s: %w", table.ID.FQN(), err)
 		}

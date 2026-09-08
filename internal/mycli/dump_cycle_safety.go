@@ -23,12 +23,13 @@ import (
 
 	"cloud.google.com/go/spanner"
 	dbadminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
+	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"google.golang.org/api/iterator"
 )
 
 const dumpCyclicInsertUnsupported = "sequential INSERT is unsupported for a cyclic foreign-key or interleave dependency among"
 
-func rejectPopulatedCyclicDumpSCCs(ctx context.Context, session *Session, txn *spanner.ReadOnlyTransaction, resolver *DependencyResolver, selected []tableID) error {
+func rejectPopulatedCyclicDumpSCCs(ctx context.Context, session *Session, txn *spanner.ReadOnlyTransaction, resolver *DependencyResolver, selected []tableID, dro *sppb.DirectedReadOptions) error {
 	if !dumpCycleSafetyPreflight {
 		return nil
 	}
@@ -44,7 +45,7 @@ func rejectPopulatedCyclicDumpSCCs(ctx context.Context, session *Session, txn *s
 					return err
 				}
 			}
-			hasRows, err := tableHasRowsWithTxn(ctx, txn, dialect, id)
+			hasRows, err := tableHasRowsWithTxn(ctx, txn, dialect, id, dro)
 			if err != nil {
 				return err
 			}
@@ -66,10 +67,10 @@ func dumpCyclicInsertError(scc []tableID) error {
 		dumpCyclicInsertUnsupported, strings.Join(names, ", "))
 }
 
-func tableHasRowsWithTxn(ctx context.Context, txn *spanner.ReadOnlyTransaction, dialect dbadminpb.DatabaseDialect, id tableID) (bool, error) {
-	iter := txn.Query(ctx, spanner.Statement{
+func tableHasRowsWithTxn(ctx context.Context, txn *spanner.ReadOnlyTransaction, dialect dbadminpb.DatabaseDialect, id tableID, dro *sppb.DirectedReadOptions) (bool, error) {
+	iter := queryWithDirectedRead(ctx, txn, spanner.Statement{
 		SQL: fmt.Sprintf("SELECT 1 FROM %s LIMIT 1", quoteTableID(dialect, id)),
-	})
+	}, dro)
 	defer iter.Stop()
 	_, err := iter.Next()
 	if errors.Is(err, iterator.Done) {

@@ -977,6 +977,7 @@ func TestSystemVariables_SetGetOperations(t *testing.T) {
 			"CLI_EXPLAIN_FORMAT":           "CURRENT",
 			"CLI_EXPLAIN_PRINT_SECTIONS":   "ordering,aggregate",
 			"CLI_WIDTH_STRATEGY":           "GREEDY_FREQUENCY",
+			"DIRECTED_READ":                "us-east1:READ_ONLY",
 		}
 		for name, value := range stringTests {
 			t.Run(name, func(t *testing.T) {
@@ -1080,15 +1081,6 @@ func TestSystemVariables_SetGetOperations(t *testing.T) {
 				newTestSysVars().withMCP(true).build(),
 				singletonMap("CLI_MCP", "TRUE"),
 			},
-			{
-				"CLI_DIRECT_READ",
-				newTestSysVars().withDirectedRead(&sppb.DirectedReadOptions{Replicas: &sppb.DirectedReadOptions_IncludeReplicas_{
-					IncludeReplicas: &sppb.DirectedReadOptions_IncludeReplicas{ReplicaSelections: []*sppb.DirectedReadOptions_ReplicaSelection{
-						{Type: sppb.DirectedReadOptions_ReplicaSelection_READ_WRITE, Location: "asia-northeast2"},
-					}},
-				}}).build(),
-				singletonMap("CLI_DIRECT_READ", "asia-northeast2:READ_WRITE"),
-			},
 		}
 		for _, test := range readOnlyTests {
 			t.Run(test.name, func(t *testing.T) {
@@ -1122,6 +1114,7 @@ func TestSystemVariables_SetGetOperations(t *testing.T) {
 			"OPTIMIZER_STATISTICS_PACKAGE": `"test-package"`,
 			"STATEMENT_TIMEOUT":            `"30s"`,
 			"MAX_COMMIT_DELAY":             `"100ms"`,
+			"DIRECTED_READ":                `"us-east1:READ_ONLY"`,
 		}
 		for name, quotedValue := range quotedStringTests {
 			t.Run(name, func(t *testing.T) {
@@ -1159,7 +1152,7 @@ func TestRenderSystemVariablesHelp(t *testing.T) {
 		"`CLI_FORMAT`",
 		// Special variables handled outside the registry.
 		"`COMMIT_RESPONSE`",
-		"`CLI_DIRECT_READ`",
+		"`DIRECTED_READ`",
 		// Description content with angle brackets must be markdown-escaped.
 		`\<name\>:\<template\>`,
 	} {

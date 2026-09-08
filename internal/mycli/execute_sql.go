@@ -39,7 +39,7 @@ func effectiveQueryMode(userMode *sppb.ExecuteSqlRequest_QueryMode) sppb.Execute
 
 // executeSQLWithFormatAndTxn executes SQL with specific format settings and within a given transaction.
 // This is for use within withReadOnlyTransaction callbacks where we already have a transaction.
-func executeSQLWithFormatAndTxn(ctx context.Context, session *Session, txn *spanner.ReadOnlyTransaction, sql string, format enums.DisplayMode, streamingMode enums.StreamingMode, sqlTableName string) (*Result, error) {
+func executeSQLWithFormatAndTxn(ctx context.Context, session *Session, txn *spanner.ReadOnlyTransaction, sql string, format enums.DisplayMode, streamingMode enums.StreamingMode, sqlTableName string, dro *sppb.DirectedReadOptions) (*Result, error) {
 	// Create a copy of the system variables for this specific execution
 	tempVars := *session.systemVariables
 
@@ -52,6 +52,7 @@ func executeSQLWithFormatAndTxn(ctx context.Context, session *Session, txn *span
 	tempVars.Display.SkipColumnNames = true
 	tempVars.Display.SuppressResultLines = true
 	tempVars.Display.EnableProgressBar = false
+	tempVars.Query.DirectedRead = dro
 
 	// Execute with the transaction directly
 	return executeSQLImplWithTxn(ctx, session, txn, sql, &tempVars)
@@ -217,8 +218,9 @@ func executeSQLImplWithTxn(ctx context.Context, session *Session, txn *spanner.R
 	// Resolve the request-level query mode from CLI_QUERY_MODE; the default is
 	// PROFILE so execution statistics are always available from Spanner.
 	opts := spanner.QueryOptions{
-		Mode:     effectiveQueryMode(sysVars.Query.QueryMode).Enum(),
-		Priority: sysVars.Query.RPCPriority,
+		Mode:                effectiveQueryMode(sysVars.Query.QueryMode).Enum(),
+		Priority:            sysVars.Query.RPCPriority,
+		DirectedReadOptions: sysVars.Query.DirectedRead,
 	}
 	iter := txn.QueryWithOptions(ctx, stmt, opts)
 

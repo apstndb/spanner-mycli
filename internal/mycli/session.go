@@ -374,7 +374,7 @@ func newSessionWithFactories(
 	dbPath := sysVars.DatabasePath()
 	clientConfig := clientConfigForSystemVariables(sysVars)
 	clientConfig.DatabaseRole = sysVars.Connection.Role
-	clientConfig.DirectedReadOptions = sysVars.Query.DirectedRead
+	forceNilDirectedReadOnCopiedClientConfig(&clientConfig)
 
 	if sysVars.Config.Insecure && len(sysVars.Config.EmbeddedClientOptions) == 0 {
 		opts = append(opts, option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())))
@@ -413,7 +413,7 @@ func newSessionWithFactories(
 func NewAdminSession(ctx context.Context, sysVars *systemVariables, opts ...option.ClientOption) (*Session, error) {
 	clientConfig := clientConfigForSystemVariables(sysVars)
 	clientConfig.DatabaseRole = sysVars.Connection.Role
-	clientConfig.DirectedReadOptions = sysVars.Query.DirectedRead
+	forceNilDirectedReadOnCopiedClientConfig(&clientConfig)
 
 	if sysVars.Config.Insecure && len(sysVars.Config.EmbeddedClientOptions) == 0 {
 		opts = append(opts, option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())))
@@ -698,7 +698,10 @@ func (s *Session) DatabaseExists(ctx context.Context) (bool, error) {
 	defer cancel()
 	stmt := spanner.NewStatement("SELECT 1")
 	iter := s.client.Single().
-		QueryWithOptions(ctx, stmt, spanner.QueryOptions{Priority: s.txn.currentPriorityWithLock()})
+		QueryWithOptions(ctx, stmt, spanner.QueryOptions{
+			Priority:            s.txn.currentPriorityWithLock(),
+			DirectedReadOptions: s.systemVariables.Query.DirectedRead,
+		})
 	defer iter.Stop()
 
 	_, err := iter.Next()
@@ -723,7 +726,10 @@ func (s *Session) RecreateClient(ctx context.Context) error {
 		return err
 	}
 
-	c, err := spanner.NewClientWithConfig(ctx, s.DatabasePath(), s.clientConfig, s.clientOpts...)
+	cfg := s.clientConfig
+	forceNilDirectedReadOnCopiedClientConfig(&cfg)
+	s.clientConfig.DirectedReadOptions = nil
+	c, err := spanner.NewClientWithConfig(ctx, s.DatabasePath(), cfg, s.clientOpts...)
 	if err != nil {
 		return err
 	}

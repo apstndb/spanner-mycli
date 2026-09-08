@@ -865,7 +865,10 @@ func (tm *TransactionManager) BeginReadOnlyTransactionLocked(ctx context.Context
 
 	// Because google-cloud-go/spanner defers calling BeginTransaction RPC until an actual query is run,
 	// we explicitly run a "SELECT 1" query so that we can determine the timestamp of read-only transaction.
-	opts := spanner.QueryOptions{Priority: resolvedPriority}
+	opts := spanner.QueryOptions{
+		Priority:            resolvedPriority,
+		DirectedReadOptions: tm.sysVars.Query.DirectedRead,
+	}
 	if _, _, _, _, err := consumeRowIterDiscard(txn.QueryWithOptions(ctx, spanner.NewStatement("SELECT 1"), opts)); err != nil {
 		txn.Close()
 		return time.Time{}, err
@@ -1151,10 +1154,13 @@ func (tm *TransactionManager) tryQueryInTransaction(ctx context.Context, stmt sp
 
 	// Apply read-write specific settings
 	if tm.tc.attrs.mode == transactionModeReadWrite {
-		// The current Go Spanner client library does not apply client-level directed read options to read-write transactions.
-		// Therefore, we explicitly set query-level options here to fail the query during a read-write transaction.
-		opts.DirectedReadOptions = tm.clientConfig.DirectedReadOptions
+		// Directed reads are a preference for supported RO operations. Do not
+		// stamp RW SELECT/PLAN: that historical fail-fast copy made keepalive
+		// and user RW queries fail BAD_REQUEST. Heartbeat also omits DRO.
+		opts.DirectedReadOptions = nil
 		tm.tc.EnableHeartbeat()
+	} else {
+		opts.DirectedReadOptions = tm.sysVars.Query.DirectedRead
 	}
 
 	// Execute query on the transaction
@@ -1190,6 +1196,7 @@ func (tm *TransactionManager) runSingleUseQuery(ctx context.Context, stmt spanne
 	if tm.sysVars.Query.ReadOnlyStaleness != nil {
 		txn = txn.WithTimestampBound(*tm.sysVars.Query.ReadOnlyStaleness)
 	}
+	opts.DirectedReadOptions = tm.sysVars.Query.DirectedRead
 	return txn.QueryWithOptions(ctx, stmt, opts), txn
 }
 
@@ -1414,8 +1421,9 @@ func (tm *TransactionManager) RunPartitionQuery(ctx context.Context, stmt spanne
 	}
 
 	partitions, err := batchROTx.PartitionQueryWithOptions(ctx, stmt, spanner.PartitionOptions{}, spanner.QueryOptions{
-		DataBoostEnabled: tm.sysVars.Query.DataBoostEnabled,
-		Priority:         tm.sysVars.Query.RPCPriority,
+		DataBoostEnabled:    tm.sysVars.Query.DataBoostEnabled,
+		Priority:            tm.sysVars.Query.RPCPriority,
+		DirectedReadOptions: tm.sysVars.Query.DirectedRead,
 	})
 	if err != nil {
 		batchROTx.Cleanup(ctx)

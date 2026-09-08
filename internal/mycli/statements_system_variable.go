@@ -10,9 +10,7 @@ import (
 	"strings"
 	"time"
 
-	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/samber/lo"
-	loi "github.com/samber/lo/it"
 )
 
 type ShowVariableStatement struct {
@@ -50,17 +48,6 @@ func (s *ShowVariablesStatement) Execute(ctx context.Context, session *Session) 
 	// Merge multi-valued variables (COMMIT_RESPONSE -> COMMIT_TIMESTAMP,
 	// MUTATION_COUNT). These intentionally override the plain rows.
 	maps.Copy(merged, session.systemVariables.Registry.ListMultiValues())
-
-	// Special handling for CLI_DIRECT_READ
-	if session.systemVariables.Query.DirectedRead != nil {
-		values := strings.Join(slices.Collect(loi.Map(
-			slices.Values(session.systemVariables.Query.DirectedRead.GetIncludeReplicas().GetReplicaSelections()),
-			func(rs *sppb.DirectedReadOptions_ReplicaSelection) string {
-				return fmt.Sprintf("%s:%s", rs.GetLocation(), rs.GetType())
-			},
-		)), ";")
-		merged["CLI_DIRECT_READ"] = values
-	}
 
 	items := lo.MapToSlice(merged, func(k, v string) nameValueRow {
 		return nameValueRow{Name: k, Value: v}
@@ -122,13 +109,6 @@ func (s *SetLocalStatement) Execute(ctx context.Context, session *Session) (*Res
 	sysVars := session.systemVariables
 	sysVars.ensureRegistry()
 	upperName := strings.ToUpper(s.VarName)
-
-	// CLI_DIRECT_READ still lives outside the registry and has no setter; mirror
-	// the SET special case. COMMIT_RESPONSE is now a registry def, so the
-	// localAllowed() check below rejects it (read-only) with no special case.
-	if upperName == "CLI_DIRECT_READ" {
-		return nil, errSetterUnimplemented{s.VarName}
-	}
 
 	// Eligibility is decided from the def's metadata, not by a pre-flight
 	// Set(old) round-trip. localAllowed() already excludes read-only,
@@ -192,9 +172,8 @@ type HelpVariablesStatement struct{}
 func (s *HelpVariablesStatement) isDetachedCompatible() {}
 
 // helpVariableRows returns sorted rows describing every system variable known
-// to the registry, plus CLI_DIRECT_READ, which is still handled outside the
-// registry. It is shared by HELP VARIABLES and the documentation generator
-// behind the hidden --sysvars-help flag.
+// to the registry. It is shared by HELP VARIABLES and the documentation
+// generator behind the hidden --sysvars-help flag.
 func helpVariableRows(sysVars *systemVariables) []helpVariableRow {
 	varInfo := sysVars.ListVariableInfo()
 
@@ -232,17 +211,6 @@ func helpVariableRows(sysVars *systemVariables) []helpVariableRow {
 			Description: info.Description,
 		})
 	}
-
-	// Add special variables not in the registry.
-	// COMMIT_RESPONSE is now a registry def (multi-valued), so it is described
-	// from varInfo above and no longer hand-appended here.
-	//
-	// CLI_DIRECT_READ - complex proto type (still outside the registry)
-	merged = append(merged, helpVariableRow{
-		Name:        "CLI_DIRECT_READ",
-		Operations:  "read",
-		Description: "Directed read options for read-only operations, in replica_location:replica_type format. Set by the --directed-read flag.",
-	})
 
 	slices.SortFunc(merged, func(lhs, rhs helpVariableRow) int {
 		return cmp.Compare(lhs.Name, rhs.Name)

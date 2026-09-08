@@ -588,8 +588,9 @@ $ spanner-mycli -p myproject -i myinstance -d mydb --directed-read us-central1:R
 $ spanner-mycli -p myproject -i myinstance -d mydb --directed-read asia-northeast2:READ_WRITE
 ```
 
-Directed reads are only effective for single queries or queries within a read-only transaction.
-Please note that directed read options do not apply to queries within a read-write transaction.
+Directed reads apply to supported read-only queries, including autocommit SELECT, explicit read-only transactions, partition queries, DUMP data-plane catalog/column/row reads, and metadata completions. They do not apply to read-write SELECT or DML, heartbeat, or partitioned DML.
+
+Runtime `SET DIRECTED_READ` uses the same `location` or `location:READ_ONLY|READ_WRITE` grammar as `--directed-read`. An empty value clears the option. `SET` is rejected while a transaction is pending or active; `SET LOCAL` is not supported. This is not the JDBC protobuf JSON syntax.
 
 > [!NOTE]
 > If you specify an incorrect region or type for directed reads, directed reads will not be enabled and [your requsts won't be routed as expected](https://cloud.google.com/spanner/docs/directed-reads#parameters). For example, in a multi-region configuration `nam3`, if you mistype `us-east1` as `us-east-1`, the connection will succeed, but directed reads will not be enabled. 
@@ -1002,6 +1003,7 @@ For how these and other connection properties map to the official Spanner driver
 | MAX_PARTITIONED_PARALLELISM     | READ_WRITE | `4`                                                 |
 | DEFAULT_ISOLATION_LEVEL         | READ_WRITE | `REPEATABLE_READ`                                    |
 | STATEMENT_TIMEOUT               | READ_WRITE | `"10m"`                                             |
+| DIRECTED_READ                   | READ_WRITE | `"us-central1:READ_ONLY"`                           |
 
 #### spanner-mycli original variables
 
@@ -1010,7 +1012,6 @@ For how these and other connection properties map to the official Spanner driver
 | CLI_PROJECT                | READ_ONLY  | `"myproject"`                                  |
 | CLI_INSTANCE               | READ_ONLY  | `"myinstance"`                                 |
 | CLI_DATABASE               | READ_ONLY  | `"mydb"`                                       |
-| CLI_DIRECT_READ            | READ_ONLY  | `"asia-northeast:READ_ONLY"`                   |
 | CLI_ENDPOINT               | READ_ONLY  | `"spanner.me-central2.rep.googleapis.com:443"` |
 | CLI_FORMAT                 | READ_WRITE | `"TABLE"`                                      |
 | CLI_DUMP_CYCLIC_MODE       | READ_WRITE | `"MUTATE"`                                     |

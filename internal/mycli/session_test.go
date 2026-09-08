@@ -382,8 +382,11 @@ func TestNewSessionWithFactoriesUsesEmbeddedClientConfig(t *testing.T) {
 	if gotConfig.DatabaseRole != "test-role" {
 		t.Errorf("DatabaseRole = %q, want %q", gotConfig.DatabaseRole, "test-role")
 	}
-	if diff := cmp.Diff(directedRead, gotConfig.DirectedReadOptions, protocmp.Transform()); diff != "" {
-		t.Errorf("DirectedReadOptions mismatch (-want +got):\n%s", diff)
+	if gotConfig.DirectedReadOptions != nil {
+		t.Errorf("DirectedReadOptions = %v, want nil on the copied CLI client config", gotConfig.DirectedReadOptions)
+	}
+	if sysVars.Config.EmbeddedClientConfig.DirectedReadOptions != nil {
+		t.Error("EmbeddedClientConfig.DirectedReadOptions mutated; original struct must stay intact")
 	}
 }
 

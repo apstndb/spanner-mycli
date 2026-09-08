@@ -957,7 +957,7 @@ func (f *fuzzyFinderCommand) fetchSchemaObjectCandidates(ctx context.Context, qu
 		return nil, nil
 	}
 
-	iter := session.client.Single().Query(ctx, spanner.Statement{SQL: query})
+	iter := session.client.Single().QueryWithOptions(ctx, spanner.Statement{SQL: query}, directedReadQueryOptions(session.systemVariables.Query.DirectedRead))
 	defer iter.Stop()
 
 	var items []fzfItem
@@ -1035,9 +1035,9 @@ func (f *fuzzyFinderCommand) fetchSchemaCandidates(ctx context.Context) ([]fzfIt
 		return nil, nil
 	}
 
-	iter := session.client.Single().Query(ctx, spanner.Statement{
+	iter := session.client.Single().QueryWithOptions(ctx, spanner.Statement{
 		SQL: `SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE CATALOG_NAME = '' ORDER BY SCHEMA_NAME`,
-	})
+	}, directedReadQueryOptions(session.systemVariables.Query.DirectedRead))
 	defer iter.Stop()
 
 	var items []fzfItem

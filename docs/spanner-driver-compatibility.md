@@ -44,7 +44,7 @@ says otherwise; `java-spanner` versions are given where known.
 | `auto_batch_dml` | yes | yes | `AUTO_BATCH_DML` implemented |
 | `auto_batch_dml_update_count` / `auto_batch_dml_update_count_verification` | yes (v1.11.0) | yes | not implemented, tracked #401 |
 | `ddl_execution_mode` (`SYNC`/`ASYNC`/`ASYNC_WAIT`) + `ddl_async_wait_timeout` | yes (v1.24.0) | n/a | `CLI_ASYNC_DDL` (bool) approximates; enum rename tracked #485 |
-| `directed_read` | yes (v1.26.0) | Connection API Directed Read since the 6.52.x era | `CLI_DIRECT_READ` (read-only; lives outside the registry, complex proto type); rename + read/write support tracked #486 (varDef series #725 PR3b) |
+| `directed_read` | yes (v1.26.0) | Connection API Directed Read since the 6.52.x era | `DIRECTED_READ` (session SET/SHOW, location[:READ_ONLY\|READ_WRITE] shorthand, empty clears; not JDBC protobuf JSON). SET rejected while a transaction is pending or active. Not applied to RW/DML/heartbeat/PDML. |
 | `transaction_timeout` | yes (v1.22.0) | v6.101.0 | not implemented, tracked #482 |
 | `statement_timeout` | yes (v1.22.0) | connection URL support v6.102.0 | `STATEMENT_TIMEOUT` implemented |
 | `read_lock_mode` (`PESSIMISTIC`/`OPTIMISTIC`) | yes (v1.18.0) | v6.100.0 | `READ_LOCK_MODE` implemented |

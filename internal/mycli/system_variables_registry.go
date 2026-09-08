@@ -5,11 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"slices"
 	"strings"
-
-	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
-	loi "github.com/samber/lo/it"
 )
 
 // ensureRegistry initializes the registry if needed.
@@ -27,14 +23,6 @@ func (sv *systemVariables) ensureRegistry() {
 // GoogleSQL vs simple value parsing.
 func (sv *systemVariables) setFrom(name string, value string, isGoogleSQL bool) error {
 	upperName := strings.ToUpper(name)
-
-	// CLI_DIRECT_READ lives outside the registry (complex proto type; see get);
-	// its setter is not yet implemented. COMMIT_RESPONSE is now a read-only
-	// registry def, so it no longer needs a special case here (Registry.Set
-	// rejects it with errSetterReadOnly).
-	if upperName == "CLI_DIRECT_READ" {
-		return errSetterUnimplemented{name}
-	}
 
 	slog.Debug("setFrom calling Registry.Set", "upperName", upperName, "value", value, "isGoogleSQL", isGoogleSQL)
 	err := sv.Registry.Set(upperName, value, isGoogleSQL)
@@ -81,21 +69,6 @@ func (sv *systemVariables) get(name string) (map[string]string, error) {
 	// unknown names (the nil type assertion below simply falls through).
 	if mv, ok := sv.Registry.GetVariable(upperName).(MultiValueVar); ok {
 		return mv.GetMulti()
-	}
-
-	// Special case for CLI_DIRECT_READ (complex proto type not in registry)
-	if upperName == "CLI_DIRECT_READ" {
-		if sv.Query.DirectedRead == nil {
-			return nil, errIgnored
-		}
-		// Format DirectedRead for display
-		values := strings.Join(slices.Collect(loi.Map(
-			slices.Values(sv.Query.DirectedRead.GetIncludeReplicas().GetReplicaSelections()),
-			func(rs *sppb.DirectedReadOptions_ReplicaSelection) string {
-				return fmt.Sprintf("%s:%s", rs.GetLocation(), rs.GetType())
-			},
-		)), ";")
-		return singletonMap(name, values), nil
 	}
 
 	value, err := sv.Registry.Get(upperName)
