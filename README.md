@@ -109,9 +109,10 @@ go install github.com/apstndb/spanner-mycli@latest
 
 Release assets include `spanner-mycli-slim`, which leaves out the optional
 GEMINI/LLM, BigQuery, and Cassandra-interface CQL statement families. Use it
-when those capabilities are not needed; the omitted statement keywords and
-feature-specific flags and system variables are not available in this
-variant. All other spanner-mycli behavior is unchanged.
+when those capabilities are not needed. Omitted statements, `--vertexai-*`
+flags, and related system variables or TOML keys are rejected rather than
+ignored. Core MCP remains. Slim is not a sandbox or a smaller module graph;
+see [Slim binary](docs/slim_binary.md).
 
 Build the same variant from source with:
 

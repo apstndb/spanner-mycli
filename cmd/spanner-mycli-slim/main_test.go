@@ -38,4 +38,10 @@ func TestSlimBinaryExcludesOptionalStatements(t *testing.T) {
 			t.Errorf("BuildStatementWithDefs(%q) succeeded, want optional statement to be absent", input)
 		}
 	}
+
+	for _, input := range []string{"HELP", "SHOW VARIABLES"} {
+		if _, err := mycli.BuildStatementWithDefs(defs, input); err != nil {
+			t.Errorf("core statement %q: %v", input, err)
+		}
+	}
 }

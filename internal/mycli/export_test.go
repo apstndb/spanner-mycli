@@ -23,6 +23,7 @@ package mycli
 import (
 	"context"
 	"errors"
+	"io"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -67,6 +68,13 @@ func NewSessionWithFeaturesForTest(t *testing.T, features ...Feature) *Session {
 // enumeration-surface regression tests.
 func ListVariablesForTest(s *Session) map[string]string {
 	return s.systemVariables.ListVariables()
+}
+
+// ParseFlagsArgsForTest runs the same flag/TOML parser Main uses, with an
+// explicit config-file list so tests never read personal configuration.
+func ParseFlagsArgsForTest(args []string, installFrom string, configFiles []string, stdout, stderr io.Writer, features ...Feature) error {
+	_, _, err := parseFlagsArgs(args, installFrom, configFiles, stdout, stderr, features...)
+	return err
 }
 
 // ClassifyForTest reports how the READONLY guard would classify stmt:
