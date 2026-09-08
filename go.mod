@@ -54,7 +54,7 @@ require (
 	github.com/vbauerster/mpb/v8 v8.16.1
 	go.uber.org/zap v1.28.0
 	golang.org/x/term v0.45.0
-	golang.org/x/time v0.15.0
+	golang.org/x/time v0.16.0
 	google.golang.org/api v0.297.0
 	google.golang.org/genai v1.71.0
 	google.golang.org/grpc v1.83.2
@@ -119,7 +119,7 @@ require (
 	github.com/google/flatbuffers v23.5.26+incompatible // indirect
 	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
-	github.com/google/uuid v1.6.0 // indirect
+	github.com/google/uuid v1.6.0
 	// The v0.3.21 tag was deleted upstream; this pins the same commit for direct module resolution.
 	github.com/googleapis/enterprise-certificate-proxy v0.3.21-0.20260811172054-82da9ba164a0 // indirect
 	github.com/googleapis/gax-go/v2 v2.24.0 // indirect
