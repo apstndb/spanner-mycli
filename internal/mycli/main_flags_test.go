@@ -1369,10 +1369,16 @@ func TestTimeoutAsyncInteraction(t *testing.T) {
 			wantAsync:   false,
 		},
 		{
-			name:        "async without timeout uses default",
+			name:        "async without timeout leaves STATEMENT_TIMEOUT unset",
 			args:        withRequiredFlags("--async"),
-			wantTimeout: lo.ToPtr(10 * time.Minute), // default
+			wantTimeout: nil,
 			wantAsync:   true,
+		},
+		{
+			name:        "explicit 10m is not omission",
+			args:        withRequiredFlags("--timeout", "10m"),
+			wantTimeout: lo.ToPtr(10 * time.Minute),
+			wantAsync:   false,
 		},
 		{
 			name:        "both timeout and async",
@@ -1407,16 +1413,27 @@ func TestTimeoutAsyncInteraction(t *testing.T) {
 					err = initErr
 				}
 				if err == nil {
-					// Check timeout
-					if tt.wantTimeout != nil {
-						if sysVars.Query.StatementTimeout == nil {
-							t.Errorf("StatementTimeout = nil, want %v", *tt.wantTimeout)
-						} else if *sysVars.Query.StatementTimeout != *tt.wantTimeout {
-							t.Errorf("StatementTimeout = %v, want %v", *sysVars.Query.StatementTimeout, *tt.wantTimeout)
+					if tt.wantTimeout == nil {
+						if sysVars.Query.StatementTimeout != nil {
+							t.Errorf("StatementTimeout = %v, want nil (omitted flag)", *sysVars.Query.StatementTimeout)
 						}
+						session := &Session{
+							mode:            DatabaseConnected,
+							systemVariables: sysVars,
+							txn:             NewTransactionManager(nil, sysVars, defaultClientConfig),
+						}
+						if got := session.getTimeoutForStatement(&SelectStatement{Query: "SELECT 1"}); got != 10*time.Minute {
+							t.Errorf("omitted ordinary timeout = %v, want 10m", got)
+						}
+						if got := session.getTimeoutForStatement(&PartitionedDmlStatement{Dml: "UPDATE T SET V = 1 WHERE TRUE"}); got != 24*time.Hour {
+							t.Errorf("omitted PDML timeout = %v, want 24h", got)
+						}
+					} else if sysVars.Query.StatementTimeout == nil {
+						t.Errorf("StatementTimeout = nil, want %v", *tt.wantTimeout)
+					} else if *sysVars.Query.StatementTimeout != *tt.wantTimeout {
+						t.Errorf("StatementTimeout = %v, want %v", *sysVars.Query.StatementTimeout, *tt.wantTimeout)
 					}
 
-					// Check async
 					assertEqual(t, "AsyncDDL", sysVars.Feature.AsyncDDL, &tt.wantAsync)
 				}
 			}

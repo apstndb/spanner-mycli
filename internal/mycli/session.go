@@ -80,19 +80,43 @@ const defaultPriority = sppb.RequestOptions_PRIORITY_MEDIUM
 // individual operations must not layer their own timeouts on top. A user-set
 // STATEMENT_TIMEOUT (nil until set) overrides the defaults: 10 minutes for
 // ordinary statements, and 24 hours for partitioned DML to accommodate its
-// long-running semantics.
+// long-running semantics. 24h is the CLI policy when no explicit timeout
+// exists, not a server-required deadline.
 func (s *Session) getTimeoutForStatement(stmt Statement) time.Duration {
-	// For partitioned DML, use longer default if no custom timeout is set
-	if _, isPartitionedDML := stmt.(*PartitionedDmlStatement); isPartitionedDML && s.systemVariables.Query.StatementTimeout == nil {
-		return 24 * time.Hour // PDML default
-	}
-
-	// Use custom timeout if set, otherwise default
 	if s.systemVariables.Query.StatementTimeout != nil {
 		return *s.systemVariables.Query.StatementTimeout
 	}
+	if s.usesPartitionedDMLTimeout(stmt) {
+		return 24 * time.Hour
+	}
+	return 10 * time.Minute
+}
 
-	return 10 * time.Minute // default timeout
+// usesPartitionedDMLTimeout reports whether stmt would execute as partitioned
+// DML, matching DmlStatement.Execute and bufferOrExecuteDML. Explicit
+// PARTITIONED statements always use the PDML default; autocommit UPDATE/DELETE
+// use it only on the executePDML route.
+func (s *Session) usesPartitionedDMLTimeout(stmt Statement) bool {
+	switch st := stmt.(type) {
+	case *PartitionedDmlStatement:
+		return true
+	case *DmlStatement:
+		if s.batch.IsActive() {
+			return false
+		}
+		if s.systemVariables.Query.TryPartitionQuery {
+			return false
+		}
+		switch mode := s.systemVariables.Query.QueryMode; {
+		case mode != nil && *mode == sppb.ExecuteSqlRequest_PLAN:
+			return false
+		case mode != nil && *mode == sppb.ExecuteSqlRequest_PROFILE:
+			return false
+		}
+		return autocommitUsesPartitionedDML(s, st.Dml)
+	default:
+		return false
+	}
 }
 
 // Session represents a database session with transaction management.

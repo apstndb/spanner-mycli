@@ -176,7 +176,8 @@ Flags:
   -h, --help                                   Show this help message and exit.
       --version                                Show version string.
       --enable-partitioned-dml                 Partitioned DML as default (AUTOCOMMIT_DML_MODE=PARTITIONED_NON_ATOMIC)
-      --timeout="10m"                          Statement timeout (e.g., '10s', '5m', '1h')
+      --timeout=STRING                         Statement timeout (e.g., '10s', '5m', '1h'). Omit for 10m on ordinary
+                                               statements and 24h on partitioned DML.
       --async                                  Return immediately, without waiting for the operation in progress to
                                                complete
       --try-partition-query                    Test whether the query can be executed as partition query without

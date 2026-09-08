@@ -161,7 +161,7 @@ type spannerOptions struct {
 	DatabaseRole              string                    `name:"database-role" hidden:"" help:"Hidden alias of --role for gcloud spanner databases execute-sql compatibility"`
 	DeploymentEndpoint        string                    `name:"deployment-endpoint" hidden:"" help:"Hidden alias of --endpoint for Google Cloud Spanner CLI compatibility"`
 	EnablePartitionedDML      bool                      `name:"enable-partitioned-dml" help:"Partitioned DML as default (AUTOCOMMIT_DML_MODE=PARTITIONED_NON_ATOMIC)"`
-	Timeout                   string                    `name:"timeout" help:"Statement timeout (e.g., '10s', '5m', '1h')" default:"10m"`
+	Timeout                   string                    `name:"timeout" help:"Statement timeout (e.g., '10s', '5m', '1h'). Omit for 10m on ordinary statements and 24h on partitioned DML."`
 	Async                     bool                      `name:"async" help:"Return immediately, without waiting for the operation in progress to complete"`
 	TryPartitionQuery         bool                      `name:"try-partition-query" help:"Test whether the query can be executed as partition query without execution"`
 	MCP                       bool                      `name:"mcp" help:"Run as MCP server"`
