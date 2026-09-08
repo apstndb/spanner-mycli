@@ -1076,15 +1076,15 @@ TABLE Singers (42)
 		},
 		{
 			desc:  "SET += statement",
-			input: `SET CLI_PROTO_DESCRIPTOR_FILE += "./message_descriptors.pb"`,
-			want:  &SetAddStatement{VarName: "CLI_PROTO_DESCRIPTOR_FILE", Value: `"./message_descriptors.pb"`},
+			input: `SET PROTO_DESCRIPTORS_FILE_PATH += "./message_descriptors.pb"`,
+			want:  &SetAddStatement{VarName: "PROTO_DESCRIPTORS_FILE_PATH", Value: `"./message_descriptors.pb"`},
 		},
 		{
 			// Without spaces around +=, the generic SET <name> = <value>
 			// definition must not swallow the "+" into the variable name.
 			desc:  "SET ADD statement without spaces around operator",
-			input: `SET CLI_PROTO_DESCRIPTOR_FILE+="./message_descriptors.pb"`,
-			want:  &SetAddStatement{VarName: "CLI_PROTO_DESCRIPTOR_FILE", Value: `"./message_descriptors.pb"`},
+			input: `SET PROTO_DESCRIPTORS_FILE_PATH+="./message_descriptors.pb"`,
+			want:  &SetAddStatement{VarName: "PROTO_DESCRIPTORS_FILE_PATH", Value: `"./message_descriptors.pb"`},
 		},
 		{
 			desc:  "SET LOCAL statement",

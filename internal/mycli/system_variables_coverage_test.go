@@ -78,8 +78,8 @@ func TestAddFromSimple(t *testing.T) {
 		}
 
 		sv := newSystemVariablesWithDefaults()
-		// CLI_PROTO_DESCRIPTOR_FILE uses the old system and has Adder support
-		err := sv.AddFromSimple("CLI_PROTO_DESCRIPTOR_FILE", tempFile)
+		// PROTO_DESCRIPTORS_FILE_PATH has a registry ADD handler.
+		err := sv.AddFromSimple("PROTO_DESCRIPTORS_FILE_PATH", tempFile)
 		// This will fail because the file content is not a valid proto descriptor
 		if err == nil {
 			t.Error("Expected error for invalid proto descriptor file")
@@ -115,9 +115,9 @@ func TestAddFromGoogleSQL(t *testing.T) {
 		}
 
 		sv := newSystemVariablesWithDefaults()
-		// CLI_PROTO_DESCRIPTOR_FILE uses the old system and has Adder support
+		// PROTO_DESCRIPTORS_FILE_PATH has a registry ADD handler.
 		// Need to quote the filename for GoogleSQL
-		err := sv.AddFromGoogleSQL("CLI_PROTO_DESCRIPTOR_FILE", "'"+tempFile+"'")
+		err := sv.AddFromGoogleSQL("PROTO_DESCRIPTORS_FILE_PATH", "'"+tempFile+"'")
 		// This will fail because the file content is not a valid proto descriptor
 		if err == nil {
 			t.Error("Expected error for invalid proto descriptor file")

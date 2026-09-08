@@ -917,7 +917,7 @@ func TestDumpCyclicMutateProtoEnum(t *testing.T) {
 	t.Parallel()
 	skipIfShortIntegration(t)
 	_, source := initializeWithRandomDB(t, nil, nil)
-	setup := `SET CLI_PROTO_DESCRIPTOR_FILE = "testdata/protos/singer.proto";
+	setup := `SET PROTO_DESCRIPTORS_FILE_PATH = "testdata/protos/singer.proto";
 		CREATE PROTO BUNDLE (` + "`examples.spanner.music.SingerInfo`, `examples.spanner.music.Genre`" + `);
 		CREATE TABLE T (Id INT64 NOT NULL, Ref INT64 NOT NULL,
 		P examples.spanner.music.SingerInfo, E examples.spanner.music.Genre,

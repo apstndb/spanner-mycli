@@ -110,7 +110,7 @@ func (t *TimestampBoundVar) Set(value string) error {
 	return nil
 }
 
-// ProtoDescriptorVar handles CLI_PROTO_DESCRIPTOR_FILE with ADD support
+// ProtoDescriptorVar handles PROTO_DESCRIPTORS_FILE_PATH with ADD support
 type ProtoDescriptorVar struct {
 	filesPtr      *[]string
 	descriptorPtr **descriptorpb.FileDescriptorSet

@@ -270,7 +270,7 @@ func TestSystemVariables_ProtoDescriptorFiles(t *testing.T) {
 				var sysVars systemVariables
 				var lastErr error
 				for _, value := range test.values {
-					if err := sysVars.AddFromSimple("CLI_PROTO_DESCRIPTOR_FILE", value); err != nil {
+					if err := sysVars.AddFromSimple("PROTO_DESCRIPTORS_FILE_PATH", value); err != nil {
 						lastErr = err
 						if test.errorMsg == "" {
 							t.Errorf("unexpected error for value %q: %v", value, err)
@@ -426,7 +426,7 @@ func TestSystemVariables_ProtoDescriptorFiles(t *testing.T) {
 
 				// Add descriptor files
 				for _, file := range test.descriptorFiles {
-					if err := sysVars.AddFromSimple("CLI_PROTO_DESCRIPTOR_FILE", file); err != nil {
+					if err := sysVars.AddFromSimple("PROTO_DESCRIPTORS_FILE_PATH", file); err != nil {
 						t.Fatalf("Failed to add descriptor file %s: %v", file, err)
 					}
 				}
@@ -455,9 +455,9 @@ func TestSystemVariables_ProtoDescriptorFiles(t *testing.T) {
 			value    string
 			errorMsg string
 		}{
-			{desc: "empty string value", varName: "CLI_PROTO_DESCRIPTOR_FILE", value: `""`, errorMsg: "no such file or directory"},
-			{desc: "spaces only value", varName: "CLI_PROTO_DESCRIPTOR_FILE", value: `"   "`, errorMsg: "no such file or directory"},
-			{desc: "non-existent path with parent directory traversal", varName: "CLI_PROTO_DESCRIPTOR_FILE", value: `"../does_not_exist/non_existent_file.pb"`, errorMsg: "no such file or directory"},
+			{desc: "empty string value", varName: "PROTO_DESCRIPTORS_FILE_PATH", value: `""`, errorMsg: "no such file or directory"},
+			{desc: "spaces only value", varName: "PROTO_DESCRIPTORS_FILE_PATH", value: `"   "`, errorMsg: "no such file or directory"},
+			{desc: "non-existent path with parent directory traversal", varName: "PROTO_DESCRIPTORS_FILE_PATH", value: `"../does_not_exist/non_existent_file.pb"`, errorMsg: "no such file or directory"},
 		}
 
 		for _, test := range tests {
@@ -964,7 +964,7 @@ func TestSystemVariables_SetGetOperations(t *testing.T) {
 			"CLI_INLINE_STATS":             "name:{{.template}}",
 			"CLI_PARSE_MODE":               "FALLBACK",
 			"CLI_LOG_LEVEL":                "INFO",
-			"CLI_PROTO_DESCRIPTOR_FILE":    "testdata/protos/order_descriptors.pb",
+			"PROTO_DESCRIPTORS_FILE_PATH":  "testdata/protos/order_descriptors.pb",
 			"STATEMENT_TIMEOUT":            "30s",
 			"MAX_PARTITIONED_PARALLELISM":  "10",
 			"CLI_TAB_WIDTH":                "4",
