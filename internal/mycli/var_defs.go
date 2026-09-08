@@ -587,9 +587,11 @@ var varDefs = []varDef{
 	},
 	{
 		name:  "CLI_LOG_LEVEL",
-		desc:  "Log level for the CLI. Use the startup --log-level flag to control embedded runtime container lifecycle logs.",
+		desc:  "Log level for the CLI slog logger (DEBUG, INFO, WARN, ERROR; WARNING is accepted as WARN). SET and --set change the process threshold. Embedded container lifecycle logs follow the startup --log-level snapshot, not later SET.",
 		scope: scopeSession,
-		bind:  func(sv *systemVariables) Variable { return &LogLevelVar{ptr: &sv.Feature.LogLevel} },
+		bind: func(sv *systemVariables) Variable {
+			return &LogLevelVar{ptr: &sv.Feature.LogLevel, runtime: sv.runtimeLogLevel}
+		},
 	},
 
 	// === Computed/Read-only variables ===

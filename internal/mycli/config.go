@@ -141,7 +141,7 @@ type spannerOptions struct {
 	SampleDatabase      string            `name:"sample-database" help:"Initialize embedded runtime with built-in sample (e.g. fingraph, singers, banking) or path to a metadata file (.json, .yaml, .yml). Requires --embedded-emulator or --embedded-omni. Cannot be combined with --detached."`
 	ListSamples         bool              `name:"list-samples" help:"List available sample databases and exit"`
 	OutputTemplate      string            `name:"output-template" help:"Filepath of output template. (EXPERIMENTAL)"`
-	LogLevel            string            `name:"log-level" help:"Set CLI log level (DEBUG, INFO, WARN, ERROR). INFO and DEBUG include embedded runtime container lifecycle logs."`
+	LogLevel            string            `name:"log-level" help:"Set CLI log level (DEBUG, INFO, WARN, ERROR). INFO and DEBUG include embedded runtime container lifecycle logs. SQL SET CLI_LOG_LEVEL does not change those container logs."`
 	LogGrpc             bool              `name:"log-grpc" help:"Show gRPC logs"`
 	// Kong only accepts enum validation on optional flags when they are modeled as
 	// pointers. Keeping these as *string preserves "unset" semantics while still
@@ -357,6 +357,11 @@ func createSystemVariablesFromOptions(opts *spannerOptions, features ...Feature)
 
 	// Start with defaults and override with options
 	sysVars := newSystemVariablesWithDefaults()
+	// Bind the process LevelVar before the first registry build so LogLevelVar
+	// captures this live pointer. Isolated newSystemVariablesWithDefaults
+	// leaves runtimeLogLevel nil.
+	sysVars.runtimeLogLevel = &cliLogLevel
+	sysVars.Config.EmbeddedLogLevel = l
 	// Don't initialize registry here - it needs to be done after the final
 	// systemVariables is in its permanent location to avoid closure issues.
 	// Feature-contributed variable defs must be set before the registry is first

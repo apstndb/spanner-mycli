@@ -245,9 +245,23 @@ func AutocommitDMLModeVar(ptr *enums.AutocommitDMLMode) *EnumVar[enums.Autocommi
 	}
 }
 
-// LogLevelVar handles CLI_LOG_LEVEL
+// parseLogLevel accepts slog names (DEBUG, INFO, WARN, ERROR), numeric
+// offsets, and the WARNING alias. Unknown values must not be applied.
+func parseLogLevel(value string) (slog.Level, error) {
+	if strings.EqualFold(value, "WARNING") {
+		value = "WARN"
+	}
+	var level slog.Level
+	if err := level.UnmarshalText([]byte(value)); err != nil {
+		return 0, fmt.Errorf("invalid log level: %s", value)
+	}
+	return level, nil
+}
+
+// LogLevelVar handles CLI_LOG_LEVEL. runtime is nil for isolated fixtures.
 type LogLevelVar struct {
-	ptr *slog.Level
+	ptr     *slog.Level
+	runtime *slog.LevelVar
 }
 
 func (l *LogLevelVar) Get() (string, error) {
@@ -255,20 +269,14 @@ func (l *LogLevelVar) Get() (string, error) {
 }
 
 func (l *LogLevelVar) Set(value string) error {
-	// Special handling for "WARNING" alias which slog doesn't recognize
-	if strings.EqualFold(value, "WARNING") {
-		*l.ptr = slog.LevelWarn
-		return nil
-	}
-
-	// Use slog.Level's built-in UnmarshalText for everything else
-	// This handles: DEBUG, INFO, WARN, ERROR (case-insensitive)
-	// and numeric offsets like "DEBUG+4", "INFO-8"
-	var level slog.Level
-	if err := level.UnmarshalText([]byte(value)); err != nil {
-		return fmt.Errorf("invalid log level: %s", value)
+	level, err := parseLogLevel(value)
+	if err != nil {
+		return err
 	}
 	*l.ptr = level
+	if l.runtime != nil {
+		l.runtime.Set(level)
+	}
 	return nil
 }
 
