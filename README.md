@@ -767,6 +767,11 @@ spanner> SELECT """
 
 The default prompt2 is `%P%R> `.
 
+Continuation prompts must be nonempty, whether supplied through `--prompt2`,
+the `prompt2` configuration key, or `SET CLI_PROMPT2`. An explicit empty startup
+value is rejected before `--set` overrides are applied. The primary prompt may
+still be empty.
+
 If you set only `%P` to `prompt2`, continuation prompt is only indentations.
 It is convenient because of copy-and-paste friendly.
 

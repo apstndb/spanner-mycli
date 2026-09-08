@@ -379,9 +379,6 @@ func createSystemVariablesFromOptions(opts *spannerOptions, features ...Feature)
 	if opts.Prompt != nil {
 		sysVars.Display.Prompt = *opts.Prompt
 	}
-	if opts.Prompt2 != nil {
-		sysVars.Display.Prompt2 = *opts.Prompt2
-	}
 	if opts.HistoryFile != nil {
 		sysVars.Display.HistoryFile = *opts.HistoryFile
 	}
@@ -591,6 +588,14 @@ func initializeSystemVariables(opts *spannerOptions, features ...Feature) (*syst
 	sysVars, err := createSystemVariablesFromOptions(opts, features...)
 	if err != nil {
 		return nil, err
+	}
+	// Validate explicit continuation prompts through SET's handler, after the
+	// registry can safely bind the permanent systemVariables pointer. Otherwise
+	// startup can accept an empty value that SET LOCAL cannot later restore.
+	if opts.Prompt2 != nil {
+		if err := sysVars.SetFromSimple("CLI_PROMPT2", *opts.Prompt2); err != nil {
+			return nil, fmt.Errorf("invalid value of --prompt2: %w", err)
+		}
 	}
 
 	// Apply feature-contributed CLI flags through the registry (issue #778). This
