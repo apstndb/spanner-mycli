@@ -257,12 +257,9 @@ func (sm *StreamManager) GetWriter() io.Writer {
 
 	// Create and cache new writer based on mode
 	if sm.silentMode {
-		// In silent mode, write only to file
-		sm.cachedWriter = &safeTeeWriter{
-			file:      sm.teeFile,
-			errStream: sm.errStream,
-			hasWarned: false,
-		}
+		// This is the only data destination: preserve partial writes and errors.
+		// safeTeeWriter is appropriate only when stdout still receives the data.
+		sm.cachedWriter = sm.teeFile
 	} else {
 		// In normal mode, write to both stdout and file
 		sm.cachedWriter = createTeeWriter(sm.outStream, sm.teeFile, sm.errStream)
