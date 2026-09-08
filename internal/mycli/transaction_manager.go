@@ -161,11 +161,22 @@ type savedLocalVar struct {
 
 // NewTransactionManager creates a new TransactionManager.
 func NewTransactionManager(client *spanner.Client, sysVars *systemVariables, clientConfig spanner.ClientConfig) *TransactionManager {
-	return &TransactionManager{
+	tm := &TransactionManager{
 		client:       client,
 		sysVars:      sysVars,
 		clientConfig: clientConfig,
 	}
+	bindTransactionManagerCallbacks(sysVars, tm)
+	return tm
+}
+
+func bindTransactionManagerCallbacks(sv *systemVariables, tm *TransactionManager) {
+	if sv == nil || tm == nil {
+		return
+	}
+	sv.inTransaction = tm.InTransaction
+	sv.transactionTagView = tm.transactionTagView
+	sv.setTransactionTagSlot = tm.setTransactionTagSlot
 }
 
 // SetClient replaces the Spanner client under tm.mu. It refuses to replace
@@ -439,6 +450,35 @@ func (tm *TransactionManager) InReadWriteTransaction() bool {
 	return mode == transactionModeReadWrite
 }
 
+// transactionTagView reports the applied RW owner tag, or the next-owner slot
+// when no physical RW owner exists. Mode and tag are read in one lock snapshot.
+func (tm *TransactionManager) transactionTagView() string {
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+	if tm.tc != nil && tm.tc.attrs.mode == transactionModeReadWrite {
+		return tm.tc.attrs.tag
+	}
+	if tm.sysVars == nil {
+		return ""
+	}
+	return tm.sysVars.Transaction.TransactionTag
+}
+
+// setTransactionTagSlot writes the next-owner slot, or rejects the write while
+// a physical RW owner exists. Guard and mutation share one critical section.
+func (tm *TransactionManager) setTransactionTagSlot(value string) error {
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+	if tm.tc != nil && tm.tc.attrs.mode == transactionModeReadWrite {
+		return errTransactionTagInReadWrite
+	}
+	if tm.sysVars == nil {
+		return errors.New("TRANSACTION_TAG requires a session")
+	}
+	tm.sysVars.Transaction.TransactionTag = value
+	return nil
+}
+
 // InReadOnlyTransaction returns true if the session is running read-only transaction.
 func (tm *TransactionManager) InReadOnlyTransaction() bool {
 	mode, _ := tm.TransactionState()
@@ -628,15 +668,6 @@ func (tm *TransactionManager) DetermineTransactionAndState(ctx context.Context) 
 	return result, inTransaction, err
 }
 
-// getTransactionTagLocked returns the transaction tag from a pending transaction if it exists.
-// Caller must hold tm.mu.
-func (tm *TransactionManager) getTransactionTagLocked() string {
-	if tm.tc != nil && tm.tc.attrs.mode == transactionModePending {
-		return tm.tc.attrs.tag
-	}
-	return ""
-}
-
 // ValidateDatabaseOperation checks whether the TransactionManager has a valid client.
 func (tm *TransactionManager) ValidateDatabaseOperation() error {
 	if tm.client == nil {
@@ -652,8 +683,12 @@ func (tm *TransactionManager) BeginReadWriteTransactionLocked(ctx context.Contex
 		return err
 	}
 
-	// Get transaction tag if there's a pending transaction
-	tag := tm.getTransactionTagLocked()
+	// Capture the next-owner slot under the constructor lock. Do not consume
+	// until the SDK transaction is successfully created.
+	tag := ""
+	if tm.sysVars != nil {
+		tag = tm.sysVars.Transaction.TransactionTag
+	}
 
 	// Build transaction options using the builder
 	builder := tm.NewTransactionOptionsBuilder().
@@ -676,6 +711,9 @@ func (tm *TransactionManager) BeginReadWriteTransactionLocked(ctx context.Contex
 	txn, err := spanner.NewReadWriteStmtBasedTransactionWithOptions(ctx, tm.client, opts)
 	if err != nil {
 		return err
+	}
+	if tm.sysVars != nil {
+		tm.sysVars.Transaction.TransactionTag = ""
 	}
 
 	// Cleanup old transaction context if it's being replaced

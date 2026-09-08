@@ -811,7 +811,7 @@ Note that transaction-level priority takes precedence over command-level priorit
 ## Transaction Tags and Request Tags
 
 You can set transaction tag using `SET TRANSACTION_TAG = "<tag>"`, and request tag using `SET STATEMENT_TAG = "<tag>"`.
-Note: `TRANSACTION_TAG` is effective only in the current transaction and `STATEMENT_TAG` is effective only in the next query.
+`TRANSACTION_TAG` is the tag for the next physical read-write transaction. After that owner starts, `SHOW VARIABLE TRANSACTION_TAG` reports the applied tag. When the owner ends, the consumed slot is empty unless a SET LOCAL baseline remains: `SET TRANSACTION_TAG = 'A'` then pending `SET LOCAL TRANSACTION_TAG = 'B'` consumes B and restores A after COMMIT, ROLLBACK, or Close. An ordinary SET after SET LOCAL supersedes that baseline, so A then LOCAL B then SET C consumes C and does not restore A or B. `SET` and `SET LOCAL` of `TRANSACTION_TAG` are rejected while a physical read-write transaction is active. A pending `BEGIN` does not consume the tag, so `BEGIN;` then `SET TRANSACTION_TAG` still applies. Read-only transactions do not consume it; ordinary SET during RO stages the next RW slot, and SET LOCAL during RO follows the usual undo restoration. Partitioned DML does not currently send a transaction tag. `STATEMENT_TAG` is effective only for the next statement.
 
 ```
 +------------------------------+
