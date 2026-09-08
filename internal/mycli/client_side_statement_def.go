@@ -508,7 +508,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Manipulate PROTO BUNDLE`,
-				Syntax: `SYNC PROTO BUNDLE [{UPSERT|DELETE} (<type> ...)]`,
+				Syntax: `SYNC PROTO BUNDLE [{UPSERT|DELETE} (<type> ...)]...`,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^SYNC\s+PROTO\s+BUNDLE(?:\s+(?P<args>.*))?$`),
@@ -1305,15 +1305,60 @@ loop:
 			return nil, fmt.Errorf("expected UPSERT or DELETE, but: %q", p.Token.AsString)
 		}
 	}
+	upsertPaths = uniqFullNames(upsertPaths)
+	deletePaths = uniqFullNames(deletePaths)
+	if name, ok := firstSharedFullName(upsertPaths, deletePaths); ok {
+		return nil, fmt.Errorf("SYNC PROTO BUNDLE conflict: %q appears in both UPSERT and DELETE", name)
+	}
 	return &SyncProtoStatement{UpsertPaths: upsertPaths, DeletePaths: deletePaths}, nil
 }
 
+// parsePaths reads one parenthesized proto-name list after UPSERT or DELETE.
+// memefish Parser.ParseExpr is a top-level parse and requires EOF after the
+// expression, so a second clause would fail as leftover input. Isolate the
+// next balanced "(...)" with the existing lexer (quoted names and comments may
+// contain parentheses or operation words) and parse that substring.
 func parsePaths(p *memefish.Parser) ([]string, error) {
-	expr, err := recoverMemefishParserPanic(p.ParseExpr)
-	if err != nil {
+	if err := p.NextToken(); err != nil {
 		return nil, err
 	}
+	if p.Token.Kind != "(" {
+		return nil, fmt.Errorf("expected path list, but: %q", p.Token.Raw)
+	}
 
+	start := p.Token.Pos
+	depth := 0
+	for {
+		switch p.Token.Kind {
+		case "(":
+			depth++
+		case ")":
+			depth--
+			if depth == 0 {
+				src := p.Buffer[int(start):int(p.Token.End)]
+				expr, err := parseMemefishExpr("", src)
+				if err != nil {
+					return nil, err
+				}
+				names, err := protoBundlePathsFromExpr(expr)
+				if err != nil {
+					return nil, err
+				}
+				if err := p.NextToken(); err != nil {
+					return nil, err
+				}
+				return names, nil
+			}
+		case token.TokenEOF:
+			return nil, fmt.Errorf("unterminated path list")
+		}
+		if err := p.NextToken(); err != nil {
+			return nil, err
+		}
+	}
+}
+
+func protoBundlePathsFromExpr(expr ast.Expr) ([]string, error) {
 	switch e := expr.(type) {
 	case *ast.ParenExpr:
 		name, err := exprToFullName(e.Expr)

@@ -41,6 +41,7 @@ func TestReadOnlyGuardCoversBatchStatements(t *testing.T) {
 		{desc: "batch DML", stmt: &BatchDMLStatement{DMLs: []spanner.Statement{spanner.NewStatement("UPDATE t SET id = 1 WHERE TRUE")}}},
 		{desc: "CREATE DATABASE", stmt: &CreateDatabaseStatement{CreateStatement: "CREATE DATABASE d"}},
 		{desc: "SYNC PROTO BUNDLE", stmt: &SyncProtoStatement{UpsertPaths: []string{"examples.ProtoType"}}},
+		{desc: "SYNC PROTO BUNDLE mixed", stmt: mustBuildMutate(t, "SYNC PROTO BUNDLE UPSERT (examples.A) DELETE (examples.B)")},
 		{desc: "ADD SPLIT POINTS", stmt: &AddSplitPointsStatement{}},
 		{desc: "EXPORT DATA", stmt: &ExportDataStatement{SQL: "EXPORT DATA OPTIONS (...) AS GRAPH g RETURN 1"}},
 		{desc: "MUTATE INSERT", stmt: mustBuildMutate(t, `MUTATE `+"`AuditSchema`.`Target`"+` INSERT STRUCT(1 AS Id)`)},
