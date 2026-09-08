@@ -406,7 +406,7 @@ func TestDumpPlanSkipsNoWritableColumns(t *testing.T) {
 	t.Parallel()
 	skipIfShortIntegration(t)
 	_, session := initializeWithRandomDB(t, nil, nil)
-	plan := &dumpPlan{Tables: []dumpTablePlan{{ID: tid("Ghost"), Columns: nil}}}
+	plan := &dumpPlan{Data: []dumpDataPlan{{Table: dumpTablePlan{ID: tid("Ghost"), Columns: nil}}}}
 	var result *Result
 	err := session.txn.withReadOnlyTransactionOrStart(t.Context(), func(txn *spanner.ReadOnlyTransaction) error {
 		var err error

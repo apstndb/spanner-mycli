@@ -67,6 +67,16 @@ const (
 	StreamingModeFalse                      // Never stream
 )
 
+// DumpCyclicMode controls restoration of cyclic table dependencies.
+//
+//go:generate go tool enumer -type=DumpCyclicMode -trimprefix=DumpCyclicMode -transform=snake_upper
+type DumpCyclicMode int
+
+const (
+	DumpCyclicModeReject DumpCyclicMode = iota
+	DumpCyclicModeMutate
+)
+
 // StyledMode represents the ANSI styling mode for output.
 //
 //go:generate go tool enumer -type=StyledMode -trimprefix=StyledMode -transform=snake_upper
