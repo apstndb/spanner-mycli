@@ -15,10 +15,13 @@
 package mycli
 
 import (
+	"io"
+	"log/slog"
 	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 )
 
@@ -80,11 +83,15 @@ func TestDirectedReadSetShowClearAndUnknownNames(t *testing.T) {
 	}
 
 	original := sysVars.Query.DirectedRead
+	originalValue := proto.CloneOf(original)
 	if err := sysVars.SetFromSimple("DIRECTED_READ", "us-east1:NOT_A_TYPE"); err == nil {
 		t.Fatal("invalid SET succeeded")
 	}
 	if sysVars.Query.DirectedRead != original {
 		t.Fatal("invalid SET replaced the DirectedRead pointer")
+	}
+	if !proto.Equal(originalValue, original) {
+		t.Fatal("invalid SET mutated the existing DirectedRead value")
 	}
 
 	if err := sysVars.SetFromGoogleSQL("DIRECTED_READ", "''"); err != nil {
@@ -149,40 +156,44 @@ func TestCloneDirectedReadIsReplacement(t *testing.T) {
 }
 
 func TestDirectedReadStartupFlagThenSet(t *testing.T) {
-	t.Parallel()
-	vars, err := initializeSystemVariables(&spannerOptions{
-		DirectedRead: "us-east1:read_only",
-		Set:          map[string]string{"DIRECTED_READ": "us-west1:READ_WRITE"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, err := vars.Get("DIRECTED_READ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got["DIRECTED_READ"] != "us-west1:READ_WRITE" {
-		t.Errorf("flag then --set = %q", got["DIRECTED_READ"])
-	}
-
-	cleared, err := initializeSystemVariables(&spannerOptions{
-		DirectedRead: "us-east1:READ_ONLY",
-		Set:          map[string]string{"DIRECTED_READ": ""},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cleared.Query.DirectedRead != nil {
-		t.Errorf("empty --set left %v", cleared.Query.DirectedRead)
-	}
-
-	_, err = initializeSystemVariables(&spannerOptions{DirectedRead: "us-east1:NOPE"})
-	if err == nil {
-		t.Fatal("invalid --directed-read accepted")
-	}
-	_, err = initializeSystemVariables(&spannerOptions{Set: map[string]string{"DIRECTED_READ": "us-east1:READ_ONLY:extra"}})
-	if err == nil {
-		t.Fatal("invalid --set DIRECTED_READ accepted")
+	oldLogger, oldLevel := slog.Default(), cliLogLevel.Level()
+	t.Cleanup(func() { slog.SetDefault(oldLogger); cliLogLevel.Set(oldLevel) })
+	for _, tt := range []struct {
+		name    string
+		args    []string
+		want    string
+		wantErr bool
+	}{
+		{name: "location", args: []string{"--directed-read=us-east1"}, want: "us-east1"},
+		{name: "mixed case", args: []string{"--directed-read=us-east1:read_only"}, want: "us-east1:READ_ONLY"},
+		{name: "set overrides", args: []string{"--directed-read=us-east1:READ_ONLY", "--set=DIRECTED_READ=us-west1:READ_WRITE"}, want: "us-west1:READ_WRITE"},
+		{name: "set clears", args: []string{"--directed-read=us-east1", "--set=DIRECTED_READ="}},
+		{name: "invalid flag", args: []string{"--directed-read=us-east1:NOPE"}, wantErr: true},
+		{name: "invalid set", args: []string{"--set=DIRECTED_READ=us-east1:READ_ONLY:extra"}, wantErr: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			opts, _, err := parseFlagsArgs(tt.args, "test", nil, io.Discard, io.Discard)
+			if err != nil {
+				t.Fatal(err)
+			}
+			vars, err := initializeSystemVariables(&opts.Spanner)
+			if tt.wantErr {
+				if err == nil || vars != nil {
+					t.Fatalf("startup state=%v error=%v", vars, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := vars.Get("DIRECTED_READ")
+			if err != nil || got["DIRECTED_READ"] != tt.want {
+				t.Fatalf("SHOW=%v error=%v want=%q", got, err, tt.want)
+			}
+			if tt.want == "" && vars.Query.DirectedRead != nil {
+				t.Fatal("clear left nonnil selection")
+			}
+		})
 	}
 }
 

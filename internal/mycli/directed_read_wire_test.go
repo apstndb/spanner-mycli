@@ -20,6 +20,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -39,14 +40,29 @@ type directedReadWireServer struct {
 	partitionFanInServer
 	mu       sync.Mutex
 	requests []*sppb.ExecuteSqlRequest
-	cycleFK  bool
+	begins   []*sppb.BeginTransactionRequest
+	cycleFK  atomic.Bool
 }
 
 func (s *directedReadWireServer) BeginTransaction(_ context.Context, r *sppb.BeginTransactionRequest) (*sppb.Transaction, error) {
+	s.mu.Lock()
+	s.begins = append(s.begins, proto.CloneOf(r))
+	s.mu.Unlock()
+	if r.Options.GetPartitionedDml() != nil {
+		return &sppb.Transaction{Id: []byte("probe-pdml")}, nil
+	}
 	if r.Options.GetReadOnly() != nil {
-		return &sppb.Transaction{Id: []byte("probe-ro"), ReadTimestamp: timestamppb.Now()}, nil
+		return &sppb.Transaction{Id: []byte("probe-ro"), ReadTimestamp: timestamppb.New(time.Unix(1700000000, 0))}, nil
 	}
 	return &sppb.Transaction{Id: []byte("probe-rw")}, nil
+}
+
+func (s *directedReadWireServer) takeBegins() []*sppb.BeginTransactionRequest {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := s.begins
+	s.begins = nil
+	return out
 }
 
 func (s *directedReadWireServer) Commit(context.Context, *sppb.CommitRequest) (*sppb.CommitResponse, error) {
@@ -85,11 +101,29 @@ func (s *directedReadWireServer) ExecuteStreamingSql(r *sppb.ExecuteSqlRequest, 
 	s.mu.Unlock()
 	tx := &sppb.Transaction{Id: []byte("probe-rw")}
 	if r.Transaction.GetSingleUse().GetReadOnly() != nil || r.Transaction.GetBegin().GetReadOnly() != nil || string(r.Transaction.GetId()) == "probe-ro" {
-		tx = &sppb.Transaction{Id: []byte("probe-ro"), ReadTimestamp: timestamppb.Now()}
+		tx = &sppb.Transaction{Id: []byte("probe-ro"), ReadTimestamp: timestamppb.New(time.Unix(1700000000, 0))}
 	}
-	md, values := directedReadFakeRow(r.Sql, s.cycleFK)
+	md, values := directedReadFakeRow(r.Sql, s.cycleFK.Load())
 	md.Transaction = tx
-	return stream.Send(&sppb.PartialResultSet{Metadata: md, Values: values})
+	result := &sppb.PartialResultSet{Metadata: md, Values: values}
+	if strings.HasPrefix(r.Sql, "UPDATE ") {
+		result.Stats = &sppb.ResultSetStats{RowCount: &sppb.ResultSetStats_RowCountExact{RowCountExact: 1}}
+		if !strings.Contains(r.Sql, "THEN RETURN") {
+			result.Metadata.RowType = &sppb.StructType{}
+			result.Values = nil
+		}
+	}
+	if r.QueryMode == sppb.ExecuteSqlRequest_PLAN || r.QueryMode == sppb.ExecuteSqlRequest_PROFILE {
+		if result.Stats == nil {
+			result.Stats = &sppb.ResultSetStats{}
+		}
+		result.Stats.QueryPlan = &sppb.QueryPlan{PlanNodes: []*sppb.PlanNode{{DisplayName: "directed-read-fixture"}}}
+		result.Stats.QueryStats = &structpb.Struct{Fields: map[string]*structpb.Value{"rows_returned": structpb.NewStringValue("1")}}
+		if r.QueryMode == sppb.ExecuteSqlRequest_PLAN {
+			result.Values = nil
+		}
+	}
+	return stream.Send(result)
 }
 
 func directedReadStringFields(names ...string) []*sppb.StructType_Field {
@@ -123,7 +157,9 @@ func directedReadFakeRow(sql string, cycleFK bool) (*sppb.ResultSetMetadata, []*
 	case strings.Contains(sql, "INFORMATION_SCHEMA.COLUMNS"):
 		return meta("COLUMN_NAME"), []*structpb.Value{structpb.NewStringValue("Id")}
 	case strings.Contains(sql, "INFORMATION_SCHEMA.SCHEMATA"):
-		return meta("SCHEMA_NAME"), []*structpb.Value{structpb.NewStringValue("")}
+		return meta("SCHEMA_NAME"), []*structpb.Value{structpb.NewStringValue("fixture_schema")}
+	case sql == "SELECT `Id` FROM `T`":
+		return &sppb.ResultSetMetadata{RowType: &sppb.StructType{Fields: []*sppb.StructType_Field{{Name: "Id", Type: &sppb.Type{Code: sppb.TypeCode_INT64}}}}}, []*structpb.Value{structpb.NewStringValue("42")}
 	default:
 		return meta("value"), []*structpb.Value{structpb.NewStringValue("observed")}
 	}

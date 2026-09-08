@@ -18,8 +18,11 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"log/slog"
 	"net"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -109,7 +112,8 @@ func requireDirected(t *testing.T, got, want *sppb.DirectedReadOptions) {
 }
 
 func TestDirectedReadStartupEmbeddedAndProductWire(t *testing.T) {
-	t.Parallel()
+	oldLogger, oldLevel := slog.Default(), cliLogLevel.Level()
+	t.Cleanup(func() { slog.SetDefault(oldLogger); cliLogLevel.Set(oldLevel) })
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 	defer cancel()
 	srv, conn := startDirectedReadDial(t)
@@ -349,12 +353,28 @@ func TestDirectedReadROVariantsGuardsAndOmits(t *testing.T) {
 		t.Fatal("RW SELECT used heartbeat tag")
 	}
 	srv.takeRequests()
-	if _, _, err := session.txn.RunAnalyzeQuery(ctx, spanner.Statement{SQL: "SELECT 'observed'"}); err != nil && !strings.Contains(err.Error(), "query plan") {
-		// Plan may be absent from the fake; the request still has to omit DRO.
-		_ = err
+	plan, _, err := session.txn.RunAnalyzeQuery(ctx, spanner.Statement{SQL: "SELECT 'observed'"})
+	if err != nil || len(plan.GetPlanNodes()) != 1 || plan.PlanNodes[0].DisplayName != "directed-read-fixture" {
+		t.Fatalf("RW PLAN plan=%v error=%v", plan, err)
 	}
-	for _, req := range srv.takeRequests() {
-		requireDirected(t, req.DirectedReadOptions, nil)
+	planReqs := srv.takeRequests()
+	if len(planReqs) != 1 || planReqs[0].QueryMode != sppb.ExecuteSqlRequest_PLAN || string(planReqs[0].GetTransaction().GetId()) != "probe-rw" {
+		t.Fatalf("RW PLAN requests=%v", planReqs)
+	}
+	requireDirected(t, planReqs[0].DirectedReadOptions, nil)
+	for _, sql := range []string{"UPDATE T SET V = 'changed' WHERE TRUE", "UPDATE T SET V = 'changed' WHERE TRUE THEN RETURN V"} {
+		result, err := executeDML(ctx, session, sql)
+		if err != nil || result.AffectedRows != 1 || !result.IsExecutedDML {
+			t.Fatalf("DML %s result=%v error=%v", sql, result, err)
+		}
+		if strings.Contains(sql, "THEN RETURN") && !strings.Contains(string(result.RenderedOutput), "observed") {
+			t.Fatalf("returning DML output=%q", result.RenderedOutput)
+		}
+		reqs := srv.takeRequests()
+		if len(reqs) != 1 || reqs[0].Sql != sql || string(reqs[0].GetTransaction().GetId()) != "probe-rw" {
+			t.Fatalf("DML requests=%v", reqs)
+		}
+		requireDirected(t, reqs[0].DirectedReadOptions, nil)
 	}
 
 	err = session.txn.withReadWriteTransaction(func(txn *spanner.ReadWriteStmtBasedTransaction) error {
@@ -413,12 +433,15 @@ func TestDirectedReadROVariantsGuardsAndOmits(t *testing.T) {
 	batch.Close()
 
 	srv.takeRequests()
-	if _, err := executePDML(ctx, session, "UPDATE T SET V = 1 WHERE TRUE"); err != nil {
-		t.Logf("PDML execution: %v", err)
+	result, err := executePDML(ctx, session, "UPDATE T SET V = 1 WHERE TRUE")
+	if err != nil || result.AffectedRows != 1 || !result.IsExecutedDML || result.AffectedRowsType != rowCountTypeLowerBound {
+		t.Fatalf("PDML result=%v error=%v", result, err)
 	}
-	for _, req := range srv.takeRequests() {
-		requireDirected(t, req.DirectedReadOptions, nil)
+	pdmlReqs := srv.takeRequests()
+	if len(pdmlReqs) != 1 || pdmlReqs[0].Sql != "UPDATE T SET V = 1 WHERE TRUE" || string(pdmlReqs[0].GetTransaction().GetId()) != "probe-pdml" {
+		t.Fatalf("PDML requests=%v", pdmlReqs)
 	}
+	requireDirected(t, pdmlReqs[0].DirectedReadOptions, nil)
 
 	f := &fuzzyFinderCommand{cli: &Cli{SessionHandler: NewSessionHandler(session)}}
 	vars.Transaction.RequestTag = "keep-me"
@@ -443,76 +466,105 @@ func TestDirectedReadROVariantsGuardsAndOmits(t *testing.T) {
 
 func TestDirectedReadDumpSnapshotWire(t *testing.T) {
 	t.Parallel()
-	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
-	defer cancel()
-	srv, conn := startDirectedReadDial(t)
-	b := mustParseDirectedRead(t, "us-west1:READ_WRITE")
-	vars := newDirectedReadVars(t)
-	session, _ := newDirectedReadProductSession(t, conn, vars)
-	if err := vars.SetFromSimple("DIRECTED_READ", "us-west1:READ_WRITE"); err != nil {
-		t.Fatal(err)
-	}
-	session.dumpDDLOverride = func(context.Context) (*adminpb.GetDatabaseDdlResponse, error) {
-		return &adminpb.GetDatabaseDdlResponse{Statements: []string{"CREATE TABLE T (Id INT64) PRIMARY KEY (Id)"}}, nil
-	}
-
-	srv.takeRequests()
-	if _, err := executeDump(ctx, session, dumpModeTables, []tableID{{Name: "T"}}); err != nil {
-		t.Fatalf("buffered DUMP TABLES: %v", err)
-	}
-	buffered := srv.takeRequests()
-	if len(buffered) == 0 {
-		t.Fatal("DUMP sent no ExecuteSql")
-	}
-	var sawCatalog, sawColumns, sawData bool
-	var txnID []byte
-	for _, req := range buffered {
-		requireDirected(t, req.DirectedReadOptions, b)
-		if txnID == nil {
-			txnID = req.GetTransaction().GetId()
+	for _, streaming := range []bool{false, true} {
+		for _, mode := range []string{"ordinary", "cyclic mutate", "cyclic reject"} {
+			t.Run(fmt.Sprintf("streaming=%t/%s", streaming, mode), func(t *testing.T) {
+				t.Parallel()
+				ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+				defer cancel()
+				srv, conn := startDirectedReadDial(t)
+				vars := newDirectedReadVars(t)
+				session, _ := newDirectedReadProductSession(t, conn, vars)
+				srv.cycleFK.Store(mode != "ordinary")
+				if mode == "cyclic mutate" {
+					vars.Display.DumpCyclicMode = enums.DumpCyclicModeMutate
+				}
+				session.dumpDDLOverride = func(context.Context) (*adminpb.GetDatabaseDdlResponse, error) {
+					t.Fatal("DUMP TABLES unexpectedly fetched DDL")
+					return nil, nil
+				}
+				for _, selection := range []string{"us-east1:READ_ONLY", "us-west1:READ_WRITE", ""} {
+					if err := vars.SetFromSimple("DIRECTED_READ", selection); err != nil {
+						t.Fatal(err)
+					}
+					want := cloneDirectedRead(vars.Query.DirectedRead)
+					var out bytes.Buffer
+					writer := io.Discard
+					if streaming {
+						writer = &out
+					}
+					vars.StreamManager = streamio.NewStreamManager(io.NopCloser(strings.NewReader("")), writer, io.Discard)
+					var snapshot *spanner.ReadOnlyTransaction
+					var stages []string
+					session.dumpReadTxnProbe = func(stage string, txn *spanner.ReadOnlyTransaction) {
+						stages = append(stages, stage)
+						if snapshot == nil {
+							snapshot = txn
+						}
+						if txn == nil || txn != snapshot {
+							t.Fatal("DUMP changed its transaction object")
+						}
+						if stage == "catalog" {
+							// Simulate replacement under the already-held transaction lock.
+							// User SET is forbidden during DUMP's RO transaction; calling
+							// its guard here would re-enter that lock. This probe tests the
+							// operation's captured options, not concurrent SET permission.
+							vars.Query.DirectedRead = mustParseDirectedRead(t, "asia-northeast1:READ_ONLY")
+						}
+					}
+					srv.takeRequests()
+					srv.takeBegins()
+					result, err := executeDump(ctx, session, dumpModeTables, []tableID{{Name: "T"}})
+					if mode == "cyclic reject" {
+						if err == nil || !strings.Contains(err.Error(), dumpCyclicInsertUnsupported) || result != nil || out.Len() != 0 {
+							t.Fatalf("cyclic safety result=%v output=%q error=%v", result, out.String(), err)
+						}
+					} else {
+						if err != nil || result.AffectedRows != 1 {
+							t.Fatalf("DUMP result=%v error=%v", result, err)
+						}
+						output := string(result.RenderedOutput)
+						if streaming {
+							output = out.String()
+						}
+						wantOutput := "INSERT INTO `T` (`Id`) VALUES (42);"
+						if mode == "cyclic mutate" {
+							wantOutput = "MUTATE `T` INSERT STRUCT<`Id` INT64>(42);"
+						}
+						if !strings.Contains(output, wantOutput) {
+							t.Fatalf("DUMP output=%q, want %q", output, wantOutput)
+						}
+					}
+					reqs := srv.takeRequests()
+					begins := srv.takeBegins()
+					if len(begins) != 1 || begins[0].GetOptions().GetReadOnly() == nil {
+						t.Fatalf("DUMP must create exactly one RO snapshot: %v", begins)
+					}
+					var catalog, fk, columns, data, rowCheck bool
+					for _, req := range reqs {
+						requireDirected(t, req.DirectedReadOptions, want)
+						if string(req.GetTransaction().GetId()) != "probe-ro" {
+							t.Fatalf("DUMP lost shared snapshot: %v", req.Transaction)
+						}
+						catalog = catalog || strings.Contains(req.Sql, "INFORMATION_SCHEMA.TABLES")
+						fk = fk || strings.Contains(req.Sql, "REFERENTIAL_CONSTRAINTS")
+						columns = columns || strings.Contains(req.Sql, "INFORMATION_SCHEMA.COLUMNS")
+						data = data || req.Sql == "SELECT `Id` FROM `T`"
+						rowCheck = rowCheck || req.Sql == "SELECT 1 FROM `T` LIMIT 1"
+					}
+					if !catalog || !fk || snapshot == nil || !slices.Contains(stages, "catalog") {
+						t.Fatalf("DUMP catalog/FK/snapshot missing: %v stages=%v", dumpSQLs(reqs), stages)
+					}
+					if mode == "cyclic reject" {
+						if !rowCheck || !slices.Contains(stages, "preflight") || slices.Contains(stages, "output") {
+							t.Fatalf("missing safety preflight: %v stages=%v", dumpSQLs(reqs), stages)
+						}
+					} else if !columns || !data || !slices.Contains(stages, "output") || (mode == "cyclic mutate" && !slices.Contains(stages, "preflight")) {
+						t.Fatalf("missing DUMP data/output path: %v stages=%v", dumpSQLs(reqs), stages)
+					}
+				}
+			})
 		}
-		if len(txnID) > 0 && len(req.GetTransaction().GetId()) > 0 && string(req.GetTransaction().GetId()) != string(txnID) {
-			t.Fatalf("DUMP used multiple txn ids %q vs %q", txnID, req.GetTransaction().GetId())
-		}
-		switch {
-		case strings.Contains(req.Sql, "INFORMATION_SCHEMA.TABLES"):
-			sawCatalog = true
-		case strings.Contains(req.Sql, "INFORMATION_SCHEMA.COLUMNS"):
-			sawColumns = true
-		case strings.Contains(req.Sql, "SELECT Id FROM") || strings.Contains(req.Sql, "SELECT `Id` FROM"):
-			sawData = true
-		}
-	}
-	if !sawCatalog || !sawColumns {
-		t.Fatalf("DUMP paths catalog=%v columns=%v data=%v sqls=%v", sawCatalog, sawColumns, sawData, dumpSQLs(buffered))
-	}
-
-	var stream bytes.Buffer
-	vars.StreamManager = streamio.NewStreamManager(io.NopCloser(strings.NewReader("")), &stream, io.Discard)
-	srv.takeRequests()
-	if _, err := executeDump(ctx, session, dumpModeTables, []tableID{{Name: "T"}}); err != nil {
-		t.Fatalf("streaming DUMP TABLES: %v", err)
-	}
-	streamed := srv.takeRequests()
-	if len(streamed) == 0 {
-		t.Fatal("streaming DUMP sent no ExecuteSql")
-	}
-	for _, req := range streamed {
-		requireDirected(t, req.DirectedReadOptions, b)
-	}
-
-	vars.Display.DumpCyclicMode = enums.DumpCyclicModeMutate
-	srv.cycleFK = true
-	srv.takeRequests()
-	if _, err := executeDump(ctx, session, dumpModeTables, []tableID{{Name: "T"}}); err != nil {
-		t.Fatalf("cyclic MUTATE DUMP: %v", err)
-	}
-	cyclic := srv.takeRequests()
-	if len(cyclic) == 0 {
-		t.Fatal("cyclic DUMP sent no ExecuteSql")
-	}
-	for _, req := range cyclic {
-		requireDirected(t, req.DirectedReadOptions, b)
 	}
 }
 
