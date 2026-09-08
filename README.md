@@ -457,10 +457,11 @@ The tee file will NOT contain:
 
 #### File handling
 
-- Files are opened in **append mode** (existing content is preserved)
+- Tee files use **append mode**; `--output` and `\o` overwrite existing content
 - Files are created if they don't exist
 - Only regular files are supported (not directories, FIFOs, or device files)
-- Write errors are handled gracefully with warnings
+- Tee file write failures warn once and leave console output running
+- File-only output preserves write errors instead of treating the failed file as optional. A failed export can leave a partial file; do not replay it as a complete dump.
 
 ```bash
 # Example: Logging a session with CLI_ECHO_INPUT
