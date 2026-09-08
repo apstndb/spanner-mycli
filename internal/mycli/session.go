@@ -544,6 +544,7 @@ func (s *Session) Close() {
 	// Close any active transaction context (which stops heartbeat)
 	if s.txn != nil {
 		s.txn.clearTransactionContext()
+		s.txn.restoreLocalVarsIfIdle()
 	}
 
 	if s.client != nil {

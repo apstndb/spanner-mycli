@@ -15,6 +15,10 @@ SHOW VARIABLES;                 -- List all variables with their current values
 SHOW VARIABLE CLI_FORMAT;       -- Show a single variable
 SET CLI_FORMAT = 'VERTICAL';    -- Set a variable
 SET LOCAL CLI_FORMAT = 'TAB';   -- Set a variable only for the current transaction
+-- Ordinary SET is session-durable through COMMIT and ROLLBACK, including after
+-- SET LOCAL. This is not PostgreSQL transactional SET: ROLLBACK does not undo
+-- a successful SET. A later SET LOCAL in the same transaction saves the new
+-- session value and restores that value when the transaction ends.
 HELP VARIABLES;                 -- Show the reference table below interactively
 ```
 

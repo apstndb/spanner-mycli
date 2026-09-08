@@ -304,12 +304,29 @@ func (tm *TransactionManager) withReadOnlyTransactionOrStart(ctx context.Context
 
 // pushLocalVarUndo appends a SET LOCAL undo entry for the current transaction.
 // It fails if no transaction is active, because the entry would never be replayed.
+// name must be the canonical registry identity (def.name), not a user alias.
 func (tm *TransactionManager) pushLocalVarUndo(name, oldValue string) error {
 	return tm.withTransactionContextWithLock(func(tcPtr **transactionContext) error {
 		if *tcPtr == nil {
 			return ErrNoTransaction
 		}
 		tm.localVarUndo = append(tm.localVarUndo, savedLocalVar{name: name, oldValue: oldValue})
+		return nil
+	})
+}
+
+// retireLocalVarUndo drops undo entries for canonical after a successful
+// ordinary SET. A later SET LOCAL then saves the new session value. Only the
+// undo slice is touched under mu; setters are not called here because they may
+// inspect transaction state and tm.mu is not reentrant.
+func (tm *TransactionManager) retireLocalVarUndo(canonical string) {
+	_ = tm.withTransactionContextWithLock(func(tcPtr **transactionContext) error {
+		if *tcPtr == nil || len(tm.localVarUndo) == 0 {
+			return nil
+		}
+		tm.localVarUndo = slices.DeleteFunc(tm.localVarUndo, func(e savedLocalVar) bool {
+			return e.name == canonical
+		})
 		return nil
 	})
 }
