@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
-	"path/filepath"
 	"regexp"
 	"slices"
 	"strconv"
@@ -538,7 +537,11 @@ func httpResolveFunc(path string) (protocompile.SearchResult, error) {
 var resolver = protocompile.CompositeResolver{&protocompile.SourceResolver{}, httpResolver}
 
 func readFileDescriptorProtoFromFile(filename string) (*descriptorpb.FileDescriptorSet, error) {
-	if filepath.Ext(filename) == ".proto" {
+	isSource, err := protoDescriptorLooksLikeSource(filename)
+	if err != nil {
+		return nil, err
+	}
+	if isSource {
 		compiler := protocompile.Compiler{
 			Resolver: protocompile.WithStandardImports(resolver),
 		}
@@ -570,7 +573,6 @@ func readFileDescriptorProtoFromFile(filename string) (*descriptorpb.FileDescrip
 	}
 
 	var b []byte
-	var err error
 	if httpOrHTTPSRe.MatchString(filename) {
 		b, err = loadFromHTTPWithLimit(context.Background(), filename, filesafety.DefaultMaxFileSize)
 		if err != nil {

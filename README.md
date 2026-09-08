@@ -1373,7 +1373,11 @@ spanner> SHOW LOCAL PROTO;
 
 This feature is powered by [bufbuild/protocompile](https://github.com/bufbuild/protocompile).
 
-(EXPERIMENTAL) `.pb` and `.proto` files can be loaded from URL.
+(EXPERIMENTAL) `.pb` and `.proto` files can be loaded from HTTP(S) URLs.
+Source vs binary is classified from the URL path; a query or fragment cannot
+change that. The original URL is used for the request, including query
+encoding. Local filenames keep ordinary extension semantics and are not parsed
+as URLs.
 
 ```
 spanner> SET CLI_PROTO_DESCRIPTOR_FILE = "https://github.com/apstndb/spanner-mycli/raw/refs/heads/main/testdata/protos/order_descriptors.pb";
