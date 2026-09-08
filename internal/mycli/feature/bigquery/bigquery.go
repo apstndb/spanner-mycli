@@ -65,6 +65,7 @@ func Feature() mycli.Feature {
 					{
 						Usage:  `Execute BigQuery SQL`,
 						Syntax: `BIGQUERY <sql>`,
+						Note:   `READONLY sessions allow BIGQUERY scripts only when every statement is a query (SELECT, WITH, or FROM-pipe / parenthesized query). Mixed or unrecognized payloads are rejected locally before a BigQuery job is created.`,
 					},
 				},
 				Pattern: regexp.MustCompile(`(?is)^BIGQUERY\s+(?P<sql>\S.*)$`),
@@ -95,7 +96,7 @@ func Feature() mycli.Feature {
 
 // BigQueryStatement executes a single BigQuery SQL statement. It embeds
 // mycli.MutationClassifier (Classify wired in the constructor to the fail-closed
-// first-keyword classifier over its own SQL) so the READONLY guard can reject
+// complete-payload classifier over its own SQL) so the READONLY guard can reject
 // mutating BigQuery statements, and mycli.MarksDetachedCompatible so it runs in
 // detached session mode (admin-only, no Spanner database).
 type BigQueryStatement struct {

@@ -575,18 +575,42 @@ func parseSchemaAndName(input string) (schema, name string, err error) {
 // statement's meaning (e.g. DUMP TABLES with an empty list would previously
 // fall back to dumping the whole database).
 func parseTableNameList(input string) ([]string, error) {
+	ids, err := parseDumpTableIDList(input)
+	if err != nil {
+		return nil, err
+	}
+	tables := make([]string, len(ids))
+	for i, id := range ids {
+		tables[i] = id.FQN()
+	}
+	return tables, nil
+}
+
+// parseDumpTableIDList parses a comma-separated list of [<schema>.]<table>
+// identifiers into lossless pair identities. Quoted components are not
+// flattened or re-split.
+func parseDumpTableIDList(input string) ([]tableID, error) {
 	p := newParser("", input)
 	if err := p.NextToken(); err != nil {
 		return nil, err
 	}
 
-	var tables []string
+	var tables []tableID
 	for {
 		idents, err := parseFQNParts(p)
 		if err != nil {
 			return nil, fmt.Errorf("expected table name: %w", err)
 		}
-		tables = append(tables, strings.Join(idents, "."))
+		var id tableID
+		switch len(idents) {
+		case 1:
+			id = tableID{Name: idents[0]}
+		case 2:
+			id = tableID{Schema: idents[0], Name: idents[1]}
+		default:
+			return nil, fmt.Errorf("expected [<schema>.]<table>, but %q has %d components", strings.Join(idents, "."), len(idents))
+		}
+		tables = append(tables, id)
 
 		switch p.Token.Kind {
 		case token.TokenEOF:

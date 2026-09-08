@@ -53,3 +53,9 @@ func parseMemefishType(filepath, input string) (ast.Type, error) {
 		return memefish.ParseType(filepath, input)
 	})
 }
+
+func parseMemefishStatement(filepath, input string) (ast.Statement, error) {
+	return recoverMemefishParserPanic(func() (ast.Statement, error) {
+		return memefish.ParseStatement(filepath, input)
+	})
+}

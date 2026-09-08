@@ -218,10 +218,8 @@ func TestExportDataRequestUsesIsolatedSingleUseOptions(t *testing.T) {
 	sysVars.Query.OptimizerStatisticsPackage = "auto_test_package"
 	sysVars.Query.ReadOnlyStaleness = lo.ToPtr(spanner.ExactStaleness(time.Minute))
 
-	// The emulator does not implement EXPORT DATA, but it still records the
-	// exact ExecuteSqlRequest before returning the expected syntax error.
-	if _, err := session.ExecuteStatement(ctx, &ExportDataStatement{SQL: exportSQL}); err == nil {
-		t.Fatal("ExportDataStatement.Execute() error = nil, want emulator syntax error")
+	if _, err := session.ExecuteStatement(ctx, &ExportDataStatement{SQL: exportSQL}); err != nil {
+		t.Fatalf("ExportDataStatement.Execute() error = %v, want nil", err)
 	}
 	if !session.txn.InReadWriteTransaction() {
 		t.Fatal("EXPORT DATA must not replace or close the explicit transaction")

@@ -134,6 +134,23 @@ type TransactionManager struct {
 	// It lives on the TransactionManager rather than on transactionContext so it
 	// survives the pending -> active context replacement in Begin*TransactionLocked.
 	localVarUndo []savedLocalVar
+
+	// autoDML is the transaction-owned automatic DML queue. Manual START/RUN/ABORT
+	// batches stay on Session.batch. Do not store this list on transactionContext:
+	// that struct is replaced pending->active, owns the heartbeat, and sits behind
+	// non-reentrant mu. autoDMLGeneration identifies the RW transaction that
+	// accepted the work so leftover statements cannot execute in a later owner.
+	autoDML           []spanner.Statement
+	autoDMLOwner      uint64
+	autoDMLGeneration uint64
+
+	// Test seams. Production remains nil.
+	// queryAfterCollectHook runs after the ordinary collector or PROFILE
+	// iterator consumer returns, so injected errors share those error branches.
+	// commitOverride substitutes CommitWithReturnResp; cleanup after the
+	// attempt is unchanged.
+	queryAfterCollectHook func() error
+	commitOverride        func(context.Context, *spanner.ReadWriteStmtBasedTransaction) (spanner.CommitResponse, error)
 }
 
 // savedLocalVar is one SET LOCAL undo-log entry.
@@ -144,11 +161,22 @@ type savedLocalVar struct {
 
 // NewTransactionManager creates a new TransactionManager.
 func NewTransactionManager(client *spanner.Client, sysVars *systemVariables, clientConfig spanner.ClientConfig) *TransactionManager {
-	return &TransactionManager{
+	tm := &TransactionManager{
 		client:       client,
 		sysVars:      sysVars,
 		clientConfig: clientConfig,
 	}
+	bindTransactionManagerCallbacks(sysVars, tm)
+	return tm
+}
+
+func bindTransactionManagerCallbacks(sv *systemVariables, tm *TransactionManager) {
+	if sv == nil || tm == nil {
+		return
+	}
+	sv.inTransaction = tm.InTransaction
+	sv.transactionTagView = tm.transactionTagView
+	sv.setTransactionTagSlot = tm.setTransactionTagSlot
 }
 
 // SetClient replaces the Spanner client under tm.mu. It refuses to replace
@@ -287,12 +315,29 @@ func (tm *TransactionManager) withReadOnlyTransactionOrStart(ctx context.Context
 
 // pushLocalVarUndo appends a SET LOCAL undo entry for the current transaction.
 // It fails if no transaction is active, because the entry would never be replayed.
+// name must be the canonical registry identity (def.name), not a user alias.
 func (tm *TransactionManager) pushLocalVarUndo(name, oldValue string) error {
 	return tm.withTransactionContextWithLock(func(tcPtr **transactionContext) error {
 		if *tcPtr == nil {
 			return ErrNoTransaction
 		}
 		tm.localVarUndo = append(tm.localVarUndo, savedLocalVar{name: name, oldValue: oldValue})
+		return nil
+	})
+}
+
+// retireLocalVarUndo drops undo entries for canonical after a successful
+// ordinary SET. A later SET LOCAL then saves the new session value. Only the
+// undo slice is touched under mu; setters are not called here because they may
+// inspect transaction state and tm.mu is not reentrant.
+func (tm *TransactionManager) retireLocalVarUndo(canonical string) {
+	_ = tm.withTransactionContextWithLock(func(tcPtr **transactionContext) error {
+		if *tcPtr == nil || len(tm.localVarUndo) == 0 {
+			return nil
+		}
+		tm.localVarUndo = slices.DeleteFunc(tm.localVarUndo, func(e savedLocalVar) bool {
+			return e.name == canonical
+		})
 		return nil
 	})
 }
@@ -336,6 +381,7 @@ func (tm *TransactionManager) clearTransactionContext() {
 			(*tcPtr).Close()
 		}
 		*tcPtr = nil
+		tm.discardAutomaticDMLLocked()
 		return nil
 	})
 }
@@ -402,6 +448,35 @@ func (tm *TransactionManager) TransactionMode() transactionMode {
 func (tm *TransactionManager) InReadWriteTransaction() bool {
 	mode, _ := tm.TransactionState()
 	return mode == transactionModeReadWrite
+}
+
+// transactionTagView reports the applied RW owner tag, or the next-owner slot
+// when no physical RW owner exists. Mode and tag are read in one lock snapshot.
+func (tm *TransactionManager) transactionTagView() string {
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+	if tm.tc != nil && tm.tc.attrs.mode == transactionModeReadWrite {
+		return tm.tc.attrs.tag
+	}
+	if tm.sysVars == nil {
+		return ""
+	}
+	return tm.sysVars.Transaction.TransactionTag
+}
+
+// setTransactionTagSlot writes the next-owner slot, or rejects the write while
+// a physical RW owner exists. Guard and mutation share one critical section.
+func (tm *TransactionManager) setTransactionTagSlot(value string) error {
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+	if tm.tc != nil && tm.tc.attrs.mode == transactionModeReadWrite {
+		return errTransactionTagInReadWrite
+	}
+	if tm.sysVars == nil {
+		return errors.New("TRANSACTION_TAG requires a session")
+	}
+	tm.sysVars.Transaction.TransactionTag = value
+	return nil
 }
 
 // InReadOnlyTransaction returns true if the session is running read-only transaction.
@@ -593,15 +668,6 @@ func (tm *TransactionManager) DetermineTransactionAndState(ctx context.Context) 
 	return result, inTransaction, err
 }
 
-// getTransactionTagLocked returns the transaction tag from a pending transaction if it exists.
-// Caller must hold tm.mu.
-func (tm *TransactionManager) getTransactionTagLocked() string {
-	if tm.tc != nil && tm.tc.attrs.mode == transactionModePending {
-		return tm.tc.attrs.tag
-	}
-	return ""
-}
-
 // ValidateDatabaseOperation checks whether the TransactionManager has a valid client.
 func (tm *TransactionManager) ValidateDatabaseOperation() error {
 	if tm.client == nil {
@@ -617,8 +683,12 @@ func (tm *TransactionManager) BeginReadWriteTransactionLocked(ctx context.Contex
 		return err
 	}
 
-	// Get transaction tag if there's a pending transaction
-	tag := tm.getTransactionTagLocked()
+	// Capture the next-owner slot under the constructor lock. Do not consume
+	// until the SDK transaction is successfully created.
+	tag := ""
+	if tm.sysVars != nil {
+		tag = tm.sysVars.Transaction.TransactionTag
+	}
 
 	// Build transaction options using the builder
 	builder := tm.NewTransactionOptionsBuilder().
@@ -642,11 +712,20 @@ func (tm *TransactionManager) BeginReadWriteTransactionLocked(ctx context.Contex
 	if err != nil {
 		return err
 	}
+	if tm.sysVars != nil {
+		tm.sysVars.Transaction.TransactionTag = ""
+	}
 
 	// Cleanup old transaction context if it's being replaced
 	if oldTc != nil {
 		oldTc.Close()
 	}
+
+	// A new RW owner must not inherit leftover automatic work. Pending->active
+	// replacement is not a terminal discard of a live owner; any residual here
+	// is cross-owner and is dropped rather than replayed.
+	tm.autoDMLGeneration++
+	tm.discardAutomaticDMLLocked()
 
 	// Set new transaction context
 	tm.tc = &transactionContext{
@@ -684,13 +763,25 @@ func (tm *TransactionManager) CommitReadWriteTransactionLocked(ctx context.Conte
 		return spanner.CommitResponse{}, ErrNotInReadWriteTransaction
 	}
 
-	resp, err := rwTxn.CommitWithReturnResp(ctx)
+	if _, _, err := tm.flushAutomaticDMLLocked(ctx); err != nil {
+		return spanner.CommitResponse{}, err
+	}
+
+	var resp spanner.CommitResponse
+	var err error
+	if tm.commitOverride != nil {
+		// Simulated call result, not an observed Commit RPC failure.
+		resp, err = tm.commitOverride(ctx, rwTxn)
+	} else {
+		resp, err = rwTxn.CommitWithReturnResp(ctx)
+	}
 
 	// Always clear transaction context after commit attempt.
 	// A failed commit invalidates the transaction on the server,
 	// so we must clear the context regardless of the outcome.
 	tm.tc.Close()
 	tm.tc = nil
+	tm.discardAutomaticDMLLocked()
 
 	// Return the response and error as-is, preserving any partial commit info
 	return resp, err
@@ -724,6 +815,7 @@ func (tm *TransactionManager) RollbackReadWriteTransactionLocked(ctx context.Con
 	// Clear transaction context after rollback
 	tm.tc.Close()
 	tm.tc = nil
+	tm.discardAutomaticDMLLocked()
 
 	return nil
 }
@@ -843,6 +935,7 @@ func (tm *TransactionManager) closeTransactionWithMode(mode transactionMode, clo
 		// Close and clear the transaction context
 		(*tcPtr).Close()
 		*tcPtr = nil
+		tm.discardAutomaticDMLLocked()
 		return nil
 	})
 }

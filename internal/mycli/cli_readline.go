@@ -59,7 +59,11 @@ func (p *persistentHistory) Add(s string) {
 			slog.Error("failed to close history file", "file", p.filename, "err", err)
 		}
 	}(file)
-	_, err = fmt.Fprintf(file, "%q\n", s)
+	// The loader accepts a complete final record without a newline. Include
+	// its separator in the same append write as the new record, without
+	// rewriting history or relying on a stale file-tail check. Extra blank
+	// lines are ignored by the loader and do not become history entries.
+	_, err = fmt.Fprintf(file, "\n%q\n", s)
 	if err != nil {
 		slog.Error("failed to write to history file", "file", p.filename, "err", err)
 	}

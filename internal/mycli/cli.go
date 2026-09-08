@@ -386,7 +386,9 @@ func (c *Cli) PrintResult(screenWidth int, result *Result, interactive bool, inp
 		w = c.GetWriter()
 	}
 
-	sink := c.newResultSink(w, input)
+	// PrintResult has no statement context; pager lifetime is stdin EOF plus
+	// Wait. executeStatement passes its cancellable context instead.
+	sink := c.newResultSink(context.Background(), w, input)
 	if err := printResult(c.SystemVariables, screenWidth, sink, result, interactive); err != nil {
 		sink.abort()
 		return err
@@ -547,7 +549,7 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 	outW := w
 	var sink *resultSink
 	if !isMetaCommand {
-		sink = c.newResultSink(w, input)
+		sink = c.newResultSink(ctx, w, input)
 		// On the error path abort() closes a fence opened by already-streamed
 		// rows and releases the pager; if nothing was written it stays silent.
 		defer sink.abort()

@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -38,7 +39,10 @@ import (
 	"github.com/apstndb/spanner-mycli/internal/mycli/format"
 	"github.com/apstndb/spanner-mycli/internal/mycli/streamio"
 
+	"google.golang.org/protobuf/encoding/prototext"
+	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/testing/protocmp"
+	"google.golang.org/protobuf/types/dynamicpb"
 
 	"cloud.google.com/go/spanner"
 	"github.com/google/go-cmp/cmp"
@@ -943,6 +947,64 @@ func TestSetLocalStatements(t *testing.T) {
 	runStatementTests(t, tests)
 }
 
+func TestOrdinarySetAfterSetLocalEnds(t *testing.T) {
+	showFormat := func(want string) stmtResult {
+		return sr("SHOW VARIABLE CLI_FORMAT", &Result{
+			KeepVariables: true,
+			TableHeader:   toTableHeader("CLI_FORMAT"),
+			Rows:          sliceOf(toRow(want)),
+		})
+	}
+	tests := []statementTestCase{
+		{
+			desc: "ordinary SET after SET LOCAL survives COMMIT of a read-write transaction",
+			stmtResults: []stmtResult{
+				srEmpty(testTableSimpleDDL),
+				srEmpty("BEGIN RW"),
+				srKeep("SET LOCAL CLI_FORMAT = 'CSV'"),
+				srKeep("SET CLI_FORMAT = 'JSONL'"),
+				showFormat("JSONL"),
+				srDML("INSERT INTO TestTable (id, active) VALUES (1, true)", 1),
+				srEmpty("COMMIT"),
+				showFormat("JSONL"),
+			},
+		},
+		{
+			desc: "ordinary SET after SET LOCAL survives ROLLBACK of a read-write transaction",
+			stmtResults: []stmtResult{
+				srEmpty("BEGIN RW"),
+				srKeep("SET LOCAL CLI_FORMAT = 'CSV'"),
+				srKeep("SET CLI_FORMAT = 'JSONL'"),
+				srEmpty("ROLLBACK"),
+				showFormat("JSONL"),
+			},
+		},
+		{
+			desc: "ordinary SET after SET LOCAL survives closing a read-only transaction",
+			stmtResults: []stmtResult{
+				srEmpty("BEGIN RO"),
+				srKeep("SET LOCAL CLI_FORMAT = 'CSV'"),
+				srKeep("SET CLI_FORMAT = 'JSONL'"),
+				srEmpty("COMMIT"),
+				showFormat("JSONL"),
+			},
+		},
+		{
+			desc: "ordinary SET after SET LOCAL survives pending to active then ROLLBACK",
+			stmtResults: []stmtResult{
+				srEmpty(testTableSimpleDDL),
+				srEmpty("BEGIN"),
+				srKeep("SET LOCAL CLI_FORMAT = 'CSV'"),
+				srKeep("SET CLI_FORMAT = 'JSONL'"),
+				srDML("INSERT INTO TestTable (id, active) VALUES (1, true)", 1),
+				srEmpty("ROLLBACK"),
+				showFormat("JSONL"),
+			},
+		},
+	}
+	runStatementTests(t, tests)
+}
+
 // TestShowStatements tests SHOW, DESCRIBE, and HELP statement functionality
 func TestShowStatements(t *testing.T) {
 	tests := []statementTestCase{
@@ -1190,6 +1252,50 @@ func TestBatchStatements(t *testing.T) {
 			},
 			// No cmpOpts needed - TableHeader should be nil for batch statements
 		},
+		{
+			desc: "AUTO_BATCH_DML disable before COMMIT still flushes",
+			ddls: sliceOf(testTableSimpleDDL),
+			stmtResults: []stmtResult{
+				srKeep("SET AUTO_BATCH_DML = TRUE"),
+				srEmpty("BEGIN"),
+				{"INSERT INTO TestTable (id, active) VALUES (2, false)", &Result{AffectedRows: 0, BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}}},
+				{"SET AUTO_BATCH_DML = FALSE", &Result{KeepVariables: true, BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}}},
+				{"COMMIT", &Result{
+					IsExecutedDML: true,
+					AffectedRows:  1,
+					TableHeader:   toTableHeader("DML", "Rows"),
+					Rows:          sliceOf(toRow("INSERT INTO TestTable (id, active) VALUES (2, false)", "1")),
+				}},
+				{"SELECT * FROM TestTable ORDER BY id", &Result{
+					AffectedRows: 1,
+					TableHeader:  toTableHeader(testTableRowType),
+					Rows:         sliceOf(toRow("2", "false")),
+				}},
+			},
+		},
+		{
+			desc: "AUTO_BATCH_DML rollback does not resurrect queued DML",
+			ddls: sliceOf(testTableSimpleDDL),
+			stmtResults: []stmtResult{
+				srKeep("SET AUTO_BATCH_DML = TRUE"),
+				srEmpty("BEGIN"),
+				{"INSERT INTO TestTable (id, active) VALUES (1, true)", &Result{AffectedRows: 0, BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}}},
+				srEmpty("ROLLBACK"),
+				srEmpty("BEGIN"),
+				{"INSERT INTO TestTable (id, active) VALUES (2, false)", &Result{AffectedRows: 0, BatchInfo: &BatchInfo{Mode: batchModeDML, Size: 1}}},
+				{"COMMIT", &Result{
+					IsExecutedDML: true,
+					AffectedRows:  1,
+					TableHeader:   toTableHeader("DML", "Rows"),
+					Rows:          sliceOf(toRow("INSERT INTO TestTable (id, active) VALUES (2, false)", "1")),
+				}},
+				{"SELECT * FROM TestTable ORDER BY id", &Result{
+					AffectedRows: 1,
+					TableHeader:  toTableHeader(testTableRowType),
+					Rows:         sliceOf(toRow("2", "false")),
+				}},
+			},
+		},
 	}
 
 	runStatementTests(t, tests)
@@ -1347,6 +1453,56 @@ func TestProtoStatements(t *testing.T) {
 	}
 
 	runStatementTests(t, tests)
+}
+
+func TestImportedProtoStatements(t *testing.T) {
+	t.Parallel()
+	skipIfShortIntegration(t)
+	dir := t.TempDir()
+	child := writeProtoSource(t, filepath.Join(dir, "child.proto"), `syntax="proto3"; package imported; message Child { string value=1; }`)
+	root := writeProtoSource(t, filepath.Join(dir, "root.proto"), fmt.Sprintf(`syntax="proto3"; package imported; import %q; message Root { Child child=1; }`, child))
+	_, session := initializeWithRandomDB(t, nil, nil)
+	handler := NewSessionHandler(session)
+	execute := func(sql string) *Result {
+		t.Helper()
+		stmt, err := BuildStatementWithCommentsWithMode(sql, sql, enums.ParseModeNoMemefish)
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, err := handler.ExecuteStatement(t.Context(), stmt)
+		if err != nil {
+			t.Fatalf("%s: %v", sql, err)
+		}
+		return result
+	}
+	execute(fmt.Sprintf("SET CLI_PROTO_DESCRIPTOR_FILE = %q", root))
+	execute("CREATE PROTO BUNDLE (`imported.Root`, `imported.Child`)")
+	execute("CREATE TABLE ProtoRows (Id INT64 NOT NULL, P imported.Root) PRIMARY KEY (Id)")
+	execute(`INSERT INTO ProtoRows (Id, P) VALUES (1, CAST('child { value: "kept" }' AS imported.Root))`)
+	result := execute("SELECT P FROM ProtoRows WHERE Id = 1")
+	if result.AffectedRows != 1 || result.Typed == nil || len(result.Typed.Rows) != 1 {
+		t.Fatalf("proto query returned no value: %+v", result)
+	}
+	rows, err := deriveDisplayRows(session.systemVariables, result.Typed)
+	if err != nil || len(rows) != 1 || len(rows[0]) != 1 {
+		t.Fatalf("CLI proto display rows = %v, err=%v", rows, err)
+	}
+	files := requireUsableDescriptor(t, session.systemVariables.Internal.ProtoDescriptor)
+	desc, err := files.FindDescriptorByName("imported.Root")
+	if err != nil {
+		t.Fatal(err)
+	}
+	message := dynamicpb.NewMessage(desc.(protoreflect.MessageDescriptor))
+	// Parse the actual CLI decoder output, not only the SDK response or local
+	// descriptor registry. Text-format whitespace is not part of the contract.
+	decoded := rows[0][0].RawText()
+	if err := prototext.Unmarshal([]byte(decoded), message); err != nil {
+		t.Fatalf("decoded proto text = %q: %v", decoded, err)
+	}
+	childMessage := message.Get(message.Descriptor().Fields().ByName("child")).Message()
+	if got := childMessage.Get(childMessage.Descriptor().Fields().ByName("value")).String(); got != "kept" {
+		t.Fatalf("imported proto field = %q, want kept", got)
+	}
 }
 
 func TestAdminStatements(t *testing.T) {
@@ -1735,10 +1891,11 @@ func TestReadWriteTransaction(t *testing.T) {
 		}
 
 		// first query
-		query := spanner.NewStatement("SELECT id, active FROM tbl")
-		iter := session.client.Single().Query(ctx, query)
-		defer iter.Stop()
-		if _, err := iter.Next(); err != nil {
+		stmt, err = BuildStatement("SELECT id, active FROM tbl")
+		if err != nil {
+			t.Fatalf("invalid statement: error=%s", err)
+		}
+		if _, err := stmt.Execute(ctx, session); err != nil {
 			t.Fatalf("unexpected error happened: %s", err)
 		}
 
@@ -1752,11 +1909,19 @@ func TestReadWriteTransaction(t *testing.T) {
 		time.Sleep(10 * time.Second)
 
 		// second query
-		query = spanner.NewStatement("SELECT id, active FROM tbl")
-		iter = session.client.Single().Query(ctx, query)
-		defer iter.Stop()
-		if _, err := iter.Next(); err != nil {
+		query := spanner.NewStatement("SELECT id, active FROM tbl")
+		err = session.txn.withReadWriteTransaction(func(tx *spanner.ReadWriteStmtBasedTransaction) error {
+			iter := tx.Query(ctx, query)
+			defer iter.Stop()
+			_, err := iter.Next()
+			return err
+		})
+		if err != nil {
 			t.Fatalf("error should not happen: %s", err)
+		}
+
+		if _, err := session.txn.CommitReadWriteTransaction(ctx); err != nil {
+			t.Fatalf("failed to commit heartbeat-kept transaction: %s", err)
 		}
 	})
 }

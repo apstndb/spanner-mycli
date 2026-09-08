@@ -162,59 +162,90 @@ func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, resul
 
 	if len(result.Appendices) > 0 {
 		for _, appendix := range result.Appendices {
-			printResultAppendix(out, appendix)
+			if err := printResultAppendix(out, appendix); err != nil {
+				return err
+			}
 		}
 	} else if len(result.Predicates) > 0 {
-		fmt.Fprintln(out, "Predicates(identified by ID):")
-		for _, s := range result.Predicates {
-			fmt.Fprintf(out, " %s\n", s)
+		if _, err := fmt.Fprintln(out, "Predicates(identified by ID):"); err != nil {
+			return err
 		}
-		fmt.Fprintln(out)
+		for _, s := range result.Predicates {
+			if _, err := fmt.Fprintf(out, " %s\n", s); err != nil {
+				return err
+			}
+		}
+		if _, err := fmt.Fprintln(out); err != nil {
+			return err
+		}
 	}
 
 	if len(result.LintResults) > 0 {
-		fmt.Fprintln(out, "Experimental Lint Result:")
-		for _, s := range result.LintResults {
-			fmt.Fprintf(out, " %s\n", s)
+		if _, err := fmt.Fprintln(out, "Experimental Lint Result:"); err != nil {
+			return err
 		}
-		fmt.Fprintln(out)
+		for _, s := range result.LintResults {
+			if _, err := fmt.Fprintf(out, " %s\n", s); err != nil {
+				return err
+			}
+		}
+		if _, err := fmt.Fprintln(out); err != nil {
+			return err
+		}
 	}
 
 	if len(result.IndexAdvice) > 0 {
-		fmt.Fprintln(out, "Query Advisor Recommendations:")
+		if _, err := fmt.Fprintln(out, "Query Advisor Recommendations:"); err != nil {
+			return err
+		}
 		for _, advice := range result.IndexAdvice {
 			for _, ddl := range advice.DDL {
 				if advice.ImprovementFactor > 0 {
-					fmt.Fprintf(out, "  %s  -- Est. improvement: %.2f%%\n", ddl, (1-1/advice.ImprovementFactor)*100)
+					if _, err := fmt.Fprintf(out, "  %s  -- Est. improvement: %.2f%%\n", ddl, (1-1/advice.ImprovementFactor)*100); err != nil {
+						return err
+					}
 				} else {
-					fmt.Fprintf(out, "  %s\n", ddl)
+					if _, err := fmt.Fprintf(out, "  %s\n", ddl); err != nil {
+						return err
+					}
 				}
 			}
 		}
-		fmt.Fprintln(out)
+		if _, err := fmt.Fprintln(out); err != nil {
+			return err
+		}
 	}
 
 	// Only print result line if not suppressed
 	if !sysVars.Display.SuppressResultLines && (sysVars.Display.Verbose || result.ForceVerbose || interactive) {
-		fmt.Fprint(out, resultLine(sysVars.Display.OutputTemplate, result, sysVars.Display.Verbose || result.ForceVerbose))
+		if _, err := fmt.Fprint(out, resultLine(sysVars.Display.OutputTemplate, result, sysVars.Display.Verbose || result.ForceVerbose)); err != nil {
+			return err
+		}
 	}
 
 	if sysVars.Display.CLIFormat == enums.DisplayModeTableDetailComment {
-		fmt.Fprintln(out, "*/")
+		if _, err := fmt.Fprintln(out, "*/"); err != nil {
+			return err
+		}
 	}
 
 	return nil
 }
 
-func printResultAppendix(out io.Writer, appendix ResultAppendix) {
+func printResultAppendix(out io.Writer, appendix ResultAppendix) error {
 	if len(appendix.Lines) == 0 {
-		return
+		return nil
 	}
-	fmt.Fprintln(out, appendix.Title)
+	if _, err := fmt.Fprintln(out, appendix.Title); err != nil {
+		return err
+	}
 	for _, s := range appendix.Lines {
-		fmt.Fprintf(out, " %s\n", s)
+		if _, err := fmt.Fprintf(out, " %s\n", s); err != nil {
+			return err
+		}
 	}
-	fmt.Fprintln(out)
+	_, err := fmt.Fprintln(out)
+	return err
 }
 
 type OutputContext struct {

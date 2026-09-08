@@ -27,6 +27,7 @@ import (
 	"github.com/bufbuild/protocompile"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"google.golang.org/protobuf/reflect/protodesc"
+	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/reflect/protoregistry"
 
 	"google.golang.org/protobuf/proto"
@@ -65,6 +66,11 @@ type StartupConfig struct {
 	MCP                       bool   // CLI_MCP
 	SkipSystemCommand         bool   // CLI_SKIP_SYSTEM_COMMAND
 
+	// EmbeddedLogLevel is the --log-level value parsed at startup. It gates
+	// embedded runtime container lifecycle logs and is not CLI_LOG_LEVEL:
+	// --set and later SQL SET must not change it.
+	EmbeddedLogLevel slog.Level
+
 	// Credential holds the raw --credential file bytes, if any. It is the durable
 	// home for the credential (read-only, not a registered variable): features
 	// that build non-Spanner clients read it via Session.CredentialBytes(), and
@@ -101,25 +107,27 @@ type LastResult struct {
 
 // DisplayVars holds display and output formatting configuration.
 type DisplayVars struct {
-	CLIFormat                  enums.DisplayMode   // CLI_FORMAT
-	Verbose                    bool                // CLI_VERBOSE
-	Prompt                     string              // CLI_PROMPT
-	Prompt2                    string              // CLI_PROMPT2
-	HistoryFile                string              // CLI_HISTORY_FILE
-	TabWidth                   int64               // CLI_TAB_WIDTH
-	TabVisualize               bool                // CLI_TAB_VISUALIZE
-	EnableHighlight            bool                // CLI_ENABLE_HIGHLIGHT
-	UsePager                   bool                // CLI_USE_PAGER
-	AutoWrap                   bool                // CLI_AUTOWRAP
-	FixedWidth                 *int64              // CLI_FIXED_WIDTH
-	MultilineProtoText         bool                // CLI_PROTOTEXT_MULTILINE
-	MarkdownCodeblock          bool                // CLI_MARKDOWN_CODEBLOCK
-	SkipColumnNames            bool                // CLI_SKIP_COLUMN_NAMES
-	SuppressResultLines        bool                // CLI_SUPPRESS_RESULT_LINES
-	ExplainFormat              enums.ExplainFormat // CLI_EXPLAIN_FORMAT
-	ExplainWrapWidth           int64               // CLI_EXPLAIN_WRAP_WIDTH
-	ExplainHangingIndent       bool                // CLI_EXPLAIN_HANGING_INDENT
-	ExplainPrintSections       string              // CLI_EXPLAIN_PRINT_SECTIONS
+	DumpCyclicMode             enums.DumpCyclicMode // CLI_DUMP_CYCLIC_MODE
+	DumpCyclicMaxBytes         int64                // CLI_DUMP_CYCLIC_MAX_BYTES
+	CLIFormat                  enums.DisplayMode    // CLI_FORMAT
+	Verbose                    bool                 // CLI_VERBOSE
+	Prompt                     string               // CLI_PROMPT
+	Prompt2                    string               // CLI_PROMPT2
+	HistoryFile                string               // CLI_HISTORY_FILE
+	TabWidth                   int64                // CLI_TAB_WIDTH
+	TabVisualize               bool                 // CLI_TAB_VISUALIZE
+	EnableHighlight            bool                 // CLI_ENABLE_HIGHLIGHT
+	UsePager                   bool                 // CLI_USE_PAGER
+	AutoWrap                   bool                 // CLI_AUTOWRAP
+	FixedWidth                 *int64               // CLI_FIXED_WIDTH
+	MultilineProtoText         bool                 // CLI_PROTOTEXT_MULTILINE
+	MarkdownCodeblock          bool                 // CLI_MARKDOWN_CODEBLOCK
+	SkipColumnNames            bool                 // CLI_SKIP_COLUMN_NAMES
+	SuppressResultLines        bool                 // CLI_SUPPRESS_RESULT_LINES
+	ExplainFormat              enums.ExplainFormat  // CLI_EXPLAIN_FORMAT
+	ExplainWrapWidth           int64                // CLI_EXPLAIN_WRAP_WIDTH
+	ExplainHangingIndent       bool                 // CLI_EXPLAIN_HANGING_INDENT
+	ExplainPrintSections       string               // CLI_EXPLAIN_PRINT_SECTIONS
 	ParsedExplainPrintSections planref.PrintSections
 	OutputTemplateFile         string // CLI_OUTPUT_TEMPLATE_FILE (computed getter/setter)
 	OutputTemplate             *template.Template
@@ -184,7 +192,7 @@ type FeatureVars struct {
 	EchoInput              bool                       // CLI_ECHO_INPUT
 	AsyncDDL               bool                       // CLI_ASYNC_DDL
 	AutoConnectAfterCreate bool                       // CLI_AUTO_CONNECT_AFTER_CREATE
-	LogLevel               slog.Level                 // CLI_LOG_LEVEL
+	LogLevel               slog.Level                 // CLI_LOG_LEVEL (session-reported; runtime threshold is runtimeLogLevel when bound)
 	DatabaseDialect        databasepb.DatabaseDialect // CLI_DATABASE_DIALECT
 }
 
@@ -225,11 +233,23 @@ type systemVariables struct {
 	// nil means no session has been created yet.
 	inTransaction func() bool
 
+	// transactionTagView and setTransactionTagSlot are bound to the live
+	// TransactionManager. nil means no session has been created yet, so the
+	// TRANSACTION_TAG slot is accessed directly.
+	transactionTagView    func() string
+	setTransactionTagSlot func(string) error
+
 	// StreamManager manages tee output functionality
 	StreamManager *streamio.StreamManager
 
 	// Registry holds the system variable registry
 	Registry *VarRegistry
+
+	// runtimeLogLevel, when non-nil, is the process slog.LevelVar backing the
+	// CLI-owned default handler. Isolated fixtures leave it nil so Registry.Set
+	// does not mutate slog.Default. Bound by createSystemVariablesFromOptions
+	// before the first registry build. Do not copy a live systemVariables.
+	runtimeLogLevel *slog.LevelVar
 
 	// featureVarDefs holds the varDefs converted from feature-contributed
 	// FeatureVars (issue #778). They are registered alongside the core varDefs
@@ -331,9 +351,12 @@ func (sv *systemVariables) ProjectPath() string {
 func newSystemVariablesWithDefaults() systemVariables {
 	sv := systemVariables{
 		Config: StartupConfig{
-			EnableADCPlus: true,
+			EnableADCPlus:    true,
+			EmbeddedLogLevel: slog.LevelWarn,
 		},
 		Display: DisplayVars{
+			DumpCyclicMode:             enums.DumpCyclicModeReject,
+			DumpCyclicMaxBytes:         64 << 20,
 			CLIFormat:                  enums.DisplayModeTable, // Default to TABLE format
 			AnalyzeColumns:             DefaultAnalyzeColumns,
 			ParsedAnalyzeColumns:       DefaultParsedAnalyzeColumns,
@@ -481,7 +504,10 @@ func mergeFDS(left, right *descriptorpb.FileDescriptorSet) *descriptorpb.FileDes
 	result := slices.Clone(left.GetFile())
 	for _, fd := range right.GetFile() {
 		idx := slices.IndexFunc(result, func(descriptorProto *descriptorpb.FileDescriptorProto) bool {
-			return descriptorProto.GetPackage() == fd.GetPackage() && descriptorProto.GetName() == fd.GetName()
+			// File names, not package/name pairs, identify protobuf files. Later
+			// inputs replace earlier versions; the complete graph is validated
+			// before installation, including references affected by replacement.
+			return descriptorProto.GetName() == fd.GetName()
 		})
 		if idx != -1 {
 			result[idx] = fd
@@ -522,9 +548,25 @@ func readFileDescriptorProtoFromFile(filename string) (*descriptorpb.FileDescrip
 			return nil, err
 		}
 
-		return &descriptorpb.FileDescriptorSet{
-			File: sliceOf(protodesc.ToFileDescriptorProto(files.FindFileByPath(filename))),
-		}, nil
+		// Compile returns roots with linked imports, not a flat descriptor set.
+		// Export each dependency once, in dependency-first declared import order,
+		// so both the decoder and the DDL request can resolve the same graph.
+		var result descriptorpb.FileDescriptorSet
+		seen := make(map[string]bool)
+		var visit func(protoreflect.FileDescriptor)
+		visit = func(file protoreflect.FileDescriptor) {
+			if seen[file.Path()] {
+				return
+			}
+			seen[file.Path()] = true
+			imports := file.Imports()
+			for i := range imports.Len() {
+				visit(imports.Get(i).FileDescriptor)
+			}
+			result.File = append(result.File, protodesc.ToFileDescriptorProto(file))
+		}
+		visit(files.FindFileByPath(filename))
+		return &result, nil
 	}
 
 	var b []byte
