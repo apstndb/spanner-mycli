@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/MakeNowJust/heredoc/v2"
@@ -86,16 +85,22 @@ func mcpApplicationErrorResult(text string) *mcp.CallToolResult {
 
 // executeStatementHandler handles the execute_statement tool
 func executeStatementHandler(cli *Cli) func(context.Context, *mcp.CallToolRequest, ExecuteStatementArgs) (*mcp.CallToolResult, any, error) {
-	// Mutex to protect concurrent access to cli.executeStatement
-	// Note: This coarse-grained mutex serializes all MCP requests, which is acceptable
-	// because spanner-mycli's MCP server is designed for single-client use only.
-	var mu sync.Mutex
+	// Serialize parsing and execution, including local session mutations, while
+	// allowing cancelled requests to leave the queue before the current call ends.
+	gate := make(chan struct{}, 1)
 
 	return func(ctx context.Context, req *mcp.CallToolRequest, params ExecuteStatementArgs) (*mcp.CallToolResult, any, error) {
-		// Protect concurrent access with mutex for the entire operation
-		// This ensures parseStatement and executeStatement are atomic
-		mu.Lock()
-		defer mu.Unlock()
+		select {
+		case gate <- struct{}{}:
+			defer func() { <-gate }()
+		case <-ctx.Done():
+			return mcpApplicationErrorResult(fmt.Sprintf("ERROR: %v", ctx.Err())), nil, nil
+		}
+		// Cancellation and an available slot may both be ready. Do not parse or
+		// execute a cancelled call merely because select chose the slot.
+		if err := ctx.Err(); err != nil {
+			return mcpApplicationErrorResult(fmt.Sprintf("ERROR: %v", err)), nil, nil
+		}
 
 		start := time.Now()
 

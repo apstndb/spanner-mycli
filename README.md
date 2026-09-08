@@ -33,6 +33,7 @@ There are differences between spanner-mycli and spanner-cli that include not onl
   * Experimental Cassandra interface support as `CQL <cql>` statement.
   * Support split points.
   * Run as MCP (Model Context Protocol) server (EXPERIMENTAL, `--mcp`). See [Model Context Protocol](https://modelcontextprotocol.io/introduction) for more information.
+    * Statement calls are serialized. Calls cancelled while waiting do not execute; cancellation after execution starts does not guarantee rollback.
 * Respects training and verification use-cases.
   * gRPC logging(`--log-grpc`)
   * Support mutations
