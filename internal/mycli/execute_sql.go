@@ -77,7 +77,7 @@ func prepareFormatConfig(sql string, sysVars *systemVariables) (*spanvalue.Forma
 	case format.SQLLiteralValues:
 		// Use SQL literal formatting for modes that declared SQLLiteralValues
 		// LiteralFormatConfig formats values as valid Spanner SQL literals
-		fc := spanvalue.LiteralFormatConfig()
+		fc := sqlLiteralFormatConfig()
 
 		// Auto-detect table name if not explicitly set
 		if sysVars.Display.SQLTableName == "" {
@@ -108,6 +108,27 @@ func prepareFormatConfig(sql string, sysVars *systemVariables) (*spanvalue.Forma
 		fc, err := decoder.FormatConfigWithProto(sysVars.Internal.ProtoDescriptor, sysVars.Display.MultilineProtoText)
 		return fc, vfm, sysVars, err
 	}
+}
+
+// sqlLiteralFormatConfig keeps SQL export and typed replay on the same policy.
+func sqlLiteralFormatConfig() *spanvalue.FormatConfig {
+	// spanvalue v0.8.4 emits CAST(-0 AS FLOAT32), whose integer operand loses
+	// the sign on replay. Remove this bridge after adopting an upstream version
+	// that preserves FLOAT32 negative zero. A typed plugin also covers nested
+	// values without rewriting matching text inside STRING or JSON literals.
+	return spanvalue.LiteralFormatConfig().WithComplexPlugin(spanvalue.PluginForTypeCode(
+		sppb.TypeCode_FLOAT32,
+		func(_ spanvalue.Formatter, value spanner.GenericColumnValue, _ bool) (string, error) {
+			var f spanner.NullFloat32
+			if err := value.Decode(&f); err != nil {
+				return "", err
+			}
+			if f.Valid && f.Float32 == 0 && math.Signbit(float64(f.Float32)) {
+				return "CAST(-0.0 AS FLOAT32)", nil
+			}
+			return "", spanvalue.ErrFallthrough
+		},
+	))
 }
 
 // newMetrics creates and initializes execution metrics from system variables.

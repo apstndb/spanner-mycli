@@ -36,7 +36,7 @@ func typedReplayFormatConfig(sysVars *systemVariables) (*spanvalue.FormatConfig,
 	vfm := format.ValueFormatModeFor(format.Mode(sysVars.Display.CLIFormat.String()))
 	switch vfm {
 	case format.SQLLiteralValues:
-		return spanvalue.LiteralFormatConfig(), vfm, nil
+		return sqlLiteralFormatConfig(), vfm, nil
 	case format.JSONValues:
 		return decoder.JSONFormatConfig(), vfm, nil
 	default:
