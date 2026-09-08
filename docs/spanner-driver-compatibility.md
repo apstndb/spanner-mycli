@@ -56,7 +56,7 @@ says otherwise; `java-spanner` versions are given where known.
 | `max_partitions` | yes | yes | not implemented (candidate gap) |
 | `default_sequence_kind` + auto-set on DDL failure | yes (v1.26.0) | JDBC/PGAdapter auto-set v6.88.0; `CREATE SEQUENCE` v6.102.0 | not implemented (candidate gap; both reference drivers converged) |
 | `max_commit_delay` | yes | yes | `MAX_COMMIT_DELAY` implemented |
-| `proto_descriptors` / `proto_descriptors_file_path` | via properties | java-spanner properties | `CLI_PROTO_DESCRIPTOR_FILE` implemented; rename tracked #487, in-memory descriptor var tracked #295 |
+| `proto_descriptors` / `proto_descriptors_file_path` | via properties | java-spanner properties | `PROTO_DESCRIPTORS` (inline base64 graph) and `PROTO_DESCRIPTORS_FILE_PATH` (SET/SHOW plus ADD, source compilation and HTTP(S) extensions) implemented; session-persistent graph, not full Java lifecycle parity. Neither supports SET LOCAL. |
 | `ddlInTransactionMode` | — | java-spanner property | not implemented, tracked #402 |
 | Inactive-transaction action | — | java-spanner property | not implemented, tracked #403 |
 | Statement-scoped connection state (`SET LOCAL`-style) | yes (v1.22.0) | JDBC `SET LOCAL` | implemented (see `SET LOCAL` below, #691) |

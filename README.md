@@ -1004,6 +1004,7 @@ For how these and other connection properties map to the official Spanner driver
 | DEFAULT_ISOLATION_LEVEL         | READ_WRITE | `REPEATABLE_READ`                                    |
 | STATEMENT_TIMEOUT               | READ_WRITE | `"10m"`                                             |
 | DIRECTED_READ                   | READ_WRITE | `"us-central1:READ_ONLY"`                           |
+| PROTO_DESCRIPTORS_FILE_PATH      | READ_WRITE | `"order_descriptors.pb"`                             |
 
 #### spanner-mycli original variables
 
@@ -1021,7 +1022,6 @@ For how these and other connection properties map to the official Spanner driver
 | CLI_PROMPT2                | READ_WRITE | `"%P%R> "`                                     |
 | CLI_ROLE                   | READ_ONLY  | `"spanner_info_reader"`                        |
 | CLI_VERBOSE                | READ_WRITE | `TRUE`                                         |
-| CLI_PROTO_DESCRIPTOR_FILE  | READ_WRITE | `"order_descriptors.pb"`                       |
 | CLI_PARSE_MODE             | READ_WRITE | `"FALLBACK"`                                   |
 | CLI_INSECURE               | READ_ONLY  | `"FALSE"`                                      |
 | CLI_QUERY_MODE             | READ_WRITE | `"PROFILE"`                                    |
@@ -1278,7 +1278,7 @@ spanner> SHOW LOCAL PROTO;
 +---------------------------------+-------+-------------------+--------------------+
 4 rows in set (0.00 sec)
 
-spanner> SET CLI_PROTO_DESCRIPTOR_FILE += "testdata/protos/query_plan_descriptors.pb";
+spanner> SET PROTO_DESCRIPTORS_FILE_PATH += "testdata/protos/query_plan_descriptors.pb";
 Empty set (0.00 sec)
 
 spanner> SHOW LOCAL PROTO;
@@ -1341,18 +1341,24 @@ spanner> SHOW REMOTE PROTO;
 1 rows in set (0.79 sec)
 ```
 
-You can also use `CLI_PROTO_DESCRIPTOR_FILE` system variable to update or read the current proto descriptor file setting.
+You can also use `PROTO_DESCRIPTORS_FILE_PATH` system variable to update or read the current proto descriptor file setting.
+
+This replaces `CLI_PROTO_DESCRIPTOR_FILE`; the old variable name is no longer
+accepted. Update SQL scripts and `--set` entries to the new name. The
+`--proto-descriptor-file` flag and its configuration-file setting are unchanged.
+ADD, `.proto` compilation, and HTTP(S) loading remain supported. `SET LOCAL`
+is not supported because restoring the value would reload external files.
 
 ```
-spanner> SET CLI_PROTO_DESCRIPTOR_FILE = "./other_descriptors.pb";
+spanner> SET PROTO_DESCRIPTORS_FILE_PATH = "./other_descriptors.pb";
 Empty set (0.00 sec)
 
-spanner> SHOW VARIABLE CLI_PROTO_DESCRIPTOR_FILE;
-+---------------------------+
-| CLI_PROTO_DESCRIPTOR_FILE |
-+---------------------------+
-| ./other_descriptors.pb    |
-+---------------------------+
+spanner> SHOW VARIABLE PROTO_DESCRIPTORS_FILE_PATH;
++-----------------------------+
+| PROTO_DESCRIPTORS_FILE_PATH |
++-----------------------------+
+| ./other_descriptors.pb       |
++-----------------------------+
 Empty set (0.00 sec)
 ```
 
@@ -1361,7 +1367,7 @@ Empty set (0.00 sec)
 (EXPERIMENTAL) It also supports non-compiled `.proto` files, including their transitive imports and standard protobuf imports.
 
 Comma-separated inputs are merged into one descriptor graph before validation,
-both for `--proto-descriptor-file` and `SET CLI_PROTO_DESCRIPTOR_FILE`. Later
+both for `--proto-descriptor-file` and `SET PROTO_DESCRIPTORS_FILE_PATH`. Later
 inputs replace earlier descriptors with the same protobuf file name; file names
 must therefore identify the intended version, even if its package changes.
 The resulting graph must resolve all imports and symbols. Failed `SET` or `ADD`
@@ -1370,7 +1376,7 @@ descriptor fragments must be supplied together in one `SET`, not as incomplete
 intermediate `ADD` operations.
 
 ```
-spanner> SET CLI_PROTO_DESCRIPTOR_FILE = "testdata/protos/order_protos.proto";
+spanner> SET PROTO_DESCRIPTORS_FILE_PATH = "testdata/protos/order_protos.proto";
 Empty set (0.00 sec)
 
 spanner> SHOW LOCAL PROTO;
@@ -1394,7 +1400,7 @@ encoding. Local filenames keep ordinary extension semantics and are not parsed
 as URLs.
 
 ```
-spanner> SET CLI_PROTO_DESCRIPTOR_FILE = "https://github.com/apstndb/spanner-mycli/raw/refs/heads/main/testdata/protos/order_descriptors.pb";
+spanner> SET PROTO_DESCRIPTORS_FILE_PATH = "https://github.com/apstndb/spanner-mycli/raw/refs/heads/main/testdata/protos/order_descriptors.pb";
 Empty set (0.68 sec)
 
 [gcpug-public-spanner:merpay-sponsored-instance:apstndb-sampledb3]
@@ -1543,7 +1549,7 @@ spanner> SELECT p, p.*
 +----------------------------------+-----------+------------+-------------+-------------+
 1 rows in set (0.33 msecs)
 
-spanner> SET CLI_PROTO_DESCRIPTOR_FILE += "testdata/protos/singer.proto";
+spanner> SET PROTO_DESCRIPTORS_FILE_PATH += "testdata/protos/singer.proto";
 Empty set (0.00 sec)
 
 spanner> SHOW LOCAL PROTO;

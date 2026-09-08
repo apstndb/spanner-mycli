@@ -92,7 +92,7 @@ read-only), `scopeConnection` (connection identity, read-only), `scopeResult`
 	},
 },
 
-// ADD support: set bindAdd to construct the ADD handler (see CLI_PROTO_DESCRIPTOR_FILE)
+// ADD support: set bindAdd to construct the ADD handler (see PROTO_DESCRIPTORS_FILE_PATH)
 ```
 
 ### Session-init-only variables

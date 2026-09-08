@@ -485,6 +485,11 @@ Predicates(identified by ID):
 When you want to adjust the width, such as when displaying an execution plan on media where horizontal scrolling is not possible and content might be truncated or wrapped,
 you can use the `WIDTH=<width>` option to wrap the content of the `Operator` column at the specified width.
 
+Both `EXPLAIN` and `EXPLAIN ANALYZE` shorten the operator header to `Operator`
+when the effective wrap width is narrower than the full header. The effective
+width comes from `WIDTH` or, when omitted or zero, `CLI_EXPLAIN_WRAP_WIDTH`.
+This controls the operator column, not the total table width.
+
 For example, in the illustration below, by setting the width of the ASCII tree drawn in the Operator column to 39 characters,
 the entire output, including the ASCII table, can fit within 80 characters.
 

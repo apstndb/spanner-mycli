@@ -159,7 +159,7 @@ type SetAddStatement struct {
 func (s *SetAddStatement) isDetachedCompatible() {}
 
 func (s *SetAddStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	// The only ADD handler is CLI_PROTO_DESCRIPTOR_FILE, which is noLocal, so
+	// The only ADD handler is PROTO_DESCRIPTORS_FILE_PATH, which is noLocal, so
 	// SET += cannot retire SET LOCAL undo. Do not hook ADD into that lifecycle.
 	if err := session.systemVariables.AddFromGoogleSQL(s.VarName, s.Value); err != nil {
 		return nil, err

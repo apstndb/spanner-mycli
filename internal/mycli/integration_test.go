@@ -1379,7 +1379,7 @@ func TestProtoStatements(t *testing.T) {
 		{
 			desc: "SHOW LOCAL PROTO with pb file",
 			stmtResults: []stmtResult{
-				srKeep(`SET CLI_PROTO_DESCRIPTOR_FILE = "testdata/protos/order_descriptors.pb"`),
+				srKeep(`SET PROTO_DESCRIPTORS_FILE_PATH = "testdata/protos/order_descriptors.pb"`),
 				{
 					stmt: `SHOW LOCAL PROTO`,
 					want: &Result{
@@ -1399,7 +1399,7 @@ func TestProtoStatements(t *testing.T) {
 		{
 			desc: "SHOW LOCAL PROTO with proto file",
 			stmtResults: []stmtResult{
-				srKeep(`SET CLI_PROTO_DESCRIPTOR_FILE = "testdata/protos/singer.proto"`),
+				srKeep(`SET PROTO_DESCRIPTORS_FILE_PATH = "testdata/protos/singer.proto"`),
 				{
 					stmt: `SHOW LOCAL PROTO`,
 					want: &Result{
@@ -1444,7 +1444,7 @@ func TestProtoStatements(t *testing.T) {
 			// Note: CREATE/ALTER/SYNC PROTO BUNDLE still exercise the CLI session path.
 			stmtResults: []stmtResult{
 				sr("SHOW REMOTE PROTO", &Result{KeepVariables: true, TableHeader: typedStringHeader("full_name", "kind", "package")}),
-				srKeep(`SET CLI_PROTO_DESCRIPTOR_FILE = "testdata/protos/order_descriptors.pb"`),
+				srKeep(`SET PROTO_DESCRIPTORS_FILE_PATH = "testdata/protos/order_descriptors.pb"`),
 				srEmpty("CREATE PROTO BUNDLE (`examples.shipping.Order`)"),
 				srEmpty("ALTER PROTO BUNDLE DELETE (`examples.shipping.Order`)"),
 				srEmpty("SYNC PROTO BUNDLE DELETE (`examples.shipping.Order`)"),
@@ -1475,7 +1475,7 @@ func TestImportedProtoStatements(t *testing.T) {
 		}
 		return result
 	}
-	execute(fmt.Sprintf("SET CLI_PROTO_DESCRIPTOR_FILE = %q", root))
+	execute(fmt.Sprintf("SET PROTO_DESCRIPTORS_FILE_PATH = %q", root))
 	execute("CREATE PROTO BUNDLE (`imported.Root`, `imported.Child`)")
 	execute("CREATE TABLE ProtoRows (Id INT64 NOT NULL, P imported.Root) PRIMARY KEY (Id)")
 	execute(`INSERT INTO ProtoRows (Id, P) VALUES (1, CAST('child { value: "kept" }' AS imported.Root))`)
@@ -1671,22 +1671,22 @@ func TestMiscStatements(t *testing.T) {
 		{
 			desc: "SET ADD statement for CLI_PROTO_FILES",
 			stmtResults: []stmtResult{
-				srKeep(`SET CLI_PROTO_DESCRIPTOR_FILE += "testdata/protos/order_descriptors.pb"`),
+				srKeep(`SET PROTO_DESCRIPTORS_FILE_PATH += "testdata/protos/order_descriptors.pb"`),
 				{
-					stmt: `SHOW VARIABLE CLI_PROTO_DESCRIPTOR_FILE`,
+					stmt: `SHOW VARIABLE PROTO_DESCRIPTORS_FILE_PATH`,
 					want: &Result{
 						KeepVariables: true,
-						TableHeader:   toTableHeader("CLI_PROTO_DESCRIPTOR_FILE"),
+						TableHeader:   toTableHeader("PROTO_DESCRIPTORS_FILE_PATH"),
 						Rows:          sliceOf(toRow("testdata/protos/order_descriptors.pb")),
 						AffectedRows:  0,
 					},
 				},
-				srKeep(`SET CLI_PROTO_DESCRIPTOR_FILE += "testdata/protos/singer.proto"`),
+				srKeep(`SET PROTO_DESCRIPTORS_FILE_PATH += "testdata/protos/singer.proto"`),
 				{
-					stmt: `SHOW VARIABLE CLI_PROTO_DESCRIPTOR_FILE`,
+					stmt: `SHOW VARIABLE PROTO_DESCRIPTORS_FILE_PATH`,
 					want: &Result{
 						KeepVariables: true,
-						TableHeader:   toTableHeader("CLI_PROTO_DESCRIPTOR_FILE"),
+						TableHeader:   toTableHeader("PROTO_DESCRIPTORS_FILE_PATH"),
 						Rows:          sliceOf(toRow("testdata/protos/order_descriptors.pb,testdata/protos/singer.proto")),
 						AffectedRows:  0,
 					},

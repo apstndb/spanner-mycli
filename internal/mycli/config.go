@@ -514,7 +514,7 @@ func applyProtoDescriptors(sysVars *systemVariables, opts *spannerOptions) error
 	}
 	// Binary files can supply different parts of the same graph. Install the
 	// startup list as one candidate, just like a multi-input SQL SET.
-	if err := sysVars.SetFromSimple("CLI_PROTO_DESCRIPTOR_FILE", opts.ProtoDescriptorFile); err != nil {
+	if err := sysVars.SetFromSimple("PROTO_DESCRIPTORS_FILE_PATH", opts.ProtoDescriptorFile); err != nil {
 		return fmt.Errorf("error on --proto-descriptor-file, file: %v: %w", opts.ProtoDescriptorFile, err)
 	}
 	return nil

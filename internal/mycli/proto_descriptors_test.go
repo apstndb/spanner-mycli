@@ -79,7 +79,7 @@ func TestProtoDescriptorsInvalidAtomic(t *testing.T) {
 	t.Parallel()
 	sv := newSystemVariablesWithDefaultsForTest()
 	sv.ensureRegistry()
-	if err := sv.SetFromSimple("CLI_PROTO_DESCRIPTOR_FILE", "testdata/protos/order_descriptors.pb"); err != nil {
+	if err := sv.SetFromSimple("PROTO_DESCRIPTORS_FILE_PATH", "testdata/protos/order_descriptors.pb"); err != nil {
 		t.Fatal(err)
 	}
 	beforeGraph, beforeFiles := cloneDescriptorState(sv)
@@ -106,7 +106,7 @@ func TestProtoDescriptorsNoLocalAndBatchGuard(t *testing.T) {
 	session := newSessionForLocalVarTest(t)
 	ctx := t.Context()
 	sv := session.systemVariables
-	if err := sv.SetFromSimple("CLI_PROTO_DESCRIPTOR_FILE", "testdata/protos/order_descriptors.pb"); err != nil {
+	if err := sv.SetFromSimple("PROTO_DESCRIPTORS_FILE_PATH", "testdata/protos/order_descriptors.pb"); err != nil {
 		t.Fatal(err)
 	}
 	fileGraph, fileList := cloneDescriptorState(sv)
@@ -125,7 +125,7 @@ func TestProtoDescriptorsNoLocalAndBatchGuard(t *testing.T) {
 
 	inline := protoDescriptorsGoogleSQL(t, a20DescriptorSet(t))
 	for _, mode := range []batchMode{batchModeDDL, batchModeDML} {
-		if err := sv.SetFromSimple("CLI_PROTO_DESCRIPTOR_FILE", "testdata/protos/order_descriptors.pb"); err != nil {
+		if err := sv.SetFromSimple("PROTO_DESCRIPTORS_FILE_PATH", "testdata/protos/order_descriptors.pb"); err != nil {
 			t.Fatal(err)
 		}
 		beforeGraph, beforeFiles := cloneDescriptorState(sv)
@@ -157,7 +157,7 @@ func TestProtoDescriptorsFileCoexistence(t *testing.T) {
 	t.Parallel()
 	sv := newSystemVariablesWithDefaultsForTest()
 	sv.ensureRegistry()
-	if err := sv.SetFromSimple("CLI_PROTO_DESCRIPTOR_FILE", "testdata/protos/order_descriptors.pb"); err != nil {
+	if err := sv.SetFromSimple("PROTO_DESCRIPTORS_FILE_PATH", "testdata/protos/order_descriptors.pb"); err != nil {
 		t.Fatal(err)
 	}
 	fileGraph, fileList := cloneDescriptorState(sv)
@@ -180,7 +180,7 @@ func TestProtoDescriptorsFileCoexistence(t *testing.T) {
 	assertShowGraph(t, sv, inline)
 
 	orderPath := "testdata/protos/order_descriptors.pb"
-	if err := sv.AddFromSimple("CLI_PROTO_DESCRIPTOR_FILE", orderPath); err != nil {
+	if err := sv.AddFromSimple("PROTO_DESCRIPTORS_FILE_PATH", orderPath); err != nil {
 		t.Fatal(err)
 	}
 	merged := sv.Internal.ProtoDescriptor
@@ -197,13 +197,13 @@ func TestProtoDescriptorsFileCoexistence(t *testing.T) {
 		Name: proto.String("broken.proto"), Dependency: []string{"missing.proto"},
 	})
 	beforeGraph, beforeFiles := cloneDescriptorState(sv)
-	if err := sv.AddFromSimple("CLI_PROTO_DESCRIPTOR_FILE", badPath); err == nil {
+	if err := sv.AddFromSimple("PROTO_DESCRIPTORS_FILE_PATH", badPath); err == nil {
 		t.Fatal("invalid ADD succeeded")
 	}
 	assertDescriptorState(t, sv, beforeGraph, beforeFiles)
 	assertShowGraph(t, sv, beforeGraph)
 
-	if err := sv.SetFromSimple("CLI_PROTO_DESCRIPTOR_FILE", "testdata/protos/singer.proto"); err != nil {
+	if err := sv.SetFromSimple("PROTO_DESCRIPTORS_FILE_PATH", "testdata/protos/singer.proto"); err != nil {
 		t.Fatal(err)
 	}
 	replaced := sv.Internal.ProtoDescriptor
