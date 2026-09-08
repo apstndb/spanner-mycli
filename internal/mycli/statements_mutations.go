@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math/big"
 	"slices"
 	"strings"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/apstndb/spanvalue"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"github.com/cloudspannerecosystem/memefish/char"
+	"github.com/google/uuid"
 	"github.com/samber/lo"
 	loi "github.com/samber/lo/it"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -81,6 +83,10 @@ func gcvToKeyable(gcv spanner.GenericColumnValue) (any, error) {
 		return decode[time.Time](gcv)
 	case sppb.TypeCode_DATE:
 		return decode[civil.Date](gcv)
+	case sppb.TypeCode_NUMERIC:
+		return decode[big.Rat](gcv)
+	case sppb.TypeCode_UUID:
+		return decode[uuid.UUID](gcv)
 	default:
 		s, err := spanvalue.FormatColumnLiteral(gcv)
 		if err != nil {
