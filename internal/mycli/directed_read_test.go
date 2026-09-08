@@ -19,7 +19,6 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 )
 
@@ -80,12 +79,12 @@ func TestDirectedReadSetShowClearAndUnknownNames(t *testing.T) {
 		t.Errorf("SHOW after region-only SET = %q, want us-east1", got["DIRECTED_READ"])
 	}
 
-	original := cloneDirectedRead(sysVars.Query.DirectedRead)
+	original := sysVars.Query.DirectedRead
 	if err := sysVars.SetFromSimple("DIRECTED_READ", "us-east1:NOT_A_TYPE"); err == nil {
 		t.Fatal("invalid SET succeeded")
 	}
-	if diff := cmp.Diff(original, sysVars.Query.DirectedRead, protocmp.Transform()); diff != "" {
-		t.Errorf("invalid SET mutated value (-want +got):\n%s", diff)
+	if sysVars.Query.DirectedRead != original {
+		t.Fatal("invalid SET replaced the DirectedRead pointer")
 	}
 
 	if err := sysVars.SetFromGoogleSQL("DIRECTED_READ", "''"); err != nil {
@@ -147,5 +146,71 @@ func TestCloneDirectedReadIsReplacement(t *testing.T) {
 	if cloneDirectedRead(nil) != nil {
 		t.Fatal("clone nil")
 	}
-	_ = proto.CloneOf(cloned)
+}
+
+func TestDirectedReadStartupFlagThenSet(t *testing.T) {
+	t.Parallel()
+	vars, err := initializeSystemVariables(&spannerOptions{
+		DirectedRead: "us-east1:read_only",
+		Set:          map[string]string{"DIRECTED_READ": "us-west1:READ_WRITE"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := vars.Get("DIRECTED_READ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["DIRECTED_READ"] != "us-west1:READ_WRITE" {
+		t.Errorf("flag then --set = %q", got["DIRECTED_READ"])
+	}
+
+	cleared, err := initializeSystemVariables(&spannerOptions{
+		DirectedRead: "us-east1:READ_ONLY",
+		Set:          map[string]string{"DIRECTED_READ": ""},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cleared.Query.DirectedRead != nil {
+		t.Errorf("empty --set left %v", cleared.Query.DirectedRead)
+	}
+
+	_, err = initializeSystemVariables(&spannerOptions{DirectedRead: "us-east1:NOPE"})
+	if err == nil {
+		t.Fatal("invalid --directed-read accepted")
+	}
+	_, err = initializeSystemVariables(&spannerOptions{Set: map[string]string{"DIRECTED_READ": "us-east1:READ_ONLY:extra"}})
+	if err == nil {
+		t.Fatal("invalid --set DIRECTED_READ accepted")
+	}
+}
+
+func TestDirectedReadSetLocalOutsideTransaction(t *testing.T) {
+	t.Parallel()
+	session := newSessionForLocalVarTest(t)
+	_, err := session.ExecuteStatement(t.Context(), &SetLocalStatement{VarName: "DIRECTED_READ", Value: "'us-east1'"})
+	if err == nil || !strings.Contains(err.Error(), "requires an active transaction") {
+		t.Fatalf("SET LOCAL outside txn: %v", err)
+	}
+}
+
+func TestDirectedReadHelpAndUnknownNames(t *testing.T) {
+	t.Parallel()
+	rows := helpVariableRows(newSystemVariablesWithDefaultsForTest())
+	var saw bool
+	for _, row := range rows {
+		if row.Name == "CLI_DIRECT_READ" || row.Name == "CLI_DIRECTED_READ" {
+			t.Errorf("obsolete name listed: %s", row.Name)
+		}
+		if row.Name == "DIRECTED_READ" {
+			saw = true
+			if !strings.Contains(row.Operations, "write") {
+				t.Errorf("operations=%q", row.Operations)
+			}
+		}
+	}
+	if !saw {
+		t.Fatal("DIRECTED_READ missing from HELP VARIABLES")
+	}
 }

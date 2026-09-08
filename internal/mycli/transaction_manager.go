@@ -1155,8 +1155,8 @@ func (tm *TransactionManager) tryQueryInTransaction(ctx context.Context, stmt sp
 	// Apply read-write specific settings
 	if tm.tc.attrs.mode == transactionModeReadWrite {
 		// Directed reads are a preference for supported RO operations. Do not
-		// stamp RW SELECT/PLAN: that historical fail-fast copy made keepalive
-		// and user RW queries fail BAD_REQUEST. Heartbeat also omits DRO.
+		// stamp RW SELECT/PLAN. Heartbeat builds its own QueryOptions with only
+		// Priority and RequestTag and never received the historical RW copy.
 		opts.DirectedReadOptions = nil
 		tm.tc.EnableHeartbeat()
 	} else {

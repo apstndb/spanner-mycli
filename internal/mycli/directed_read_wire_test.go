@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -29,6 +30,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -37,6 +39,7 @@ type directedReadWireServer struct {
 	partitionFanInServer
 	mu       sync.Mutex
 	requests []*sppb.ExecuteSqlRequest
+	cycleFK  bool
 }
 
 func (s *directedReadWireServer) BeginTransaction(_ context.Context, r *sppb.BeginTransactionRequest) (*sppb.Transaction, error) {
@@ -44,6 +47,36 @@ func (s *directedReadWireServer) BeginTransaction(_ context.Context, r *sppb.Beg
 		return &sppb.Transaction{Id: []byte("probe-ro"), ReadTimestamp: timestamppb.Now()}, nil
 	}
 	return &sppb.Transaction{Id: []byte("probe-rw")}, nil
+}
+
+func (s *directedReadWireServer) Commit(context.Context, *sppb.CommitRequest) (*sppb.CommitResponse, error) {
+	return &sppb.CommitResponse{CommitTimestamp: timestamppb.Now()}, nil
+}
+
+func (s *directedReadWireServer) Rollback(context.Context, *sppb.RollbackRequest) (*emptypb.Empty, error) {
+	return &emptypb.Empty{}, nil
+}
+
+func (s *directedReadWireServer) takeRequests() []*sppb.ExecuteSqlRequest {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := s.requests
+	s.requests = nil
+	return out
+}
+
+func (s *directedReadWireServer) ExecuteSql(ctx context.Context, r *sppb.ExecuteSqlRequest) (*sppb.ResultSet, error) {
+	s.mu.Lock()
+	s.requests = append(s.requests, proto.Clone(r).(*sppb.ExecuteSqlRequest))
+	s.mu.Unlock()
+	return &sppb.ResultSet{
+		Metadata: &sppb.ResultSetMetadata{
+			RowType: &sppb.StructType{Fields: []*sppb.StructType_Field{
+				{Name: "value", Type: &sppb.Type{Code: sppb.TypeCode_INT64}},
+			}},
+		},
+		Stats: &sppb.ResultSetStats{RowCount: &sppb.ResultSetStats_RowCountLowerBound{RowCountLowerBound: 1}},
+	}, nil
 }
 
 func (s *directedReadWireServer) ExecuteStreamingSql(r *sppb.ExecuteSqlRequest, stream sppb.Spanner_ExecuteStreamingSqlServer) error {
@@ -54,15 +87,46 @@ func (s *directedReadWireServer) ExecuteStreamingSql(r *sppb.ExecuteSqlRequest, 
 	if r.Transaction.GetSingleUse().GetReadOnly() != nil || r.Transaction.GetBegin().GetReadOnly() != nil || string(r.Transaction.GetId()) == "probe-ro" {
 		tx = &sppb.Transaction{Id: []byte("probe-ro"), ReadTimestamp: timestamppb.Now()}
 	}
-	return stream.Send(&sppb.PartialResultSet{
-		Metadata: &sppb.ResultSetMetadata{
-			RowType: &sppb.StructType{Fields: []*sppb.StructType_Field{
-				{Name: "value", Type: &sppb.Type{Code: sppb.TypeCode_STRING}},
-			}},
-			Transaction: tx,
-		},
-		Values: []*structpb.Value{structpb.NewStringValue("observed")},
-	})
+	md, values := directedReadFakeRow(r.Sql, s.cycleFK)
+	md.Transaction = tx
+	return stream.Send(&sppb.PartialResultSet{Metadata: md, Values: values})
+}
+
+func directedReadStringFields(names ...string) []*sppb.StructType_Field {
+	fields := make([]*sppb.StructType_Field, len(names))
+	for i, name := range names {
+		fields[i] = &sppb.StructType_Field{Name: name, Type: &sppb.Type{Code: sppb.TypeCode_STRING}}
+	}
+	return fields
+}
+
+func directedReadFakeRow(sql string, cycleFK bool) (*sppb.ResultSetMetadata, []*structpb.Value) {
+	meta := func(names ...string) *sppb.ResultSetMetadata {
+		return &sppb.ResultSetMetadata{RowType: &sppb.StructType{Fields: directedReadStringFields(names...)}}
+	}
+	switch {
+	case strings.Contains(sql, "INFORMATION_SCHEMA.TABLES"):
+		return meta("TABLE_SCHEMA", "TABLE_NAME", "TABLE_TYPE", "PARENT_TABLE_NAME"), []*structpb.Value{
+			structpb.NewStringValue(""), structpb.NewStringValue("T"), structpb.NewStringValue("BASE TABLE"), structpb.NewNullValue(),
+		}
+	case strings.Contains(sql, "REFERENTIAL_CONSTRAINTS"):
+		md := meta("CONSTRAINT_SCHEMA", "CONSTRAINT_NAME", "CHILD_SCHEMA", "CHILD_TABLE",
+			"UNIQUE_CONSTRAINT_SCHEMA", "UNIQUE_CONSTRAINT_NAME", "PARENT_SCHEMA", "PARENT_TABLE", "ENFORCED")
+		if !cycleFK {
+			return md, nil
+		}
+		return md, []*structpb.Value{
+			structpb.NewStringValue(""), structpb.NewStringValue("c"), structpb.NewStringValue(""), structpb.NewStringValue("T"),
+			structpb.NewStringValue(""), structpb.NewStringValue("p"), structpb.NewStringValue(""), structpb.NewStringValue("T"),
+			structpb.NewStringValue("YES"),
+		}
+	case strings.Contains(sql, "INFORMATION_SCHEMA.COLUMNS"):
+		return meta("COLUMN_NAME"), []*structpb.Value{structpb.NewStringValue("Id")}
+	case strings.Contains(sql, "INFORMATION_SCHEMA.SCHEMATA"):
+		return meta("SCHEMA_NAME"), []*structpb.Value{structpb.NewStringValue("")}
+	default:
+		return meta("value"), []*structpb.Value{structpb.NewStringValue("observed")}
+	}
 }
 
 func startDirectedReadWire(t *testing.T) (*directedReadWireServer, *spanner.Client) {
