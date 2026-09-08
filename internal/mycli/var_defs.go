@@ -453,7 +453,7 @@ var varDefs = []varDef{
 	},
 	{
 		name:  "STATEMENT_TIMEOUT",
-		desc:  "A property of type STRING indicating the current timeout value for statements (e.g., 10s, 5m, 1h). Default is 10m.",
+		desc:  "A property of type STRING indicating the current timeout value for statements (e.g., 10s, 5m, 1h). NULL (the omitted-flag default) uses 10m for ordinary statements and 24h for partitioned DML. This is a CLI policy, not a server-required deadline.",
 		scope: scopeSession,
 		bind: func(sv *systemVariables) Variable {
 			return NullableDurationVar(&sv.Query.StatementTimeout).

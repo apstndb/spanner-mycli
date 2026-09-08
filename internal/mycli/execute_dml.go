@@ -28,6 +28,19 @@ func isInsert(sql string) bool {
 	return token.IsKeywordLike("INSERT")
 }
 
+// autocommitUsesPartitionedDML reports whether autocommit DML sql would be
+// executed as partitioned DML. Pending transactions count as in-transaction,
+// matching GetTransactionFlagsWithLock in bufferOrExecuteDML.
+func autocommitUsesPartitionedDML(session *Session, sql string) bool {
+	if session == nil || session.txn == nil || session.systemVariables == nil {
+		return false
+	}
+	inTransaction, _ := session.txn.GetTransactionFlagsWithLock()
+	return !inTransaction &&
+		!isInsert(sql) &&
+		session.systemVariables.Transaction.AutocommitDMLMode == enums.AutocommitDMLModePartitionedNonAtomic
+}
+
 func bufferOrExecuteDML(ctx context.Context, session *Session, sql string) (*Result, error) {
 	switch b := session.batch.Current().(type) {
 	case *BatchDMLStatement:
@@ -63,10 +76,7 @@ func bufferOrExecuteDML(ctx context.Context, session *Session, sql string) (*Res
 			return nil, err
 		}
 
-		inTransaction, _ := session.txn.GetTransactionFlagsWithLock()
-		if !inTransaction &&
-			!isInsert(sql) &&
-			session.systemVariables.Transaction.AutocommitDMLMode == enums.AutocommitDMLModePartitionedNonAtomic {
+		if autocommitUsesPartitionedDML(session, sql) {
 			return executePDML(ctx, session, sql)
 		}
 
