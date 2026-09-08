@@ -2,6 +2,7 @@ package mycli
 
 import (
 	"context"
+	"fmt"
 	"iter"
 	"log/slog"
 	"slices"
@@ -41,6 +42,10 @@ type SyncProtoStatement struct {
 func (SyncProtoStatement) isMutationStatement() {}
 
 func (s *SyncProtoStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	if name, ok := firstSharedFullName(s.UpsertPaths, s.DeletePaths); ok {
+		return nil, fmt.Errorf("SYNC PROTO BUNDLE conflict: %q appears in both UPSERT and DELETE", name)
+	}
+
 	_, fds, err := session.GetDatabaseSchema(ctx)
 	if err != nil {
 		return nil, err
@@ -49,7 +54,31 @@ func (s *SyncProtoStatement) Execute(ctx context.Context, session *Session) (*Re
 	return bufferOrExecuteDdlStatements(ctx, session, composeProtoBundleDDLs(fds, s.UpsertPaths, s.DeletePaths))
 }
 
+func firstSharedFullName(upsertPaths, deletePaths []string) (string, bool) {
+	inDelete := make(map[string]struct{}, len(deletePaths))
+	for _, name := range deletePaths {
+		inDelete[name] = struct{}{}
+	}
+	for _, name := range upsertPaths {
+		if _, ok := inDelete[name]; ok {
+			return name, true
+		}
+	}
+	return "", false
+}
+
+func uniqFullNames(paths []string) []string {
+	if len(paths) == 0 {
+		return paths
+	}
+	return lo.Uniq(paths)
+}
+
 func composeProtoBundleDDLs(fds *descriptorpb.FileDescriptorSet, upsertPaths, deletePaths []string) []string {
+	// Set-wise: first-occurrence order, no duplicate-count DROP/ALTER lists.
+	upsertPaths = uniqFullNames(upsertPaths)
+	deletePaths = uniqFullNames(deletePaths)
+
 	fullNameSetFds := make(map[string]struct{})
 	for info := range fdsToInfoSeq(fds) {
 		fullNameSetFds[info.FullName] = struct{}{}

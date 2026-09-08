@@ -1030,19 +1030,45 @@ TABLE Singers (42)
 			want:  &SyncProtoStatement{DeletePaths: sliceOf("examples.ProtoType", "examples.EscapedType", `examples.EscapedPath`)},
 		},
 		{
-			desc: "SYNC PROTO BUNDLE UPSERT statement with single path",
-			// input: "SYNC PROTO BUNDLE UPSERT (examples.EnumType) DELETE (examples.ProtoType)",
+			desc:  "SYNC PROTO BUNDLE UPSERT statement with single path",
 			input: "SYNC PROTO BUNDLE UPSERT (examples.EnumType)",
 			want:  &SyncProtoStatement{UpsertPaths: sliceOf("examples.EnumType")},
 		},
-		// TODO: Not yet implemented
-		/*
-			{
-				desc: "SYNC PROTO BUNDLE UPSERT DELETE statement",
-				input: "SYNC PROTO BUNDLE UPSERT (examples.EnumType) DELETE (examples.ProtoType)",
-				want:  &SyncProtoStatement{UpsertPaths: sliceOf("examples.EnumType"), DeletePaths: sliceOf("examples.ProtoType")},,
-			},
-		*/
+		{
+			desc:  "SYNC PROTO BUNDLE UPSERT then DELETE",
+			input: "SYNC PROTO BUNDLE UPSERT (examples.EnumType) DELETE (examples.ProtoType)",
+			want:  &SyncProtoStatement{UpsertPaths: sliceOf("examples.EnumType"), DeletePaths: sliceOf("examples.ProtoType")},
+		},
+		{
+			desc:  "SYNC PROTO BUNDLE DELETE then UPSERT",
+			input: "SYNC PROTO BUNDLE DELETE (examples.ProtoType) UPSERT (examples.EnumType)",
+			want:  &SyncProtoStatement{UpsertPaths: sliceOf("examples.EnumType"), DeletePaths: sliceOf("examples.ProtoType")},
+		},
+		{
+			desc:  "SYNC PROTO BUNDLE mixed quoted names",
+			input: "SYNC PROTO BUNDLE UPSERT (examples.`EscapedType`) DELETE (`examples.EscapedPath`)",
+			want:  &SyncProtoStatement{UpsertPaths: sliceOf("examples.EscapedType"), DeletePaths: sliceOf(`examples.EscapedPath`)},
+		},
+		{
+			desc:  "SYNC PROTO BUNDLE mixed with comment",
+			input: "SYNC PROTO BUNDLE UPSERT /*c*/ (examples.EnumType) DELETE (examples.ProtoType)",
+			want:  &SyncProtoStatement{UpsertPaths: sliceOf("examples.EnumType"), DeletePaths: sliceOf("examples.ProtoType")},
+		},
+		{
+			desc:  "SYNC PROTO BUNDLE repeated same-kind clauses",
+			input: "SYNC PROTO BUNDLE UPSERT (examples.A) UPSERT (examples.B)",
+			want:  &SyncProtoStatement{UpsertPaths: sliceOf("examples.A", "examples.B")},
+		},
+		{
+			desc:  "SYNC PROTO BUNDLE intra-list duplicates keep first occurrence",
+			input: "SYNC PROTO BUNDLE DELETE (examples.A, examples.B, examples.A)",
+			want:  &SyncProtoStatement{DeletePaths: sliceOf("examples.A", "examples.B")},
+		},
+		{
+			desc:  "SYNC PROTO BUNDLE empty args",
+			input: "SYNC PROTO BUNDLE",
+			want:  &SyncProtoStatement{},
+		},
 		{
 			desc:  "SET statement",
 			input: `SET OPTIMIZER_VERSION = "3"`,
@@ -1246,6 +1272,13 @@ func TestBuildStatement_InvalidCase(t *testing.T) {
 		"ADD SPLIT POINTS TABLE",
 		"DROP SPLIT POINTS INDEX",
 		"SYNC PROTO BUNDLE UPSERT '",
+		"SYNC PROTO BUNDLE UPSERT ()",
+		"SYNC PROTO BUNDLE DELETE ()",
+		"SYNC PROTO BUNDLE UPSERT (examples.A) leftover",
+		"SYNC PROTO BUNDLE UPSERT (examples.A) DELETE (examples.B); extra",
+		"SYNC PROTO BUNDLE UPSERT (examples.A) DELETE (examples.A)",
+		"SYNC PROTO BUNDLE DELETE (examples.A) UPSERT (examples.A)",
+		"SYNC PROTO BUNDLE UPSERT (examples.A) DELETE (",
 		`SHOW LAST QUERY PLAN INTO "unterminated`,
 		"SHOW LAST QUERY PLAN INTO two paths.json",
 		`SHOW LAST QUERY PLAN INTO ""`,
@@ -1592,6 +1625,29 @@ var orderDescriptorsContent []byte
 
 var orderFds = lo.Must(decodeMessage[descriptorpb.FileDescriptorSet, *descriptorpb.FileDescriptorSet](orderDescriptorsContent))
 
+var twoTypeFds = &descriptorpb.FileDescriptorSet{
+	File: []*descriptorpb.FileDescriptorProto{{
+		Name:    proto.String("two.proto"),
+		Package: proto.String("pkg"),
+		Syntax:  proto.String("proto3"),
+		MessageType: []*descriptorpb.DescriptorProto{
+			{Name: proto.String("Old")},
+			{Name: proto.String("Keep")},
+		},
+	}},
+}
+
+var oneTypeFds = &descriptorpb.FileDescriptorSet{
+	File: []*descriptorpb.FileDescriptorProto{{
+		Name:    proto.String("one.proto"),
+		Package: proto.String("pkg"),
+		Syntax:  proto.String("proto3"),
+		MessageType: []*descriptorpb.DescriptorProto{
+			{Name: proto.String("Old")},
+		},
+	}},
+}
+
 func decodeMessage[T any, PT interface {
 	*T
 	proto.Message
@@ -1655,13 +1711,30 @@ func TestComposeProtoBundleDDLs(t *testing.T) {
 			deletePaths: sliceOf("examples.UnknownType"),
 			want:        nil,
 		},
-		// TODO: Support mixed SYNC PROTO BUNDLE in parseSyncProtoBundle
 		{
 			desc:        "Mixed UPSERT, DELETE",
 			fds:         orderFds,
 			upsertPaths: sliceOf("examples.shipping.Order", "examples.UnknownType"),
 			deletePaths: sliceOf("examples.shipping.OrderHistory"),
 			want:        sliceOf("ALTER PROTO BUNDLE INSERT (examples.UnknownType) UPDATE (examples.shipping.`Order`) DELETE (examples.shipping.OrderHistory)"),
+		},
+		{
+			desc:        "duplicate DELETE of one type does not DROP remaining types",
+			fds:         twoTypeFds,
+			deletePaths: sliceOf("pkg.Old", "pkg.Old"),
+			want:        sliceOf("ALTER PROTO BUNDLE DELETE (pkg.Old)"),
+		},
+		{
+			desc:        "unique DELETE of one type among two",
+			fds:         twoTypeFds,
+			deletePaths: sliceOf("pkg.Old"),
+			want:        sliceOf("ALTER PROTO BUNDLE DELETE (pkg.Old)"),
+		},
+		{
+			desc:        "duplicate DELETE of the last remaining type is DROP",
+			fds:         oneTypeFds,
+			deletePaths: sliceOf("pkg.Old", "pkg.Old"),
+			want:        sliceOf("DROP PROTO BUNDLE"),
 		},
 	} {
 		got := composeProtoBundleDDLs(tt.fds, tt.upsertPaths, tt.deletePaths)
