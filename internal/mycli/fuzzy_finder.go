@@ -267,6 +267,8 @@ func completionHeader(ct fuzzyCompletionType) string {
 		return "Query Parameters"
 	case fuzzyCompleteSetTarget:
 		return "System Variables / PARAM"
+	case fuzzyCompletePlanNode:
+		return "Cached Plan Nodes"
 	default:
 		return "Statements"
 	}
@@ -797,9 +799,49 @@ func (f *fuzzyFinderCommand) fetchCandidates(ctx context.Context, ct fuzzyComple
 		return f.fetchParamCandidates(), nil
 	case fuzzyCompleteSetTarget:
 		return f.fetchSetTargetCandidates(), nil
+	case fuzzyCompletePlanNode:
+		return f.fetchPlanNodeCandidates(ctx)
 	default:
 		return nil, nil
 	}
+}
+
+// fetchPlanNodeCandidates reads the same current cache as SHOW PLAN NODE, without
+// a network lookup or a second cache. Use slice positions because SHOW indexes
+// the raw node slice, even when a malformed plan has inconsistent Index fields.
+func (f *fuzzyFinderCommand) fetchPlanNodeCandidates(ctx context.Context) ([]fzfItem, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	cache := f.cli.SystemVariables.LastResult.QueryCache
+	if cache == nil {
+		return nil, nil
+	}
+	var items []fzfItem
+	for i, node := range cache.QueryPlan.GetPlanNodes() {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if node == nil {
+			continue
+		}
+		// Keep labels single-line and prevent control bytes (including fzf's
+		// value/label delimiter) from changing the candidate transport.
+		name := []rune(strings.Map(func(r rune) rune {
+			if unicode.IsControl(r) || unicode.IsSpace(r) {
+				return ' '
+			}
+			return r
+		}, node.GetDisplayName()))
+		if len(name) > 128 {
+			name = append(name[:128], '…')
+		}
+		items = append(items, fzfItem{
+			Value: fmt.Sprintf("%d", i),
+			Label: fmt.Sprintf("%d %s %s", i, node.GetKind(), strings.Join(strings.Fields(string(name)), " ")),
+		})
+	}
+	return items, nil
 }
 
 // fetchDatabaseCandidates lists databases from the current instance.

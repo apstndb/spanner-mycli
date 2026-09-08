@@ -1071,6 +1071,13 @@ For how these and other connection properties map to the official Spanner driver
 > Built-in defaults: `--reverse`, `--no-sort`, `--height=<computed>`, `--select-1`, `--exit-0`, `--highlight-line`, `--cycle`, `--border=rounded`, `--info=inline-right`, and `--header-border=inline` when a header is shown.
 > `--tmux` and `--popup` are not supported because the fuzzy finder runs fzf in-process via the Go library.
 
+After a query or `EXPLAIN ANALYZE` has cached a plan, type `SHOW PLAN NODE `
+and press `Ctrl+T` to select a node by ID, kind, or operator name. Only its ID
+is inserted. Scalar nodes are included. This reads the same cache as
+`SHOW PLAN NODE` without a network request; when no plan is cached, the input
+is unchanged. It does not change when plans are cached or cleared (plain
+`EXPLAIN` does not populate this cache).
+
 > **Note**: `CLI_TYPE_STYLES` configures ANSI styling for query result values based on their Spanner type. Format: colon-separated `TYPE=STYLE` pairs.
 > - Named colors/attributes: `red`, `green`, `bold`, `dim`, `italic`, `underline`, etc.
 > - Raw SGR numbers: `38;5;214` (256-color), `38;2;R;G;B` (truecolor)

@@ -262,6 +262,7 @@ var completionSampleValues = map[string]string{
 	"model":          "mymodel",
 	"schema":         "myschema",
 	"param":          "myparam",
+	"plan_node":      "0",
 }
 
 // completionCase describes one candidate insertion to simulate for a
