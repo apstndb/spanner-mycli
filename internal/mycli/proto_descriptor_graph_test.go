@@ -100,7 +100,7 @@ func TestProtoDescriptorDependencyClosure(t *testing.T) {
 	}
 
 	var sv systemVariables
-	if err := sv.SetFromSimple("CLI_PROTO_DESCRIPTOR_FILE", left+","+root); err != nil {
+	if err := sv.SetFromSimple("PROTO_DESCRIPTORS_FILE_PATH", left+","+root); err != nil {
 		t.Fatal(err)
 	}
 	if len(sv.Internal.ProtoDescriptor.File) != 4 {
@@ -156,16 +156,16 @@ func TestProtoDescriptorInvalidGraphPreservesState(t *testing.T) {
 				goodPath := writeDescriptorSet(t, filepath.Join(dir, "good.pb"), goodFiles...)
 				badPath := writeDescriptorSet(t, filepath.Join(dir, "bad.pb"), badFiles...)
 				var sv systemVariables
-				if err := sv.SetFromSimple("CLI_PROTO_DESCRIPTOR_FILE", goodPath); err != nil {
+				if err := sv.SetFromSimple("PROTO_DESCRIPTORS_FILE_PATH", goodPath); err != nil {
 					t.Fatal(err)
 				}
 				before := proto.Clone(sv.Internal.ProtoDescriptor)
 				beforePaths := slices.Clone(sv.Internal.ProtoDescriptorFile)
 				var err error
 				if operation == "SET" {
-					err = sv.SetFromSimple("CLI_PROTO_DESCRIPTOR_FILE", badPath)
+					err = sv.SetFromSimple("PROTO_DESCRIPTORS_FILE_PATH", badPath)
 				} else {
-					err = sv.AddFromSimple("CLI_PROTO_DESCRIPTOR_FILE", badPath)
+					err = sv.AddFromSimple("PROTO_DESCRIPTORS_FILE_PATH", badPath)
 				}
 				if err == nil || !strings.Contains(err.Error(), "invalid proto descriptor set") {
 					t.Errorf("invalid graph error = %v", err)
@@ -174,10 +174,10 @@ func TestProtoDescriptorInvalidGraphPreservesState(t *testing.T) {
 					t.Error("failed load changed descriptor or file list")
 				}
 				requireUsableDescriptor(t, sv.Internal.ProtoDescriptor)
-				if err := sv.AddFromSimple("CLI_PROTO_DESCRIPTOR_FILE", goodPath); err != nil || len(sv.Internal.ProtoDescriptorFile) != 1 {
+				if err := sv.AddFromSimple("PROTO_DESCRIPTORS_FILE_PATH", goodPath); err != nil || len(sv.Internal.ProtoDescriptorFile) != 1 {
 					t.Fatalf("duplicate ADD no longer a no-op: err=%v", err)
 				}
-				if err := sv.SetFromSimple("CLI_PROTO_DESCRIPTOR_FILE", ""); err != nil || sv.Internal.ProtoDescriptor != nil || len(sv.Internal.ProtoDescriptorFile) != 0 {
+				if err := sv.SetFromSimple("PROTO_DESCRIPTORS_FILE_PATH", ""); err != nil || sv.Internal.ProtoDescriptor != nil || len(sv.Internal.ProtoDescriptorFile) != 0 {
 					t.Fatalf("empty reset failed: %v", err)
 				}
 			})
@@ -196,7 +196,7 @@ func TestProtoDescriptorFileIdentityReplacement(t *testing.T) {
 			replacement.MessageType = append(replacement.MessageType, &descriptorpb.DescriptorProto{Name: proto.String("Added")})
 			second := writeDescriptorSet(t, filepath.Join(dir, "second.pb"), replacement)
 			var sv systemVariables
-			if err := sv.SetFromSimple("CLI_PROTO_DESCRIPTOR_FILE", first+","+second); err != nil {
+			if err := sv.SetFromSimple("PROTO_DESCRIPTORS_FILE_PATH", first+","+second); err != nil {
 				t.Fatal(err)
 			}
 			if len(sv.Internal.ProtoDescriptor.File) != 1 {

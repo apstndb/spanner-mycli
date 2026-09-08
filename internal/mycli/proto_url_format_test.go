@@ -185,7 +185,7 @@ func TestHTTPProtoDescriptorGraphAndStartup(t *testing.T) {
 	sourceURL := srv.URL + "/root.proto?fixture=1"
 	sv := newSystemVariablesWithDefaultsForTest()
 	sv.ensureRegistry()
-	if err := sv.SetFromSimple("CLI_PROTO_DESCRIPTOR_FILE", sourceURL); err != nil {
+	if err := sv.SetFromSimple("PROTO_DESCRIPTORS_FILE_PATH", sourceURL); err != nil {
 		t.Fatal(err)
 	}
 	requireUsableDescriptor(t, sv.Internal.ProtoDescriptor)
@@ -194,7 +194,7 @@ func TestHTTPProtoDescriptorGraphAndStartup(t *testing.T) {
 	}
 	beforeGraph, beforeFiles := cloneDescriptorState(sv)
 
-	if err := sv.AddFromSimple("CLI_PROTO_DESCRIPTOR_FILE", srv.URL+"/missing.pb"); err == nil {
+	if err := sv.AddFromSimple("PROTO_DESCRIPTORS_FILE_PATH", srv.URL+"/missing.pb"); err == nil {
 		t.Fatal("invalid ADD succeeded")
 	}
 	assertDescriptorState(t, sv, beforeGraph, beforeFiles)

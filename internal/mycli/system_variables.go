@@ -197,7 +197,7 @@ type FeatureVars struct {
 
 // InternalVars holds internal state not directly exposed as system variables.
 type InternalVars struct {
-	ProtoDescriptorFile []string // CLI_PROTO_DESCRIPTOR_FILE
+	ProtoDescriptorFile []string // PROTO_DESCRIPTORS_FILE_PATH
 	ProtoDescriptor     *descriptorpb.FileDescriptorSet
 }
 
