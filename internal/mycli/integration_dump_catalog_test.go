@@ -588,3 +588,101 @@ func TestDumpAncestorFKInterleaveAccepted(t *testing.T) {
 		t.Fatalf("rejected valid ancestor FK schema:\n%s", out)
 	}
 }
+
+func TestDumpDDLRewriteFailureBeforeOutput(t *testing.T) {
+	t.Parallel()
+	skipIfShortIntegration(t)
+	_, session := initializeWithRandomDB(t, []string{"CREATE TABLE A (Id INT64 NOT NULL) PRIMARY KEY(Id)"}, nil)
+	for _, invalid := range []string{
+		"CREATE TABLE A (Id INT64 NOT NULL, FOREIGN KEY(Id) REFERENCES Missing(Id)) PRIMARY KEY(Id)",
+		"CREATE TABLE A (Id INT64 NOT NULL, FOREIGN KEY(Id) REFERENCES B()",
+	} {
+		response := &adminpb.GetDatabaseDdlResponse{Statements: []string{"CREATE SCHEMA Earlier", invalid}}
+		session.ddlCache.response = response
+		session.ddlCache.fetchedAt = time.Now()
+		session.ddlCache.schemaGeneration = session.SchemaGeneration()
+		session.dumpDDLOverride = func(context.Context) (*adminpb.GetDatabaseDdlResponse, error) { return response, nil }
+		for _, statement := range []Statement{&DumpSchemaStatement{}, &DumpDatabaseStatement{}} {
+			for _, streaming := range []bool{false, true} {
+				var buf strings.Builder
+				original := session.systemVariables.StreamManager
+				if streaming {
+					session.systemVariables.StreamManager = streamio.NewStreamManager(original.GetInStream(), &buf, original.GetErrStream())
+				}
+				result, err := statement.Execute(t.Context(), session)
+				session.systemVariables.StreamManager = original
+				if err == nil || result != nil || buf.Len() != 0 {
+					t.Fatalf("%T streaming=%v: result=%+v error=%v output=%q; want error before any output", statement, streaming, result, err, buf.String())
+				}
+			}
+		}
+	}
+}
+
+func TestDumpDDLForwardForeignKeyReplay(t *testing.T) {
+	t.Parallel()
+	skipIfShortIntegration(t)
+	for _, tc := range []struct {
+		name string
+		ddl  []string
+	}{
+		{"mutual", []string{
+			"CREATE TABLE A (Id INT64 NOT NULL, Ref INT64) PRIMARY KEY(Id)",
+			"CREATE TABLE B (Id INT64 NOT NULL, Ref INT64) PRIMARY KEY(Id)",
+			"ALTER TABLE A ADD CONSTRAINT fk_a FOREIGN KEY(Ref) REFERENCES B(Id)",
+			"ALTER TABLE B ADD CONSTRAINT fk_b FOREIGN KEY(Ref) REFERENCES A(Id)",
+		}},
+		{"ancestor", []string{
+			"CREATE TABLE A (Id INT64 NOT NULL, ChildId INT64) PRIMARY KEY(Id)",
+			"CREATE TABLE B (Id INT64 NOT NULL, ChildId INT64 NOT NULL) PRIMARY KEY(Id,ChildId), INTERLEAVE IN PARENT A ON DELETE CASCADE",
+			"ALTER TABLE A ADD CONSTRAINT fk_child FOREIGN KEY(Id,ChildId) REFERENCES B(Id,ChildId)",
+		}},
+		{"self_synonym", []string{
+			"CREATE TABLE A (Id INT64 NOT NULL, Ref INT64, SYNONYM (AliasA)) PRIMARY KEY(Id)",
+			"ALTER TABLE A ADD CONSTRAINT fk_self FOREIGN KEY(Ref) REFERENCES AliasA(Id)",
+		}},
+		{"unnamed_mutual", []string{
+			"CREATE TABLE A (Id INT64 NOT NULL, Ref INT64) PRIMARY KEY(Id)",
+			"CREATE TABLE B (Id INT64 NOT NULL, Ref INT64) PRIMARY KEY(Id)",
+			"ALTER TABLE A ADD FOREIGN KEY(Ref) REFERENCES B(Id)",
+			"ALTER TABLE B ADD FOREIGN KEY(Ref) REFERENCES A(Id)",
+		}},
+		{"informational_named", []string{
+			"CREATE SCHEMA Alpha", "CREATE SCHEMA Beta",
+			"CREATE TABLE Alpha.T (Id INT64 NOT NULL, Ref INT64) PRIMARY KEY(Id)",
+			"CREATE TABLE Beta.T (Id INT64 NOT NULL, Ref INT64) PRIMARY KEY(Id)",
+			"ALTER TABLE Alpha.T ADD CONSTRAINT fk_alpha FOREIGN KEY(Ref) REFERENCES Beta.T(Id) NOT ENFORCED",
+			"ALTER TABLE Beta.T ADD CONSTRAINT fk_beta FOREIGN KEY(Ref) REFERENCES Alpha.T(Id) NOT ENFORCED",
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, source := initializeWithRandomDB(t, tc.ddl, nil)
+			want, err := source.GetDatabaseDdlFresh(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Logf("source canonical DDL: %q", want.Statements)
+			for _, mode := range []string{"SCHEMA", "DATABASE"} {
+				t.Run(mode, func(t *testing.T) {
+					var statement Statement = &DumpSchemaStatement{}
+					if mode == "DATABASE" {
+						statement = &DumpDatabaseStatement{}
+					}
+					buffered := dumpSQL(t, source, statement)
+					if streamed := dumpStreamingSQL(t, source, statement); buffered != streamed {
+						t.Fatal("buffered/streaming DDL differs")
+					}
+					_, target := initializeWithRandomDB(t, nil, nil)
+					replayDumpSQL(t, target, buffered)
+					got, err := target.GetDatabaseDdlFresh(t.Context())
+					if err != nil {
+						t.Fatal(err)
+					}
+					if diff := cmp.Diff(want.Statements, got.Statements); diff != "" {
+						t.Fatalf("restored schema changed (-want +got):\n%s", diff)
+					}
+				})
+			}
+		})
+	}
+}

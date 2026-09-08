@@ -218,7 +218,11 @@ func prepareDumpWithTxn(ctx context.Context, session *Session, mode dumpMode, sp
 		if err != nil {
 			return nil, err
 		}
-		plan.DDL = renderDDLStatements(stmts)
+		replayDDL, err := prepareDumpDDLForReplay(stmts)
+		if err != nil {
+			return nil, err
+		}
+		plan.DDL = renderDDLStatements(replayDDL)
 		if err := resolver.applyInterleaveParents(stmts, selected); err != nil {
 			return nil, err
 		}
@@ -370,19 +374,11 @@ func exportDDL(ctx context.Context, session *Session) (*Result, error) {
 		return nil, err
 	}
 
-	var out bytes.Buffer
-	fmt.Fprintln(&out, "-- Database DDL exported by spanner-mycli")
-	fmt.Fprintln(&out)
-
-	for _, stmt := range ddl.Statements {
-		if !strings.HasSuffix(stmt, ";") {
-			stmt += ";"
-		}
-		fmt.Fprintln(&out, stmt)
-		fmt.Fprintln(&out)
+	replayDDL, err := prepareDumpDDLForReplay(ddl.Statements)
+	if err != nil {
+		return nil, err
 	}
-
-	return &Result{RenderedOutput: out.Bytes()}, nil
+	return &Result{RenderedOutput: renderDDLStatements(replayDDL)}, nil
 }
 
 func renderDDLStatements(statements []string) []byte {
