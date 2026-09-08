@@ -419,6 +419,17 @@ spanner> SELECT * FROM keys;  -- Output goes to file only
 spanner> \O                   -- Disable redirect using \O
 ```
 
+##### DDL restore order
+
+`DUMP SCHEMA` and `DUMP DATABASE` move inline foreign keys that reference
+tables created later into `ALTER TABLE ... ADD` statements after the other DDL,
+before any data. This allows an empty cyclic foreign-key schema to be restored
+even when Spanner returns its constraints inside `CREATE TABLE`. If an affected
+table definition cannot be parsed or safely rewritten, the dump fails before
+emitting SQL. `DUMP TABLES` does not export or modify DDL. This does not remove
+the rejection of populated cycles involving enforced foreign keys or interleave
+relationships, or make database restoration atomic.
+
 #### What gets logged
 
 The tee file will contain:
