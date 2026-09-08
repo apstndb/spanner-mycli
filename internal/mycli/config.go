@@ -512,11 +512,13 @@ func applyStalenessOptions(sysVars *systemVariables, opts *spannerOptions) error
 }
 
 func applyProtoDescriptors(sysVars *systemVariables, opts *spannerOptions) error {
-	ss := lo.Ternary(opts.ProtoDescriptorFile != "", strings.Split(opts.ProtoDescriptorFile, ","), nil)
-	for _, s := range ss {
-		if err := sysVars.AddFromGoogleSQL("CLI_PROTO_DESCRIPTOR_FILE", strconv.Quote(s)); err != nil {
-			return fmt.Errorf("error on --proto-descriptor-file, file: %v: %w", s, err)
-		}
+	if opts.ProtoDescriptorFile == "" {
+		return nil
+	}
+	// Binary files can supply different parts of the same graph. Install the
+	// startup list as one candidate, just like a multi-input SQL SET.
+	if err := sysVars.SetFromSimple("CLI_PROTO_DESCRIPTOR_FILE", opts.ProtoDescriptorFile); err != nil {
+		return fmt.Errorf("error on --proto-descriptor-file, file: %v: %w", opts.ProtoDescriptorFile, err)
 	}
 	return nil
 }

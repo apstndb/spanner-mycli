@@ -14,6 +14,7 @@ import (
 	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spanner-mycli/internal/mycli/filesafety"
 	"github.com/samber/lo"
+	"google.golang.org/protobuf/reflect/protodesc"
 	"google.golang.org/protobuf/types/descriptorpb"
 )
 
@@ -137,6 +138,11 @@ func (p *ProtoDescriptorVar) Set(value string) error {
 		}
 		fileDescriptorSet = mergeFDS(fileDescriptorSet, fds)
 	}
+	// Individual binary inputs may be fragments of one graph. Validate only
+	// after the complete candidate has been assembled, before changing state.
+	if _, err := protodesc.NewFiles(fileDescriptorSet); err != nil {
+		return fmt.Errorf("invalid proto descriptor set: %w", err)
+	}
 
 	*p.filesPtr = files
 	*p.descriptorPtr = fileDescriptorSet
@@ -156,8 +162,12 @@ func (p *ProtoDescriptorVar) Add(value string) error {
 		return err
 	}
 
+	candidate := mergeFDS(*p.descriptorPtr, fds)
+	if _, err := protodesc.NewFiles(candidate); err != nil {
+		return fmt.Errorf("invalid proto descriptor set: %w", err)
+	}
 	*p.filesPtr = append(*p.filesPtr, value)
-	*p.descriptorPtr = mergeFDS(*p.descriptorPtr, fds)
+	*p.descriptorPtr = candidate
 	return nil
 }
 

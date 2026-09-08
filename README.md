@@ -1318,7 +1318,16 @@ spanner> SHOW VARIABLE CLI_PROTO_DESCRIPTOR_FILE;
 Empty set (0.00 sec)
 ```
 
-(EXPERIMENTAL) It also supports non-compiled `.proto` file.
+(EXPERIMENTAL) It also supports non-compiled `.proto` files, including their transitive imports and standard protobuf imports.
+
+Comma-separated inputs are merged into one descriptor graph before validation,
+both for `--proto-descriptor-file` and `SET CLI_PROTO_DESCRIPTOR_FILE`. Later
+inputs replace earlier descriptors with the same protobuf file name; file names
+must therefore identify the intended version, even if its package changes.
+The resulting graph must resolve all imports and symbols. Failed `SET` or `ADD`
+leaves both the previous descriptor graph and file list unchanged; split binary
+descriptor fragments must be supplied together in one `SET`, not as incomplete
+intermediate `ADD` operations.
 
 ```
 spanner> SET CLI_PROTO_DESCRIPTOR_FILE = "testdata/protos/order_protos.proto";
