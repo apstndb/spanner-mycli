@@ -52,6 +52,7 @@ const (
 	fuzzyCompleteSchema
 	fuzzyCompleteParam
 	fuzzyCompleteSetTarget
+	fuzzyCompletePlanNode
 )
 
 func (t fuzzyCompletionType) String() string {
@@ -84,6 +85,8 @@ func (t fuzzyCompletionType) String() string {
 		return "param"
 	case fuzzyCompleteSetTarget:
 		return "set_target"
+	case fuzzyCompletePlanNode:
+		return "plan_node"
 	default:
 		return fmt.Sprintf("unhandled fuzzyCompletionType: %d", t)
 	}
@@ -670,6 +673,10 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			}
 			return &ShowPlanNodeStatement{NodeID: int(nodeID)}, nil
 		},
+		Completion: []fuzzyArgCompletion{{
+			PrefixPattern:  regexp.MustCompile(`(?i)^\s*SHOW\s+PLAN\s+NODE\s+(\d*)$`),
+			CompletionType: fuzzyCompletePlanNode,
+		}},
 	},
 	// SHOW LAST QUERY PLAN — ProtoJSON or ProtoJSON-equivalent YAML export of the cached plan
 	{
