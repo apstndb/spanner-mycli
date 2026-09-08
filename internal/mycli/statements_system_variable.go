@@ -87,6 +87,9 @@ func (s *SetStatement) isDetachedCompatible() {}
 func (s *SetStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	sysVars := session.systemVariables
 	sysVars.ensureRegistry()
+	if strings.EqualFold(s.VarName, protoDescriptorsVarName) && session.batch.IsActive() {
+		return nil, errors.New("PROTO_DESCRIPTORS cannot be set while a batch is active")
+	}
 	// Ordinary SET is session-durable through COMMIT and ROLLBACK. It is not
 	// PostgreSQL transactional SET. Invalidation must not live in Registry.Set:
 	// that path also restores LOCAL values and would erase LOCAL itself.
