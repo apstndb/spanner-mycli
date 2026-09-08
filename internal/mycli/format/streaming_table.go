@@ -231,7 +231,10 @@ func (f *TableStreamingFormatter) FinishFormat() error {
 
 // newCondition creates a tabwrap.Condition from the formatter's config.
 func (f *TableStreamingFormatter) newCondition() *tabwrap.Condition {
-	return &tabwrap.Condition{TabWidth: cmp.Or(f.config.TabWidth, 4)}
+	// Styled controls whether the CLI adds styles, not whether input text can
+	// already contain ANSI escapes. Use the same visible-width rules for raw
+	// cells, headers, tab expansion and wrapping, even with CLI styling disabled.
+	return &tabwrap.Condition{TabWidth: cmp.Or(f.config.TabWidth, 4), ControlSequences: true}
 }
 
 // calculateWidths calculates optimal column widths based on preview rows.

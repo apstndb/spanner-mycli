@@ -46,7 +46,7 @@ func (ProportionalStrategy) CalculateWidths(wc *widthCalculator, availableWidth 
 	}
 
 	// Start with header-proportional allocation + preferred/min width floor.
-	adjustedWidths := adjustByHeader(headers, availableWidth)
+	adjustedWidths := wc.adjustByHeader(headers, availableWidth)
 	applyColumnFloors(adjustedWidths, hints, availableWidth)
 
 	// Compute deficit per column: how much more each column wants.
