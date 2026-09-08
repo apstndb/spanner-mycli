@@ -310,12 +310,21 @@ func TestDumpCatalogConditionalGetDdlAndPermission(t *testing.T) {
 	), []string{"INSERT INTO Plain (Id, Value) VALUES (1, 'x')"})
 
 	session.dumpDDLOverride = func(context.Context) (*adminpb.GetDatabaseDdlResponse, error) {
-		t.Fatal("GetDatabaseDdlFresh should not be called")
+		t.Fatal("GetDatabaseDdlFresh should not be called for TABLES-only dumps")
 		return nil, errors.New("fail-if-called")
 	}
 	_ = dumpSQL(t, session, &DumpTablesStatement{Tables: []tableID{tidn("Beta", "CrossChild")}})
 	_ = dumpSQL(t, session, &DumpTablesStatement{Tables: []tableID{tid("Plain")}})
+
+	schemaCalls := 0
+	session.dumpDDLOverride = func(ctx context.Context) (*adminpb.GetDatabaseDdlResponse, error) {
+		schemaCalls++
+		return session.adminClient.GetDatabaseDdl(ctx, &adminpb.GetDatabaseDdlRequest{Database: session.DatabasePath()})
+	}
 	_ = dumpSQL(t, session, &DumpSchemaStatement{})
+	if schemaCalls != 1 {
+		t.Fatalf("SCHEMA dump fresh GetDdl calls = %d, want 1", schemaCalls)
+	}
 
 	session.dumpDDLOverride = func(context.Context) (*adminpb.GetDatabaseDdlResponse, error) {
 		return nil, status.Error(codes.PermissionDenied, "denied")

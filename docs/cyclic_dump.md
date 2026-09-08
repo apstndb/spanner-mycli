@@ -79,9 +79,12 @@ the caller's responsibility. Selection is not a promise of standalone replay.
 
 Generated stored columns are omitted and recompute at the target. Defaulted
 columns include their observed source values. PROTO and ENUM columns use BYTES
-and INT64 wire-surrogate values; matching target descriptors must already be
-available. This mode does not export descriptor files. Unsupported cyclic row
-types or malformed values fail during preflight rather than being guessed.
+and INT64 wire-surrogate values. `DUMP TABLES` is data-only, so matching target
+descriptors must already be available. `DUMP DATABASE` may prepend
+`SET PROTO_DESCRIPTORS` from the same fresh GetDatabaseDdl response used for
+DDL; MUTATE still does not emit a companion descriptor file for the data
+statements. Unsupported cyclic row types or malformed values fail during
+preflight rather than being guessed.
 
 Matching schema, permissions, descriptors, and target state remain prerequisites.
 There is no guarantee for arbitrary schema drift, additional target constraints,

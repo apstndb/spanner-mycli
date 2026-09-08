@@ -349,7 +349,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `Export database DDL and data as SQL statements`,
 				Syntax: `DUMP DATABASE`,
-				Note:   `Exports DDL plus BASE TABLE data from the default schema and named schemas. Views and synonyms are omitted from data. Catalog, column, and row reads share one read-only transaction. Requires spanner.databases.getDdl; that admin RPC is not timestamp-bound to the dump transaction. CLI_DUMP_CYCLIC_MODE defaults to REJECT for populated cyclic FK/interleave groups, including all-NULL or row-acyclic data. Opt-in MUTATE pre-encodes all cyclic groups before output, then emits one unsplit transaction per populated group. No service-quota prediction or globally atomic restore; earlier work may remain committed.`,
+				Note:   `Exports DDL plus BASE TABLE data from the default schema and named schemas. Views and synonyms are omitted from data. Catalog, column, and row reads share one read-only transaction. Requires spanner.databases.getDdl; that admin RPC is a fresh GetDatabaseDdl call and is not timestamp-bound to the dump transaction. When the admin response includes proto descriptors, prepends SET PROTO_DESCRIPTORS before rewritten DDL. CLI_DUMP_CYCLIC_MODE defaults to REJECT for populated cyclic FK/interleave groups, including all-NULL or row-acyclic data. Opt-in MUTATE pre-encodes all cyclic groups before output, then emits one unsplit transaction per populated group. No service-quota prediction or globally atomic restore; earlier work may remain committed.`,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^DUMP\s+DATABASE$`),
@@ -362,7 +362,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `Export database DDL only as SQL statements`,
 				Syntax: `DUMP SCHEMA`,
-				Note:   `Exports cached database DDL only. Does not require a fresh GetDatabaseDdl call.`,
+				Note:   `Exports a fresh GetDatabaseDdl response as SQL. Requires spanner.databases.getDdl. When the admin response includes proto descriptors, prepends SET PROTO_DESCRIPTORS so CREATE PROTO BUNDLE replay is self-contained.`,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^DUMP\s+SCHEMA$`),
