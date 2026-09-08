@@ -31,7 +31,10 @@ func encodeProtoDescriptors(fds *descriptorpb.FileDescriptorSet) (string, error)
 	if fds == nil {
 		return "", nil
 	}
-	raw, err := proto.Marshal(fds)
+	// Deterministic is a local protobuf marshal option. It is not a
+	// cross-build or cross-language canonical encoding, and it does not
+	// sort semantically equivalent graphs.
+	raw, err := proto.MarshalOptions{Deterministic: true}.Marshal(fds)
 	if err != nil {
 		return "", err
 	}

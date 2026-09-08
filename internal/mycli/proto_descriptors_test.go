@@ -16,6 +16,8 @@ package mycli
 
 import (
 	"encoding/base64"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -55,44 +57,34 @@ func TestProtoDescriptorsSetShowClear(t *testing.T) {
 	if sv.Internal.ProtoDescriptorFile != nil {
 		t.Fatalf("file provenance = %v, want cleared", sv.Internal.ProtoDescriptorFile)
 	}
-	got, err := sv.Registry.Get(protoDescriptorsVarName)
-	if err != nil {
-		t.Fatal(err)
+	if !proto.Equal(fds, sv.Internal.ProtoDescriptor) {
+		t.Fatal("SET did not install the expected graph")
 	}
-	if got != encoded && decodeMust(t, got) == nil {
-		t.Fatal("SHOW did not round-trip a valid graph")
-	}
+	assertShowGraph(t, sv, fds)
 	unpadded := strings.TrimRight(encoded, "=")
 	if err := sv.SetFromSimple(protoDescriptorsVarName, unpadded); err != nil {
 		t.Fatalf("unpadded standard base64: %v", err)
 	}
+	assertShowGraph(t, sv, fds)
 	if err := sv.SetFromSimple(protoDescriptorsVarName, ""); err != nil {
 		t.Fatal(err)
 	}
 	if sv.Internal.ProtoDescriptor != nil {
 		t.Fatal("empty SET did not clear graph")
 	}
+	assertShowGraph(t, sv, nil)
 }
 
 func TestProtoDescriptorsInvalidAtomic(t *testing.T) {
 	t.Parallel()
 	sv := newSystemVariablesWithDefaultsForTest()
 	sv.ensureRegistry()
-	good, err := encodeProtoDescriptors(a20DescriptorSet(t))
-	if err != nil {
+	if err := sv.SetFromSimple("CLI_PROTO_DESCRIPTOR_FILE", "testdata/protos/order_descriptors.pb"); err != nil {
 		t.Fatal(err)
 	}
-	if err := sv.SetFromSimple(protoDescriptorsVarName, good); err != nil {
-		t.Fatal(err)
-	}
-	before := proto.Clone(sv.Internal.ProtoDescriptor)
-	for _, bad := range []string{"@@@@", base64.StdEncoding.EncodeToString([]byte("not-a-proto"))} {
-		if err := sv.SetFromSimple(protoDescriptorsVarName, bad); err == nil {
-			t.Fatalf("invalid SET %q succeeded", bad)
-		}
-		if !proto.Equal(before, sv.Internal.ProtoDescriptor) {
-			t.Fatal("invalid SET mutated graph")
-		}
+	beforeGraph, beforeFiles := cloneDescriptorState(sv)
+	if len(beforeFiles) == 0 || beforeGraph == nil {
+		t.Fatal("expected nonempty file provenance before invalid SET")
 	}
 	broken := &descriptorpb.FileDescriptorSet{File: []*descriptorpb.FileDescriptorProto{{
 		Name: proto.String("broken.proto"), Dependency: []string{"missing.proto"},
@@ -101,11 +93,11 @@ func TestProtoDescriptorsInvalidAtomic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := sv.SetFromSimple(protoDescriptorsVarName, base64.StdEncoding.EncodeToString(badGraph)); err == nil {
-		t.Fatal("invalid graph SET succeeded")
-	}
-	if !proto.Equal(before, sv.Internal.ProtoDescriptor) {
-		t.Fatal("invalid graph SET mutated graph")
+	for _, bad := range []string{"@@@@", base64.StdEncoding.EncodeToString([]byte("not-a-proto")), base64.StdEncoding.EncodeToString(badGraph)} {
+		if err := sv.SetFromSimple(protoDescriptorsVarName, bad); err == nil {
+			t.Fatalf("invalid SET %q succeeded", bad)
+		}
+		assertDescriptorState(t, sv, beforeGraph, beforeFiles)
 	}
 }
 
@@ -113,20 +105,51 @@ func TestProtoDescriptorsNoLocalAndBatchGuard(t *testing.T) {
 	t.Parallel()
 	session := newSessionForLocalVarTest(t)
 	ctx := t.Context()
+	sv := session.systemVariables
+	if err := sv.SetFromSimple("CLI_PROTO_DESCRIPTOR_FILE", "testdata/protos/order_descriptors.pb"); err != nil {
+		t.Fatal(err)
+	}
+	fileGraph, fileList := cloneDescriptorState(sv)
+
 	if _, err := session.ExecuteStatement(ctx, &BeginStatement{}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := session.ExecuteStatement(ctx, &SetLocalStatement{VarName: protoDescriptorsVarName, Value: "''"}); err == nil {
-		t.Fatal("SET LOCAL PROTO_DESCRIPTORS succeeded")
+	_, err := session.ExecuteStatement(ctx, &SetLocalStatement{VarName: protoDescriptorsVarName, Value: "''"})
+	if err == nil || err.Error() != protoDescriptorsVarName+" does not support SET LOCAL" {
+		t.Fatalf("SET LOCAL error = %v", err)
 	}
+	assertDescriptorState(t, sv, fileGraph, fileList)
 	if _, err := session.ExecuteStatement(ctx, &RollbackStatement{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := session.batch.Start(batchModeDDL); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := session.ExecuteStatement(ctx, &SetStatement{VarName: protoDescriptorsVarName, Value: "''"}); err == nil || !strings.Contains(err.Error(), "batch is active") {
-		t.Fatalf("batch SET error = %v", err)
+
+	inline := protoDescriptorsGoogleSQL(t, a20DescriptorSet(t))
+	for _, mode := range []batchMode{batchModeDDL, batchModeDML} {
+		if err := sv.SetFromSimple("CLI_PROTO_DESCRIPTOR_FILE", "testdata/protos/order_descriptors.pb"); err != nil {
+			t.Fatal(err)
+		}
+		beforeGraph, beforeFiles := cloneDescriptorState(sv)
+		if err := session.batch.Start(mode); err != nil {
+			t.Fatal(err)
+		}
+		_, err := session.ExecuteStatement(ctx, &SetStatement{VarName: protoDescriptorsVarName, Value: inline})
+		if err == nil || err.Error() != "PROTO_DESCRIPTORS cannot be set while a batch is active" {
+			t.Fatalf("batch %v SET error = %v", mode, err)
+		}
+		assertDescriptorState(t, sv, beforeGraph, beforeFiles)
+		if _, err := session.ExecuteStatement(ctx, &AbortBatchStatement{}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := session.ExecuteStatement(ctx, &SetStatement{VarName: protoDescriptorsVarName, Value: inline}); err != nil {
+			t.Fatalf("SET after aborting %v batch: %v", mode, err)
+		}
+		if !proto.Equal(a20DescriptorSet(t), sv.Internal.ProtoDescriptor) {
+			t.Fatalf("SET after aborting %v batch installed the wrong graph", mode)
+		}
+		assertShowGraph(t, sv, a20DescriptorSet(t))
+		if len(sv.Internal.ProtoDescriptorFile) != 0 {
+			t.Fatalf("successful SET left file list %v", sv.Internal.ProtoDescriptorFile)
+		}
 	}
 }
 
@@ -137,9 +160,16 @@ func TestProtoDescriptorsFileCoexistence(t *testing.T) {
 	if err := sv.SetFromSimple("CLI_PROTO_DESCRIPTOR_FILE", "testdata/protos/order_descriptors.pb"); err != nil {
 		t.Fatal(err)
 	}
-	encoded, err := sv.Registry.Get(protoDescriptorsVarName)
-	if err != nil || encoded == "" {
-		t.Fatalf("SHOW after file SET: %q %v", encoded, err)
+	fileGraph, fileList := cloneDescriptorState(sv)
+	assertShowGraph(t, sv, fileGraph)
+	if len(fileList) == 0 {
+		t.Fatal("file SET left empty provenance")
+	}
+
+	inline := a20DescriptorSet(t)
+	encoded, err := encodeProtoDescriptors(inline)
+	if err != nil {
+		t.Fatal(err)
 	}
 	if err := sv.SetFromSimple(protoDescriptorsVarName, encoded); err != nil {
 		t.Fatal(err)
@@ -147,6 +177,47 @@ func TestProtoDescriptorsFileCoexistence(t *testing.T) {
 	if len(sv.Internal.ProtoDescriptorFile) != 0 {
 		t.Fatalf("inline SET left file list %v", sv.Internal.ProtoDescriptorFile)
 	}
+	assertShowGraph(t, sv, inline)
+
+	orderPath := "testdata/protos/order_descriptors.pb"
+	if err := sv.AddFromSimple("CLI_PROTO_DESCRIPTOR_FILE", orderPath); err != nil {
+		t.Fatal(err)
+	}
+	merged := sv.Internal.ProtoDescriptor
+	requireUsableDescriptor(t, merged)
+	if !containsDescriptorFile(merged, "a20.proto") || !containsDescriptorPackage(merged, "examples.shipping") {
+		t.Fatalf("ADD after inline SET did not keep both graphs: %v", merged)
+	}
+	if !slices.Equal(sv.Internal.ProtoDescriptorFile, []string{orderPath}) {
+		t.Fatalf("file list after ADD = %v", sv.Internal.ProtoDescriptorFile)
+	}
+	assertShowGraph(t, sv, merged)
+
+	badPath := writeDescriptorSet(t, filepath.Join(t.TempDir(), "bad.pb"), &descriptorpb.FileDescriptorProto{
+		Name: proto.String("broken.proto"), Dependency: []string{"missing.proto"},
+	})
+	beforeGraph, beforeFiles := cloneDescriptorState(sv)
+	if err := sv.AddFromSimple("CLI_PROTO_DESCRIPTOR_FILE", badPath); err == nil {
+		t.Fatal("invalid ADD succeeded")
+	}
+	assertDescriptorState(t, sv, beforeGraph, beforeFiles)
+	assertShowGraph(t, sv, beforeGraph)
+
+	if err := sv.SetFromSimple("CLI_PROTO_DESCRIPTOR_FILE", "testdata/protos/singer.proto"); err != nil {
+		t.Fatal(err)
+	}
+	replaced := sv.Internal.ProtoDescriptor
+	requireUsableDescriptor(t, replaced)
+	if containsDescriptorFile(replaced, "a20.proto") || containsDescriptorPackage(replaced, "examples.shipping") {
+		t.Fatalf("replacing file SET kept previous types: %v", replaced)
+	}
+	if !containsDescriptorPackage(replaced, "examples.spanner.music") {
+		t.Fatalf("replacing file SET missing singer types: %v", replaced)
+	}
+	if !slices.Equal(sv.Internal.ProtoDescriptorFile, []string{"testdata/protos/singer.proto"}) {
+		t.Fatalf("file list after replacing SET = %v", sv.Internal.ProtoDescriptorFile)
+	}
+	assertShowGraph(t, sv, replaced)
 }
 
 func TestDumpProtoDescriptorsPreamble(t *testing.T) {
@@ -187,4 +258,87 @@ func decodeMust(t *testing.T, encoded string) *descriptorpb.FileDescriptorSet {
 		t.Fatal(err)
 	}
 	return fds
+}
+
+func deterministicPaddedEncoding(t *testing.T, fds *descriptorpb.FileDescriptorSet) string {
+	t.Helper()
+	if fds == nil {
+		return ""
+	}
+	raw, err := proto.MarshalOptions{Deterministic: true}.Marshal(fds)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return base64.StdEncoding.EncodeToString(raw)
+}
+
+func assertShowGraph(t *testing.T, sv *systemVariables, want *descriptorpb.FileDescriptorSet) {
+	t.Helper()
+	got, err := sv.Registry.Get(protoDescriptorsVarName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want == nil {
+		if got != "" {
+			t.Fatalf("SHOW = %q, want empty", got)
+		}
+		return
+	}
+	if !proto.Equal(want, decodeMust(t, got)) {
+		t.Fatal("SHOW decoded graph does not equal the effective graph")
+	}
+	if got != deterministicPaddedEncoding(t, want) {
+		t.Fatalf("SHOW encoding = %q, want independently computed deterministic padded encoding", got)
+	}
+}
+
+func cloneDescriptorState(sv *systemVariables) (*descriptorpb.FileDescriptorSet, []string) {
+	var graph *descriptorpb.FileDescriptorSet
+	if sv.Internal.ProtoDescriptor != nil {
+		graph = proto.Clone(sv.Internal.ProtoDescriptor).(*descriptorpb.FileDescriptorSet)
+	}
+	return graph, slices.Clone(sv.Internal.ProtoDescriptorFile)
+}
+
+func assertDescriptorState(t *testing.T, sv *systemVariables, graph *descriptorpb.FileDescriptorSet, files []string) {
+	t.Helper()
+	if !proto.Equal(graph, sv.Internal.ProtoDescriptor) {
+		t.Fatal("descriptor graph changed")
+	}
+	if !slices.Equal(files, sv.Internal.ProtoDescriptorFile) {
+		t.Fatalf("file provenance = %v, want %v", sv.Internal.ProtoDescriptorFile, files)
+	}
+}
+
+func protoDescriptorsGoogleSQL(t *testing.T, fds *descriptorpb.FileDescriptorSet) string {
+	t.Helper()
+	encoded, err := encodeProtoDescriptors(fds)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return "'" + encoded + "'"
+}
+
+func containsDescriptorFile(fds *descriptorpb.FileDescriptorSet, name string) bool {
+	if fds == nil {
+		return false
+	}
+	for _, file := range fds.File {
+		if file.GetName() == name {
+			return true
+		}
+	}
+	return false
+}
+
+func containsDescriptorPackage(fds *descriptorpb.FileDescriptorSet, pkg string) bool {
+	if fds == nil {
+		return false
+	}
+	for _, file := range fds.File {
+		if file.GetPackage() == pkg {
+			return true
+		}
+	}
+	return false
 }
