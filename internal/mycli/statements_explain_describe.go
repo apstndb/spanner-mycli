@@ -427,7 +427,7 @@ func generateExplainResult(sysVars *systemVariables, queryPlan *sppb.QueryPlan, 
 	}
 
 	result := &Result{
-		TableHeader:  toTableHeader(explainColumnNames),
+		TableHeader:  toTableHeader(explainBaseColumnNames(width)),
 		ColumnAlign:  explainColumnAlign,
 		AffectedRows: len(rows),
 		Rows:         rows,
@@ -551,9 +551,14 @@ func buildExplainAnalyzeResult(sysVars *systemVariables, plan *sppb.QueryPlan, q
 	return result, nil
 }
 
+func explainBaseColumnNames(width int64) []string {
+	// Keep the header from widening a wrapped operator column in either mode.
+	return lo.Ternary(width == 0 || width >= operatorColumnNameLength, explainColumnNames, explainColumnNamesShort)
+}
+
 func explainAnalyzeHeader(def []columnRenderDef, width int64) ([]string, []tw.Align) {
 	// Start with the base columns and alignments for EXPLAIN output.
-	baseNames := lo.Ternary(width == 0 || width >= operatorColumnNameLength, explainColumnNames, explainColumnNamesShort)
+	baseNames := explainBaseColumnNames(width)
 	baseAlign := explainColumnAlign
 
 	// Extract the names and alignments from the custom column definitions.
