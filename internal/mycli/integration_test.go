@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -38,7 +39,10 @@ import (
 	"github.com/apstndb/spanner-mycli/internal/mycli/format"
 	"github.com/apstndb/spanner-mycli/internal/mycli/streamio"
 
+	"google.golang.org/protobuf/encoding/prototext"
+	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/testing/protocmp"
+	"google.golang.org/protobuf/types/dynamicpb"
 
 	"cloud.google.com/go/spanner"
 	"github.com/google/go-cmp/cmp"
@@ -1449,6 +1453,56 @@ func TestProtoStatements(t *testing.T) {
 	}
 
 	runStatementTests(t, tests)
+}
+
+func TestImportedProtoStatements(t *testing.T) {
+	t.Parallel()
+	skipIfShortIntegration(t)
+	dir := t.TempDir()
+	child := writeProtoSource(t, filepath.Join(dir, "child.proto"), `syntax="proto3"; package imported; message Child { string value=1; }`)
+	root := writeProtoSource(t, filepath.Join(dir, "root.proto"), fmt.Sprintf(`syntax="proto3"; package imported; import %q; message Root { Child child=1; }`, child))
+	_, session := initializeWithRandomDB(t, nil, nil)
+	handler := NewSessionHandler(session)
+	execute := func(sql string) *Result {
+		t.Helper()
+		stmt, err := BuildStatementWithCommentsWithMode(sql, sql, enums.ParseModeNoMemefish)
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, err := handler.ExecuteStatement(t.Context(), stmt)
+		if err != nil {
+			t.Fatalf("%s: %v", sql, err)
+		}
+		return result
+	}
+	execute(fmt.Sprintf("SET CLI_PROTO_DESCRIPTOR_FILE = %q", root))
+	execute("CREATE PROTO BUNDLE (`imported.Root`, `imported.Child`)")
+	execute("CREATE TABLE ProtoRows (Id INT64 NOT NULL, P imported.Root) PRIMARY KEY (Id)")
+	execute(`INSERT INTO ProtoRows (Id, P) VALUES (1, CAST('child { value: "kept" }' AS imported.Root))`)
+	result := execute("SELECT P FROM ProtoRows WHERE Id = 1")
+	if result.AffectedRows != 1 || result.Typed == nil || len(result.Typed.Rows) != 1 {
+		t.Fatalf("proto query returned no value: %+v", result)
+	}
+	rows, err := deriveDisplayRows(session.systemVariables, result.Typed)
+	if err != nil || len(rows) != 1 || len(rows[0]) != 1 {
+		t.Fatalf("CLI proto display rows = %v, err=%v", rows, err)
+	}
+	files := requireUsableDescriptor(t, session.systemVariables.Internal.ProtoDescriptor)
+	desc, err := files.FindDescriptorByName("imported.Root")
+	if err != nil {
+		t.Fatal(err)
+	}
+	message := dynamicpb.NewMessage(desc.(protoreflect.MessageDescriptor))
+	// Parse the actual CLI decoder output, not only the SDK response or local
+	// descriptor registry. Text-format whitespace is not part of the contract.
+	decoded := rows[0][0].RawText()
+	if err := prototext.Unmarshal([]byte(decoded), message); err != nil {
+		t.Fatalf("decoded proto text = %q: %v", decoded, err)
+	}
+	childMessage := message.Get(message.Descriptor().Fields().ByName("child")).Message()
+	if got := childMessage.Get(childMessage.Descriptor().Fields().ByName("value")).String(); got != "kept" {
+		t.Fatalf("imported proto field = %q, want kept", got)
+	}
 }
 
 func TestAdminStatements(t *testing.T) {

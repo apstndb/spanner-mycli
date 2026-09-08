@@ -27,6 +27,7 @@ import (
 	"github.com/bufbuild/protocompile"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"google.golang.org/protobuf/reflect/protodesc"
+	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/reflect/protoregistry"
 
 	"google.golang.org/protobuf/proto"
@@ -491,7 +492,10 @@ func mergeFDS(left, right *descriptorpb.FileDescriptorSet) *descriptorpb.FileDes
 	result := slices.Clone(left.GetFile())
 	for _, fd := range right.GetFile() {
 		idx := slices.IndexFunc(result, func(descriptorProto *descriptorpb.FileDescriptorProto) bool {
-			return descriptorProto.GetPackage() == fd.GetPackage() && descriptorProto.GetName() == fd.GetName()
+			// File names, not package/name pairs, identify protobuf files. Later
+			// inputs replace earlier versions; the complete graph is validated
+			// before installation, including references affected by replacement.
+			return descriptorProto.GetName() == fd.GetName()
 		})
 		if idx != -1 {
 			result[idx] = fd
@@ -532,9 +536,25 @@ func readFileDescriptorProtoFromFile(filename string) (*descriptorpb.FileDescrip
 			return nil, err
 		}
 
-		return &descriptorpb.FileDescriptorSet{
-			File: sliceOf(protodesc.ToFileDescriptorProto(files.FindFileByPath(filename))),
-		}, nil
+		// Compile returns roots with linked imports, not a flat descriptor set.
+		// Export each dependency once, in dependency-first declared import order,
+		// so both the decoder and the DDL request can resolve the same graph.
+		var result descriptorpb.FileDescriptorSet
+		seen := make(map[string]bool)
+		var visit func(protoreflect.FileDescriptor)
+		visit = func(file protoreflect.FileDescriptor) {
+			if seen[file.Path()] {
+				return
+			}
+			seen[file.Path()] = true
+			imports := file.Imports()
+			for i := range imports.Len() {
+				visit(imports.Get(i).FileDescriptor)
+			}
+			result.File = append(result.File, protodesc.ToFileDescriptorProto(file))
+		}
+		visit(files.FindFileByPath(filename))
+		return &result, nil
 	}
 
 	var b []byte
