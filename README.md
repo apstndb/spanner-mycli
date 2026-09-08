@@ -462,6 +462,7 @@ The tee file will NOT contain:
 - Only regular files are supported (not directories, FIFOs, or device files)
 - Tee file write failures warn once and leave console output running
 - File-only output preserves write errors instead of treating the failed file as optional. A failed export can leave a partial file; do not replay it as a complete dump.
+- Result-display failures, including summaries and query-plan appendices, report an error. This does not undo a statement that already completed successfully.
 
 ```bash
 # Example: Logging a session with CLI_ECHO_INPUT
