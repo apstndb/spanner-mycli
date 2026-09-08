@@ -21,6 +21,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/klauspost/compress/zstd"
 )
@@ -397,8 +398,10 @@ func extractSnippet(content, term string, maxLen int) string {
 	}
 
 	// Center the snippet around the match.
-	// Convert byte offset to rune offset for safe slicing.
-	runeIdx := len([]rune(content[:idx]))
+	// strings.Index returns a byte offset in the lowered string. Go's
+	// unicode.ToLower is 1:1 in runes but not in UTF-8 bytes (Ⱥ expands,
+	// K contracts), so convert that offset using the lowered prefix.
+	runeIdx := utf8.RuneCountInString(lower[:idx])
 	start := max(runeIdx-maxLen/2, 0)
 	end := min(start+maxLen, runeLen)
 

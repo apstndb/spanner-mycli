@@ -23,6 +23,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	dkapi "github.com/apstndb/developerknowledge-go"
 	"golang.org/x/time/rate"
@@ -614,4 +615,46 @@ func TestExecuteToolCall_SearchDeveloperDocs_FallbackToLocal(t *testing.T) {
 	if qr["source"] != "local_cache" {
 		t.Errorf("expected source=local_cache, got %v", qr["source"])
 	}
+}
+
+func TestExecuteToolCall_UnicodeSnippets(t *testing.T) {
+	t.Parallel()
+	for _, route := range []string{"search_cached_documents", "search_developer_docs"} {
+		for _, prefix := range []string{strings.Repeat("Ⱥ", 20), strings.Repeat("K", 500), strings.Repeat("あ", 40), ""} {
+			t.Run(route+"/"+prefixLabel(prefix), func(t *testing.T) {
+				t.Parallel()
+				c := newTestCache(t)
+				c.Put("documents/audit-only", prefix+"Needle extra")
+				resp := executeToolCall(t.Context(), &genai.FunctionCall{
+					Name: route,
+					Args: map[string]any{"queries": []any{"needle extra"}},
+				}, c)
+				qr, _ := resp["query_results"].(map[string]any)["needle extra"].(map[string]any)
+				if qr == nil {
+					t.Fatalf("missing query result: %v", resp)
+				}
+				if route == "search_developer_docs" && qr["source"] != "local_cache" {
+					t.Fatalf("developer search did not use local fallback: %v", qr["source"])
+				}
+				if qr["count"] != 1 {
+					t.Fatalf("count=%v", qr["count"])
+				}
+				rows, _ := qr["results"].([]map[string]any)
+				if len(rows) != 1 {
+					t.Fatalf("results=%v", qr["results"])
+				}
+				snippet, _ := rows[0]["snippet"].(string)
+				if !utf8.ValidString(snippet) || !strings.Contains(snippet, "Needle") {
+					t.Fatalf("snippet=%q", snippet)
+				}
+			})
+		}
+	}
+}
+
+func prefixLabel(prefix string) string {
+	if prefix == "" {
+		return "ascii"
+	}
+	return string([]rune(prefix)[0])
 }
