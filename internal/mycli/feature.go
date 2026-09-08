@@ -17,16 +17,11 @@ package mycli
 // This file defines the Feature registration seam (issue #778). A Feature is a
 // plain value passed to Main that contributes client-side statements, system
 // variables, CLI flags, and per-session state without the core package
-// importing the feature's dependencies. In PR0 the seam is introduced with zero
-// behavior change: the three optional families (GEMINI/BIGQUERY/CQL) still live
-// in core and Main is called with an empty feature list, so the full binary's
-// user-visible surface does not move.
-//
-// New-feature checklist (enforced at registration through the merged tables and
-// the #728 invariant tests): every contributed statement must declare its
-// READONLY/detached classification via the marker embeds below, every variable
-// must declare its SET policy through FeatureVar, and docs/completion must stay
-// consistent.
+// importing the feature's dependencies. The full root main registers
+// feature/all.All(); the slim cmd/spanner-mycli-slim main registers none.
+// Marker embeds are opt-in: unmarked statements keep ordinary/non-detached
+// behavior. MergedStatementDefs concatenates tables and does not itself
+// enforce a classification schema.
 
 import (
 	"context"

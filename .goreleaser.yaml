@@ -9,7 +9,20 @@
 version: 2
 
 builds:
-  - env:
+  - id: spanner-mycli
+    main: .
+    binary: spanner-mycli
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+      - darwin
+    ldflags: -s -w -X main.version={{.Version}} -X "main.installFrom=downloaded from release page"
+  - id: spanner-mycli-slim
+    main: ./cmd/spanner-mycli-slim
+    binary: spanner-mycli-slim
+    env:
       - CGO_ENABLED=0
     goos:
       - linux
@@ -18,16 +31,31 @@ builds:
     ldflags: -s -w -X main.version={{.Version}} -X "main.installFrom=downloaded from release page"
 
 archives:
-  - formats: [tar.gz]
+  - id: spanner-mycli
+    ids: [spanner-mycli]
+    formats: [tar.gz]
     # this name template makes the OS and Arch compatible with the results of `uname`.
     name_template: >-
-      {{ .ProjectName }}_
+      spanner-mycli_
       {{- title .Os }}_
       {{- if eq .Arch "amd64" }}x86_64
       {{- else if eq .Arch "386" }}i386
       {{- else }}{{ .Arch }}{{ end }}
       {{- if .Arm }}v{{ .Arm }}{{ end }}
     # use zip for windows archives
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+  - id: spanner-mycli-slim
+    ids: [spanner-mycli-slim]
+    formats: [tar.gz]
+    name_template: >-
+      spanner-mycli-slim_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
     format_overrides:
       - goos: windows
         formats: [zip]
