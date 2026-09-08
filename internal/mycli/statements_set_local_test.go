@@ -5,11 +5,15 @@
 package mycli
 
 import (
+	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // newSessionForLocalVarTest builds a Session wired for the pending-transaction
@@ -298,6 +302,137 @@ func TestOrdinarySetPersistsOnSessionClose(t *testing.T) {
 	}
 	if session.systemVariables.typeStyles[sppb.TypeCode_INT64] == "" {
 		t.Fatal("derived typeStyles not kept after Close")
+	}
+}
+
+func TestSessionCloseRestoresOutstandingLocal(t *testing.T) {
+	t.Parallel()
+
+	t.Run("mixed remaining LOCAL restores while ordinary SET remains", func(t *testing.T) {
+		t.Parallel()
+		session := newSessionForLocalVarTest(t)
+		ctx := t.Context()
+		wantPrompt := mustGetVar(t, session, "CLI_PROMPT")
+		wantStyles := mustGetVar(t, session, "CLI_TYPE_STYLES")
+		wantDerived := session.systemVariables.typeStyles[sppb.TypeCode_STRING]
+		if _, err := session.ExecuteStatement(ctx, &BeginStatement{}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := session.ExecuteStatement(ctx, &SetLocalStatement{VarName: "CLI_PROMPT", Value: "'local> '"}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := session.ExecuteStatement(ctx, &SetLocalStatement{VarName: "CLI_TYPE_STYLES", Value: "'STRING=green'"}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := session.ExecuteStatement(ctx, &SetLocalStatement{VarName: "CLI_FORMAT", Value: "'CSV'"}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := session.ExecuteStatement(ctx, &SetStatement{VarName: "CLI_FORMAT", Value: "'JSONL'"}); err != nil {
+			t.Fatal(err)
+		}
+		session.Close()
+		if got := mustGetVar(t, session, "CLI_PROMPT"); got != wantPrompt {
+			t.Fatalf("Close left unrelated LOCAL CLI_PROMPT: got %q want %q", got, wantPrompt)
+		}
+		if got := mustGetVar(t, session, "CLI_TYPE_STYLES"); got != wantStyles {
+			t.Fatalf("Close left LOCAL CLI_TYPE_STYLES: got %q want %q", got, wantStyles)
+		}
+		if session.systemVariables.typeStyles[sppb.TypeCode_STRING] != wantDerived {
+			t.Fatal("Close did not restore derived typeStyles")
+		}
+		if got := mustGetVar(t, session, "CLI_FORMAT"); got != "JSONL" {
+			t.Fatalf("Close lost session SET CLI_FORMAT: %q", got)
+		}
+		if n := len(session.txn.localVarUndo); n != 0 {
+			t.Fatalf("Close left %d stale undo entries", n)
+		}
+		session.Close()
+		if n := len(session.txn.localVarUndo); n != 0 {
+			t.Fatalf("repeated Close left %d undo entries", n)
+		}
+		if got := mustGetVar(t, session, "CLI_FORMAT"); got != "JSONL" {
+			t.Fatalf("repeated Close changed session SET: %q", got)
+		}
+	})
+
+	t.Run("LOCAL after ordinary SET restores the session value", func(t *testing.T) {
+		t.Parallel()
+		session := newSessionForLocalVarTest(t)
+		ctx := t.Context()
+		if _, err := session.ExecuteStatement(ctx, &BeginStatement{}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := session.ExecuteStatement(ctx, &SetStatement{VarName: "CLI_FORMAT", Value: "'JSONL'"}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := session.ExecuteStatement(ctx, &SetLocalStatement{VarName: "CLI_FORMAT", Value: "'CSV'"}); err != nil {
+			t.Fatal(err)
+		}
+		session.Close()
+		if got := mustGetVar(t, session, "CLI_FORMAT"); got != "JSONL" {
+			t.Fatalf("Close left LOCAL over session SET: %q", got)
+		}
+		if n := len(session.txn.localVarUndo); n != 0 {
+			t.Fatalf("Close left %d stale undo entries", n)
+		}
+	})
+}
+
+func TestOrdinarySetSurvivesAutomaticQueryAbort(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping emulator integration test in short mode")
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
+	defer cancel()
+	_, session := initializeWithRandomDB(t, []string{testTableSimpleDDL}, nil)
+	wantPrompt := mustGetVar(t, session, "CLI_PROMPT")
+
+	mustExec(t, ctx, session, "BEGIN RW")
+	mustExec(t, ctx, session, "SET LOCAL CLI_PROMPT = 'local> '")
+	mustExec(t, ctx, session, "SET CLI_FORMAT = 'JSONL'")
+	session.txn.queryAfterCollectHook = func() error {
+		return status.Error(codes.Aborted, "injected collector result")
+	}
+	t.Cleanup(func() { session.txn.queryAfterCollectHook = nil })
+	_, err := execSQL(t, ctx, session, "SELECT 1")
+	session.txn.queryAfterCollectHook = nil
+	if spanner.ErrCode(err) != codes.Aborted {
+		t.Fatalf("SELECT abort: %v", err)
+	}
+	if session.txn.InTransaction() {
+		t.Fatal("query abort left an active transaction")
+	}
+	if n := len(session.txn.localVarUndo); n != 0 {
+		t.Fatalf("query abort left %d stale undo entries", n)
+	}
+	if got := mustGetVar(t, session, "CLI_PROMPT"); got != wantPrompt {
+		t.Fatalf("query abort left LOCAL CLI_PROMPT: got %q want %q", got, wantPrompt)
+	}
+	if got := mustGetVar(t, session, "CLI_FORMAT"); got != "JSONL" {
+		t.Fatalf("query abort lost session SET CLI_FORMAT: %q", got)
+	}
+
+	if err := session.RecreateClient(ctx); err != nil {
+		t.Fatalf("RecreateClient after abort: %v", err)
+	}
+	mustExec(t, ctx, session, "BEGIN RW")
+	mustExec(t, ctx, session, "SET LOCAL CLI_VERBOSE = TRUE")
+	if got := mustGetVar(t, session, "CLI_VERBOSE"); got != "TRUE" {
+		t.Fatalf("later LOCAL CLI_VERBOSE: %q", got)
+	}
+	mustExec(t, ctx, session, "ROLLBACK")
+	if session.txn.InTransaction() {
+		t.Fatal("later ROLLBACK left an active transaction")
+	}
+	if n := len(session.txn.localVarUndo); n != 0 {
+		t.Fatalf("later transaction left %d undo entries", n)
+	}
+	if got := mustGetVar(t, session, "CLI_VERBOSE"); got != "FALSE" {
+		t.Fatalf("later LOCAL contaminated session: CLI_VERBOSE=%q", got)
+	}
+	if got := mustGetVar(t, session, "CLI_FORMAT"); got != "JSONL" {
+		t.Fatalf("later transaction lost prior session SET: %q", got)
 	}
 }
 
