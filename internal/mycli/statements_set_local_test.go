@@ -390,14 +390,21 @@ func TestOrdinarySetSurvivesAutomaticQueryAbort(t *testing.T) {
 
 	mustExec(t, ctx, session, "BEGIN RW")
 	mustExec(t, ctx, session, "SET LOCAL CLI_PROMPT = 'local> '")
+	mustExec(t, ctx, session, "SET LOCAL CLI_FORMAT = 'CSV'")
 	mustExec(t, ctx, session, "SET CLI_FORMAT = 'JSONL'")
+	const injectedCollectorAbortMsg = "injected collector abort for SET LOCAL"
+	var hookFired bool
 	session.txn.queryAfterCollectHook = func() error {
-		return status.Error(codes.Aborted, "injected collector result")
+		hookFired = true
+		return status.Error(codes.Aborted, injectedCollectorAbortMsg)
 	}
 	t.Cleanup(func() { session.txn.queryAfterCollectHook = nil })
 	_, err := execSQL(t, ctx, session, "SELECT 1")
 	session.txn.queryAfterCollectHook = nil
-	if spanner.ErrCode(err) != codes.Aborted {
+	if !hookFired {
+		t.Fatal("queryAfterCollectHook did not run")
+	}
+	if spanner.ErrCode(err) != codes.Aborted || err == nil || !strings.Contains(err.Error(), injectedCollectorAbortMsg) {
 		t.Fatalf("SELECT abort: %v", err)
 	}
 	if session.txn.InTransaction() {
