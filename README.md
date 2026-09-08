@@ -1489,14 +1489,16 @@ Query OK, 0 rows affected (8.24 sec)
 
 `SYNC PROTO BUNDLE` accepts any number of `UPSERT` and `DELETE` clauses in either order as one statement. The client reads the current bundle once and composes a single `CREATE PROTO BUNDLE`, `ALTER PROTO BUNDLE`, `DROP PROTO BUNDLE`, or no-op. It does not run the clauses as two separately executed operations.
 
+Illustrative input and composed SQL (not a live session transcript):
+
 ```
-spanner> SYNC PROTO BUNDLE UPSERT (`examples.shipping.OrderHistory`) DELETE (`examples.shipping.Order`);
-+--------------------------------------------------------------------------------------------------+
-| executed                                                                                         |
-+--------------------------------------------------------------------------------------------------+
-| ALTER PROTO BUNDLE INSERT (examples.shipping.OrderHistory) DELETE (examples.shipping.`Order`);   |
-+--------------------------------------------------------------------------------------------------+
-Query OK, 0 rows affected (8.57 sec)
+SYNC PROTO BUNDLE UPSERT (examples.NewType) DELETE (examples.OldType);
+```
+
+When `examples.NewType` is absent from the current bundle and `examples.OldType` is present, that input composes:
+
+```
+ALTER PROTO BUNDLE INSERT (examples.NewType) DELETE (examples.OldType);
 ```
 
 Names are set-wise per operation: repeated names in UPSERT or in DELETE keep the first occurrence. The same full name in both UPSERT and DELETE is rejected before execution. Official GoogleSQL documents `INSERT`, `UPDATE`, and `DELETE` on one `ALTER PROTO BUNDLE` as one atomic type-information change; that does not make the preceding schema read or a `START BATCH DDL` payload atomic.

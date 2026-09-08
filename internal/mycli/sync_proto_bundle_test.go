@@ -1,105 +1,29 @@
+// Copyright 2026 apstndb
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package mycli
 
 import (
-	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
-	"github.com/cloudspannerecosystem/memefish"
-	"github.com/cloudspannerecosystem/memefish/ast"
-	"github.com/cloudspannerecosystem/memefish/token"
 	"github.com/google/go-cmp/cmp"
-	"github.com/samber/lo"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/descriptorpb"
 )
-
-// originalParseSyncProtoBundle is a retained snapshot of the Issue 242 baseline
-// parser. parsePaths called memefish Parser.ParseExpr, which requires EOF after
-// the first list, so mixed clauses failed. Used only as a negative control.
-func originalParseSyncProtoBundle(s string) (Statement, error) {
-	p := &memefish.Parser{Lexer: &memefish.Lexer{
-		File: &token.File{
-			Buffer: s,
-		},
-	}}
-	err := p.NextToken()
-	if err != nil {
-		return nil, err
-	}
-
-	var upsertPaths, deletePaths []string
-loop:
-	for {
-		switch {
-		case p.Token.Kind == token.TokenEOF:
-			break loop
-		case p.Token.IsKeywordLike("UPSERT"):
-			paths, err := originalParsePaths(p)
-			if err != nil {
-				return nil, err
-			}
-			upsertPaths = append(upsertPaths, paths...)
-		case p.Token.IsKeywordLike("DELETE"):
-			paths, err := originalParsePaths(p)
-			if err != nil {
-				return nil, err
-			}
-			deletePaths = append(deletePaths, paths...)
-		default:
-			return nil, fmt.Errorf("expected UPSERT or DELETE, but: %q", p.Token.AsString)
-		}
-	}
-	return &SyncProtoStatement{UpsertPaths: upsertPaths, DeletePaths: deletePaths}, nil
-}
-
-func originalParsePaths(p *memefish.Parser) ([]string, error) {
-	expr, err := recoverMemefishParserPanic(p.ParseExpr)
-	if err != nil {
-		return nil, err
-	}
-
-	switch e := expr.(type) {
-	case *ast.ParenExpr:
-		name, err := exprToFullName(e.Expr)
-		if err != nil {
-			return nil, err
-		}
-		return sliceOf(name), nil
-	case *ast.TupleStructLiteral:
-		return lo.MapErr(e.Values, func(expr ast.Expr, _ int) (string, error) {
-			return exprToFullName(expr)
-		})
-	default:
-		return nil, fmt.Errorf("must be paren expr or tuple of path, but: %T", expr)
-	}
-}
-
-func TestOriginalParseSyncProtoBundleRejectsMixed(t *testing.T) {
-	t.Parallel()
-	for _, args := range []string{
-		"UPSERT (examples.EnumType) DELETE (examples.ProtoType)",
-		"DELETE (examples.ProtoType) UPSERT (examples.EnumType)",
-	} {
-		_, err := originalParseSyncProtoBundle(args)
-		if err == nil {
-			t.Fatalf("original parser accepted mixed args %q", args)
-		}
-		if !strings.Contains(err.Error(), "expected token: <eof>") {
-			t.Fatalf("original parser error for %q = %v, want leftover EOF", args, err)
-		}
-
-		stmt, err := BuildStatement("SYNC PROTO BUNDLE " + args)
-		if err != nil {
-			t.Fatalf("candidate BuildStatement(%q) error = %v", args, err)
-		}
-		if _, ok := stmt.(*SyncProtoStatement); !ok {
-			t.Fatalf("candidate statement %T, want *SyncProtoStatement", stmt)
-		}
-	}
-}
 
 func TestSyncProtoBundleParserToComposer(t *testing.T) {
 	t.Parallel()
@@ -155,6 +79,70 @@ func TestSyncProtoBundleParserToComposer(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSyncProtoBundleLexicalAndIdentity(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name string
+		sql  string
+		want *SyncProtoStatement
+	}{
+		{
+			name: "comment with parentheses and DELETE keyword",
+			sql:  "SYNC PROTO BUNDLE UPSERT /* DELETE (examples.Hidden) */ (examples.A) DELETE (examples.B)",
+			want: &SyncProtoStatement{UpsertPaths: sliceOf("examples.A"), DeletePaths: sliceOf("examples.B")},
+		},
+		{
+			name: "quoted ident containing parentheses and DELETE",
+			sql:  "SYNC PROTO BUNDLE UPSERT (`foo) DELETE (`)",
+			want: &SyncProtoStatement{UpsertPaths: sliceOf("foo) DELETE (")},
+		},
+		{
+			name: "repeated DELETE then interleaved UPSERT keeps first-occurrence order",
+			sql:  "SYNC PROTO BUNDLE DELETE (examples.A) UPSERT (examples.B) DELETE (examples.A, examples.C)",
+			want: &SyncProtoStatement{UpsertPaths: sliceOf("examples.B"), DeletePaths: sliceOf("examples.A", "examples.C")},
+		},
+		{
+			name: "repeated same-kind DELETE clauses unique in first-occurrence order",
+			sql:  "SYNC PROTO BUNDLE DELETE (examples.A, examples.B) DELETE (examples.B, examples.C)",
+			want: &SyncProtoStatement{DeletePaths: sliceOf("examples.A", "examples.B", "examples.C")},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := BuildStatement(tt.sql)
+			if err != nil {
+				t.Fatalf("BuildStatement(%q) error = %v", tt.sql, err)
+			}
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("BuildStatement(%q) mismatch (-want +got):\n%s", tt.sql, diff)
+			}
+		})
+	}
+}
+
+func TestSyncProtoBundleDecodedOverlapAndMalformed(t *testing.T) {
+	t.Parallel()
+	t.Run("equivalent decoded spellings conflict", func(t *testing.T) {
+		t.Parallel()
+		sql := "SYNC PROTO BUNDLE UPSERT (examples.`Type`) DELETE (`examples.Type`)"
+		got, err := BuildStatement(sql)
+		if err == nil || got != nil {
+			t.Fatalf("BuildStatement(%q) = %#v, %v; want error and nil statement", sql, got, err)
+		}
+		if !strings.Contains(err.Error(), "appears in both UPSERT and DELETE") {
+			t.Fatalf("error = %v, want overlap conflict", err)
+		}
+	})
+	t.Run("malformed later clause returns nil statement", func(t *testing.T) {
+		t.Parallel()
+		sql := "SYNC PROTO BUNDLE UPSERT (examples.A) DELETE ("
+		got, err := BuildStatement(sql)
+		if err == nil || got != nil {
+			t.Fatalf("BuildStatement(%q) = %#v, %v; want error and nil statement", sql, got, err)
+		}
+	})
 }
 
 func TestSyncProtoBundleOverlapExecuteRejects(t *testing.T) {
