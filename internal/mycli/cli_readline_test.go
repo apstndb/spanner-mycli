@@ -749,7 +749,7 @@ func TestPersistentHistoryAdd(t *testing.T) {
 			validateFile: func(t *testing.T, fs afero.Fs, filename string) {
 				content, err := afero.ReadFile(fs, filename)
 				require.NoError(t, err)
-				assert.Equal(t, "\"SELECT * FROM users\"\n", string(content))
+				assert.Equal(t, "\n\"SELECT * FROM users\"\n", string(content))
 			},
 			validateHistory: func(t *testing.T, h History) {
 				assert.Equal(t, 1, h.Len())
@@ -766,7 +766,7 @@ func TestPersistentHistoryAdd(t *testing.T) {
 			validateFile: func(t *testing.T, fs afero.Fs, filename string) {
 				content, err := afero.ReadFile(fs, filename)
 				require.NoError(t, err)
-				expected := "\"SELECT 1\"\n\"SELECT 2\"\n\"SELECT 3\"\n"
+				expected := "\n\"SELECT 1\"\n\n\"SELECT 2\"\n\n\"SELECT 3\"\n"
 				assert.Equal(t, expected, string(content))
 			},
 			validateHistory: func(t *testing.T, h History) {
@@ -809,7 +809,7 @@ func TestPersistentHistoryAdd(t *testing.T) {
 			validateFile: func(t *testing.T, fs afero.Fs, filename string) {
 				content, err := afero.ReadFile(fs, filename)
 				require.NoError(t, err)
-				expected := "\"EXISTING COMMAND\"\n\"NEW COMMAND\"\n"
+				expected := "\"EXISTING COMMAND\"\n\n\"NEW COMMAND\"\n"
 				assert.Equal(t, expected, string(content))
 			},
 			validateHistory: func(t *testing.T, h History) {
@@ -1151,7 +1151,7 @@ func TestNewPersistentHistory(t *testing.T) {
 	// Verify the file was updated
 	content, err := os.ReadFile(tmpFile.Name())
 	require.NoError(t, err)
-	expected := "\"SELECT 1\"\n\"SELECT 2\"\n\"SELECT 3\"\n"
+	expected := "\"SELECT 1\"\n\"SELECT 2\"\n\n\"SELECT 3\"\n"
 	assert.Equal(t, expected, string(content))
 }
 
