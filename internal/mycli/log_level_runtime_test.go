@@ -17,15 +17,15 @@ package mycli
 import (
 	"bytes"
 	"context"
+	"io"
 	"log/slog"
+	"os"
 	"strings"
 	"testing"
 
 	"cloud.google.com/go/spanner"
-	adminapi "cloud.google.com/go/spanner/admin/database/apiv1"
 	"github.com/testcontainers/testcontainers-go"
 	tclog "github.com/testcontainers/testcontainers-go/log"
-	"google.golang.org/api/option"
 )
 
 func captureLogger(lv slog.Leveler) (*bytes.Buffer, *slog.Logger) {
@@ -50,6 +50,39 @@ func restoreProcessLogger(t *testing.T) {
 		slog.SetDefault(prevLogger)
 		cliLogLevel.Set(prevLevel)
 	})
+}
+
+func withCapturedStderr(t *testing.T, fn func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := os.Stderr
+	os.Stderr = w
+	defer func() { os.Stderr = old }()
+	fn()
+	_ = w.Close()
+	var buf bytes.Buffer
+	if _, err := io.Copy(&buf, r); err != nil {
+		t.Fatal(err)
+	}
+	_ = r.Close()
+	return buf.String()
+}
+
+func emitEmbeddedAdapters(t *testing.T, logger *slog.Logger) {
+	t.Helper()
+	customizer := configureTestcontainersLogger(logger)
+	tclog.Printf("global message")
+	req := testcontainers.GenericContainerRequest{}
+	if err := customizer.Customize(&req); err != nil {
+		t.Fatalf("Customize() error = %v", err)
+	}
+	if req.Logger == nil {
+		t.Fatal("Customize() did not configure the per-container logger")
+	}
+	req.Logger.Printf("container message")
 }
 
 func boundLogLevelVars(t *testing.T, initial slog.Level) (*systemVariables, *slog.LevelVar) {
@@ -322,6 +355,19 @@ func TestLogLevelP3LocalRestoreAndOrdinarySet(t *testing.T) {
 	if _, err := session.ExecuteStatement(ctx, &SetLocalStatement{VarName: "CLI_LOG_LEVEL", Value: "'DEBUG'"}); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := session.ExecuteStatement(ctx, &CommitStatement{}); err != nil {
+		t.Fatal(err)
+	}
+	if mustLogLevel(t, sv) != "WARN" || debugEnabled(logger) || lv.Level() != slog.LevelWarn {
+		t.Fatal("LOCAL-only COMMIT did not restore WARN")
+	}
+
+	if _, err := session.ExecuteStatement(ctx, &BeginStatement{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.ExecuteStatement(ctx, &SetLocalStatement{VarName: "CLI_LOG_LEVEL", Value: "'DEBUG'"}); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := session.ExecuteStatement(ctx, &SetStatement{VarName: "CLI_LOG_LEVEL", Value: "'INFO'"}); err != nil {
 		t.Fatal(err)
 	}
@@ -371,131 +417,112 @@ func TestLogLevelRegistryRebuildKeepsBinding(t *testing.T) {
 	}
 }
 
-func TestLogLevelSessionReplacementKeepsBinding(t *testing.T) {
-	t.Parallel()
-	sv, lv := boundLogLevelVars(t, slog.LevelWarn)
-	sv.Connection = ConnectionVars{Project: "p", Instance: "i", Database: "d"}
-	newFake := func() *Session {
-		session, err := newSessionWithFactories(
-			t.Context(),
-			sv,
-			func(context.Context, string, spanner.ClientConfig, ...option.ClientOption) (*spanner.Client, error) {
-				return &spanner.Client{}, nil
-			},
-			func(context.Context, ...option.ClientOption) (*adminapi.DatabaseAdminClient, error) {
-				return &adminapi.DatabaseAdminClient{}, nil
-			},
-			func(*spanner.Client) {},
-		)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return session
-	}
-	handler := NewSessionHandler(newFake())
+func TestLogLevelSessionSwitchAndDetach(t *testing.T) {
+	skipIfShortIntegration(t)
+	_, session := initializeWithRandomDB(t, nil, nil)
+	sv := session.systemVariables
+	var lv slog.LevelVar
+	lv.Set(slog.LevelWarn)
+	sv.runtimeLogLevel = &lv
+	sv.Feature.LogLevel = slog.LevelWarn
+	sv.Registry = nil
+	sv.ensureRegistry()
+	handler := NewSessionHandler(session)
+	t.Cleanup(func() { handler.Close() })
+	ctx := t.Context()
 	if err := sv.SetFromSimple("CLI_LOG_LEVEL", "DEBUG"); err != nil {
 		t.Fatal(err)
 	}
-	handler.Session = newFake()
+	db := sv.Connection.Database
+	if _, err := handler.ExecuteStatement(ctx, &UseStatement{Database: "missing-a16-log-db"}); err == nil {
+		t.Fatal("USE missing database succeeded")
+	}
+	if handler.systemVariables != sv || lv.Level() != slog.LevelDebug {
+		t.Fatal("failed USE dropped runtime binding")
+	}
+	if _, err := handler.ExecuteStatement(ctx, &UseStatement{Database: db}); err != nil {
+		t.Fatalf("USE same database: %v", err)
+	}
 	if handler.systemVariables != sv {
-		t.Fatal("replacement session forked systemVariables")
+		t.Fatal("USE forked systemVariables")
+	}
+	if err := sv.SetFromSimple("CLI_LOG_LEVEL", "INFO"); err != nil {
+		t.Fatal(err)
+	}
+	if lv.Level() != slog.LevelInfo || mustLogLevel(t, sv) != "INFO" {
+		t.Fatal("USE dropped runtime binding")
+	}
+	if _, err := handler.ExecuteStatement(ctx, &DetachStatement{}); err != nil {
+		t.Fatalf("DETACH: %v", err)
+	}
+	if handler.systemVariables != sv {
+		t.Fatal("DETACH forked systemVariables")
 	}
 	if err := sv.SetFromSimple("CLI_LOG_LEVEL", "ERROR"); err != nil {
 		t.Fatal(err)
 	}
 	if lv.Level() != slog.LevelError || mustLogLevel(t, sv) != "ERROR" {
-		t.Fatal("session replacement dropped runtime binding")
+		t.Fatal("DETACH dropped runtime binding")
+	}
+	if _, err := handler.ExecuteStatement(ctx, &UseStatement{Database: db}); err != nil {
+		t.Fatalf("USE after DETACH: %v", err)
+	}
+	if err := sv.SetFromSimple("CLI_LOG_LEVEL", "WARN"); err != nil {
+		t.Fatal(err)
+	}
+	if lv.Level() != slog.LevelWarn || handler.systemVariables != sv {
+		t.Fatal("USE after DETACH dropped runtime binding")
 	}
 }
 
-func TestLogLevelP4EmbeddedSnapshotIgnoresLaterSet(t *testing.T) {
-	t.Parallel()
-
-	t.Run("startup WARN stays quiet after SET DEBUG", func(t *testing.T) {
-		t.Parallel()
-		sv := newSystemVariablesWithDefaultsForTest()
-		sv.Config.EmbeddedLogLevel = slog.LevelWarn
-		var lv slog.LevelVar
-		lv.Set(slog.LevelWarn)
-		sv.runtimeLogLevel = &lv
-		sv.ensureRegistry()
-		if err := sv.SetFromSimple("CLI_LOG_LEVEL", "DEBUG"); err != nil {
-			t.Fatal(err)
-		}
-
-		var buf bytes.Buffer
-		fixed := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: sv.Config.EmbeddedLogLevel}))
-		testcontainersSlogLogger{logger: fixed}.Printf("container started")
-		if buf.Len() != 0 {
-			t.Fatalf("embedded WARN logger emitted after SET DEBUG: %q", buf.String())
-		}
-		if lv.Level() != slog.LevelDebug {
-			t.Fatal("CLI runtime did not follow SET DEBUG")
-		}
-	})
-
-	t.Run("startup DEBUG stays visible after SET WARN", func(t *testing.T) {
-		t.Parallel()
-		sv := newSystemVariablesWithDefaultsForTest()
-		sv.Config.EmbeddedLogLevel = slog.LevelDebug
-		sv.Feature.LogLevel = slog.LevelDebug
-		var lv slog.LevelVar
-		lv.Set(slog.LevelDebug)
-		sv.runtimeLogLevel = &lv
-		sv.ensureRegistry()
-		if err := sv.SetFromSimple("CLI_LOG_LEVEL", "WARN"); err != nil {
-			t.Fatal(err)
-		}
-
-		var buf bytes.Buffer
-		fixed := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: sv.Config.EmbeddedLogLevel}))
-		testcontainersSlogLogger{logger: fixed}.Printf("container started")
-		if !strings.Contains(buf.String(), "container started") {
-			t.Fatalf("embedded DEBUG logger quiet after SET WARN: %q", buf.String())
-		}
-		if lv.Level() != slog.LevelWarn {
-			t.Fatal("CLI runtime did not follow SET WARN")
-		}
-	})
-}
-
-func TestLogLevelP4ConfigureBothAdaptersWithFixedLogger(t *testing.T) {
+func TestLogLevelP4ProductionConstructorAndAdapters(t *testing.T) {
+	restoreProcessLogger(t)
 	previousLogger := tclog.Default()
 	t.Cleanup(func() {
 		tclog.SetDefault(previousLogger)
 	})
 
-	var buf bytes.Buffer
-	fixed := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
-	customizer := configureTestcontainersLogger(fixed)
-	tclog.Printf("global quiet")
-	req := testcontainers.GenericContainerRequest{}
-	if err := customizer.Customize(&req); err != nil {
-		t.Fatalf("Customize() error = %v", err)
-	}
-	if req.Logger == nil {
-		t.Fatal("Customize() did not configure the per-container logger")
-	}
-	req.Logger.Printf("container quiet")
-	if buf.Len() != 0 {
-		t.Fatalf("WARN snapshot emitted after CLI DEBUG would have: %q", buf.String())
-	}
-
-	var debugBuf bytes.Buffer
-	debugFixed := slog.New(slog.NewTextHandler(&debugBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	debugCustomizer := configureTestcontainersLogger(debugFixed)
-	tclog.Printf("global visible")
-	req2 := testcontainers.GenericContainerRequest{}
-	if err := debugCustomizer.Customize(&req2); err != nil {
-		t.Fatalf("Customize() error = %v", err)
-	}
-	req2.Logger.Printf("container visible")
-	got := debugBuf.String()
-	for _, want := range []string{"global visible", "container visible"} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("DEBUG snapshot missing %q: %q", want, got)
+	t.Run("startup WARN stays quiet after SET DEBUG", func(t *testing.T) {
+		sv, err := createSystemVariablesFromOptions(&spannerOptions{LogLevel: "WARN"})
+		if err != nil {
+			t.Fatal(err)
 		}
-	}
+		sv.ensureRegistry()
+		if err := sv.SetFromSimple("CLI_LOG_LEVEL", "DEBUG"); err != nil {
+			t.Fatal(err)
+		}
+		if cliLogLevel.Level() != slog.LevelDebug {
+			t.Fatal("CLI runtime did not follow SET DEBUG")
+		}
+		got := withCapturedStderr(t, func() {
+			emitEmbeddedAdapters(t, newEmbeddedRuntimeLogger(sv.Config.EmbeddedLogLevel))
+		})
+		if got != "" {
+			t.Fatalf("WARN constructor emitted after SET DEBUG: %q", got)
+		}
+	})
+
+	t.Run("startup DEBUG stays visible after SET WARN", func(t *testing.T) {
+		sv, err := createSystemVariablesFromOptions(&spannerOptions{LogLevel: "DEBUG"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		sv.ensureRegistry()
+		if err := sv.SetFromSimple("CLI_LOG_LEVEL", "WARN"); err != nil {
+			t.Fatal(err)
+		}
+		if cliLogLevel.Level() != slog.LevelWarn {
+			t.Fatal("CLI runtime did not follow SET WARN")
+		}
+		got := withCapturedStderr(t, func() {
+			emitEmbeddedAdapters(t, newEmbeddedRuntimeLogger(sv.Config.EmbeddedLogLevel))
+		})
+		for _, want := range []string{"global message", "container message"} {
+			if !strings.Contains(got, want) {
+				t.Fatalf("DEBUG constructor missing %q after SET WARN: %q", want, got)
+			}
+		}
+	})
 }
 
 func TestCachedEnabledDoesNotFreezeDebugToWarn(t *testing.T) {
