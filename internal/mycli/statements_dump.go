@@ -188,6 +188,7 @@ func prepareDumpSchema(ctx context.Context, session *Session) (*dumpPlan, error)
 func prepareDumpWithTxn(ctx context.Context, session *Session, mode dumpMode, specificTables []tableID, txn *spanner.ReadOnlyTransaction) (*dumpPlan, error) {
 	plan := &dumpPlan{}
 	var freshDDL []string
+	var freshProto []byte
 	haveFresh := false
 	fetchFresh := func() ([]string, error) {
 		if haveFresh {
@@ -198,6 +199,7 @@ func prepareDumpWithTxn(ctx context.Context, session *Session, mode dumpMode, sp
 			return nil, wrapDumpGetDdlError(err)
 		}
 		freshDDL = resp.GetStatements()
+		freshProto = resp.GetProtoDescriptors()
 		haveFresh = true
 		return freshDDL, nil
 	}
@@ -227,11 +229,10 @@ func prepareDumpWithTxn(ctx context.Context, session *Session, mode dumpMode, sp
 		if err != nil {
 			return nil, err
 		}
-		replayDDL, err := prepareDumpDDLForReplay(stmts)
+		plan.DDL, err = renderDumpDDL(stmts, freshProto)
 		if err != nil {
 			return nil, err
 		}
-		plan.DDL = renderDDLStatements(replayDDL)
 		if err := resolver.applyInterleaveParents(stmts, selected); err != nil {
 			return nil, err
 		}
@@ -409,16 +410,15 @@ func executeDumpStreamingWithTxn(ctx context.Context, session *Session, mode dum
 // Each statement is terminated with ';' and followed by a blank line, matching
 // the previous per-row rendering; callers write Result.RenderedOutput directly.
 func exportDDL(ctx context.Context, session *Session) (*Result, error) {
-	ddl, err := session.GetDatabaseDdlCached(ctx)
+	ddl, err := session.GetDatabaseDdlFresh(ctx)
+	if err != nil {
+		return nil, wrapDumpGetDdlError(err)
+	}
+	rendered, err := renderDumpDDL(ddl.Statements, ddl.GetProtoDescriptors())
 	if err != nil {
 		return nil, err
 	}
-
-	replayDDL, err := prepareDumpDDLForReplay(ddl.Statements)
-	if err != nil {
-		return nil, err
-	}
-	return &Result{RenderedOutput: renderDDLStatements(replayDDL)}, nil
+	return &Result{RenderedOutput: rendered}, nil
 }
 
 func renderDDLStatements(statements []string) []byte {

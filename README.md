@@ -1318,6 +1318,8 @@ spanner> SHOW VARIABLE CLI_PROTO_DESCRIPTOR_FILE;
 Empty set (0.00 sec)
 ```
 
+`PROTO_DESCRIPTORS` holds the same effective graph as base64. `SET PROTO_DESCRIPTORS` replaces the graph and clears file provenance. `DUMP SCHEMA` and `DUMP DATABASE` emit that SET before DDL when the admin response includes descriptors, so a single SQL script can replay `CREATE PROTO BUNDLE` without a sidecar file. `SET LOCAL` is not supported, and SET is rejected while a manual batch is active.
+
 (EXPERIMENTAL) It also supports non-compiled `.proto` files, including their transitive imports and standard protobuf imports.
 
 Comma-separated inputs are merged into one descriptor graph before validation,

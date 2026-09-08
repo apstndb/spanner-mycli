@@ -665,6 +665,20 @@ var varDefs = []varDef{
 		},
 	},
 	{
+		// noLocal: the displayed value is only the graph; undo cannot restore
+		// both the graph and file provenance together.
+		name:    protoDescriptorsVarName,
+		desc:    "Base64 FileDescriptorSet for the session proto graph. DUMP SCHEMA/DATABASE emit SET PROTO_DESCRIPTORS so replay is self-contained. SET LOCAL is not supported. Cannot be changed while a manual batch is active.",
+		scope:   scopeSession,
+		noLocal: true,
+		bind: func(sv *systemVariables) Variable {
+			return &ProtoDescriptorsVar{
+				filesPtr:      &sv.Internal.ProtoDescriptorFile,
+				descriptorPtr: &sv.Internal.ProtoDescriptor,
+			}
+		},
+	},
+	{
 		name: "CLI_TYPE_STYLES",
 		desc: "Type-based ANSI styling for query results. Format: colon-separated TYPE=STYLE pairs (e.g., 'STRING=green:INT64=bold:NULL=dim'). " +
 			"Supports named colors (red, green, yellow, blue, magenta, cyan, white, black), " +

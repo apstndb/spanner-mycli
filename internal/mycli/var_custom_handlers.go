@@ -149,6 +149,38 @@ func (p *ProtoDescriptorVar) Set(value string) error {
 	return nil
 }
 
+// ProtoDescriptorsVar handles PROTO_DESCRIPTORS (base64 FileDescriptorSet).
+type ProtoDescriptorsVar struct {
+	filesPtr      *[]string
+	descriptorPtr **descriptorpb.FileDescriptorSet
+}
+
+func (p *ProtoDescriptorsVar) Get() (string, error) {
+	if p.descriptorPtr == nil || *p.descriptorPtr == nil {
+		return "", nil
+	}
+	return encodeProtoDescriptors(*p.descriptorPtr)
+}
+
+func (p *ProtoDescriptorsVar) Set(value string) error {
+	if value == "" {
+		*p.filesPtr = nil
+		*p.descriptorPtr = nil
+		return nil
+	}
+	raw, err := decodeProtoDescriptorBytes(value)
+	if err != nil {
+		return err
+	}
+	fds, err := parseProtoDescriptorsGraph(raw)
+	if err != nil {
+		return err
+	}
+	*p.filesPtr = nil
+	*p.descriptorPtr = fds
+	return nil
+}
+
 func (p *ProtoDescriptorVar) Add(value string) error {
 	value = strings.TrimSpace(value)
 
