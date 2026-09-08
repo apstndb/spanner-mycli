@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"strings"
 
 	"github.com/testcontainers/testcontainers-go"
@@ -27,11 +28,20 @@ import (
 )
 
 // testcontainersSlogLogger routes Testcontainers lifecycle diagnostics through
-// the CLI logger. Testcontainers does not attach levels to these messages, so
-// treat them as informational: the default WARN level stays quiet, while
-// --log-level=INFO or DEBUG makes them visible.
+// a logger whose Info gate is the startup --log-level snapshot. Testcontainers
+// does not attach levels to these messages, so treat them as informational:
+// WARN stays quiet, while --log-level=INFO or DEBUG makes them visible.
+// Later SQL SET / --set CLI_LOG_LEVEL must not change this logger.
 type testcontainersSlogLogger struct {
 	logger *slog.Logger
+}
+
+// newEmbeddedRuntimeLogger returns a stderr TextHandler whose level is a
+// fixed slog.Level value. Caching Enabled(Info) while still calling a
+// mutable logger's Info would still suppress previously enabled output
+// after DEBUG-to-WARN.
+func newEmbeddedRuntimeLogger(level slog.Level) *slog.Logger {
+	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
 }
 
 func (l testcontainersSlogLogger) Printf(format string, args ...any) {

@@ -1,3 +1,17 @@
+// Copyright 2026 apstndb
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package mycli
 
 import (
@@ -8,617 +22,401 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
+func tid(name string) tableID          { return tableID{Name: name} }
+func tidn(schema, name string) tableID { return tableID{Schema: schema, Name: name} }
+func parentPtr(id tableID) *tableID    { p := id; return &p }
+func fqnList(ids []tableID) []string {
+	out := make([]string, len(ids))
+	for i, id := range ids {
+		out[i] = id.FQN()
+	}
+	return out
+}
+
 func TestDependencyResolver_TopologicalSort(t *testing.T) {
 	t.Parallel()
-	tests := []struct {
-		name           string
-		setupTables    func() *DependencyResolver
-		tablesToExport []string
-		expectedOrder  []string
-		expectError    bool
-		errorContains  string
-	}{
-		{
-			name: "Simple INTERLEAVE hierarchy",
-			setupTables: func() *DependencyResolver {
-				dr := NewDependencyResolver()
-				dr.tables = map[string]*TableDependency{
-					"Singers": {
-						TableName:      "Singers",
-						ChildrenTables: []string{"Albums"},
-						Level:          0,
-					},
-					"Albums": {
-						TableName:      "Albums",
-						ParentTable:    "Singers",
-						ChildrenTables: []string{"Songs"},
-						Level:          1,
-					},
-					"Songs": {
-						TableName:   "Songs",
-						ParentTable: "Albums",
-						Level:       2,
-					},
-				}
-				return dr
-			},
-			tablesToExport: []string{"Songs", "Albums", "Singers"},
-			expectedOrder:  []string{"Singers", "Albums", "Songs"},
-			expectError:    false,
-		},
-		{
-			name: "Tables with foreign keys",
-			setupTables: func() *DependencyResolver {
-				dr := NewDependencyResolver()
-				dr.tables = map[string]*TableDependency{
-					"Venues": {
-						TableName: "Venues",
-						Level:     0,
-					},
-					"Singers": {
-						TableName: "Singers",
-						Level:     0,
-					},
-					"Concerts": {
-						TableName: "Concerts",
-						ForeignKeys: []FKReference{
-							{ParentTable: "Venues", ChildTable: "Concerts"},
-							{ParentTable: "Singers", ChildTable: "Concerts"},
-						},
-						Level: 0,
-					},
-				}
-				return dr
-			},
-			tablesToExport: []string{"Concerts", "Venues", "Singers"},
-			expectedOrder:  []string{"Singers", "Venues", "Concerts"},
-			expectError:    false,
-		},
-		{
-			name: "Mixed INTERLEAVE and FK dependencies",
-			setupTables: func() *DependencyResolver {
-				dr := NewDependencyResolver()
-				dr.tables = map[string]*TableDependency{
-					"Venues": {
-						TableName: "Venues",
-						Level:     0,
-					},
-					"Singers": {
-						TableName:      "Singers",
-						ChildrenTables: []string{"Albums"},
-						Level:          0,
-					},
-					"Albums": {
-						TableName:   "Albums",
-						ParentTable: "Singers",
-						Level:       1,
-					},
-					"Concerts": {
-						TableName: "Concerts",
-						ForeignKeys: []FKReference{
-							{ParentTable: "Venues", ChildTable: "Concerts"},
-							{ParentTable: "Singers", ChildTable: "Concerts"},
-						},
-						Level: 0,
-					},
-				}
-				return dr
-			},
-			tablesToExport: []string{"Concerts", "Albums", "Venues", "Singers"},
-			expectedOrder:  []string{"Singers", "Albums", "Venues", "Concerts"},
-			expectError:    false,
-		},
-		{
-			name: "Self-referential FK",
-			setupTables: func() *DependencyResolver {
-				dr := NewDependencyResolver()
-				dr.tables = map[string]*TableDependency{
-					"Employees": {
-						TableName: "Employees",
-						ForeignKeys: []FKReference{
-							{ConstraintName: "FK_Employees_Manager", ParentTable: "Employees", ChildTable: "Employees"},
-						},
-						Level: 0,
-					},
-				}
-				return dr
-			},
-			tablesToExport: []string{"Employees"},
-			expectedOrder:  []string{"Employees"},
-			expectError:    false,
-		},
-		{
-			name: "Circular FK dependency",
-			setupTables: func() *DependencyResolver {
-				dr := NewDependencyResolver()
-				dr.tables = map[string]*TableDependency{
-					"TableA": {
-						TableName: "TableA",
-						ForeignKeys: []FKReference{
-							{ParentTable: "TableB", ChildTable: "TableA"},
-						},
-						Level: 0,
-					},
-					"TableB": {
-						TableName: "TableB",
-						ForeignKeys: []FKReference{
-							{ParentTable: "TableA", ChildTable: "TableB"},
-						},
-						Level: 0,
-					},
-				}
-				return dr
-			},
-			tablesToExport: []string{"TableA", "TableB"},
-			expectedOrder:  nil,
-			expectError:    true,
-			errorContains:  "circular foreign key dependency detected: TableA -> TableB -> TableA",
-		},
-		{
-			name: "Deep INTERLEAVE hierarchy (7 levels)",
-			setupTables: func() *DependencyResolver {
-				dr := NewDependencyResolver()
-				tables := []string{"T1", "T2", "T3", "T4", "T5", "T6", "T7"}
-				for i, name := range tables {
-					td := &TableDependency{
-						TableName: name,
-						Level:     i,
-					}
-					if i > 0 {
-						td.ParentTable = tables[i-1]
-						dr.tables[tables[i-1]].ChildrenTables = append(dr.tables[tables[i-1]].ChildrenTables, name)
-					}
-					dr.tables[name] = td
-				}
-				return dr
-			},
-			tablesToExport: []string{"T7", "T5", "T3", "T1", "T6", "T4", "T2"},
-			expectedOrder:  []string{"T1", "T2", "T3", "T4", "T5", "T6", "T7"},
-			expectError:    false,
-		},
-		{
-			name: "FK that conflicts with INTERLEAVE",
-			setupTables: func() *DependencyResolver {
-				dr := NewDependencyResolver()
-				dr.tables = map[string]*TableDependency{
-					"Parent": {
-						TableName:      "Parent",
-						ChildrenTables: []string{"Child"},
-						Level:          0,
-					},
-					"Child": {
-						TableName:   "Child",
-						ParentTable: "Parent",
-						ForeignKeys: []FKReference{
-							{ParentTable: "Other", ChildTable: "Child"},
-						},
-						Level: 1,
-					},
-					"Other": {
-						TableName: "Other",
-						ForeignKeys: []FKReference{
-							{ParentTable: "Child", ChildTable: "Other"},
-						},
-						Level: 0,
-					},
-				}
-				return dr
-			},
-			tablesToExport: []string{"Parent", "Child", "Other"},
-			// Both orders are valid since FK cycle is broken by INTERLEAVE
-			// Parent must come before Child (INTERLEAVE), but Other can be anywhere
-			// after being processed. We accept the actual order produced.
-			expectedOrder: []string{"Parent", "Other", "Child"},
-			expectError:   false,
-		},
-		{
-			name: "Empty database",
-			setupTables: func() *DependencyResolver {
-				return NewDependencyResolver()
-			},
-			tablesToExport: []string{},
-			expectedOrder:  []string{}, // go-cmp handles nil vs empty slice correctly
-			expectError:    false,
-		},
-		{
-			name: "Single table",
-			setupTables: func() *DependencyResolver {
-				dr := NewDependencyResolver()
-				dr.tables = map[string]*TableDependency{
-					"SingleTable": {
-						TableName: "SingleTable",
-						Level:     0,
-					},
-				}
-				return dr
-			},
-			tablesToExport: []string{"SingleTable"},
-			expectedOrder:  []string{"SingleTable"},
-			expectError:    false,
-		},
-		{
-			name: "Table not found",
-			setupTables: func() *DependencyResolver {
-				dr := NewDependencyResolver()
-				dr.tables = map[string]*TableDependency{
-					"ExistingTable": {
-						TableName: "ExistingTable",
-						Level:     0,
-					},
-				}
-				return dr
-			},
-			tablesToExport: []string{"NonExistentTable"},
-			expectedOrder:  nil,
-			expectError:    true,
-			errorContains:  "table NonExistentTable not found",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			dr := tt.setupTables()
-			result, err := dr.GetOrderForTables(tt.tablesToExport)
-
-			if tt.expectError {
-				if err == nil {
-					t.Errorf("Expected error containing '%s', but got no error", tt.errorContains)
-				} else if tt.errorContains != "" && !containsStr(err.Error(), tt.errorContains) {
-					t.Errorf("Expected error containing '%s', but got: %v", tt.errorContains, err)
-				}
-			} else {
-				if err != nil {
-					t.Errorf("Unexpected error: %v", err)
-				}
-				if diff := cmp.Diff(tt.expectedOrder, result); diff != "" {
-					t.Errorf("Order mismatch (-want +got):\n%s", diff)
-				}
-			}
-		})
-	}
-}
-
-func TestDependencyResolver_HasInterleavePathBetween(t *testing.T) {
-	t.Parallel()
 	dr := NewDependencyResolver()
-	dr.tables = map[string]*TableDependency{
-		"GrandParent": {
-			TableName:      "GrandParent",
-			ChildrenTables: []string{"Parent"},
-		},
-		"Parent": {
-			TableName:      "Parent",
-			ParentTable:    "GrandParent",
-			ChildrenTables: []string{"Child"},
-		},
-		"Child": {
-			TableName:   "Child",
-			ParentTable: "Parent",
-		},
-		"Unrelated": {
-			TableName: "Unrelated",
-		},
+	dr.tables = map[tableID]*TableDependency{
+		tid("Singers"): {ID: tid("Singers")},
+		tid("Albums"):  {ID: tid("Albums"), InterleaveParent: parentPtr(tid("Singers"))},
+		tid("Songs"):   {ID: tid("Songs"), InterleaveParent: parentPtr(tid("Albums"))},
 	}
-
-	tests := []struct {
-		ancestor   string
-		descendant string
-		expected   bool
-	}{
-		{"GrandParent", "Child", true},
-		{"GrandParent", "Parent", true},
-		{"Parent", "Child", true},
-		{"Child", "Parent", false},
-		{"Child", "GrandParent", false},
-		{"Unrelated", "Child", false},
-		{"Parent", "Unrelated", false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.ancestor+"->"+tt.descendant, func(t *testing.T) {
-			result := dr.hasInterleavePathBetween(tt.ancestor, tt.descendant)
-			if result != tt.expected {
-				t.Errorf("hasInterleavePathBetween(%s, %s) = %v, expected %v",
-					tt.ancestor, tt.descendant, result, tt.expected)
-			}
-		})
-	}
-}
-
-func TestDependencyResolver_CalculateInterleaveLevels(t *testing.T) {
-	t.Parallel()
-	dr := NewDependencyResolver()
-	dr.tables = map[string]*TableDependency{
-		"Root": {
-			TableName:      "Root",
-			ChildrenTables: []string{"Level1"},
-		},
-		"Level1": {
-			TableName:      "Level1",
-			ParentTable:    "Root",
-			ChildrenTables: []string{"Level2"},
-		},
-		"Level2": {
-			TableName:      "Level2",
-			ParentTable:    "Level1",
-			ChildrenTables: []string{"Level3"},
-		},
-		"Level3": {
-			TableName:   "Level3",
-			ParentTable: "Level2",
-		},
-		"Independent": {
-			TableName: "Independent",
-		},
-	}
-
-	dr.calculateInterleaveLevels()
-
-	expectedLevels := map[string]int{
-		"Root":        0,
-		"Level1":      1,
-		"Level2":      2,
-		"Level3":      3,
-		"Independent": 0,
-	}
-
-	for tableName, expectedLevel := range expectedLevels {
-		if dr.tables[tableName].Level != expectedLevel {
-			t.Errorf("Table %s: expected level %d, got %d",
-				tableName, expectedLevel, dr.tables[tableName].Level)
-		}
-	}
-}
-
-func TestDependencyResolver_GetDependencyInfo(t *testing.T) {
-	t.Parallel()
-	dr := NewDependencyResolver()
-	dr.tables = map[string]*TableDependency{
-		"TestTable": {
-			TableName:   "TestTable",
-			ParentTable: "ParentTable",
-			ForeignKeys: []FKReference{
-				{ParentTable: "RefTable", ChildTable: "TestTable"},
-			},
-			Level: 1,
-		},
-	}
-
-	// Test existing table
-	info, err := dr.GetDependencyInfo("TestTable")
+	got, err := dr.GetOrderForTables([]tableID{tid("Songs"), tid("Albums"), tid("Singers")})
 	if err != nil {
-		t.Errorf("Unexpected error: %v", err)
+		t.Fatal(err)
 	}
-	if info.TableName != "TestTable" {
-		t.Errorf("Expected table name TestTable, got %s", info.TableName)
-	}
-	if info.ParentTable != "ParentTable" {
-		t.Errorf("Expected parent table ParentTable, got %s", info.ParentTable)
-	}
-	if len(info.ForeignKeys) != 1 {
-		t.Errorf("Expected 1 foreign key, got %d", len(info.ForeignKeys))
-	}
-
-	// Test non-existent table
-	_, err = dr.GetDependencyInfo("NonExistent")
-	if err == nil {
-		t.Error("Expected error for non-existent table")
-	}
-	if !containsStr(err.Error(), "table NonExistent not found") {
-		t.Errorf("Expected error message to contain 'table NonExistent not found', got: %v", err)
+	want := []string{"Singers", "Albums", "Songs"}
+	if diff := cmp.Diff(want, fqnList(got)); diff != "" {
+		t.Fatal(diff)
 	}
 }
 
-func TestDependencyResolver_ComplexScenarios(t *testing.T) {
-	t.Parallel()
-	t.Run("Multiple FK to same table", func(t *testing.T) {
-		dr := NewDependencyResolver()
-		dr.tables = map[string]*TableDependency{
-			"Users": {
-				TableName: "Users",
-				Level:     0,
-			},
-			"Posts": {
-				TableName: "Posts",
-				ForeignKeys: []FKReference{
-					{ConstraintName: "FK_Posts_Author", ParentTable: "Users", ChildTable: "Posts"},
-					{ConstraintName: "FK_Posts_Editor", ParentTable: "Users", ChildTable: "Posts"},
-				},
-				Level: 0,
-			},
-		}
-
-		result, err := dr.GetOrderForTables([]string{"Posts", "Users"})
-		if err != nil {
-			t.Errorf("Unexpected error: %v", err)
-		}
-
-		expectedOrder := []string{"Users", "Posts"}
-		if diff := cmp.Diff(expectedOrder, result); diff != "" {
-			t.Errorf("Order mismatch (-want +got):\n%s", diff)
-		}
-	})
-
-	t.Run("Independent table islands", func(t *testing.T) {
-		dr := NewDependencyResolver()
-		dr.tables = map[string]*TableDependency{
-			"Island1_A": {
-				TableName:      "Island1_A",
-				ChildrenTables: []string{"Island1_B"},
-				Level:          0,
-			},
-			"Island1_B": {
-				TableName:   "Island1_B",
-				ParentTable: "Island1_A",
-				Level:       1,
-			},
-			"Island2_A": {
-				TableName:      "Island2_A",
-				ChildrenTables: []string{"Island2_B"},
-				Level:          0,
-			},
-			"Island2_B": {
-				TableName:   "Island2_B",
-				ParentTable: "Island2_A",
-				Level:       1,
-			},
-		}
-
-		result, err := dr.GetOrderForTables([]string{"Island2_B", "Island1_B", "Island2_A", "Island1_A"})
-		if err != nil {
-			t.Errorf("Unexpected error: %v", err)
-		}
-
-		// Check that each island maintains its internal order
-		island1AIndex := indexOf(result, "Island1_A")
-		island1BIndex := indexOf(result, "Island1_B")
-		island2AIndex := indexOf(result, "Island2_A")
-		island2BIndex := indexOf(result, "Island2_B")
-
-		if island1AIndex >= island1BIndex {
-			t.Errorf("Island1_A should come before Island1_B")
-		}
-		if island2AIndex >= island2BIndex {
-			t.Errorf("Island2_A should come before Island2_B")
-		}
-	})
-}
-
-func TestDependencyResolver_PartialExport(t *testing.T) {
+func TestDependencyResolver_ForeignKeysAndPartial(t *testing.T) {
 	t.Parallel()
 	dr := NewDependencyResolver()
-	dr.tables = map[string]*TableDependency{
-		"Parent": {
-			TableName:      "Parent",
-			ChildrenTables: []string{"Child1", "Child2"},
-			Level:          0,
+	dr.tables = map[tableID]*TableDependency{
+		tid("Venues"):  {ID: tid("Venues")},
+		tid("Singers"): {ID: tid("Singers")},
+		tid("Concerts"): {
+			ID:        tid("Concerts"),
+			FKParents: []tableID{tid("Venues"), tid("Singers")},
 		},
-		"Child1": {
-			TableName:   "Child1",
-			ParentTable: "Parent",
-			Level:       1,
-		},
-		"Child2": {
-			TableName:   "Child2",
-			ParentTable: "Parent",
-			Level:       1,
-		},
-		"Unrelated": {
-			TableName: "Unrelated",
-			Level:     0,
-		},
+		tid("Child1"):    {ID: tid("Child1"), InterleaveParent: parentPtr(tid("Parent"))},
+		tid("Parent"):    {ID: tid("Parent")},
+		tid("Unrelated"): {ID: tid("Unrelated")},
 	}
-
-	// Export only some tables, including a child without its parent
-	result, err := dr.GetOrderForTables([]string{"Child1", "Unrelated"})
+	got, err := dr.GetOrderForTables([]tableID{tid("Concerts"), tid("Venues"), tid("Singers")})
 	if err != nil {
-		t.Errorf("Unexpected error: %v", err)
+		t.Fatal(err)
 	}
-
-	// Should handle gracefully even without parent
-	if len(result) != 2 {
-		t.Errorf("Expected 2 tables, got %d", len(result))
+	if diff := cmp.Diff([]string{"Singers", "Venues", "Concerts"}, fqnList(got)); diff != "" {
+		t.Fatal(diff)
 	}
-
-	// Should contain both requested tables
-	if !slices.Contains(result, "Child1") || !slices.Contains(result, "Unrelated") {
-		t.Errorf("Result should contain both requested tables: %v", result)
+	partial, err := dr.GetOrderForTables([]tableID{tid("Child1"), tid("Unrelated")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(partial) != 2 || !slices.Contains(partial, tid("Child1")) || !slices.Contains(partial, tid("Unrelated")) {
+		t.Fatalf("child-only subset: %v", partial)
 	}
 }
 
-// Helper functions
+func TestDependencyResolver_NamedSchemaIdentity(t *testing.T) {
+	t.Parallel()
+	dr := NewDependencyResolver()
+	dr.tables = map[tableID]*TableDependency{
+		tid("Users"):           {ID: tid("Users")},
+		tidn("Alpha", "Users"): {ID: tidn("Alpha", "Users")},
+		tidn("Beta", "Child"): {
+			ID:               tidn("Beta", "Child"),
+			ParentBasename:   "Users",
+			InterleaveParent: parentPtr(tidn("Alpha", "Users")),
+		},
+	}
+	got, err := dr.GetOrderForTables([]tableID{tidn("Beta", "Child"), tidn("Alpha", "Users"), tid("Users")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"Users", "Alpha.Users", "Beta.Child"}
+	if diff := cmp.Diff(want, fqnList(got)); diff != "" {
+		t.Fatal(diff)
+	}
+}
+
+func TestDependencyResolver_MissingAndNotBase(t *testing.T) {
+	t.Parallel()
+	dr := NewDependencyResolver()
+	dr.tables = map[tableID]*TableDependency{tid("Existing"): {ID: tid("Existing")}}
+	dr.objects = map[tableID]catalogObject{
+		tid("Existing"): {ID: tid("Existing"), Type: "BASE TABLE"},
+		tid("AView"):    {ID: tid("AView"), Type: "VIEW"},
+	}
+	if _, err := dr.GetOrderForTables([]tableID{tid("Missing")}); err == nil || !containsStr(err.Error(), "not found") {
+		t.Fatalf("missing: %v", err)
+	}
+	if _, err := dr.GetOrderForTables([]tableID{tid("AView")}); err == nil || !containsStr(err.Error(), "not a base table") {
+		t.Fatalf("view: %v", err)
+	}
+}
+
+func TestSelectedNeedsInterleaveDDL(t *testing.T) {
+	t.Parallel()
+	dr := NewDependencyResolver()
+	dr.tables = map[tableID]*TableDependency{
+		tidn("Beta", "CrossChild"): {ID: tidn("Beta", "CrossChild"), ParentBasename: "Parent"},
+		tidn("Alpha", "Parent"):    {ID: tidn("Alpha", "Parent")},
+		tidn("Beta", "Parent"):     {ID: tidn("Beta", "Parent")},
+	}
+	if !dr.selectedNeedsInterleaveDDL([]tableID{tidn("Beta", "CrossChild"), tidn("Alpha", "Parent")}) {
+		t.Fatal("expected GetDdl when another selected table shares parent basename")
+	}
+	if dr.selectedNeedsInterleaveDDL([]tableID{tidn("Beta", "CrossChild")}) {
+		t.Fatal("child-only should not require GetDdl")
+	}
+}
+
 func containsStr(s, substr string) bool {
 	return strings.Contains(s, substr)
 }
 
-func indexOf(slice []string, item string) int {
-	for i, v := range slice {
-		if v == item {
-			return i
-		}
+func TestIsKnownNotEnforced(t *testing.T) {
+	t.Parallel()
+	no, yes := "NO", "YES"
+	if !isKnownNotEnforced(&no) {
+		t.Fatal("NO must be known not-enforced")
 	}
-	return -1
+	if isKnownNotEnforced(&yes) || isKnownNotEnforced(nil) {
+		t.Fatal("YES and missing ENFORCED are conservative safety edges")
+	}
 }
 
-func TestDependencyResolver_MultiColumnFK(t *testing.T) {
+func TestGetOrderForTablesEmptyFKCycleSucceeds(t *testing.T) {
 	t.Parallel()
-	t.Run("Multi-column foreign key treated as single dependency", func(t *testing.T) {
-		dr := NewDependencyResolver()
-		dr.tables = map[string]*TableDependency{
-			"Users": {
-				TableName: "Users",
-				Level:     0,
-			},
-			"UserPreferences": {
-				TableName: "UserPreferences",
-				// Single FK constraint with multiple columns
-				ForeignKeys: []FKReference{
-					{
-						ConstraintName: "FK_User",
-						ParentTable:    "Users",
-						ChildTable:     "UserPreferences",
-					},
-				},
-				Level: 0,
-			},
-		}
+	a, b := tid("A"), tid("B")
+	dr := NewDependencyResolver()
+	dr.tables = map[tableID]*TableDependency{
+		a: {ID: a, FKParents: []tableID{b}, SafetyFKParents: []tableID{b}},
+		b: {ID: b, FKParents: []tableID{a}, SafetyFKParents: []tableID{a}},
+	}
+	got, err := dr.GetOrderForTables([]tableID{b, a})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff([]string{"A", "B"}, fqnList(got)); diff != "" {
+		t.Fatal(diff)
+	}
+}
 
-		result, err := dr.GetOrderForTables([]string{"UserPreferences", "Users"})
-		if err != nil {
-			t.Errorf("Unexpected error: %v", err)
-		}
+func TestCyclicSafetySCCs(t *testing.T) {
+	t.Parallel()
+	parent, child, other := tid("Parent"), tid("Child"), tid("Other")
+	dr := NewDependencyResolver()
+	dr.tables = map[tableID]*TableDependency{
+		parent: {ID: parent},
+		child: {
+			ID:               child,
+			InterleaveParent: parentPtr(parent),
+			FKParents:        []tableID{other},
+			SafetyFKParents:  []tableID{other},
+		},
+		other: {ID: other, FKParents: []tableID{child}, SafetyFKParents: []tableID{child}},
+	}
+	sccs := dr.cyclicSafetySCCs([]tableID{parent, child, other})
+	if len(sccs) != 1 {
+		t.Fatalf("sccs=%v", sccs)
+	}
+	if diff := cmp.Diff([]string{"Child", "Other"}, fqnList(sccs[0])); diff != "" {
+		t.Fatal(diff)
+	}
+	got, err := dr.GetOrderForTables([]tableID{parent, child, other})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got[0] != parent {
+		t.Fatalf("order %v, want Parent first", fqnList(got))
+	}
 
-		expectedOrder := []string{"Users", "UserPreferences"}
-		if diff := cmp.Diff(expectedOrder, result); diff != "" {
-			t.Errorf("Order mismatch (-want +got):\n%s", diff)
+	self := tid("Emp")
+	selfDR := NewDependencyResolver()
+	selfDR.tables = map[tableID]*TableDependency{
+		self: {ID: self, SafetyFKParents: []tableID{self}},
+	}
+	selfSCCs := selfDR.cyclicSafetySCCs([]tableID{self})
+	if len(selfSCCs) != 1 || selfSCCs[0][0] != self {
+		t.Fatalf("self scc=%v", selfSCCs)
+	}
+
+	infoA, infoB := tid("A"), tid("B")
+	info := NewDependencyResolver()
+	info.tables = map[tableID]*TableDependency{
+		infoA: {ID: infoA, FKParents: []tableID{infoB}},
+		infoB: {ID: infoB, FKParents: []tableID{infoA}},
+	}
+	if sccs := info.cyclicSafetySCCs([]tableID{infoA, infoB}); len(sccs) != 0 {
+		t.Fatalf("NOT ENFORCED-equivalent empty SafetyFKParents must not be cyclic: %v", sccs)
+	}
+}
+
+func TestMixedEnforcementDoesNotCreateOrderCycle(t *testing.T) {
+	t.Parallel()
+	a, b := tid("A"), tid("B")
+	dr := NewDependencyResolver()
+	dr.tables = map[tableID]*TableDependency{
+		a: {ID: a, FKParents: []tableID{b}, SafetyFKParents: []tableID{b}},
+		b: {ID: b},
+	}
+	if sccs := dr.cyclicSafetySCCs([]tableID{a, b}); len(sccs) != 0 {
+		t.Fatalf("enforced A->B plus omitted informational B->A must be acyclic: %v", sccs)
+	}
+	got, err := dr.GetOrderForTables([]tableID{a, b})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff([]string{"B", "A"}, fqnList(got)); diff != "" {
+		t.Fatal(diff)
+	}
+}
+
+func TestCyclicSafetySCCsAncestorReverseFK(t *testing.T) {
+	t.Parallel()
+	parent, child := tid("AParent"), tid("ZChild")
+	dr := NewDependencyResolver()
+	dr.tables = map[tableID]*TableDependency{
+		parent: {ID: parent, FKParents: []tableID{child}, SafetyFKParents: []tableID{child}},
+		child:  {ID: child, InterleaveParent: parentPtr(parent)},
+	}
+	sccs := dr.cyclicSafetySCCs([]tableID{parent, child})
+	if len(sccs) != 1 {
+		t.Fatalf("sccs=%v", sccs)
+	}
+	if diff := cmp.Diff([]string{"AParent", "ZChild"}, fqnList(sccs[0])); diff != "" {
+		t.Fatal(diff)
+	}
+}
+
+func TestAncestorFKDoesNotRejectValidInterleave(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name   string
+		parent tableID
+		child  tableID
+	}{
+		{name: "parent sorts first", parent: tid("AParent"), child: tid("ZChild")},
+		{name: "child sorts first", parent: tid("Parent"), child: tid("Child")},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			dr := NewDependencyResolver()
+			dr.tables = map[tableID]*TableDependency{
+				tt.parent: {ID: tt.parent, FKParents: []tableID{tt.child}},
+				tt.child:  {ID: tt.child, InterleaveParent: parentPtr(tt.parent)},
+			}
+			got, err := dr.GetOrderForTables([]tableID{tt.parent, tt.child})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff([]string{tt.parent.FQN(), tt.child.FQN()}, fqnList(got)); diff != "" {
+				t.Fatal(diff)
+			}
+		})
+	}
+}
+
+func fourParentResolver() *DependencyResolver {
+	dr := NewDependencyResolver()
+	dr.tables = map[tableID]*TableDependency{
+		tid("Parent"):                 {ID: tid("Parent")},
+		tidn("Alpha", "Parent"):       {ID: tidn("Alpha", "Parent")},
+		tidn("Beta", "Parent"):        {ID: tidn("Beta", "Parent")},
+		tidn("Alpha", "SameChild"):    {ID: tidn("Alpha", "SameChild"), ParentBasename: "Parent"},
+		tidn("Beta", "CrossChild"):    {ID: tidn("Beta", "CrossChild"), ParentBasename: "Parent"},
+		tidn("Alpha", "DefaultChild"): {ID: tidn("Alpha", "DefaultChild"), ParentBasename: "Parent"},
+		tid("NamedChild"):             {ID: tid("NamedChild"), ParentBasename: "Parent"},
+	}
+	return dr
+}
+
+func fourParentDDL() []string {
+	return []string{
+		"CREATE TABLE Parent (Id INT64 NOT NULL) PRIMARY KEY(Id)",
+		"CREATE TABLE Alpha.Parent (Id INT64 NOT NULL) PRIMARY KEY(Id)",
+		"CREATE TABLE Beta.Parent (Id INT64 NOT NULL) PRIMARY KEY(Id)",
+		"CREATE TABLE Alpha.SameChild (Id INT64 NOT NULL, ChildId INT64 NOT NULL) PRIMARY KEY(Id, ChildId), INTERLEAVE IN PARENT Alpha.Parent ON DELETE CASCADE",
+		"CREATE TABLE Beta.CrossChild (Id INT64 NOT NULL, ChildId INT64 NOT NULL) PRIMARY KEY(Id, ChildId), INTERLEAVE IN PARENT Alpha.Parent ON DELETE CASCADE",
+		"CREATE TABLE Alpha.DefaultChild (Id INT64 NOT NULL, ChildId INT64 NOT NULL) PRIMARY KEY(Id, ChildId), INTERLEAVE IN PARENT Parent ON DELETE CASCADE",
+		"CREATE TABLE NamedChild (Id INT64 NOT NULL, ChildId INT64 NOT NULL) PRIMARY KEY(Id, ChildId), INTERLEAVE IN PARENT Alpha.Parent ON DELETE CASCADE",
+	}
+}
+
+func TestApplyInterleaveParentsFourMatrix(t *testing.T) {
+	t.Parallel()
+	ddl := fourParentDDL()
+	all := []tableID{
+		tid("Parent"), tidn("Alpha", "Parent"), tidn("Beta", "Parent"),
+		tidn("Alpha", "SameChild"), tidn("Beta", "CrossChild"),
+		tidn("Alpha", "DefaultChild"), tid("NamedChild"),
+	}
+
+	dr := fourParentResolver()
+	if err := dr.applyInterleaveParents(ddl, all); err != nil {
+		t.Fatal(err)
+	}
+	want := map[tableID]tableID{
+		tidn("Alpha", "SameChild"):    tidn("Alpha", "Parent"),
+		tidn("Beta", "CrossChild"):    tidn("Alpha", "Parent"),
+		tidn("Alpha", "DefaultChild"): tid("Parent"),
+		tid("NamedChild"):             tidn("Alpha", "Parent"),
+	}
+	for child, parent := range want {
+		got := dr.tables[child].InterleaveParent
+		if got == nil || *got != parent {
+			t.Fatalf("%s parent = %v, want %s", child.FQN(), got, parent.FQN())
 		}
+	}
+
+	childOnly := fourParentResolver()
+	if err := childOnly.applyInterleaveParents(ddl, []tableID{tidn("Beta", "CrossChild")}); err != nil {
+		t.Fatal(err)
+	}
+	if childOnly.tables[tidn("Beta", "CrossChild")].InterleaveParent != nil {
+		t.Fatal("child-only must not add a parent edge")
+	}
+
+	unrelated := fourParentResolver()
+	if err := unrelated.applyInterleaveParents(ddl, []tableID{tidn("Beta", "CrossChild"), tidn("Beta", "Parent")}); err != nil {
+		t.Fatal(err)
+	}
+	if got := unrelated.tables[tidn("Beta", "CrossChild")].InterleaveParent; got != nil {
+		t.Fatalf("unrelated same-basename must not bind %s", got.FQN())
+	}
+
+	trueParent := fourParentResolver()
+	if err := trueParent.applyInterleaveParents(ddl, []tableID{tidn("Beta", "CrossChild"), tidn("Alpha", "Parent")}); err != nil {
+		t.Fatal(err)
+	}
+	got := trueParent.tables[tidn("Beta", "CrossChild")].InterleaveParent
+	if got == nil || *got != tidn("Alpha", "Parent") {
+		t.Fatalf("true parent+child = %v", got)
+	}
+}
+
+func TestGetOrderForTablesNamedFKAndSynonym(t *testing.T) {
+	t.Parallel()
+	dr := NewDependencyResolver()
+	dr.tables = map[tableID]*TableDependency{
+		tidn("Alpha", "Parent"): {ID: tidn("Alpha", "Parent")},
+		tidn("Beta", "Parent"):  {ID: tidn("Beta", "Parent")},
+		tidn("Alpha", "Child"):  {ID: tidn("Alpha", "Child"), FKParents: []tableID{tidn("Beta", "Parent")}},
+		tidn("Beta", "Child"):   {ID: tidn("Beta", "Child"), FKParents: []tableID{tidn("Alpha", "Parent")}},
+	}
+	got, err := dr.GetOrderForTables([]tableID{
+		tidn("Alpha", "Child"), tidn("Beta", "Child"),
+		tidn("Alpha", "Parent"), tidn("Beta", "Parent"),
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	order := map[tableID]int{}
+	for i, id := range got {
+		order[id] = i
+	}
+	if order[tidn("Beta", "Parent")] > order[tidn("Alpha", "Child")] {
+		t.Fatalf("Beta.Parent must precede Alpha.Child: %v", fqnList(got))
+	}
+	if order[tidn("Alpha", "Parent")] > order[tidn("Beta", "Child")] {
+		t.Fatalf("Alpha.Parent must precede Beta.Child: %v", fqnList(got))
+	}
 
-	t.Run("Composite key with multiple FKs", func(t *testing.T) {
-		dr := NewDependencyResolver()
-		dr.tables = map[string]*TableDependency{
-			"Orders": {
-				TableName: "Orders",
-				Level:     0,
-			},
-			"Products": {
-				TableName: "Products",
-				Level:     0,
-			},
-			"OrderItems": {
-				TableName: "OrderItems",
-				// Multiple separate FK constraints
-				ForeignKeys: []FKReference{
-					{
-						ConstraintName: "FK_Order",
-						ParentTable:    "Orders",
-						ChildTable:     "OrderItems",
-					},
-					{
-						ConstraintName: "FK_Product",
-						ParentTable:    "Products",
-						ChildTable:     "OrderItems",
-					},
-				},
-				Level: 0,
-			},
-		}
+	childOnly, err := dr.GetOrderForTables([]tableID{tidn("Alpha", "Child")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff([]string{"Alpha.Child"}, fqnList(childOnly)); diff != "" {
+		t.Fatal(diff)
+	}
 
-		result, err := dr.GetOrderForTables([]string{"OrderItems", "Orders", "Products"})
-		if err != nil {
-			t.Errorf("Unexpected error: %v", err)
-		}
+	syn := NewDependencyResolver()
+	syn.tables = map[tableID]*TableDependency{tid("Original"): {ID: tid("Original")}}
+	syn.objects = map[tableID]catalogObject{
+		tid("Original"): {ID: tid("Original"), Type: "BASE TABLE"},
+		tid("Alias"):    {ID: tid("Alias"), Type: "SYNONYM"},
+	}
+	if _, err := syn.GetOrderForTables([]tableID{tid("Alias")}); err == nil || !containsStr(err.Error(), "not a base table") {
+		t.Fatalf("synonym: %v", err)
+	}
 
-		// Both Orders and Products must come before OrderItems
-		orderIndex := indexOf(result, "Orders")
-		productIndex := indexOf(result, "Products")
-		orderItemIndex := indexOf(result, "OrderItems")
-
-		if orderIndex >= orderItemIndex {
-			t.Errorf("Orders should come before OrderItems")
-		}
-		if productIndex >= orderItemIndex {
-			t.Errorf("Products should come before OrderItems")
-		}
-	})
+	dr = NewDependencyResolver()
+	dr.tables = map[tableID]*TableDependency{
+		tidn("Beta", "CrossChild"): {ID: tidn("Beta", "CrossChild"), ParentBasename: "Parent"},
+	}
+	dr.objects = map[tableID]catalogObject{
+		tidn("Beta", "CrossChild"): {ID: tidn("Beta", "CrossChild"), Type: "BASE TABLE"},
+		tid("Parent"):              {ID: tid("Parent"), Type: "SYNONYM"},
+	}
+	if err := dr.lookupExplicit(tid("Parent")); err == nil || !containsStr(err.Error(), "not a base table") {
+		t.Fatalf("synonym candidate: %v", err)
+	}
+	if !dr.selectedNeedsInterleaveDDL([]tableID{tidn("Beta", "CrossChild"), tid("Parent")}) {
+		t.Fatal("predicate still sees the same-basename synonym; caller must validate first")
+	}
 }

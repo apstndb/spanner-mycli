@@ -77,23 +77,25 @@ func getVersion() string {
 	return info.Main.Version
 }
 
+// cliLogLevel is the process slog threshold for the CLI-owned default
+// TextHandler installed in init. SetLogLevel and live LogLevelVar.Set
+// mutate it without replacing the logger. Isolated systemVariables leave
+// runtimeLogLevel nil so Registry.Set does not touch this value.
+var cliLogLevel slog.LevelVar
+
 func init() {
-	h := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-		Level: slog.LevelWarn,
-	}))
-	slog.SetDefault(h)
+	cliLogLevel.Set(slog.LevelWarn)
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level: &cliLogLevel,
+	})))
 }
 
 func SetLogLevel(logLevel string) (slog.Level, error) {
-	var level slog.Level
-	if err := level.UnmarshalText([]byte(logLevel)); err != nil {
+	level, err := parseLogLevel(logLevel)
+	if err != nil {
 		return 0, err
 	}
-
-	h := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-		Level: level,
-	}))
-	slog.SetDefault(h)
+	cliLogLevel.Set(level)
 	return level, nil
 }
 
@@ -214,7 +216,7 @@ func run(ctx context.Context, opts *spannerOptions, features ...Feature) error {
 			spanemuboost.WithInstanceID(sysVars.Connection.Instance),
 			spanemuboost.WithDatabaseID(sysVars.Connection.Database),
 			spanemuboost.WithDatabaseDialect(sysVars.Feature.DatabaseDialect),
-			spanemuboost.WithContainerCustomizers(configureTestcontainersLogger(slog.Default())),
+			spanemuboost.WithContainerCustomizers(configureTestcontainersLogger(newEmbeddedRuntimeLogger(sysVars.Config.EmbeddedLogLevel))),
 		}
 		if opts.EmulatorImage != "" {
 			runtimeOpts = append(runtimeOpts, spanemuboost.WithContainerImage(opts.EmulatorImage))

@@ -2,6 +2,7 @@ package mycli
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"os"
 	"strings"
@@ -177,7 +178,7 @@ func TestDisplayResultWithPty(t *testing.T) {
 			}
 
 			// Call displayResult with a per-statement sink, as executeStatement does
-			err = cli.displayResult(cli.newResultSink(tty, tt.input), tt.result, tt.interactive, tty)
+			err = cli.displayResult(cli.newResultSink(context.Background(), tty, tt.input), tt.result, tt.interactive, tty)
 			if err != nil {
 				t.Fatalf("displayResult() failed: %v", err)
 			}

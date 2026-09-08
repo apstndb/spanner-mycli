@@ -62,15 +62,26 @@ fmt:
 	golangci-lint fmt .
 	@echo "Code formatted successfully"
 
+# Capture the formatter's own exit status and stdout once. Piping into grep or
+# tail would observe the last command instead, so a stderr-only formatter
+# failure (for example exit 23) was previously reported as success.
 fmt-check:
 	@echo "Checking code formatting..."
-	@if golangci-lint fmt --diff . | grep -q "^diff"; then \
+	@out=$$(mktemp "$${TMPDIR:-/tmp}/spanner-mycli-fmt-check.XXXXXX") || { echo "fmt-check: failed to create temporary output file" >&2; exit 1; }; \
+	trap 'rm -f "$$out"' EXIT; \
+	golangci-lint fmt --diff . >"$$out"; \
+	status=$$?; \
+	if [ "$$status" -ne 0 ]; then \
+		echo "Code formatting check failed (exit $$status)."; \
+		cat "$$out"; \
+		exit "$$status"; \
+	fi; \
+	if [ -s "$$out" ]; then \
 		echo "Code formatting issues found. Run 'make fmt' to fix."; \
-		golangci-lint fmt --diff . | head -100; \
+		cat "$$out"; \
 		exit 1; \
-	else \
-		echo "Code formatting is correct"; \
-	fi
+	fi; \
+	echo "Code formatting is correct"
 
 # Combined test, lint, and format check (required before push)
 check: test lint fmt-check

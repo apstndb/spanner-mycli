@@ -80,19 +80,43 @@ const defaultPriority = sppb.RequestOptions_PRIORITY_MEDIUM
 // individual operations must not layer their own timeouts on top. A user-set
 // STATEMENT_TIMEOUT (nil until set) overrides the defaults: 10 minutes for
 // ordinary statements, and 24 hours for partitioned DML to accommodate its
-// long-running semantics.
+// long-running semantics. 24h is the CLI policy when no explicit timeout
+// exists, not a server-required deadline.
 func (s *Session) getTimeoutForStatement(stmt Statement) time.Duration {
-	// For partitioned DML, use longer default if no custom timeout is set
-	if _, isPartitionedDML := stmt.(*PartitionedDmlStatement); isPartitionedDML && s.systemVariables.Query.StatementTimeout == nil {
-		return 24 * time.Hour // PDML default
-	}
-
-	// Use custom timeout if set, otherwise default
 	if s.systemVariables.Query.StatementTimeout != nil {
 		return *s.systemVariables.Query.StatementTimeout
 	}
+	if s.usesPartitionedDMLTimeout(stmt) {
+		return 24 * time.Hour
+	}
+	return 10 * time.Minute
+}
 
-	return 10 * time.Minute // default timeout
+// usesPartitionedDMLTimeout reports whether stmt would execute as partitioned
+// DML, matching DmlStatement.Execute and bufferOrExecuteDML. Explicit
+// PARTITIONED statements always use the PDML default; autocommit UPDATE/DELETE
+// use it only on the executePDML route.
+func (s *Session) usesPartitionedDMLTimeout(stmt Statement) bool {
+	switch st := stmt.(type) {
+	case *PartitionedDmlStatement:
+		return true
+	case *DmlStatement:
+		if s.batch.IsActive() {
+			return false
+		}
+		if s.systemVariables.Query.TryPartitionQuery {
+			return false
+		}
+		switch mode := s.systemVariables.Query.QueryMode; {
+		case mode != nil && *mode == sppb.ExecuteSqlRequest_PLAN:
+			return false
+		case mode != nil && *mode == sppb.ExecuteSqlRequest_PROFILE:
+			return false
+		}
+		return autocommitUsesPartitionedDML(s, st.Dml)
+	default:
+		return false
+	}
 }
 
 // Session represents a database session with transaction management.
@@ -114,6 +138,18 @@ type Session struct {
 	// ddlCache caches the GetDatabaseDdl response to avoid redundant RPCs.
 	// Invalidated on schemaGeneration change (DDL execution) and TTL expiry.
 	ddlCache ddlCacheEntry
+
+	// dumpDDLOverride replaces GetDatabaseDdlFresh in tests.
+	dumpDDLOverride func(context.Context) (*adminpb.GetDatabaseDdlResponse, error)
+
+	// dumpReadTxnProbe, if set, is invoked from the dump read-only callback
+	// with the same transaction used for catalog preflight and first output.
+	// Tests only; must not acquire the transaction mutex.
+	dumpReadTxnProbe func(phase string, txn *spanner.ReadOnlyTransaction)
+
+	// dumpCyclePreflightProbe, if set, is invoked for each table in a cyclic
+	// safety SCC before the row-presence query. Tests only.
+	dumpCyclePreflightProbe func(id tableID, txn *spanner.ReadOnlyTransaction) error
 
 	// featureState is the keyed per-session store for feature state contributed
 	// through the Feature seam (issue #778). Values implementing io.Closer are
@@ -210,7 +246,7 @@ func (h *SessionHandler) validateSessionSwitch() error {
 	if h.txn.InTransaction() {
 		return errors.New("cannot switch session while a transaction is active; COMMIT, ROLLBACK, or CLOSE it first")
 	}
-	if h.batch.IsActive() {
+	if h.batch.IsActive() || (h.txn != nil && h.txn.HasAutomaticDML()) {
 		return errors.New("cannot switch session while a batch is active; RUN BATCH or ABORT BATCH first")
 	}
 	return nil
@@ -230,6 +266,8 @@ func (h *SessionHandler) switchSession(ctx context.Context, database, role strin
 	sysVars := h.systemVariables
 	oldDatabase, oldRole := sysVars.Connection.Database, sysVars.Connection.Role
 	oldInTransaction := sysVars.inTransaction
+	oldTagView := sysVars.transactionTagView
+	oldSetTag := sysVars.setTransactionTagSlot
 	sysVars.Connection.Database = database
 	sysVars.Connection.Role = role
 
@@ -237,6 +275,8 @@ func (h *SessionHandler) switchSession(ctx context.Context, database, role strin
 		sysVars.Connection.Database = oldDatabase
 		sysVars.Connection.Role = oldRole
 		sysVars.inTransaction = oldInTransaction
+		sysVars.transactionTagView = oldTagView
+		sysVars.setTransactionTagSlot = oldSetTag
 	}
 
 	newSession, err := h.createSessionWithOpts(ctx, sysVars)
@@ -469,6 +509,18 @@ func (c *ddlCacheEntry) now() time.Time {
 
 const ddlCacheTTL = 30 * time.Second
 
+// GetDatabaseDdlFresh fetches schema DDL without using the 30-second cache.
+// DUMP data-catalog interleave edges use this so a stale cached parent FQN
+// cannot silently bind the wrong schema. It does not populate ddlCache.
+func (s *Session) GetDatabaseDdlFresh(ctx context.Context) (*adminpb.GetDatabaseDdlResponse, error) {
+	if s.dumpDDLOverride != nil {
+		return s.dumpDDLOverride(ctx)
+	}
+	return s.adminClient.GetDatabaseDdl(ctx, &adminpb.GetDatabaseDdlRequest{
+		Database: s.DatabasePath(),
+	})
+}
+
 // GetDatabaseDdlCached returns the cached DDL response, fetching from the API
 // only when the cache is stale (TTL expired or schema generation changed).
 func (s *Session) GetDatabaseDdlCached(ctx context.Context) (*adminpb.GetDatabaseDdlResponse, error) {
@@ -520,6 +572,7 @@ func (s *Session) Close() {
 	// Close any active transaction context (which stops heartbeat)
 	if s.txn != nil {
 		s.txn.clearTransactionContext()
+		s.txn.restoreLocalVarsIfIdle()
 	}
 
 	if s.client != nil {
@@ -719,6 +772,16 @@ func parseDirectedReadOption(directedReadOptionText string) (*sppb.DirectedReadO
 	}, nil
 }
 
+func (s *Session) pendingBatchInfo() *BatchInfo {
+	if info := s.batch.Info(); info != nil {
+		return info
+	}
+	if s.txn != nil {
+		return s.txn.AutomaticBatchInfo()
+	}
+	return nil
+}
+
 var errReadOnly = errors.New("can't execute this statement in READONLY mode")
 
 func (s *Session) failStatementIfReadOnly() error {
@@ -744,7 +807,7 @@ func (s *Session) ExecuteStatement(ctx context.Context, stmt Statement) (result 
 
 	defer func() {
 		if result != nil {
-			result.BatchInfo = s.batch.Info()
+			result.BatchInfo = s.pendingBatchInfo()
 		}
 	}()
 	// SET LOCAL values revert when the transaction ends for any reason:

@@ -14,53 +14,110 @@
 
 package bigquery
 
-import "strings"
+import (
+	"strings"
 
-// firstBigQueryKeyword returns the uppercased first whitespace-delimited token
-// of a BigQuery statement, or "" if there is none.
-func firstBigQueryKeyword(sql string) string {
-	start := -1
-	for i := range len(sql) {
-		if !isBigQueryKeywordWhitespace(sql[i]) {
-			start = i
-			break
-		}
-	}
-	if start == -1 {
-		return ""
-	}
+	"github.com/cloudspannerecosystem/memefish"
+	"github.com/cloudspannerecosystem/memefish/token"
+)
 
-	end := len(sql)
-	for i := start; i < len(sql); i++ {
-		if isBigQueryKeywordWhitespace(sql[i]) {
-			end = i
-			break
-		}
-	}
-	return strings.ToUpper(sql[start:end])
-}
-
-func isBigQueryKeywordWhitespace(c byte) bool {
-	switch c {
-	case ' ', '\t', '\n', '\r', '\v', '\f':
-		return true
-	default:
-		return false
-	}
-}
-
-// bigQueryStatementMutates reports whether a BIGQUERY statement should be
-// treated as mutating for the READONLY guard.
+// bigQueryClassificationCopy returns a classification-only view of sql.
 //
-// The classifier is deliberately fail-closed: only BigQuery statements whose
-// first keyword is a known read-only query verb are allowed under READONLY.
-// Everything else, including unrecognized, empty, DML, DDL, and script-control
-// statements, is treated as mutating and blocked before it can reach BigQuery.
-func bigQueryStatementMutates(sql string) bool {
-	switch firstBigQueryKeyword(sql) {
-	case "SELECT", "WITH":
-		return false
-	default:
+// memefish v0.8.1 ends `--`/`#` comments at LF only and does not treat ASCII
+// backspace as whitespace. GoogleSQL line comments end at CR or LF, and
+// backspace is whitespace. Mapping CR to LF and backspace to space makes the
+// token walk conservative for the READONLY guard (a comment cannot hide a later
+// DELETE across a raw CR). The substitutions do not add or remove quote, slash,
+// or semicolon bytes. The original SQL is not modified and remains the payload
+// passed to BigQuery.
+func bigQueryClassificationCopy(sql string) string {
+	return strings.NewReplacer("\r", "\n", "\b", " ").Replace(sql)
+}
+
+// bigQueryStatementMutates reports whether a BIGQUERY payload should be treated
+// as mutating for the READONLY guard.
+//
+// The classifier is fail-closed and local: it inspects the complete payload
+// before client, auth, or job construction. Only scripts whose every nonempty
+// semicolon region begins with an unquoted query root (SELECT, WITH, or FROM,
+// allowing leading parentheses) are read-only. Empty or comment-only payloads,
+// unknown/DML/DDL/procedural roots, lexer errors, and unexpected panics are
+// mutating. A positive verdict requires a complete walk to EOF. Pipe CALL/SET/
+// DROP inside a query are not statement-root operations and are not blacklisted.
+//
+// Truncated octal/hex/unicode escapes in memefish v0.8.1 can panic with
+// runtime.Error while building a diagnostic whose end exceeds Buffer.
+// Lexer.NextToken recovers only *memefish.Error and re-panics the rest. The
+// recover here is classifier-local: any panic becomes unknown/mutating. Do not reuse
+// recoverMemefishParserPanic, which deliberately re-panics runtime.Error.
+func bigQueryStatementMutates(sql string) (mutating bool) {
+	mutating = true
+	defer func() {
+		if recover() != nil {
+			mutating = true
+		}
+	}()
+	return !bigQueryPayloadIsReadOnly(bigQueryClassificationCopy(sql))
+}
+
+// overlappingBlockComment is the three-byte sequence memefish v0.8.1 emits as a
+// closed comment because skipCommentUntil("*/") starts at the opening slash and
+// therefore matches the overlapping "*/" inside "/*/" after one skip.
+// GoogleSQL requires a later star-slash closer (cs_comment in googlesql.tm), so
+// "/*/ ' */; DELETE ..." still contains a DELETE statement. Rejecting this
+// exact lexer comment Raw is fail-closed; it does not ban the same bytes inside
+// strings or quoted identifiers.
+const overlappingBlockComment = "/*/"
+
+func commentsHaveOverlappingBlock(comments []token.TokenComment) bool {
+	for _, c := range comments {
+		if c.Raw == overlappingBlockComment {
+			return true
+		}
+	}
+	return false
+}
+
+func bigQueryPayloadIsReadOnly(sql string) bool {
+	lex := &memefish.Lexer{File: &token.File{FilePath: "bigquery-readonly", Buffer: sql}}
+	sawQuery := false
+	atStart := true
+	for n := 0; n <= len(sql)+1; n++ {
+		if err := lex.NextToken(); err != nil {
+			return false
+		}
+		if commentsHaveOverlappingBlock(lex.Token.Comments) {
+			return false
+		}
+		switch lex.Token.Kind {
+		case token.TokenEOF:
+			return sawQuery
+		case ";":
+			atStart = true
+		case token.TokenBad:
+			return false
+		case "(":
+			if atStart {
+				continue
+			}
+		default:
+			if atStart {
+				if !isBigQueryQueryRoot(lex.Token) {
+					return false
+				}
+				sawQuery = true
+				atStart = false
+			}
+		}
+	}
+	return false
+}
+
+func isBigQueryQueryRoot(tok token.Token) bool {
+	switch tok.Kind {
+	case "SELECT", "WITH", "FROM":
 		return true
+	default:
+		return false
 	}
 }

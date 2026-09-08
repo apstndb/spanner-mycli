@@ -13,25 +13,25 @@ func TestBuildSelectQueryWithColumns(t *testing.T) {
 	tests := []struct {
 		name    string
 		columns []string
-		table   string
+		table   tableID
 		wantSQL string
 	}{
 		{
 			name:    "simple identifiers stay quoted",
 			columns: []string{"UserId", "FirstName"},
-			table:   "Users",
+			table:   tableID{Name: "Users"},
 			wantSQL: "SELECT `UserId`, `FirstName` FROM `Users`",
 		},
 		{
 			name:    "reserved identifiers are quoted",
 			columns: []string{"Order", "Value"},
-			table:   "Order",
+			table:   tableID{Name: "Order"},
 			wantSQL: "SELECT `Order`, `Value` FROM `Order`",
 		},
 		{
 			name:    "schema qualified table is quoted segment by segment",
 			columns: []string{"UserId", "From"},
-			table:   "select.Order",
+			table:   tableID{Schema: "select", Name: "Order"},
 			wantSQL: "SELECT `UserId`, `From` FROM `select`.`Order`",
 		},
 	}

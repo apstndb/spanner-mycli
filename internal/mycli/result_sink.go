@@ -17,11 +17,13 @@ package mycli
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"os/exec"
+	"sync"
 
 	"github.com/kballard/go-shellquote"
 )
@@ -45,20 +47,25 @@ import (
 // time, not at statement submission).
 type resultSink struct {
 	c     *Cli
-	dst   io.Writer // caller-provided destination
-	input string    // raw statement text for CLI_ECHO_INPUT
+	ctx   context.Context // statement context; PrintResult uses Background
+	dst   io.Writer       // caller-provided destination
+	input string          // raw statement text for CLI_ECHO_INPUT
 
 	out       io.Writer    // active destination once started (pager pipe or dst)
 	startErr  error        // sticky pager start failure
 	fenceOpen bool         // opening ```sql fence was written
-	stopPager func() error // closes the pager pipe and waits; nil without pager
+	stopPager func() error // closes pager stdin and waits once; nil without pager
 	done      bool
 }
 
 // newResultSink returns a sink writing to dst. input is echoed when
-// CLI_ECHO_INPUT is enabled.
-func (c *Cli) newResultSink(dst io.Writer, input string) *resultSink {
-	return &resultSink{c: c, dst: dst, input: input}
+// CLI_ECHO_INPUT is enabled. ctx bounds the pager child only; it cannot
+// interrupt an independently blocking dst (unpaged output).
+func (c *Cli) newResultSink(ctx context.Context, dst io.Writer, input string) *resultSink {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return &resultSink{c: c, ctx: ctx, dst: dst, input: input}
 }
 
 // start lazily initializes the sink: it starts the pager when CLI_USE_PAGER
@@ -70,10 +77,14 @@ func (s *resultSink) start() error {
 	if s.out != nil || s.startErr != nil {
 		return s.startErr
 	}
+	if err := s.ctx.Err(); err != nil {
+		s.startErr = err
+		return err
+	}
 
 	out := s.dst
 	if s.c.SystemVariables.Display.UsePager {
-		pw, stop, err := startPager(s.dst)
+		pw, stop, err := startPager(s.ctx, s.dst)
 		if err != nil {
 			s.startErr = err
 			return err
@@ -83,46 +94,79 @@ func (s *resultSink) start() error {
 	}
 	s.out = out
 
+	// Test seam: fail after the pager is owned and before decorations so
+	// finish/abort must still Wait. Production leaves this nil.
+	if testFailPagerDecorate != nil {
+		err := testFailPagerDecorate()
+		s.startErr = err
+		return err
+	}
+
 	if s.c.SystemVariables.Display.MarkdownCodeblock {
-		fmt.Fprintln(out, "```sql")
+		if _, err := fmt.Fprintln(out, "```sql"); err != nil {
+			s.startErr = s.wrapPagerWrite(err)
+			return s.startErr
+		}
 		s.fenceOpen = true
 	}
 	// The echo is intentionally sent through the sink (not TtyOutStream) so it
 	// is captured in tee files, providing complete context in logs showing
 	// which queries produced which results.
 	if s.c.SystemVariables.Feature.EchoInput && s.input != "" {
-		fmt.Fprintln(out, s.input+";")
+		if _, err := fmt.Fprintln(out, s.input+";"); err != nil {
+			s.startErr = s.wrapPagerWrite(err)
+			return s.startErr
+		}
 	}
 	return nil
 }
 
 func (s *resultSink) Write(p []byte) (int, error) {
+	if err := s.ctx.Err(); err != nil {
+		return 0, err
+	}
 	if err := s.start(); err != nil {
 		return 0, err
 	}
-	return s.out.Write(p)
+	n, err := s.out.Write(p)
+	if err != nil {
+		return n, s.wrapPagerWrite(err)
+	}
+	return n, nil
+}
+
+func (s *resultSink) wrapPagerWrite(err error) error {
+	if err == nil {
+		return nil
+	}
+	if ctxErr := s.ctx.Err(); ctxErr != nil {
+		return ctxErr
+	}
+	if s.stopPager == nil {
+		return err
+	}
+	return fmt.Errorf("pager write: %w", err)
 }
 
 // finish emits the closing decoration and shuts the pager down. It
 // force-starts the sink so statements that produced no other output still
 // emit the decoration pair (e.g. an empty ```sql fence), matching the
 // historical printResult output byte for byte. Call it only on the success
-// path; use abort for error unwinding.
+// path; use abort for error unwinding. The pager is reaped even when start
+// or the closing fence fails, and done is set only after that reap.
 func (s *resultSink) finish() error {
 	if s.done {
 		return nil
 	}
+	err := s.start()
+	if err == nil && s.fenceOpen {
+		if _, ferr := fmt.Fprintln(s.out, "```"); ferr != nil {
+			err = s.wrapPagerWrite(ferr)
+		}
+	}
+	err = errors.Join(err, s.reapPager())
 	s.done = true
-	if err := s.start(); err != nil {
-		return err
-	}
-	if s.fenceOpen {
-		fmt.Fprintln(s.out, "```")
-	}
-	if s.stopPager != nil {
-		return s.stopPager()
-	}
-	return nil
+	return err
 }
 
 // abort unwinds the sink on the error path without forcing decorations: a
@@ -133,23 +177,41 @@ func (s *resultSink) abort() {
 	if s.done {
 		return
 	}
-	s.done = true
-	if s.out == nil {
-		return // never started; nothing to unwind
-	}
-	if s.fenceOpen {
+	if s.out != nil && s.fenceOpen {
 		fmt.Fprintln(s.out, "```")
 	}
-	if s.stopPager != nil {
-		_ = s.stopPager() // errors already logged by stopPager
-	}
+	_ = s.reapPager()
+	s.done = true
 }
 
-// startPager launches the pager command from $PAGER (default "less") writing
-// to w and returns the pipe feeding it plus a function that closes the pipe
-// and waits for the pager to exit. Close/wait failures are logged, not
-// returned, preserving the historical behavior of the pager teardown.
-func startPager(w io.Writer) (io.Writer, func() error, error) {
+func (s *resultSink) reapPager() error {
+	stop := s.stopPager
+	s.stopPager = nil
+	if stop == nil {
+		return nil
+	}
+	return stop()
+}
+
+// startPager launches $PAGER (default "less") writing to w and returns the
+// stdin writer plus a stop func that closes stdin and Wait()s exactly once.
+//
+// Ownership uses exec.StdinPipe, not an unmanaged io.Pipe as Cmd.Stdin.
+// Cmd.Wait waits for the extra copy goroutine that io.Copy's a non-file
+// Stdin into the child; if the child exits first that copy returns while the
+// PipeWriter stays open, so a later Write blocks forever. StdinPipe is an
+// *os.File, so the child closing stdin yields EPIPE and unblocks writers.
+// CommandContext(ctx) kills the child on statement cancel, which is the same
+// unblock path. stop Wait()s exactly once and returns close/wait errors:
+// canceled contexts map to ctx.Err(), and a nonzero child exit after stdin
+// EOF is an unexpected pager failure (not full success). Interactive user
+// quit while bytes are still being written already fails at Write (EPIPE).
+// If the entire payload fit in the OS pipe and the pager exited 0 after
+// reading only a prefix, that incomplete display is not detectable from Wait.
+func startPager(ctx context.Context, w io.Writer) (io.Writer, func() error, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	pagerpath := cmp.Or(os.Getenv("PAGER"), "less")
 
 	split, err := shellquote.Split(pagerpath)
@@ -161,25 +223,48 @@ func startPager(w io.Writer) (io.Writer, func() error, error) {
 	if len(split) == 0 {
 		return nil, nil, fmt.Errorf("invalid pager command: %q", pagerpath)
 	}
-	cmd := exec.CommandContext(context.Background(), split[0], split[1:]...)
-
-	pr, pw := io.Pipe()
-	cmd.Stdin = pr
+	cmd := exec.CommandContext(ctx, split[0], split[1:]...)
 	cmd.Stdout = w
 
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to start pager: %w", err)
+	}
 	if err := cmd.Start(); err != nil {
 		slog.Error("failed to start pager command", "err", err)
+		_ = stdin.Close()
 		return nil, nil, fmt.Errorf("failed to start pager: %w", err)
 	}
 
+	var once sync.Once
+	var stopErr error
 	stop := func() error {
-		if err := pw.Close(); err != nil {
-			slog.Error("failed to close pipe", "err", err)
-		}
-		if err := cmd.Wait(); err != nil {
-			slog.Error("failed to wait for pager command", "err", err)
-		}
-		return nil
+		once.Do(func() {
+			if err := stdin.Close(); err != nil && !ignorePagerCloseErr(err) {
+				slog.Error("failed to close pager stdin", "err", err)
+				stopErr = err
+			}
+			if err := cmd.Wait(); err != nil {
+				if ctx.Err() != nil {
+					stopErr = ctx.Err()
+					return
+				}
+				slog.Error("failed to wait for pager command", "err", err)
+				if stopErr == nil {
+					stopErr = fmt.Errorf("pager wait: %w", err)
+				}
+			}
+		})
+		return stopErr
 	}
-	return pw, stop, nil
+	return stdin, stop, nil
 }
+
+func ignorePagerCloseErr(err error) bool {
+	return errors.Is(err, os.ErrClosed) || errors.Is(err, io.ErrClosedPipe)
+}
+
+// testFailPagerDecorate is invoked after a pager is acquired and before
+// decorations. Production leaves it nil. Tests must not run in parallel
+// with other pager tests while it is set.
+var testFailPagerDecorate func() error

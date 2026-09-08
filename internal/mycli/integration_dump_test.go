@@ -3,9 +3,12 @@ package mycli
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 
+	"cloud.google.com/go/spanner"
+	"github.com/apstndb/gsqlutils"
 	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spanner-mycli/internal/mycli/streamio"
 	"github.com/google/go-cmp/cmp"
@@ -111,7 +114,7 @@ func TestDumpStatements(t *testing.T) {
 		},
 		{
 			name:               "DUMP TABLES specific",
-			stmt:               &DumpTablesStatement{Tables: []string{"Albums", "Singers"}},
+			stmt:               &DumpTablesStatement{Tables: []tableID{tid("Albums"), tid("Singers")}},
 			expectDDL:          false,
 			expectTables:       []string{"Singers", "Albums"}, // Should be reordered by dependency
 			expectInsertCount:  5,                             // 2 singers + 3 albums
@@ -182,7 +185,7 @@ func TestDumpTablesWithInvalidTable(t *testing.T) {
 
 	_, session := initializeWithRandomDB(t, nil, nil)
 
-	stmt := &DumpTablesStatement{Tables: []string{"NonExistentTable"}}
+	stmt := &DumpTablesStatement{Tables: []tableID{tid("NonExistentTable")}}
 	_, err := stmt.Execute(ctx, session)
 	if err == nil {
 		t.Fatalf("Expected error for non-existent table")
@@ -262,7 +265,7 @@ func TestDumpWithStreaming(t *testing.T) {
 		originalStream.GetErrStream(),
 	)
 
-	dumpStmt := &DumpTablesStatement{Tables: []string{"StreamTest"}}
+	dumpStmt := &DumpTablesStatement{Tables: []tableID{tid("StreamTest")}}
 	result, err := dumpStmt.Execute(ctx, session)
 	if err != nil {
 		t.Fatalf("Execute failed: %v", err)
@@ -344,7 +347,7 @@ func TestDumpWithForeignKeys(t *testing.T) {
 	}
 
 	// Test DUMP TABLES with FK dependencies
-	dumpStmt := &DumpTablesStatement{Tables: []string{"Concerts", "Venues", "Artists"}}
+	dumpStmt := &DumpTablesStatement{Tables: []tableID{tid("Concerts"), tid("Venues"), tid("Artists")}}
 	result, err := dumpStmt.Execute(ctx, session)
 	if err != nil {
 		t.Fatalf("Execute failed: %v", err)
@@ -527,7 +530,7 @@ func TestDumpWithGeneratedColumns(t *testing.T) {
 	}
 
 	// Execute DUMP TABLES
-	dumpStmt := &DumpTablesStatement{Tables: []string{"Users"}}
+	dumpStmt := &DumpTablesStatement{Tables: []tableID{tid("Users")}}
 	result, err := dumpStmt.Execute(ctx, session)
 	if err != nil {
 		t.Fatalf("DUMP TABLES failed: %v", err)
@@ -544,5 +547,114 @@ func TestDumpWithGeneratedColumns(t *testing.T) {
 
 	if diff := cmp.Diff(expectedOutput, dumpRenderedOutputForTest(t, result)); diff != "" {
 		t.Errorf("DUMP output mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestDumpFloat32NegativeZeroReplay(t *testing.T) {
+	t.Parallel()
+	skipIfShortIntegration(t)
+	const castText = "CAST(-0 AS FLOAT32)"
+	const ddl = `CREATE TABLE FloatValues (
+		Id INT64 NOT NULL, V FLOAT32, A ARRAY<FLOAT32>, EmptyValues ARRAY<FLOAT32>,
+		NullValues ARRAY<FLOAT32>, NullValue FLOAT32, D FLOAT64,
+		TextValue STRING(MAX), JsonValue JSON, BytesValue BYTES(MAX)
+	) PRIMARY KEY(Id)`
+	execute := func(t *testing.T, session *Session, sql string) *Result {
+		t.Helper()
+		stmt, err := BuildStatement(sql)
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, err := stmt.Execute(t.Context(), session)
+		if err != nil {
+			t.Fatalf("execute %s: %v", sql, err)
+		}
+		return result
+	}
+	check := func(t *testing.T, session *Session) {
+		t.Helper()
+		iter := session.client.Single().Query(t.Context(), spanner.Statement{
+			SQL: "SELECT V,A,EmptyValues,NullValues,NullValue,D,TextValue,JsonValue,BytesValue FROM FloatValues WHERE Id=1",
+		})
+		defer iter.Stop()
+		row, err := iter.Next()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var scalar, nullScalar spanner.NullFloat32
+		var values []spanner.NullFloat32
+		var emptyArray, nullArray spanner.GenericColumnValue
+		var double spanner.NullFloat64
+		var text string
+		var json spanner.NullJSON
+		var bytes []byte
+		if err := row.Columns(&scalar, &values, &emptyArray, &nullArray, &nullScalar, &double, &text, &json, &bytes); err != nil {
+			t.Fatal(err)
+		}
+		if !scalar.Valid || math.Float32bits(scalar.Float32) != math.Float32bits(float32(math.Copysign(0, -1))) {
+			t.Errorf("FLOAT32 scalar negative zero changed: %v", scalar)
+		}
+		if len(values) != 7 {
+			t.Fatalf("array length = %d, want 7", len(values))
+		}
+		wantFloats := []float32{float32(math.Copysign(0, -1)), 0, 1.5, float32(math.NaN()), float32(math.Inf(1)), float32(math.Inf(-1))}
+		for i, want := range wantFloats {
+			got := values[i]
+			if !got.Valid || !(math.IsNaN(float64(want)) && math.IsNaN(float64(got.Float32))) && math.Float32bits(got.Float32) != math.Float32bits(want) {
+				t.Errorf("FLOAT32 array[%d] = %v, want %v with sign bit preserved", i, got, want)
+			}
+		}
+		if values[6].Valid || nullScalar.Valid || emptyArray.Value.GetListValue() == nil || len(emptyArray.Value.GetListValue().Values) != 0 || nullArray.Value.GetListValue() != nil {
+			t.Error("NULL or empty-array shape changed")
+		}
+		if !double.Valid || math.Float64bits(double.Float64) != math.Float64bits(math.Copysign(0, -1)) {
+			t.Errorf("FLOAT64 negative-zero control changed: %v", double)
+		}
+		if text != castText || string(bytes) != castText || !json.Valid {
+			t.Errorf("literal-text controls changed: string=%q bytes=%q JSON=%v", text, bytes, json)
+		}
+		if diff := cmp.Diff(any(map[string]any{"text": castText}), json.Value); diff != "" {
+			t.Errorf("JSON control changed (-want +got):\n%s", diff)
+		}
+	}
+	for _, mode := range []string{"buffered", "streamed"} {
+		t.Run(mode, func(t *testing.T) {
+			_, source := initializeWithRandomDB(t, nil, nil)
+			_, target := initializeWithRandomDB(t, nil, nil)
+			execute(t, source, ddl)
+			execute(t, target, ddl)
+			execute(t, source, `INSERT INTO FloatValues
+				(Id,V,A,EmptyValues,NullValues,NullValue,D,TextValue,JsonValue,BytesValue) VALUES
+				(1, CAST('-0' AS FLOAT32),
+				[CAST('-0' AS FLOAT32),CAST(0 AS FLOAT32),CAST(1.5 AS FLOAT32),CAST('nan' AS FLOAT32),CAST('inf' AS FLOAT32),CAST('-inf' AS FLOAT32),NULL],
+				[],NULL,NULL,CAST('-0' AS FLOAT64),'CAST(-0 AS FLOAT32)',JSON '{"text":"CAST(-0 AS FLOAT32)"}',b'CAST(-0 AS FLOAT32)')`)
+			check(t, source)
+			if t.Failed() {
+				t.Fatal("invalid source fixture")
+			}
+			var output string
+			if mode == "buffered" {
+				output = dumpRenderedOutputForTest(t, execute(t, source, "DUMP TABLES FloatValues"))
+			} else {
+				result, text, err := executeSQLExportForTest(t, t.Context(), source, "DUMP TABLES FloatValues")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !result.Streamed {
+					t.Fatal("expected streamed DUMP")
+				}
+				output = text
+			}
+			statements, err := gsqlutils.SeparateInputPreserveCommentsWithStatus("", output)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, raw := range statements {
+				if sql := strings.TrimSpace(raw.Statement); sql != "" {
+					execute(t, target, sql)
+				}
+			}
+			check(t, target)
+		})
 	}
 }

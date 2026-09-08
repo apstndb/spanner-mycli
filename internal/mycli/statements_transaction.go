@@ -144,13 +144,16 @@ func (s *CommitStatement) Execute(ctx context.Context, session *Session) (*Resul
 		return result, err
 	}
 
-	// Handle read-write transaction
+	// Handle read-write transaction. Flush owned automatic DML regardless of
+	// the live AUTO_BATCH_DML flag. Do not implicitly RUN a leftover manual batch.
 	result := &Result{}
-	if session.systemVariables.Transaction.AutoBatchDML && session.batch.IsActive() {
-		var err error
-		result, err = runBatch(ctx, session)
+	if session.txn != nil {
+		flushed, err := session.txn.FlushAutomaticDML(ctx)
 		if err != nil {
 			return nil, err
+		}
+		if flushed != nil {
+			result = flushed
 		}
 	}
 

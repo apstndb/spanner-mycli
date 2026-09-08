@@ -42,6 +42,10 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
+// errExplainAnalyzeUnsupportedOnEmulator is returned when EXPLAIN ANALYZE
+// executed but the backend omitted query plan nodes (Cloud Spanner Emulator).
+var errExplainAnalyzeUnsupportedOnEmulator = errors.New("query plan is not available. EXPLAIN ANALYZE statement is not supported for Cloud Spanner Emulator")
+
 type ExplainStatement struct {
 	Explain       string
 	IsDML         bool // Whether the statement being explained is a DML
@@ -435,6 +439,10 @@ func generateExplainResult(sysVars *systemVariables, queryPlan *sppb.QueryPlan, 
 }
 
 func executeExplainAnalyze(ctx context.Context, session *Session, sql string, format enums.ExplainFormat, width int64, printSections *planref.PrintSections) (*Result, error) {
+	if _, err := session.txn.FlushAutomaticDML(ctx); err != nil {
+		return nil, err
+	}
+
 	stmt, err := newStatement(sql, session.systemVariables.Params, false)
 	if err != nil {
 		return nil, err
@@ -444,7 +452,7 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string, fo
 	// regardless of CLI_QUERY_MODE.
 	iter, roTxn, err := session.txn.RunQueryWithStats(ctx, stmt, false, sppb.ExecuteSqlRequest_PROFILE)
 	if err != nil {
-		return nil, err
+		return nil, rollbackReadWriteIfAborted(ctx, session, err)
 	}
 
 	// Count the actual data rows while draining the iterator;
@@ -454,14 +462,17 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string, fo
 		actualRows++
 		return nil
 	})
+	if err == nil {
+		err = session.txn.invokeQueryAfterCollectHook()
+	}
 	if err != nil {
-		return nil, err
+		return nil, rollbackReadWriteIfAborted(ctx, session, err)
 	}
 
 	// Cloud Spanner Emulator doesn't set query plan nodes to the result.
 	// See: https://github.com/GoogleCloudPlatform/cloud-spanner-emulator/blob/77188b228e7757cd56ecffb5bc3ee85dce5d6ae1/frontend/handlers/queries.cc#L224-L230
 	if plan == nil {
-		return nil, errors.New("query plan is not available. EXPLAIN ANALYZE statement is not supported for Cloud Spanner Emulator")
+		return nil, errExplainAnalyzeUnsupportedOnEmulator
 	}
 
 	result, err := generateExplainAnalyzeResult(session.systemVariables, plan, stats, format, width, printSections)
@@ -557,6 +568,10 @@ func explainAnalyzeHeader(def []columnRenderDef, width int64) ([]string, []tw.Al
 }
 
 func executeExplainAnalyzeDML(ctx context.Context, session *Session, sql string, format enums.ExplainFormat, width int64, printSections *planref.PrintSections) (*Result, error) {
+	if _, err := session.txn.FlushAutomaticDML(ctx); err != nil {
+		return nil, err
+	}
+
 	stmt, err := newStatement(sql, session.systemVariables.Params, false)
 	if err != nil {
 		return nil, err
@@ -571,6 +586,10 @@ func executeExplainAnalyzeDML(ctx context.Context, session *Session, sql string,
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	if dmlResult.Plan == nil {
+		return nil, errExplainAnalyzeUnsupportedOnEmulator
 	}
 
 	result, err := generateExplainAnalyzeResult(session.systemVariables, dmlResult.Plan, queryStats, format, width, printSections)

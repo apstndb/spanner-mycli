@@ -14,10 +14,39 @@ import (
 	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spanner-mycli/internal/mycli/filesafety"
 	"github.com/samber/lo"
+	"google.golang.org/protobuf/reflect/protodesc"
 	"google.golang.org/protobuf/types/descriptorpb"
 )
 
 var stalenessRe = regexp.MustCompile(`^\(([^:]+)(?:: (.+))?\)$`)
+
+// transactionTagVar is the dedicated TRANSACTION_TAG handler. Get reports the
+// applied physical RW tag when one exists, otherwise the next-owner slot.
+// Set writes the slot unless a physical RW owner exists.
+type transactionTagVar struct {
+	sv *systemVariables
+}
+
+func (v *transactionTagVar) Get() (string, error) {
+	if v.sv == nil {
+		return "", fmt.Errorf("variable not initialized")
+	}
+	if v.sv.transactionTagView != nil {
+		return v.sv.transactionTagView(), nil
+	}
+	return v.sv.Transaction.TransactionTag, nil
+}
+
+func (v *transactionTagVar) Set(value string) error {
+	if v.sv == nil {
+		return fmt.Errorf("variable not initialized")
+	}
+	if v.sv.setTransactionTagSlot != nil {
+		return v.sv.setTransactionTagSlot(value)
+	}
+	v.sv.Transaction.TransactionTag = value
+	return nil
+}
 
 // formatTimestampBound formats a TimestampBound for display
 func formatTimestampBound(tb *spanner.TimestampBound) string {
@@ -109,9 +138,46 @@ func (p *ProtoDescriptorVar) Set(value string) error {
 		}
 		fileDescriptorSet = mergeFDS(fileDescriptorSet, fds)
 	}
+	// Individual binary inputs may be fragments of one graph. Validate only
+	// after the complete candidate has been assembled, before changing state.
+	if _, err := protodesc.NewFiles(fileDescriptorSet); err != nil {
+		return fmt.Errorf("invalid proto descriptor set: %w", err)
+	}
 
 	*p.filesPtr = files
 	*p.descriptorPtr = fileDescriptorSet
+	return nil
+}
+
+// ProtoDescriptorsVar handles PROTO_DESCRIPTORS (base64 FileDescriptorSet).
+type ProtoDescriptorsVar struct {
+	filesPtr      *[]string
+	descriptorPtr **descriptorpb.FileDescriptorSet
+}
+
+func (p *ProtoDescriptorsVar) Get() (string, error) {
+	if p.descriptorPtr == nil || *p.descriptorPtr == nil {
+		return "", nil
+	}
+	return encodeProtoDescriptors(*p.descriptorPtr)
+}
+
+func (p *ProtoDescriptorsVar) Set(value string) error {
+	if value == "" {
+		*p.filesPtr = nil
+		*p.descriptorPtr = nil
+		return nil
+	}
+	raw, err := decodeProtoDescriptorBytes(value)
+	if err != nil {
+		return err
+	}
+	fds, err := parseProtoDescriptorsGraph(raw)
+	if err != nil {
+		return err
+	}
+	*p.filesPtr = nil
+	*p.descriptorPtr = fds
 	return nil
 }
 
@@ -128,8 +194,12 @@ func (p *ProtoDescriptorVar) Add(value string) error {
 		return err
 	}
 
+	candidate := mergeFDS(*p.descriptorPtr, fds)
+	if _, err := protodesc.NewFiles(candidate); err != nil {
+		return fmt.Errorf("invalid proto descriptor set: %w", err)
+	}
 	*p.filesPtr = append(*p.filesPtr, value)
-	*p.descriptorPtr = mergeFDS(*p.descriptorPtr, fds)
+	*p.descriptorPtr = candidate
 	return nil
 }
 
@@ -207,9 +277,23 @@ func AutocommitDMLModeVar(ptr *enums.AutocommitDMLMode) *EnumVar[enums.Autocommi
 	}
 }
 
-// LogLevelVar handles CLI_LOG_LEVEL
+// parseLogLevel accepts slog names (DEBUG, INFO, WARN, ERROR), numeric
+// offsets, and the WARNING alias. Unknown values must not be applied.
+func parseLogLevel(value string) (slog.Level, error) {
+	if strings.EqualFold(value, "WARNING") {
+		value = "WARN"
+	}
+	var level slog.Level
+	if err := level.UnmarshalText([]byte(value)); err != nil {
+		return 0, fmt.Errorf("invalid log level: %s", value)
+	}
+	return level, nil
+}
+
+// LogLevelVar handles CLI_LOG_LEVEL. runtime is nil for isolated fixtures.
 type LogLevelVar struct {
-	ptr *slog.Level
+	ptr     *slog.Level
+	runtime *slog.LevelVar
 }
 
 func (l *LogLevelVar) Get() (string, error) {
@@ -217,20 +301,14 @@ func (l *LogLevelVar) Get() (string, error) {
 }
 
 func (l *LogLevelVar) Set(value string) error {
-	// Special handling for "WARNING" alias which slog doesn't recognize
-	if strings.EqualFold(value, "WARNING") {
-		*l.ptr = slog.LevelWarn
-		return nil
-	}
-
-	// Use slog.Level's built-in UnmarshalText for everything else
-	// This handles: DEBUG, INFO, WARN, ERROR (case-insensitive)
-	// and numeric offsets like "DEBUG+4", "INFO-8"
-	var level slog.Level
-	if err := level.UnmarshalText([]byte(value)); err != nil {
-		return fmt.Errorf("invalid log level: %s", value)
+	level, err := parseLogLevel(value)
+	if err != nil {
+		return err
 	}
 	*l.ptr = level
+	if l.runtime != nil {
+		l.runtime.Set(level)
+	}
 	return nil
 }
 

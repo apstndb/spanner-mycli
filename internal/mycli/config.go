@@ -141,7 +141,7 @@ type spannerOptions struct {
 	SampleDatabase      string            `name:"sample-database" help:"Initialize embedded runtime with built-in sample (e.g. fingraph, singers, banking) or path to a metadata file (.json, .yaml, .yml). Requires --embedded-emulator or --embedded-omni. Cannot be combined with --detached."`
 	ListSamples         bool              `name:"list-samples" help:"List available sample databases and exit"`
 	OutputTemplate      string            `name:"output-template" help:"Filepath of output template. (EXPERIMENTAL)"`
-	LogLevel            string            `name:"log-level" help:"Set CLI log level (DEBUG, INFO, WARN, ERROR). INFO and DEBUG include embedded runtime container lifecycle logs."`
+	LogLevel            string            `name:"log-level" help:"Set CLI log level (DEBUG, INFO, WARN, ERROR). INFO and DEBUG include embedded runtime container lifecycle logs. SQL SET CLI_LOG_LEVEL does not change those container logs."`
 	LogGrpc             bool              `name:"log-grpc" help:"Show gRPC logs"`
 	// Kong only accepts enum validation on optional flags when they are modeled as
 	// pointers. Keeping these as *string preserves "unset" semantics while still
@@ -161,7 +161,7 @@ type spannerOptions struct {
 	DatabaseRole              string                    `name:"database-role" hidden:"" help:"Hidden alias of --role for gcloud spanner databases execute-sql compatibility"`
 	DeploymentEndpoint        string                    `name:"deployment-endpoint" hidden:"" help:"Hidden alias of --endpoint for Google Cloud Spanner CLI compatibility"`
 	EnablePartitionedDML      bool                      `name:"enable-partitioned-dml" help:"Partitioned DML as default (AUTOCOMMIT_DML_MODE=PARTITIONED_NON_ATOMIC)"`
-	Timeout                   string                    `name:"timeout" help:"Statement timeout (e.g., '10s', '5m', '1h')" default:"10m"`
+	Timeout                   string                    `name:"timeout" help:"Statement timeout (e.g., '10s', '5m', '1h'). Omit for 10m on ordinary statements and 24h on partitioned DML."`
 	Async                     bool                      `name:"async" help:"Return immediately, without waiting for the operation in progress to complete"`
 	TryPartitionQuery         bool                      `name:"try-partition-query" help:"Test whether the query can be executed as partition query without execution"`
 	MCP                       bool                      `name:"mcp" help:"Run as MCP server"`
@@ -357,6 +357,11 @@ func createSystemVariablesFromOptions(opts *spannerOptions, features ...Feature)
 
 	// Start with defaults and override with options
 	sysVars := newSystemVariablesWithDefaults()
+	// Bind the process LevelVar before the first registry build so LogLevelVar
+	// captures this live pointer. Isolated newSystemVariablesWithDefaults
+	// leaves runtimeLogLevel nil.
+	sysVars.runtimeLogLevel = &cliLogLevel
+	sysVars.Config.EmbeddedLogLevel = l
 	// Don't initialize registry here - it needs to be done after the final
 	// systemVariables is in its permanent location to avoid closure issues.
 	// Feature-contributed variable defs must be set before the registry is first
@@ -507,11 +512,13 @@ func applyStalenessOptions(sysVars *systemVariables, opts *spannerOptions) error
 }
 
 func applyProtoDescriptors(sysVars *systemVariables, opts *spannerOptions) error {
-	ss := lo.Ternary(opts.ProtoDescriptorFile != "", strings.Split(opts.ProtoDescriptorFile, ","), nil)
-	for _, s := range ss {
-		if err := sysVars.AddFromGoogleSQL("CLI_PROTO_DESCRIPTOR_FILE", strconv.Quote(s)); err != nil {
-			return fmt.Errorf("error on --proto-descriptor-file, file: %v: %w", s, err)
-		}
+	if opts.ProtoDescriptorFile == "" {
+		return nil
+	}
+	// Binary files can supply different parts of the same graph. Install the
+	// startup list as one candidate, just like a multi-input SQL SET.
+	if err := sysVars.SetFromSimple("CLI_PROTO_DESCRIPTOR_FILE", opts.ProtoDescriptorFile); err != nil {
+		return fmt.Errorf("error on --proto-descriptor-file, file: %v: %w", opts.ProtoDescriptorFile, err)
 	}
 	return nil
 }

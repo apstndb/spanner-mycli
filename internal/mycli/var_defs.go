@@ -79,6 +79,25 @@ func (d *varDef) resettable() bool {
 // Note: COMMIT_RESPONSE and CLI_DIRECT_READ require special handling outside
 // the registry (see system_variables_registry.go).
 var varDefs = []varDef{
+	{
+		name:  "CLI_DUMP_CYCLIC_MODE",
+		desc:  "DUMP cyclic data policy: REJECT (default) or opt-in MUTATE (one transaction per cyclic table group). No service-quota prediction; later restore failure can leave earlier groups committed.",
+		scope: scopeSession,
+		bind:  func(sv *systemVariables) Variable { return DumpCyclicModeVar(&sv.Display.DumpCyclicMode) },
+	},
+	{
+		name:  "CLI_DUMP_CYCLIC_MAX_BYTES",
+		desc:  "Positive aggregate encoded cyclic-text retention cap for DUMP MUTATE mode. Default 67108864 (64 MiB). Not a hard heap bound or Spanner commit-size/mutation-count estimate.",
+		scope: scopeSession,
+		bind: func(sv *systemVariables) Variable {
+			return IntVar(&sv.Display.DumpCyclicMaxBytes).WithValidator(func(n int64) error {
+				if n <= 0 {
+					return fmt.Errorf("CLI_DUMP_CYCLIC_MAX_BYTES must be positive")
+				}
+				return nil
+			})
+		},
+	},
 	// === Simple boolean variables ===
 	{
 		// txnGuard: READONLY switches the transaction mode, which is meaningless
@@ -104,7 +123,7 @@ var varDefs = []varDef{
 	},
 	{
 		name:  "AUTO_BATCH_DML",
-		desc:  "A property of type BOOL indicating whether the DML is executed immediately or begins a batch DML. The default is false.",
+		desc:  "A BOOL indicating whether DML in an explicit read-write transaction is buffered until COMMIT, a later execute-now statement, or RUN BATCH. SET only changes future buffering. The default is false.",
 		scope: scopeSession,
 		bind:  func(sv *systemVariables) Variable { return BoolVar(&sv.Transaction.AutoBatchDML) },
 	},
@@ -277,9 +296,9 @@ var varDefs = []varDef{
 	},
 	{
 		name:  "TRANSACTION_TAG",
-		desc:  "A property of type STRING that contains the transaction tag for the next transaction.",
+		desc:  "Transaction tag for the next physical read-write transaction. After that owner starts, SHOW reports the applied tag. The consumed slot is then empty unless a SET LOCAL baseline restores. Ordinary SET after SET LOCAL supersedes LOCAL. SET and SET LOCAL are rejected while a read-write transaction is active. Read-only transactions do not consume this tag; SET LOCAL during RO still restores. Partitioned DML does not currently send a transaction tag.",
 		scope: scopeSession,
-		bind:  func(sv *systemVariables) Variable { return StringVar(&sv.Transaction.TransactionTag) },
+		bind:  func(sv *systemVariables) Variable { return &transactionTagVar{sv: sv} },
 	},
 	{
 		name:  "STATEMENT_TAG",
@@ -434,7 +453,7 @@ var varDefs = []varDef{
 	},
 	{
 		name:  "STATEMENT_TIMEOUT",
-		desc:  "A property of type STRING indicating the current timeout value for statements (e.g., 10s, 5m, 1h). Default is 10m.",
+		desc:  "A property of type STRING indicating the current timeout value for statements (e.g., 10s, 5m, 1h). NULL (the omitted-flag default) uses 10m for ordinary statements and 24h for partitioned DML. This is a CLI policy, not a server-required deadline.",
 		scope: scopeSession,
 		bind: func(sv *systemVariables) Variable {
 			return NullableDurationVar(&sv.Query.StatementTimeout).
@@ -568,9 +587,11 @@ var varDefs = []varDef{
 	},
 	{
 		name:  "CLI_LOG_LEVEL",
-		desc:  "Log level for the CLI. Use the startup --log-level flag to control embedded runtime container lifecycle logs.",
+		desc:  "Log level for the CLI slog logger (DEBUG, INFO, WARN, ERROR; WARNING is accepted as WARN). SET and --set change the process threshold. Embedded container lifecycle logs follow the startup --log-level snapshot, not later SET.",
 		scope: scopeSession,
-		bind:  func(sv *systemVariables) Variable { return &LogLevelVar{ptr: &sv.Feature.LogLevel} },
+		bind: func(sv *systemVariables) Variable {
+			return &LogLevelVar{ptr: &sv.Feature.LogLevel, runtime: sv.runtimeLogLevel}
+		},
 	},
 
 	// === Computed/Read-only variables ===
@@ -641,6 +662,20 @@ var varDefs = []varDef{
 				filesPtr:      &sv.Internal.ProtoDescriptorFile,
 				descriptorPtr: &sv.Internal.ProtoDescriptor,
 			}).Add
+		},
+	},
+	{
+		// noLocal: the displayed value is only the graph; undo cannot restore
+		// both the graph and file provenance together.
+		name:    protoDescriptorsVarName,
+		desc:    "Base64 FileDescriptorSet for the session proto graph. DUMP SCHEMA/DATABASE emit SET PROTO_DESCRIPTORS so replay is self-contained. SET LOCAL is not supported. Cannot be changed while a manual batch is active.",
+		scope:   scopeSession,
+		noLocal: true,
+		bind: func(sv *systemVariables) Variable {
+			return &ProtoDescriptorsVar{
+				filesPtr:      &sv.Internal.ProtoDescriptorFile,
+				descriptorPtr: &sv.Internal.ProtoDescriptor,
+			}
 		},
 	},
 	{

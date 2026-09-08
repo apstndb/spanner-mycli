@@ -172,6 +172,12 @@ type partitionedRow struct {
 	err error
 }
 
+// testOnPartitionSubmit is invoked immediately before each pool.Go during
+// partitioned fan-in. Production leaves it nil. Tests use it to observe
+// whether canceled shutdown still schedules remaining partitions; conc
+// ContextPool.Go does not itself skip work after context cancel.
+var testOnPartitionSubmit func()
+
 // runPartitionedRowSeq executes all partitions with bounded concurrency and
 // hands consume the row-type metadata plus a merged, fallible row sequence.
 // The single consumer serializes output, so sinks need no locking. Metadata is
@@ -196,45 +202,61 @@ func runPartitionedRowSeq(
 	ch := make(chan partitionedRow)
 	var capturedMD atomic.Pointer[sppb.ResultSetMetadata]
 
-	p := pool.New().WithContext(childCtx).WithMaxGoroutines(parallelism)
-	for _, partition := range partitions {
-		p.Go(func(workerCtx context.Context) error {
-			rowIter := batchROTx.Execute(workerCtx, partition)
-			var result spaniter.RowIteratorResult
-			rows := spaniter.RowIteratorSeq(rowIter, spaniter.WithResult(&result))
-			captureMetadata := func() {
-				if capturedMD.Load() != nil {
-					return
-				}
-				if rowIter.Metadata != nil {
-					capturedMD.CompareAndSwap(nil, rowIter.Metadata)
-				}
-				if result.Metadata != nil {
-					capturedMD.CompareAndSwap(nil, result.Metadata)
-				}
-			}
-			for row, err := range rows {
-				captureMetadata()
-				if err != nil {
-					select {
-					case ch <- partitionedRow{err: err}:
-					case <-workerCtx.Done():
-					}
-					return err
-				}
-				select {
-				case ch <- partitionedRow{row: row}:
-				case <-workerCtx.Done():
-					return workerCtx.Err()
-				}
-			}
-			captureMetadata()
-			return nil
-		})
+	if parallelism < 1 {
+		parallelism = 1
 	}
 
+	p := pool.New().WithContext(childCtx).WithMaxGoroutines(parallelism)
 	producersDone := make(chan error, 1)
 	go func() {
+		// Submit inside this goroutine so conc Pool.Go blocking at MaxGoroutines
+		// cannot starve the consumer. Go() waits for a free worker when the pool
+		// is full; a worker that has a row waits to send on the unbuffered
+		// channel. Consume must therefore be running before every Go() returns.
+		// Stop scheduling once the child context is canceled: conc Go() does not
+		// short-circuit on a canceled context, so the remaining list would
+		// otherwise still be submitted after shutdown.
+		for _, partition := range partitions {
+			if childCtx.Err() != nil {
+				break
+			}
+			if testOnPartitionSubmit != nil {
+				testOnPartitionSubmit()
+			}
+			p.Go(func(workerCtx context.Context) error {
+				rowIter := batchROTx.Execute(workerCtx, partition)
+				var result spaniter.RowIteratorResult
+				rows := spaniter.RowIteratorSeq(rowIter, spaniter.WithResult(&result))
+				captureMetadata := func() {
+					if capturedMD.Load() != nil {
+						return
+					}
+					if rowIter.Metadata != nil {
+						capturedMD.CompareAndSwap(nil, rowIter.Metadata)
+					}
+					if result.Metadata != nil {
+						capturedMD.CompareAndSwap(nil, result.Metadata)
+					}
+				}
+				for row, err := range rows {
+					captureMetadata()
+					if err != nil {
+						select {
+						case ch <- partitionedRow{err: err}:
+						case <-workerCtx.Done():
+						}
+						return err
+					}
+					select {
+					case ch <- partitionedRow{row: row}:
+					case <-workerCtx.Done():
+						return workerCtx.Err()
+					}
+				}
+				captureMetadata()
+				return nil
+			})
+		}
 		producersDone <- p.Wait()
 		close(ch)
 	}()

@@ -20,6 +20,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -629,6 +630,78 @@ func TestExtractSnippet(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("UTF-8 expansion keeps original-case match", func(t *testing.T) {
+		t.Parallel()
+		content := strings.Repeat("Ⱥ", 20) + "Needle"
+		result := extractSnippet(content, "needle", 300)
+		if !utf8.ValidString(result) || !strings.Contains(result, "Needle") {
+			t.Fatalf("expansion snippet = %q", result)
+		}
+	})
+
+	t.Run("UTF-8 contraction keeps original-case match", func(t *testing.T) {
+		t.Parallel()
+		content := strings.Repeat("K", 500) + "Needle"
+		result := extractSnippet(content, "needle", 300)
+		if !utf8.ValidString(result) || !strings.Contains(result, "Needle") {
+			t.Fatalf("contraction snippet = %q", result)
+		}
+	})
+
+	t.Run("Unicode search term", func(t *testing.T) {
+		t.Parallel()
+		content := "prefix Ⱥ target"
+		result := extractSnippet(content, "Ⱥ", 300)
+		if !strings.Contains(result, "Ⱥ") {
+			t.Fatalf("unicode term snippet = %q", result)
+		}
+	})
+
+	t.Run("empty term uses start", func(t *testing.T) {
+		t.Parallel()
+		result := extractSnippet("hello world", "", 300)
+		if result != "hello world" {
+			t.Fatalf("empty term = %q", result)
+		}
+	})
+}
+
+func TestDocCacheSearchUnicodeAndMultiWord(t *testing.T) {
+	t.Parallel()
+	c := newTestCache(t)
+	c.Put("documents/expand", strings.Repeat("Ⱥ", 20)+"Needle extra")
+	c.Put("documents/contract", strings.Repeat("K", 500)+"Needle extra")
+	c.Put("documents/cjk", strings.Repeat("あ", 40)+"Needle extra")
+	c.Put("documents/ascii", "Needle extra in ascii")
+
+	for _, name := range []string{"documents/expand", "documents/contract", "documents/cjk", "documents/ascii"} {
+		rows := c.Search("needle extra")
+		var snippet string
+		for _, row := range rows {
+			if row.Name == name {
+				snippet = row.Snippet
+			}
+		}
+		if snippet == "" || !utf8.ValidString(snippet) || !strings.Contains(snippet, "Needle") {
+			t.Fatalf("%s snippet = %q rows=%d", name, snippet, len(rows))
+		}
+	}
+
+	if got := c.Search("needle missing"); len(got) != 0 {
+		t.Fatalf("missing-word AND leaked %d results", len(got))
+	}
+	if got := c.Search(""); len(got) != 0 {
+		t.Fatalf("empty query leaked %d results", len(got))
+	}
+	if got := c.Search("absentterm"); len(got) != 0 {
+		t.Fatalf("absent term leaked %d results", len(got))
+	}
+
+	first := c.Search("extra needle")
+	if len(first) == 0 || !strings.Contains(first[0].Snippet, "Needle") {
+		t.Fatalf("first-word snippet missing: %+v", first)
+	}
 }
 
 func TestDocCategory(t *testing.T) {
