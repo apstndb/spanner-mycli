@@ -47,6 +47,96 @@ type tagObservation struct {
 	kind, txnTag, reqTag string
 }
 
+func tagCounts(records []tagObservation) map[string]int {
+	counts := map[string]int{}
+	for _, r := range records {
+		counts[r.kind]++
+	}
+	return counts
+}
+
+func requireTaggedRecords(t *testing.T, records []tagObservation, wantTag string) {
+	t.Helper()
+	if len(records) == 0 {
+		t.Fatal("no tagged RPCs observed")
+	}
+	for _, r := range records {
+		if r.txnTag != wantTag {
+			t.Errorf("%s transaction_tag=%q want=%q", r.kind, r.txnTag, wantTag)
+		}
+	}
+}
+
+func requireRPCKinds(t *testing.T, records []tagObservation, kinds ...string) {
+	t.Helper()
+	counts := tagCounts(records)
+	for _, kind := range kinds {
+		if counts[kind] == 0 {
+			t.Fatalf("missing %s RPC: %v", kind, counts)
+		}
+	}
+}
+
+func mustReadProbeID(t *testing.T, ctx context.Context, session *Session, id int) {
+	t.Helper()
+	query := fmt.Sprintf("SELECT Id FROM A7TagProbe WHERE Id = %d", id)
+	res := mustExec(t, ctx, session, query)
+	if res.AffectedRows != 1 {
+		t.Fatalf("%s: AffectedRows=%d want 1 (empty success is vacuous)", query, res.AffectedRows)
+	}
+	if res.Typed == nil || len(res.Typed.Rows) != 1 {
+		t.Fatalf("%s typed rows=%v want 1", query, res.Typed)
+	}
+	var got int64
+	if err := res.Typed.Rows[0].Column(0, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got != int64(id) {
+		t.Fatalf("%s Id=%d want %d", query, got, id)
+	}
+}
+
+func observeTaggedRW(enabled *atomic.Bool, records *[]tagObservation, mu *sync.Mutex) func(any) {
+	return func(message any) {
+		if enabled != nil && !enabled.Load() {
+			return
+		}
+		var kind string
+		var options *sppb.RequestOptions
+		switch r := message.(type) {
+		case *sppb.BeginTransactionRequest:
+			if r.Options.GetReadWrite() == nil {
+				return
+			}
+			kind, options = "begin", r.RequestOptions
+		case *sppb.ExecuteSqlRequest:
+			if r.GetRequestOptions().GetRequestTag() == "spanner_mycli_heartbeat" {
+				kind, options = "heartbeat", r.RequestOptions
+				break
+			}
+			if !strings.Contains(r.Sql, "A7TagProbe") {
+				return
+			}
+			kind, options = "dml", r.RequestOptions
+			if strings.HasPrefix(r.Sql, "SELECT") {
+				kind = "query"
+			}
+		case *sppb.ExecuteBatchDmlRequest:
+			kind, options = "batch", r.RequestOptions
+		case *sppb.CommitRequest:
+			kind, options = "commit", r.RequestOptions
+		default:
+			return
+		}
+		if options == nil {
+			return
+		}
+		mu.Lock()
+		*records = append(*records, tagObservation{kind, options.GetTransactionTag(), options.GetRequestTag()})
+		mu.Unlock()
+	}
+}
+
 func newTaggedCLISession(t *testing.T, ctx context.Context, clients interface {
 	ClientOptions() []option.ClientOption
 }, project, instance, database string, observe func(any), extraDial ...grpc.UnaryClientInterceptor,
@@ -91,45 +181,11 @@ func TestTransactionTagWireRoutes(t *testing.T) {
 	clients, _ := initializeWithRandomDB(t, []string{"CREATE TABLE A7TagProbe (Id INT64 NOT NULL) PRIMARY KEY (Id)"}, nil)
 	ctx := t.Context()
 
-	observeRW := func(enabled *atomic.Bool, records *[]tagObservation, mu *sync.Mutex) func(any) {
-		return func(message any) {
-			if !enabled.Load() {
-				return
-			}
-			var kind string
-			var options *sppb.RequestOptions
-			switch r := message.(type) {
-			case *sppb.BeginTransactionRequest:
-				if r.Options.GetReadWrite() == nil {
-					return
-				}
-				kind, options = "begin", r.RequestOptions
-			case *sppb.ExecuteSqlRequest:
-				if !strings.Contains(r.Sql, "A7TagProbe") {
-					return
-				}
-				kind, options = "dml", r.RequestOptions
-				if strings.HasPrefix(r.Sql, "SELECT") {
-					kind = "query"
-				}
-			case *sppb.ExecuteBatchDmlRequest:
-				kind, options = "batch", r.RequestOptions
-			case *sppb.CommitRequest:
-				kind, options = "commit", r.RequestOptions
-			default:
-				return
-			}
-			mu.Lock()
-			*records = append(*records, tagObservation{kind, options.GetTransactionTag(), options.GetRequestTag()})
-			mu.Unlock()
-		}
-	}
-
 	t.Run("sdk_control", func(t *testing.T) {
 		var mu sync.Mutex
 		var records []tagObservation
 		var enabled atomic.Bool
-		session := newTaggedCLISession(t, ctx, clients, clients.ProjectID, clients.InstanceID, clients.DatabaseID, observeRW(&enabled, &records, &mu))
+		session := newTaggedCLISession(t, ctx, clients, clients.ProjectID, clients.InstanceID, clients.DatabaseID, observeTaggedRW(&enabled, &records, &mu))
 		enabled.Store(true)
 		_, err := session.client.ReadWriteTransactionWithOptions(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
 			if _, err := txn.Update(ctx, spanner.Statement{SQL: "INSERT INTO A7TagProbe (Id) VALUES (1)"}); err != nil {
@@ -141,11 +197,13 @@ func TestTransactionTagWireRoutes(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, r := range records {
-			if r.txnTag != "a7-sdk" {
-				t.Errorf("%s tag=%q", r.kind, r.txnTag)
-			}
+		requireTaggedRecords(t, records, "a7-sdk")
+		requireRPCKinds(t, records, "commit")
+		counts := tagCounts(records)
+		if counts["begin"] == 0 && counts["dml"] == 0 {
+			t.Fatalf("SDK control observed neither begin nor inline DML: %v", counts)
 		}
+		mustReadProbeID(t, ctx, session, 1)
 	})
 
 	for i, route := range []string{"cli_pending", "cli_explicit_rw", "cli_implicit", "cli_manual_batch", "cli_automatic_batch", "cli_mutate"} {
@@ -153,10 +211,10 @@ func TestTransactionTagWireRoutes(t *testing.T) {
 			var mu sync.Mutex
 			var records []tagObservation
 			var enabled atomic.Bool
-			session := newTaggedCLISession(t, ctx, clients, clients.ProjectID, clients.InstanceID, clients.DatabaseID, observeRW(&enabled, &records, &mu))
+			session := newTaggedCLISession(t, ctx, clients, clients.ProjectID, clients.InstanceID, clients.DatabaseID, observeTaggedRW(&enabled, &records, &mu))
 			wantTag := "a7-" + route
-			insert := fmt.Sprintf("INSERT INTO A7TagProbe (Id) VALUES (%d)", i+10)
-			query := fmt.Sprintf("SELECT Id FROM A7TagProbe WHERE Id = %d", i+10)
+			id := i + 10
+			insert := fmt.Sprintf("INSERT INTO A7TagProbe (Id) VALUES (%d)", id)
 			enabled.Store(true)
 			mustExec(t, ctx, session, "SET TRANSACTION_TAG = '"+wantTag+"'")
 			if session.systemVariables.ListVariables()["TRANSACTION_TAG"] != wantTag {
@@ -167,7 +225,7 @@ func TestTransactionTagWireRoutes(t *testing.T) {
 				mustExec(t, ctx, session, "BEGIN")
 				mustExec(t, ctx, session, insert)
 				mustExec(t, ctx, session, "SET STATEMENT_TAG = 'a7-request'")
-				mustExec(t, ctx, session, query)
+				mustExec(t, ctx, session, fmt.Sprintf("SELECT Id FROM A7TagProbe WHERE Id = %d", id))
 				mustExec(t, ctx, session, "COMMIT")
 			case "cli_explicit_rw":
 				mustExec(t, ctx, session, "BEGIN RW")
@@ -196,31 +254,39 @@ func TestTransactionTagWireRoutes(t *testing.T) {
 				}
 				mustExec(t, ctx, session, "COMMIT")
 			case "cli_mutate":
-				mustExec(t, ctx, session, fmt.Sprintf("MUTATE A7TagProbe INSERT STRUCT(%d AS Id)", i+10))
+				mustExec(t, ctx, session, fmt.Sprintf("MUTATE A7TagProbe INSERT STRUCT(%d AS Id)", id))
 			}
 			enabled.Store(false)
 			if got := mustGetVar(t, session, "TRANSACTION_TAG"); got != "" {
 				t.Fatalf("slot after owner: %q", got)
 			}
-			counts := map[string]int{}
-			for _, r := range records {
-				counts[r.kind]++
-				if r.txnTag != wantTag {
-					t.Errorf("%s transaction_tag=%q want=%q", r.kind, r.txnTag, wantTag)
+			requireTaggedRecords(t, records, wantTag)
+			requireRPCKinds(t, records, "commit")
+			counts := tagCounts(records)
+			switch route {
+			case "cli_pending":
+				requireRPCKinds(t, records, "dml", "query")
+				var sawRequest bool
+				for _, r := range records {
+					if r.kind == "query" && r.reqTag == "a7-request" {
+						sawRequest = true
+					}
 				}
-			}
-			if counts["commit"] == 0 {
-				t.Fatalf("no commit: %v", counts)
-			}
-			if route == "cli_manual_batch" || route == "cli_automatic_batch" {
+				if !sawRequest {
+					t.Fatalf("pending in-txn SELECT missing STATEMENT_TAG: %v", records)
+				}
+			case "cli_explicit_rw", "cli_implicit":
+				requireRPCKinds(t, records, "dml")
+			case "cli_manual_batch", "cli_automatic_batch":
 				if counts["batch"] != 1 || counts["dml"] != 0 {
 					t.Fatalf("batch route counts: %v", counts)
 				}
+			case "cli_mutate":
+				if counts["dml"] != 0 {
+					t.Fatalf("MUTATE used SQL: %v", counts)
+				}
 			}
-			if route == "cli_mutate" && counts["dml"] != 0 {
-				t.Fatalf("MUTATE used SQL: %v", counts)
-			}
-			mustExec(t, ctx, session, query)
+			mustReadProbeID(t, ctx, session, id)
 		})
 	}
 }
@@ -321,16 +387,24 @@ func TestTransactionTagLocalThenOrdinary(t *testing.T) {
 	t.Setenv("SPANNER_DISABLE_AUTO_TAGGING", "true")
 	clients, _ := initializeWithRandomDB(t, []string{"CREATE TABLE A7TagProbe (Id INT64 NOT NULL) PRIMARY KEY (Id)"}, nil)
 	ctx := t.Context()
-	session := newTaggedCLISession(t, ctx, clients, clients.ProjectID, clients.InstanceID, clients.DatabaseID, func(any) {})
+	var mu sync.Mutex
+	var records []tagObservation
+	var enabled atomic.Bool
+	session := newTaggedCLISession(t, ctx, clients, clients.ProjectID, clients.InstanceID, clients.DatabaseID, observeTaggedRW(&enabled, &records, &mu))
 	mustExec(t, ctx, session, "SET TRANSACTION_TAG = 'A'")
 	mustExec(t, ctx, session, "BEGIN")
 	mustExec(t, ctx, session, "SET LOCAL TRANSACTION_TAG = 'B'")
 	mustExec(t, ctx, session, "SET TRANSACTION_TAG = 'C'")
+	enabled.Store(true)
 	mustExec(t, ctx, session, "INSERT INTO A7TagProbe (Id) VALUES (70)")
 	mustExec(t, ctx, session, "COMMIT")
+	enabled.Store(false)
 	if got := mustGetVar(t, session, "TRANSACTION_TAG"); got != "" {
 		t.Fatalf("after C consume: %q", got)
 	}
+	requireTaggedRecords(t, records, "C")
+	requireRPCKinds(t, records, "dml", "commit")
+	mustReadProbeID(t, ctx, session, 70)
 }
 
 func TestTransactionTagLocalRestoresBaseline(t *testing.T) {
@@ -338,15 +412,23 @@ func TestTransactionTagLocalRestoresBaseline(t *testing.T) {
 	t.Setenv("SPANNER_DISABLE_AUTO_TAGGING", "true")
 	clients, _ := initializeWithRandomDB(t, []string{"CREATE TABLE A7TagProbe (Id INT64 NOT NULL) PRIMARY KEY (Id)"}, nil)
 	ctx := t.Context()
-	session := newTaggedCLISession(t, ctx, clients, clients.ProjectID, clients.InstanceID, clients.DatabaseID, func(any) {})
+	var mu sync.Mutex
+	var records []tagObservation
+	var enabled atomic.Bool
+	session := newTaggedCLISession(t, ctx, clients, clients.ProjectID, clients.InstanceID, clients.DatabaseID, observeTaggedRW(&enabled, &records, &mu))
 	mustExec(t, ctx, session, "SET TRANSACTION_TAG = 'A'")
 	mustExec(t, ctx, session, "BEGIN")
 	mustExec(t, ctx, session, "SET LOCAL TRANSACTION_TAG = 'B'")
+	enabled.Store(true)
 	mustExec(t, ctx, session, "INSERT INTO A7TagProbe (Id) VALUES (71)")
 	mustExec(t, ctx, session, "COMMIT")
+	enabled.Store(false)
 	if got := mustGetVar(t, session, "TRANSACTION_TAG"); got != "A" {
 		t.Fatalf("restore A: %q", got)
 	}
+	requireTaggedRecords(t, records, "B")
+	requireRPCKinds(t, records, "dml", "commit")
+	mustReadProbeID(t, ctx, session, 71)
 }
 
 func TestTransactionTagPDMLDoesNotConsume(t *testing.T) {
@@ -427,12 +509,10 @@ func TestTransactionTagPendingSetAfterBegin(t *testing.T) {
 	mustExec(t, ctx, session, "INSERT INTO A7TagProbe (Id) VALUES (80)")
 	mustExec(t, ctx, session, "COMMIT")
 	enabled.Store(false)
-	for _, r := range records {
-		if r.txnTag != "after-pending" {
-			t.Errorf("%s tag=%q", r.kind, r.txnTag)
-		}
-	}
+	requireTaggedRecords(t, records, "after-pending")
+	requireRPCKinds(t, records, "commit")
 	assertWireTagSurfaces(t, ctx, session, "")
+	mustReadProbeID(t, ctx, session, 80)
 }
 
 func TestTransactionTagNoLeakageThenNewTag(t *testing.T) {
@@ -577,6 +657,7 @@ func TestTransactionTagSessionSwitchAndDetach(t *testing.T) {
 	_, session := initializeWithRandomDB(t, []string{"CREATE TABLE A7TagProbe (Id INT64 NOT NULL) PRIMARY KEY (Id)"}, nil)
 	ctx := t.Context()
 	handler := NewSessionHandler(session)
+	t.Cleanup(func() { handler.Close() })
 	mustExec(t, ctx, handler.Session, "SET TRANSACTION_TAG = 'across-switch'")
 	oldTM := handler.txn
 
@@ -630,4 +711,135 @@ func TestTransactionTagSessionSwitchAndDetach(t *testing.T) {
 		t.Fatal("SET succeeded after DETACH/USE; callbacks may be stale")
 	}
 	mustExec(t, ctx, handler.Session, "COMMIT")
+}
+
+func TestTransactionTagRollbackAfterConsumeRestoresBaseline(t *testing.T) {
+	skipIfShortIntegration(t)
+	t.Setenv("SPANNER_DISABLE_AUTO_TAGGING", "true")
+	clients, _ := initializeWithRandomDB(t, []string{"CREATE TABLE A7TagProbe (Id INT64 NOT NULL) PRIMARY KEY (Id)"}, nil)
+	ctx := t.Context()
+	var mu sync.Mutex
+	var records []tagObservation
+	var enabled atomic.Bool
+	session := newTaggedCLISession(t, ctx, clients, clients.ProjectID, clients.InstanceID, clients.DatabaseID, observeTaggedRW(&enabled, &records, &mu))
+	mustExec(t, ctx, session, "SET TRANSACTION_TAG = 'A'")
+	mustExec(t, ctx, session, "BEGIN")
+	mustExec(t, ctx, session, "SET LOCAL TRANSACTION_TAG = 'B'")
+	enabled.Store(true)
+	mustExec(t, ctx, session, "INSERT INTO A7TagProbe (Id) VALUES (90)")
+	mustExec(t, ctx, session, "ROLLBACK")
+	enabled.Store(false)
+	requireTaggedRecords(t, records, "B")
+	requireRPCKinds(t, records, "dml")
+	if got := mustGetVar(t, session, "TRANSACTION_TAG"); got != "A" {
+		t.Fatalf("ROLLBACK restore A: %q", got)
+	}
+	res := mustExec(t, ctx, session, "SELECT Id FROM A7TagProbe WHERE Id = 90")
+	if res.AffectedRows != 0 {
+		t.Fatalf("ROLLBACK left row: %d", res.AffectedRows)
+	}
+}
+
+func TestTransactionTagROLocalRestoresBaseline(t *testing.T) {
+	skipIfShortIntegration(t)
+	clients, _ := initializeWithRandomDB(t, nil, nil)
+	ctx := t.Context()
+	session := newTaggedCLISession(t, ctx, clients, clients.ProjectID, clients.InstanceID, clients.DatabaseID, func(any) {})
+	mustExec(t, ctx, session, "SET TRANSACTION_TAG = 'A'")
+	mustExec(t, ctx, session, "BEGIN RO")
+	mustExec(t, ctx, session, "SET LOCAL TRANSACTION_TAG = 'B'")
+	assertWireTagSurfaces(t, ctx, session, "B")
+	mustExec(t, ctx, session, "COMMIT")
+	assertWireTagSurfaces(t, ctx, session, "A")
+}
+
+func TestTransactionTagFailedBeginPreservesPendingLocal(t *testing.T) {
+	skipIfShortIntegration(t)
+	clients, _ := initializeWithRandomDB(t, []string{"CREATE TABLE A7TagProbe (Id INT64 NOT NULL) PRIMARY KEY (Id)"}, nil)
+	ctx := t.Context()
+	const injected = "injected RW begin failure for LOCAL undo"
+	var hookFired atomic.Bool
+	failBegin := func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoke grpc.UnaryInvoker, options ...grpc.CallOption) error {
+		if r, ok := req.(*sppb.BeginTransactionRequest); ok && r.Options.GetReadWrite() != nil {
+			hookFired.Store(true)
+			return status.Error(codes.PermissionDenied, injected)
+		}
+		return invoke(ctx, method, req, reply, cc, options...)
+	}
+	session := newTaggedCLISession(t, ctx, clients, clients.ProjectID, clients.InstanceID, clients.DatabaseID, func(any) {}, failBegin)
+	mustExec(t, ctx, session, "SET TRANSACTION_TAG = 'A'")
+	mustExec(t, ctx, session, "BEGIN")
+	mustExec(t, ctx, session, "SET LOCAL TRANSACTION_TAG = 'B'")
+	_, err := execSQL(t, ctx, session, "INSERT INTO A7TagProbe (Id) VALUES (93)")
+	if err == nil || !strings.Contains(err.Error(), injected) {
+		t.Fatalf("pending materialize: %v", err)
+	}
+	if !hookFired.Load() {
+		t.Fatal("begin failure hook did not run")
+	}
+	assertWireTagSurfaces(t, ctx, session, "B")
+	mustExec(t, ctx, session, "ROLLBACK")
+	assertWireTagSurfaces(t, ctx, session, "A")
+}
+
+func TestTransactionTagHeartbeatUsesOwnerTag(t *testing.T) {
+	skipIfShortIntegration(t)
+	t.Setenv("SPANNER_DISABLE_AUTO_TAGGING", "true")
+	clients, _ := initializeWithRandomDB(t, []string{"CREATE TABLE A7TagProbe (Id INT64 NOT NULL) PRIMARY KEY (Id)"}, nil)
+	ctx := t.Context()
+	var mu sync.Mutex
+	var records []tagObservation
+	var enabled atomic.Bool
+	session := newTaggedCLISession(t, ctx, clients, clients.ProjectID, clients.InstanceID, clients.DatabaseID, observeTaggedRW(&enabled, &records, &mu))
+	mustExec(t, ctx, session, "SET TRANSACTION_TAG = 'a7-heartbeat'")
+	mustExec(t, ctx, session, "BEGIN RW")
+	mustExec(t, ctx, session, "INSERT INTO A7TagProbe (Id) VALUES (91)")
+	enabled.Store(true)
+	err := session.txn.withReadWriteTransaction(func(txn *spanner.ReadWriteStmtBasedTransaction) error {
+		return heartbeat(txn, sppb.RequestOptions_PRIORITY_LOW)
+	})
+	enabled.Store(false)
+	if err != nil {
+		t.Fatalf("heartbeat: %v", err)
+	}
+	var saw bool
+	for _, r := range records {
+		if r.kind == "heartbeat" && r.txnTag == "a7-heartbeat" && r.reqTag == "spanner_mycli_heartbeat" {
+			saw = true
+		}
+	}
+	if !saw {
+		t.Fatalf("heartbeat RPC not observed: %v", records)
+	}
+	mustExec(t, ctx, session, "COMMIT")
+}
+
+func TestTransactionTagCaptureContendsWithGetterSetter(t *testing.T) {
+	skipIfShortIntegration(t)
+	t.Setenv("SPANNER_DISABLE_AUTO_TAGGING", "true")
+	clients, _ := initializeWithRandomDB(t, []string{"CREATE TABLE A7TagProbe (Id INT64 NOT NULL) PRIMARY KEY (Id)"}, nil)
+	ctx := t.Context()
+	session := newTaggedCLISession(t, ctx, clients, clients.ProjectID, clients.InstanceID, clients.DatabaseID, func(any) {})
+	mustExec(t, ctx, session, "SET TRANSACTION_TAG = 'a7-contend'")
+	var wg sync.WaitGroup
+	for range 16 {
+		wg.Go(func() {
+			_, _ = session.systemVariables.Get("TRANSACTION_TAG")
+			_ = session.systemVariables.ListVariables()["TRANSACTION_TAG"]
+			_ = session.systemVariables.SetFromSimple("TRANSACTION_TAG", "race")
+		})
+	}
+	mustExec(t, ctx, session, "BEGIN RW")
+	wg.Wait()
+	applied := mustGetVar(t, session, "TRANSACTION_TAG")
+	if applied != "a7-contend" && applied != "race" {
+		t.Fatalf("applied tag after contended capture: %q", applied)
+	}
+	err := session.systemVariables.SetFromSimple("TRANSACTION_TAG", "too-late")
+	if !errors.Is(err, errTransactionTagInReadWrite) {
+		t.Fatalf("SET after capture: %v", err)
+	}
+	mustExec(t, ctx, session, "INSERT INTO A7TagProbe (Id) VALUES (92)")
+	mustExec(t, ctx, session, "COMMIT")
+	mustReadProbeID(t, ctx, session, 92)
 }

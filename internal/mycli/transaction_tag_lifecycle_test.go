@@ -174,8 +174,8 @@ func TestTransactionTagConcurrentAppliedOwnerAccess(t *testing.T) {
 			_, _ = session.systemVariables.Get("TRANSACTION_TAG")
 			_ = session.systemVariables.ListVariables()["TRANSACTION_TAG"]
 			err := session.systemVariables.SetFromSimple("TRANSACTION_TAG", "race")
-			if err != nil && !errors.Is(err, errTransactionTagInReadWrite) {
-				t.Errorf("unexpected SET error: %v", err)
+			if !errors.Is(err, errTransactionTagInReadWrite) {
+				t.Errorf("SET during physical RW: %v", err)
 			}
 		})
 	}
