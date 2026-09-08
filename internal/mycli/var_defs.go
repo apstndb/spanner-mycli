@@ -648,7 +648,7 @@ var varDefs = []varDef{
 		// the old value at transaction end would re-read those files, so it opts
 		// out of SET LOCAL.
 		name:    "CLI_PROTO_DESCRIPTOR_FILE",
-		desc:    "Comma-separated list of proto descriptor files. Supports ADD to append files.",
+		desc:    "Comma-separated list of proto descriptor files. Supports ADD to append files. HTTP(S) source vs binary is classified from the URL path, not query or fragment.",
 		scope:   scopeSession,
 		noLocal: true,
 		bind: func(sv *systemVariables) Variable {
