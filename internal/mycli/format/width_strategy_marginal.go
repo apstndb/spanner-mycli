@@ -46,7 +46,7 @@ func (MarginalCostStrategy) CalculateWidths(wc *widthCalculator, availableWidth 
 	}
 
 	// Start with header-proportional allocation + preferred/min width floor.
-	adjustedWidths := adjustByHeader(headers, availableWidth)
+	adjustedWidths := wc.adjustByHeader(headers, availableWidth)
 	applyColumnFloors(adjustedWidths, hints, availableWidth)
 
 	remaining := availableWidth - lo.Sum(adjustedWidths)

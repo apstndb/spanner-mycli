@@ -221,7 +221,7 @@ func TestAdjustByHeader(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := adjustByHeader(tt.headers, tt.availableWidth)
+			got := newTestWidthCalculator().adjustByHeader(tt.headers, tt.availableWidth)
 			if len(got) != tt.wantLen {
 				t.Errorf("len = %d, want %d", len(got), tt.wantLen)
 			}

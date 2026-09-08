@@ -46,7 +46,7 @@ func (GreedyFrequencyStrategy) CalculateWidths(wc *widthCalculator, availableWid
 		return fmt.Sprintf("remaining %v, adjustedWidths: %v", remainsWidth-sumWidths(adjustedWidths), adjustedWidths)
 	}
 
-	adjustedWidths := adjustByHeader(headers, availableWidth)
+	adjustedWidths := wc.adjustByHeader(headers, availableWidth)
 
 	applyColumnFloors(adjustedWidths, hints, availableWidth)
 

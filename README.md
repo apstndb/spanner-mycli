@@ -1087,6 +1087,12 @@ is unchanged. It does not change when plans are cached or cleared (plain
 > - Set to empty string to disable all type styling.
 > - See [docs/system_variables.md](docs/system_variables.md) for full reference.
 
+Table width calculation and wrapping account for 7-bit ANSI escape sequences
+already present in values or headers, independently of CLI-added type styling.
+SGR color/style sequences are preserved across wrapped lines. Disabling CLI
+styling does not sanitize escape sequences in the input; CSV, JSONL and SQL
+export behavior is unchanged.
+
 ### Batch statements
 
 #### DDL batching

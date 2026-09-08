@@ -257,8 +257,8 @@ func (wc WidthCount) Length() int { return wc.width }
 // Count returns the frequency count.
 func (wc WidthCount) Count() int { return wc.count }
 
-func adjustByHeader(headers []string, availableWidth int) []int {
-	nameWidths := slices.Collect(loi.Map(slices.Values(headers), tabwrap.StringWidth))
+func (wc *widthCalculator) adjustByHeader(headers []string, availableWidth int) []int {
+	nameWidths := slices.Collect(loi.Map(slices.Values(headers), wc.StringWidth))
 
 	adjustWidths, _ := adjustToSum(availableWidth, nameWidths)
 
