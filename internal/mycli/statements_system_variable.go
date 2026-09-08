@@ -85,8 +85,18 @@ type SetStatement struct {
 func (s *SetStatement) isDetachedCompatible() {}
 
 func (s *SetStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	if err := session.systemVariables.SetFromGoogleSQL(s.VarName, s.Value); err != nil {
+	sysVars := session.systemVariables
+	sysVars.ensureRegistry()
+	// Ordinary SET is session-durable through COMMIT and ROLLBACK. It is not
+	// PostgreSQL transactional SET. Invalidation must not live in Registry.Set:
+	// that path also restores LOCAL values and would erase LOCAL itself.
+	if err := sysVars.SetFromGoogleSQL(s.VarName, s.Value); err != nil {
 		return nil, err
+	}
+	if session.txn != nil && session.txn.InTransaction() {
+		if def := sysVars.Registry.lookupDef(s.VarName); def != nil {
+			session.txn.retireLocalVarUndo(def.name)
+		}
 	}
 	return &Result{KeepVariables: true}, nil
 }
@@ -146,7 +156,7 @@ func (s *SetLocalStatement) Execute(ctx context.Context, session *Session) (*Res
 		return nil, err
 	}
 
-	if err := session.txn.pushLocalVarUndo(upperName, oldValue); err != nil {
+	if err := session.txn.pushLocalVarUndo(def.name, oldValue); err != nil {
 		// The transaction ended between the check above and the push;
 		// undo the set so the value does not silently outlive the transaction.
 		if restoreErr := sysVars.Registry.Set(upperName, oldValue, false); restoreErr != nil {
@@ -166,6 +176,8 @@ type SetAddStatement struct {
 func (s *SetAddStatement) isDetachedCompatible() {}
 
 func (s *SetAddStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+	// The only ADD handler is CLI_PROTO_DESCRIPTOR_FILE, which is noLocal, so
+	// SET += cannot retire SET LOCAL undo. Do not hook ADD into that lifecycle.
 	if err := session.systemVariables.AddFromGoogleSQL(s.VarName, s.Value); err != nil {
 		return nil, err
 	}

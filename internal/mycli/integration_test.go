@@ -943,6 +943,64 @@ func TestSetLocalStatements(t *testing.T) {
 	runStatementTests(t, tests)
 }
 
+func TestOrdinarySetAfterSetLocalEnds(t *testing.T) {
+	showFormat := func(want string) stmtResult {
+		return sr("SHOW VARIABLE CLI_FORMAT", &Result{
+			KeepVariables: true,
+			TableHeader:   toTableHeader("CLI_FORMAT"),
+			Rows:          sliceOf(toRow(want)),
+		})
+	}
+	tests := []statementTestCase{
+		{
+			desc: "ordinary SET after SET LOCAL survives COMMIT of a read-write transaction",
+			stmtResults: []stmtResult{
+				srEmpty(testTableSimpleDDL),
+				srEmpty("BEGIN RW"),
+				srKeep("SET LOCAL CLI_FORMAT = 'CSV'"),
+				srKeep("SET CLI_FORMAT = 'JSONL'"),
+				showFormat("JSONL"),
+				srDML("INSERT INTO TestTable (id, active) VALUES (1, true)", 1),
+				srEmpty("COMMIT"),
+				showFormat("JSONL"),
+			},
+		},
+		{
+			desc: "ordinary SET after SET LOCAL survives ROLLBACK of a read-write transaction",
+			stmtResults: []stmtResult{
+				srEmpty("BEGIN RW"),
+				srKeep("SET LOCAL CLI_FORMAT = 'CSV'"),
+				srKeep("SET CLI_FORMAT = 'JSONL'"),
+				srEmpty("ROLLBACK"),
+				showFormat("JSONL"),
+			},
+		},
+		{
+			desc: "ordinary SET after SET LOCAL survives closing a read-only transaction",
+			stmtResults: []stmtResult{
+				srEmpty("BEGIN RO"),
+				srKeep("SET LOCAL CLI_FORMAT = 'CSV'"),
+				srKeep("SET CLI_FORMAT = 'JSONL'"),
+				srEmpty("COMMIT"),
+				showFormat("JSONL"),
+			},
+		},
+		{
+			desc: "ordinary SET after SET LOCAL survives pending to active then ROLLBACK",
+			stmtResults: []stmtResult{
+				srEmpty(testTableSimpleDDL),
+				srEmpty("BEGIN"),
+				srKeep("SET LOCAL CLI_FORMAT = 'CSV'"),
+				srKeep("SET CLI_FORMAT = 'JSONL'"),
+				srDML("INSERT INTO TestTable (id, active) VALUES (1, true)", 1),
+				srEmpty("ROLLBACK"),
+				showFormat("JSONL"),
+			},
+		},
+	}
+	runStatementTests(t, tests)
+}
+
 // TestShowStatements tests SHOW, DESCRIBE, and HELP statement functionality
 func TestShowStatements(t *testing.T) {
 	tests := []statementTestCase{
