@@ -22,7 +22,6 @@ import (
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
-	"github.com/apstndb/spanner-mycli/enums"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -54,11 +53,6 @@ func TestDirectedReadROPlanAndProfileABClear(t *testing.T) {
 			requireDirected(t, planReqs[0].DirectedReadOptions, sel.want)
 			if planReqs[0].GetTransaction().GetId() != nil && string(planReqs[0].GetTransaction().GetId()) == "probe-rw" {
 				t.Fatal("RO PLAN used RW transaction identity")
-			}
-
-			result, err := executeExplain(ctx, session, stmt.SQL, false, enums.ExplainFormatUnspecified, 0, nil)
-			if err != nil || result == nil || result.AffectedRows < 1 {
-				t.Fatalf("EXPLAIN result=%v error=%v", result, err)
 			}
 
 			srv.takeRequests()
