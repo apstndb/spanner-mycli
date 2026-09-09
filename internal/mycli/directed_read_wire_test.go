@@ -25,10 +25,13 @@ import (
 	"time"
 
 	"cloud.google.com/go/spanner"
+	adminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -36,12 +39,24 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+type directedReadAdminServer struct {
+	adminpb.UnimplementedDatabaseAdminServer
+}
+
+func (*directedReadAdminServer) ListDatabases(context.Context, *adminpb.ListDatabasesRequest) (*adminpb.ListDatabasesResponse, error) {
+	return &adminpb.ListDatabasesResponse{}, nil
+}
+
 type directedReadWireServer struct {
 	partitionFanInServer
-	mu       sync.Mutex
-	requests []*sppb.ExecuteSqlRequest
-	begins   []*sppb.BeginTransactionRequest
-	cycleFK  atomic.Bool
+	mu               sync.Mutex
+	requests         []*sppb.ExecuteSqlRequest
+	begins           []*sppb.BeginTransactionRequest
+	partitionQueries []*sppb.PartitionQueryRequest
+	rollbacks        int
+	cycleFK          atomic.Bool
+	failRollback     atomic.Bool
+	cleanups         atomic.Int32
 }
 
 func (s *directedReadWireServer) BeginTransaction(_ context.Context, r *sppb.BeginTransactionRequest) (*sppb.Transaction, error) {
@@ -69,7 +84,34 @@ func (s *directedReadWireServer) Commit(context.Context, *sppb.CommitRequest) (*
 	return &sppb.CommitResponse{CommitTimestamp: timestamppb.Now()}, nil
 }
 
-func (s *directedReadWireServer) Rollback(context.Context, *sppb.RollbackRequest) (*emptypb.Empty, error) {
+func (s *directedReadWireServer) Rollback(_ context.Context, _ *sppb.RollbackRequest) (*emptypb.Empty, error) {
+	s.mu.Lock()
+	s.rollbacks++
+	fail := s.failRollback.Load()
+	s.mu.Unlock()
+	if fail {
+		return nil, status.Error(codes.Internal, "injected rollback failure")
+	}
+	return &emptypb.Empty{}, nil
+}
+
+func (s *directedReadWireServer) PartitionQuery(ctx context.Context, r *sppb.PartitionQueryRequest) (*sppb.PartitionResponse, error) {
+	s.mu.Lock()
+	s.partitionQueries = append(s.partitionQueries, proto.CloneOf(r))
+	s.mu.Unlock()
+	return s.partitionFanInServer.PartitionQuery(ctx, r)
+}
+
+func (s *directedReadWireServer) takePartitionQueries() []*sppb.PartitionQueryRequest {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := s.partitionQueries
+	s.partitionQueries = nil
+	return out
+}
+
+func (s *directedReadWireServer) DeleteSession(context.Context, *sppb.DeleteSessionRequest) (*emptypb.Empty, error) {
+	s.cleanups.Add(1)
 	return &emptypb.Empty{}, nil
 }
 
@@ -117,8 +159,16 @@ func (s *directedReadWireServer) ExecuteStreamingSql(r *sppb.ExecuteSqlRequest, 
 		if result.Stats == nil {
 			result.Stats = &sppb.ResultSetStats{}
 		}
-		result.Stats.QueryPlan = &sppb.QueryPlan{PlanNodes: []*sppb.PlanNode{{DisplayName: "directed-read-fixture"}}}
-		result.Stats.QueryStats = &structpb.Struct{Fields: map[string]*structpb.Value{"rows_returned": structpb.NewStringValue("1")}}
+		result.Stats.QueryPlan = &sppb.QueryPlan{PlanNodes: []*sppb.PlanNode{{
+			Index:       0,
+			Kind:        sppb.PlanNode_RELATIONAL,
+			DisplayName: "directed-read-fixture",
+		}}}
+		result.Stats.QueryStats = &structpb.Struct{Fields: map[string]*structpb.Value{
+			"rows_returned": structpb.NewStringValue("1"),
+			"elapsed_time":  structpb.NewStringValue("1 msec"),
+			"query_text":    structpb.NewStringValue(r.Sql),
+		}}
 		if r.QueryMode == sppb.ExecuteSqlRequest_PLAN {
 			result.Values = nil
 		}
@@ -171,6 +221,7 @@ func startDirectedReadWire(t *testing.T) (*directedReadWireServer, *spanner.Clie
 	listener := bufconn.Listen(1 << 20)
 	grpcServer := grpc.NewServer()
 	sppb.RegisterSpannerServer(grpcServer, srv)
+	adminpb.RegisterDatabaseAdminServer(grpcServer, &directedReadAdminServer{})
 	go func() {
 		if err := grpcServer.Serve(listener); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
 			t.Errorf("serve: %v", err)

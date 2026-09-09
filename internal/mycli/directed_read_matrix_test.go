@@ -41,12 +41,13 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func startDirectedReadDial(t *testing.T) (*directedReadWireServer, *grpc.ClientConn) {
+func startDirectedReadDial(t *testing.T) (*directedReadWireServer, []option.ClientOption) {
 	t.Helper()
 	srv := &directedReadWireServer{partitionFanInServer: partitionFanInServer{nPartitions: 1, rowsPer: 1}}
 	listener := bufconn.Listen(1 << 20)
 	grpcServer := grpc.NewServer()
 	sppb.RegisterSpannerServer(grpcServer, srv)
+	adminpb.RegisterDatabaseAdminServer(grpcServer, &directedReadAdminServer{})
 	go func() {
 		if err := grpcServer.Serve(listener); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
 			t.Errorf("serve: %v", err)
@@ -56,15 +57,17 @@ func startDirectedReadDial(t *testing.T) (*directedReadWireServer, *grpc.ClientC
 		grpcServer.Stop()
 		_ = listener.Close()
 	})
-	conn, err := grpc.NewClient("passthrough:///directed-read-matrix",
-		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }),
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
-	if err != nil {
-		t.Fatal(err)
+	// Per-client dialer options so USE/DETACH/RecreateClient can close a
+	// session without shutting down the shared in-memory listener.
+	opts := []option.ClientOption{
+		option.WithoutAuthentication(),
+		option.WithEndpoint("bufnet"),
+		option.WithGRPCDialOption(grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+			return listener.Dial()
+		})),
+		option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())),
 	}
-	t.Cleanup(func() { _ = conn.Close() })
-	return srv, conn
+	return srv, opts
 }
 
 func mustParseDirectedRead(t *testing.T, s string) *sppb.DirectedReadOptions {
@@ -85,17 +88,17 @@ func newDirectedReadVars(t *testing.T) *systemVariables {
 	return vars
 }
 
-func newDirectedReadProductSession(t *testing.T, conn *grpc.ClientConn, vars *systemVariables) (*Session, spanner.ClientConfig) {
+func newDirectedReadProductSession(t *testing.T, opts []option.ClientOption, vars *systemVariables) (*Session, spanner.ClientConfig) {
 	t.Helper()
 	var gotCfg spanner.ClientConfig
 	session, err := newSessionWithFactories(t.Context(), vars,
-		func(ctx context.Context, db string, cfg spanner.ClientConfig, _ ...option.ClientOption) (*spanner.Client, error) {
+		func(ctx context.Context, db string, cfg spanner.ClientConfig, clientOpts ...option.ClientOption) (*spanner.Client, error) {
 			gotCfg = cfg
-			return spanner.NewClientWithConfig(ctx, db, cfg, option.WithGRPCConn(conn))
+			return spanner.NewClientWithConfig(ctx, db, cfg, clientOpts...)
 		},
 		adminapi.NewDatabaseAdminClient,
 		func(c *spanner.Client) { c.Close() },
-		option.WithGRPCConn(conn),
+		opts...,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -111,12 +114,43 @@ func requireDirected(t *testing.T, got, want *sppb.DirectedReadOptions) {
 	}
 }
 
+func directedReadABClear(t *testing.T) []struct {
+	name string
+	set  string
+	want *sppb.DirectedReadOptions
+} {
+	t.Helper()
+	return []struct {
+		name string
+		set  string
+		want *sppb.DirectedReadOptions
+	}{
+		{name: "A", set: "us-east1:READ_ONLY", want: mustParseDirectedRead(t, "us-east1:READ_ONLY")},
+		{name: "B", set: "us-west1:READ_WRITE", want: mustParseDirectedRead(t, "us-west1:READ_WRITE")},
+		{name: "clear", set: "", want: nil},
+	}
+}
+
+func requireDirectedPlan(t *testing.T, plan *sppb.QueryPlan) {
+	t.Helper()
+	if plan == nil || len(plan.GetPlanNodes()) == 0 || plan.PlanNodes[0].GetDisplayName() != "directed-read-fixture" {
+		t.Fatalf("plan=%v, want directed-read-fixture node", plan)
+	}
+}
+
+func requireDirectedProfileStats(t *testing.T, stats map[string]any) {
+	t.Helper()
+	if fmt.Sprint(stats["rows_returned"]) != "1" {
+		t.Fatalf("PROFILE stats=%v, want rows_returned=1", stats)
+	}
+}
+
 func TestDirectedReadStartupEmbeddedAndProductWire(t *testing.T) {
 	oldLogger, oldLevel := slog.Default(), cliLogLevel.Level()
 	t.Cleanup(func() { slog.SetDefault(oldLogger); cliLogLevel.Set(oldLevel) })
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 	defer cancel()
-	srv, conn := startDirectedReadDial(t)
+	srv, opts := startDirectedReadDial(t)
 	a := mustParseDirectedRead(t, "us-east1:READ_ONLY")
 	b := mustParseDirectedRead(t, "us-west1:READ_WRITE")
 	embed := mustParseDirectedRead(t, "europe-west1:READ_ONLY")
@@ -134,16 +168,15 @@ func TestDirectedReadStartupEmbeddedAndProductWire(t *testing.T) {
 	vars.StreamManager = streamio.NewStreamManager(io.NopCloser(strings.NewReader("")), io.Discard, io.Discard)
 	vars.Config.EmbeddedClientConfig = &spanner.ClientConfig{
 		DisableNativeMetrics: true,
-		Type:                 spanner.OMNI,
 		DisableRouteToLeader: true,
 		UserAgent:            "embedded-directed-test",
 		DirectedReadOptions:  embed,
 	}
-	session, cfg := newDirectedReadProductSession(t, conn, vars)
+	session, cfg := newDirectedReadProductSession(t, opts, vars)
 	if cfg.DirectedReadOptions != nil {
 		t.Fatalf("copied client DRO=%v want nil", cfg.DirectedReadOptions)
 	}
-	if cfg.UserAgent != "embedded-directed-test" || cfg.Type != spanner.OMNI || !cfg.DisableRouteToLeader {
+	if cfg.UserAgent != "embedded-directed-test" || !cfg.DisableRouteToLeader || !cfg.DisableNativeMetrics {
 		t.Fatalf("unrelated embedded fields changed: %+v", cfg)
 	}
 	if vars.Config.EmbeddedClientConfig.DirectedReadOptions != embed || !proto.Equal(embed, embedCopy) {
@@ -291,10 +324,10 @@ func TestDirectedReadROVariantsGuardsAndOmits(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 	defer cancel()
-	srv, conn := startDirectedReadDial(t)
+	srv, opts := startDirectedReadDial(t)
 	b := mustParseDirectedRead(t, "us-west1:READ_WRITE")
 	vars := newDirectedReadVars(t)
-	session, _ := newDirectedReadProductSession(t, conn, vars)
+	session, _ := newDirectedReadProductSession(t, opts, vars)
 	if err := vars.SetFromSimple("DIRECTED_READ", "us-west1:READ_WRITE"); err != nil {
 		t.Fatal(err)
 	}
@@ -461,7 +494,9 @@ func TestDirectedReadROVariantsGuardsAndOmits(t *testing.T) {
 		t.Fatal("completion sent no request")
 	}
 	requireDirected(t, comp[0].DirectedReadOptions, b)
-	_ = items
+	if len(items) != 1 || items[0].Value != "fixture_schema" {
+		t.Fatalf("completion candidates=%v, want fixture_schema", items)
+	}
 }
 
 func TestDirectedReadDumpSnapshotWire(t *testing.T) {
@@ -472,9 +507,9 @@ func TestDirectedReadDumpSnapshotWire(t *testing.T) {
 				t.Parallel()
 				ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 				defer cancel()
-				srv, conn := startDirectedReadDial(t)
+				srv, opts := startDirectedReadDial(t)
 				vars := newDirectedReadVars(t)
-				session, _ := newDirectedReadProductSession(t, conn, vars)
+				session, _ := newDirectedReadProductSession(t, opts, vars)
 				srv.cycleFK.Store(mode != "ordinary")
 				if mode == "cyclic mutate" {
 					vars.Display.DumpCyclicMode = enums.DumpCyclicModeMutate

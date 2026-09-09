@@ -93,6 +93,18 @@ func TestDirectedReadSetShowClearAndUnknownNames(t *testing.T) {
 	if !proto.Equal(originalValue, original) {
 		t.Fatal("invalid SET mutated the existing DirectedRead value")
 	}
+	if err := sysVars.SetFromSimple("DIRECTED_READ", "us-east1:READ_ONLY:extra"); err == nil {
+		t.Fatal("SET with extra separators succeeded")
+	}
+	if sysVars.Query.DirectedRead != original || !proto.Equal(originalValue, original) {
+		t.Fatal("extra-separator SET changed the current selection")
+	}
+	if err := sysVars.SetFromSimple("DIRECTED_READ", "us-east1:"); err == nil {
+		t.Fatal("SET with empty replica type succeeded")
+	}
+	if sysVars.Query.DirectedRead != original || !proto.Equal(originalValue, original) {
+		t.Fatal("empty replica-type SET changed the current selection")
+	}
 
 	if err := sysVars.SetFromGoogleSQL("DIRECTED_READ", "''"); err != nil {
 		t.Fatalf("empty SET: %v", err)
