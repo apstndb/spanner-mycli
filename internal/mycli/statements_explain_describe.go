@@ -663,7 +663,9 @@ func templateMapFunc(tmplName, tmplText string) (func(row plantree.RowWithPredic
 
 	return func(row plantree.RowWithPredicates) (string, error) {
 		var sb strings.Builder
-		if err = tmpl.Execute(&sb, row.ExecutionStats); err != nil {
+		// Use a per-call error so concurrent EXPLAIN/ANALYZE renders do not
+		// race on the Parse error from the enclosing function.
+		if err := tmpl.Execute(&sb, row.ExecutionStats); err != nil {
 			return "", err
 		}
 
