@@ -43,7 +43,7 @@ require (
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
 	github.com/klauspost/compress v1.20.0
 	github.com/modelcontextprotocol/go-sdk v1.7.0
-	github.com/nyaosorg/go-readline-ny v1.15.1
+	github.com/nyaosorg/go-readline-ny v1.16.0
 	github.com/olekukonko/tablewriter v1.1.4
 	github.com/pelletier/go-toml v1.9.5
 	github.com/samber/lo v1.53.0
@@ -54,7 +54,7 @@ require (
 	github.com/vbauerster/mpb/v8 v8.16.1
 	go.uber.org/zap v1.28.0
 	golang.org/x/term v0.45.0
-	golang.org/x/time v0.15.0
+	golang.org/x/time v0.16.0
 	google.golang.org/api v0.297.0
 	google.golang.org/genai v1.71.0
 	google.golang.org/grpc v1.83.2
@@ -119,7 +119,7 @@ require (
 	github.com/google/flatbuffers v23.5.26+incompatible // indirect
 	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
-	github.com/google/uuid v1.6.0 // indirect
+	github.com/google/uuid v1.6.0
 	// The v0.3.21 tag was deleted upstream; this pins the same commit for direct module resolution.
 	github.com/googleapis/enterprise-certificate-proxy v0.3.21-0.20260811172054-82da9ba164a0 // indirect
 	github.com/googleapis/gax-go/v2 v2.24.0 // indirect
@@ -149,7 +149,7 @@ require (
 	github.com/moby/sys/user v0.4.1 // indirect
 	github.com/moby/sys/userns v0.1.0 // indirect
 	github.com/moby/term v0.5.2 // indirect
-	github.com/nyaosorg/go-ttyadapter v0.6.2 // indirect
+	github.com/nyaosorg/go-ttyadapter v0.7.0 // indirect
 	github.com/olekukonko/cat v0.0.0-20250911104152-50322a0618f6 // indirect
 	github.com/olekukonko/errors v1.2.0 // indirect
 	github.com/olekukonko/ll v0.1.6 // indirect
