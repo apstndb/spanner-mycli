@@ -202,8 +202,8 @@ func NewTableHeader(names ...string) TableHeader { return toTableHeader(names...
 // argument. Exported wrapper over unquoteString for feature packages.
 func UnquoteString(s string) string { return unquoteString(s) }
 
-// ProjectID returns the configured Spanner project for the session.
-func (s *Session) ProjectID() string { return s.systemVariables.Connection.Project }
+// ProjectID returns the session's construction-time Spanner project.
+func (s *Session) ProjectID() string { return s.connection.Project }
 
 // CredentialBytes returns a defensive copy of the raw --credential bytes stored
 // on the durable startup config. Feature packages that build their own
