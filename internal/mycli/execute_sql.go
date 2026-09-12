@@ -528,15 +528,11 @@ func executeStreamingSQL(ctx context.Context, qe *queryExecution) (*Result, erro
 	return executeStreamingSQLWithSpanvalueProcessor(qe)
 }
 
-// createStreamingProcessor creates the appropriate streaming processor based on format and streaming mode.
+// streamingProcessorFor creates the appropriate streaming processor based on format and streaming mode.
 // Non-table formats are always streaming because they do not benefit from row buffering.
 // For table formats, CLI_TABLE_STREAMING controls whether to trade layout quality for immediate output.
 // Spanvalue-writer formats (CSV/JSONL/SQL_INSERT*) never reach this function:
 // decideExecutionMode routes them to the spanvalue writer path directly.
-func createStreamingProcessor(sysVars *systemVariables, out io.Writer, screenWidth int) (RowProcessor, error) {
-	return streamingProcessorFor(queryRenderingFrom(sysVars), out, screenWidth)
-}
-
 func streamingProcessorFor(render queryRendering, out io.Writer, screenWidth int) (RowProcessor, error) {
 	fmtMode := format.Mode(render.CLIFormat.String())
 	if fmtMode.IsTableMode() || fmtMode == format.ModeUnspecified {
