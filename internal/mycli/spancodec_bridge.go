@@ -105,7 +105,7 @@ func streamStructRows[T any](enc *spancodec.RowEncoder[T], items []T, sysVars *s
 	if err != nil {
 		return nil, false, err
 	}
-	w, handled, err := newSpanvalueRowIteratorWriterFor(out, sysVars, fc)
+	w, handled, err := newSpanvalueRowIteratorWriterFor(out, exportWriterOptionsFrom(sysVars), fc)
 	if err != nil || !handled {
 		return nil, handled, err
 	}
