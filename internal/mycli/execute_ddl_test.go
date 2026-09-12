@@ -18,9 +18,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"strings"
 	"testing"
 
+	"cloud.google.com/go/spanner"
+	"github.com/apstndb/spanner-mycli/internal/mycli/streamio"
+	"github.com/google/go-cmp/cmp"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -107,4 +112,119 @@ func TestIsCancellationError(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestBufferOrExecuteDdlStatements(t *testing.T) {
+	t.Parallel()
+
+	t.Run("rejects active batch DML", func(t *testing.T) {
+		t.Parallel()
+		session := newSessionForLocalVarTest(t)
+		session.batch.SetCurrent(&BatchDMLStatement{})
+		_, err := bufferOrExecuteDdlStatements(t.Context(), session, []string{"CREATE TABLE t (id INT64) PRIMARY KEY (id)"})
+		if err == nil || !strings.Contains(err.Error(), "active batch DML") {
+			t.Fatalf("error = %v, want active batch DML", err)
+		}
+	})
+
+	t.Run("buffers into active bulk DDL", func(t *testing.T) {
+		t.Parallel()
+		session := newSessionForLocalVarTest(t)
+		bulk := &BulkDdlStatement{Ddls: []string{"CREATE TABLE t1 (id INT64) PRIMARY KEY (id)"}}
+		session.batch.SetCurrent(bulk)
+		got, err := bufferOrExecuteDdlStatements(t.Context(), session, []string{"CREATE TABLE t2 (id INT64) PRIMARY KEY (id)"})
+		if err != nil {
+			t.Fatalf("bufferOrExecuteDdlStatements() error = %v", err)
+		}
+		if got == nil || got.KeepVariables {
+			t.Fatalf("result = %+v, want empty Result", got)
+		}
+		want := []string{
+			"CREATE TABLE t1 (id INT64) PRIMARY KEY (id)",
+			"CREATE TABLE t2 (id INT64) PRIMARY KEY (id)",
+		}
+		if diff := strings.Join(bulk.Ddls, "\n"); diff != strings.Join(want, "\n") {
+			t.Fatalf("buffered DDLs = %v, want %v", bulk.Ddls, want)
+		}
+		current, ok := session.batch.Current().(*BulkDdlStatement)
+		if !ok || current != bulk {
+			t.Fatalf("batch.Current() = %T, want original *BulkDdlStatement", session.batch.Current())
+		}
+	})
+
+	t.Run("rejects queued automatic DML", func(t *testing.T) {
+		t.Parallel()
+		session := newSessionForLocalVarTest(t)
+		session.txn.autoDML = []spanner.Statement{{SQL: "INSERT INTO t (id) VALUES (1)"}}
+		_, err := bufferOrExecuteDdlStatements(t.Context(), session, []string{"CREATE TABLE t (id INT64) PRIMARY KEY (id)"})
+		if err == nil || !strings.Contains(err.Error(), "active batch DML") {
+			t.Fatalf("error = %v, want active batch DML", err)
+		}
+	})
+}
+
+func TestExecuteDdlStatementsEmpty(t *testing.T) {
+	t.Parallel()
+
+	t.Run("no echo header", func(t *testing.T) {
+		t.Parallel()
+		session := newSessionForLocalVarTest(t)
+		got, err := executeDdlStatements(t.Context(), session, nil)
+		if err != nil {
+			t.Fatalf("executeDdlStatements() error = %v", err)
+		}
+		if got.TableHeader != nil {
+			t.Fatalf("TableHeader = %v, want nil", got.TableHeader)
+		}
+	})
+
+	t.Run("echo header without rows", func(t *testing.T) {
+		t.Parallel()
+		session := newSessionForLocalVarTest(t)
+		session.systemVariables.Feature.EchoExecutedDDL = true
+		got, err := executeDdlStatements(t.Context(), session, nil)
+		if err != nil {
+			t.Fatalf("executeDdlStatements() error = %v", err)
+		}
+		want := toTableHeader("Executed", "Commit Timestamp")
+		if diff := cmp.Diff(want, got.TableHeader); diff != "" {
+			t.Fatalf("TableHeader mismatch (-want +got):\n%s", diff)
+		}
+		if len(got.Rows) != 0 {
+			t.Fatalf("Rows = %v, want empty", got.Rows)
+		}
+	})
+}
+
+func TestNewProgressWithTTY(t *testing.T) {
+	t.Parallel()
+
+	if p := newProgressWithTTY(t.Context(), nil); p != nil {
+		t.Fatal("nil session: got progress, want nil")
+	}
+	if p := newProgressWithTTY(t.Context(), &Session{}); p != nil {
+		t.Fatal("nil systemVariables: got progress, want nil")
+	}
+
+	session := newSessionForLocalVarTest(t)
+	if p := newProgressWithTTY(t.Context(), session); p != nil {
+		t.Fatal("nil StreamManager: got progress, want nil")
+	}
+
+	session.systemVariables.StreamManager = streamio.NewStreamManager(io.NopCloser(strings.NewReader("")), io.Discard, io.Discard)
+	if p := newProgressWithTTY(t.Context(), session); p != nil {
+		t.Fatal("non-TTY output: got progress, want nil")
+	}
+
+	tty, err := os.CreateTemp(t.TempDir(), "ddl-progress-*.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = tty.Close() })
+	session.systemVariables.StreamManager.SetTtyStream(tty)
+	p := newProgressWithTTY(t.Context(), session)
+	if p == nil {
+		t.Fatal("TTY stream: got nil progress")
+	}
+	p.Wait()
 }
