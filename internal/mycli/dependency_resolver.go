@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"cloud.google.com/go/spanner"
+	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 )
 
 // TableDependency is a BASE TABLE member of the dump data catalog.
@@ -79,17 +80,17 @@ type informationSchemaFKRow struct {
 	Enforced               *string `spanner:"ENFORCED"`
 }
 
-func (dr *DependencyResolver) BuildDependencyGraphWithTxn(ctx context.Context, txn *spanner.ReadOnlyTransaction) error {
-	if err := dr.queryCatalogWithTxn(ctx, txn); err != nil {
+func (dr *DependencyResolver) BuildDependencyGraphWithTxn(ctx context.Context, txn *spanner.ReadOnlyTransaction, dro *sppb.DirectedReadOptions) error {
+	if err := dr.queryCatalogWithTxn(ctx, txn, dro); err != nil {
 		return err
 	}
-	if err := dr.queryForeignKeysWithTxn(ctx, txn); err != nil {
+	if err := dr.queryForeignKeysWithTxn(ctx, txn, dro); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (dr *DependencyResolver) queryCatalogWithTxn(ctx context.Context, txn *spanner.ReadOnlyTransaction) error {
+func (dr *DependencyResolver) queryCatalogWithTxn(ctx context.Context, txn *spanner.ReadOnlyTransaction, dro *sppb.DirectedReadOptions) error {
 	query := `
 		SELECT
 			TABLE_SCHEMA,
@@ -101,7 +102,7 @@ func (dr *DependencyResolver) queryCatalogWithTxn(ctx context.Context, txn *span
 		ORDER BY TABLE_SCHEMA, TABLE_NAME`
 
 	var rows []informationSchemaTableRow
-	if err := spanner.SelectAll(txn.Query(ctx, spanner.Statement{SQL: query}), &rows); err != nil {
+	if err := spanner.SelectAll(queryWithDirectedRead(ctx, txn, spanner.Statement{SQL: query}, dro), &rows); err != nil {
 		return fmt.Errorf("failed to query dump catalog: %w", err)
 	}
 	for _, row := range rows {
@@ -123,7 +124,7 @@ func (dr *DependencyResolver) queryCatalogWithTxn(ctx context.Context, txn *span
 	return nil
 }
 
-func (dr *DependencyResolver) queryForeignKeysWithTxn(ctx context.Context, txn *spanner.ReadOnlyTransaction) error {
+func (dr *DependencyResolver) queryForeignKeysWithTxn(ctx context.Context, txn *spanner.ReadOnlyTransaction, dro *sppb.DirectedReadOptions) error {
 	// Join TABLE_CONSTRAINTS on qualified constraint identity so known
 	// NOT ENFORCED FKs can be omitted from the safety graph. A query error
 	// is returned; missing ENFORCED values are treated as enforced.
@@ -152,7 +153,7 @@ func (dr *DependencyResolver) queryForeignKeysWithTxn(ctx context.Context, txn *
 		ORDER BY rc.CONSTRAINT_SCHEMA, rc.CONSTRAINT_NAME`
 
 	var rows []informationSchemaFKRow
-	if err := spanner.SelectAll(txn.Query(ctx, spanner.Statement{SQL: query}), &rows); err != nil {
+	if err := spanner.SelectAll(queryWithDirectedRead(ctx, txn, spanner.Statement{SQL: query}, dro), &rows); err != nil {
 		return fmt.Errorf("failed to query foreign keys: %w", err)
 	}
 	orderSeen := make(map[[2]tableID]bool)

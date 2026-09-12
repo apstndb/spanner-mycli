@@ -63,7 +63,7 @@ func TestExecuteDumpStreamingWithTxnPropagatesWriteError(t *testing.T) {
 			t.Cleanup(session.Close)
 			want := errors.New("output failed")
 			// Header failures must stop before querying, so no data transaction is needed.
-			result, err := executeDumpStreamingWithTxn(t.Context(), session, tt.mode, &tt.plan, dumpFailWriter{err: want}, nil)
+			result, err := executeDumpStreamingWithTxn(t.Context(), session, tt.mode, &tt.plan, dumpFailWriter{err: want}, nil, nil)
 			if result != nil {
 				t.Fatalf("result = %#v, want nil", result)
 			}
