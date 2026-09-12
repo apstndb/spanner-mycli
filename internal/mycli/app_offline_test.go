@@ -157,7 +157,6 @@ func TestRunOfflineStartupErrors(t *testing.T) {
 	// Keep startup-error cases sequential, including their subtests.
 
 	t.Run("validation errors", func(t *testing.T) {
-
 		tests := []struct {
 			name string
 			opts *spannerOptions
@@ -207,7 +206,6 @@ func TestRunOfflineStartupErrors(t *testing.T) {
 	})
 
 	t.Run("system variable initialization errors", func(t *testing.T) {
-
 		tests := []struct {
 			name string
 			opts *spannerOptions
@@ -245,7 +243,6 @@ func TestRunOfflineStartupErrors(t *testing.T) {
 	})
 
 	t.Run("credential file errors", func(t *testing.T) {
-
 		t.Run("missing file", func(t *testing.T) {
 			missing := filepath.Join(t.TempDir(), "missing-cred.json")
 			_, err := runOffline(t, connectionOpts(func(opts *spannerOptions) {
@@ -266,7 +263,6 @@ func TestRunOfflineStartupErrors(t *testing.T) {
 	})
 
 	t.Run("sample metadata errors before runtime start", func(t *testing.T) {
-
 		writeMeta := func(t *testing.T, name, contents string) string {
 			t.Helper()
 			path := filepath.Join(t.TempDir(), name)
