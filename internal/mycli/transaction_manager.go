@@ -158,13 +158,23 @@ type savedLocalVar struct {
 	oldValue string // display-string value before SET LOCAL, restored via Registry.Set
 }
 
-// NewTransactionManager creates a new TransactionManager.
-func NewTransactionManager(client *spanner.Client, sysVars *systemVariables, clientConfig spanner.ClientConfig) *TransactionManager {
-	tm := &TransactionManager{
+// newTransactionManager allocates a TransactionManager without publishing
+// registry callbacks. Public NewTransactionManager and SessionHandler
+// adoption bind those callbacks; USE/DETACH candidates stay unbound until
+// the live session is replaced.
+func newTransactionManager(client *spanner.Client, sysVars *systemVariables, clientConfig spanner.ClientConfig) *TransactionManager {
+	return &TransactionManager{
 		client:       client,
 		sysVars:      sysVars,
 		clientConfig: clientConfig,
 	}
+}
+
+// NewTransactionManager creates a TransactionManager and binds it as the
+// live inTransaction / TRANSACTION_TAG callbacks. SessionHandler candidate
+// construction uses newTransactionManager instead.
+func NewTransactionManager(client *spanner.Client, sysVars *systemVariables, clientConfig spanner.ClientConfig) *TransactionManager {
+	tm := newTransactionManager(client, sysVars, clientConfig)
 	bindTransactionManagerCallbacks(sysVars, tm)
 	return tm
 }
