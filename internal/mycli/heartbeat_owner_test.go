@@ -45,13 +45,25 @@ type heartbeatRecord struct {
 	priority sppb.RequestOptions_Priority
 }
 
+type sqlObservation struct {
+	sql       string
+	reqTag    string
+	txnID     string
+	readOnly  bool
+	hadReadTs bool
+}
+
 type heartbeatRPCServer struct {
 	sppb.UnimplementedSpannerServer
 
-	mu         sync.Mutex
-	next       atomic.Uint64
-	sqlTxn     map[string]string
-	heartbeats []heartbeatRecord
+	mu          sync.Mutex
+	next        atomic.Uint64
+	sqlTxn      map[string]string
+	roIDs       map[string]struct{}
+	rwIDs       map[string]struct{}
+	heartbeats  []heartbeatRecord
+	sqlObs      []sqlObservation
+	failROQuery error
 
 	heartbeatStarted     chan struct{}
 	heartbeatStartedOnce sync.Once
@@ -64,10 +76,69 @@ func (s *heartbeatRPCServer) newTxnID() []byte {
 }
 
 func (s *heartbeatRPCServer) txnIDFor(r *sppb.ExecuteSqlRequest) []byte {
-	if id := r.GetTransaction().GetId(); len(id) > 0 {
+	sel := r.GetTransaction()
+	if id := sel.GetId(); len(id) > 0 {
 		return slices.Clone(id)
 	}
-	return s.newTxnID()
+	id := s.newTxnID()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.noteSelectorLocked(id, sel)
+	return id
+}
+
+func (s *heartbeatRPCServer) ensureTxnMapsLocked() {
+	if s.roIDs == nil {
+		s.roIDs = make(map[string]struct{})
+	}
+	if s.rwIDs == nil {
+		s.rwIDs = make(map[string]struct{})
+	}
+}
+
+func (s *heartbeatRPCServer) noteSelectorLocked(id []byte, sel *sppb.TransactionSelector) {
+	if sel == nil {
+		return
+	}
+	opts := sel.GetBegin()
+	if opts == nil {
+		opts = sel.GetSingleUse()
+	}
+	if opts == nil {
+		return
+	}
+	s.ensureTxnMapsLocked()
+	key := string(id)
+	switch {
+	case opts.GetReadOnly() != nil:
+		s.roIDs[key] = struct{}{}
+	case opts.GetReadWrite() != nil:
+		s.rwIDs[key] = struct{}{}
+	}
+}
+
+func (s *heartbeatRPCServer) isReadOnlyLocked(r *sppb.ExecuteSqlRequest, txnID []byte) bool {
+	sel := r.GetTransaction()
+	if sel.GetBegin().GetReadOnly() != nil || sel.GetSingleUse().GetReadOnly() != nil {
+		return true
+	}
+	if sel.GetBegin().GetReadWrite() != nil || sel.GetSingleUse().GetReadWrite() != nil {
+		return false
+	}
+	_, ok := s.roIDs[string(txnID)]
+	return ok
+}
+
+func (s *heartbeatRPCServer) setFailROQuery(err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.failROQuery = err
+}
+
+func (s *heartbeatRPCServer) sqlObservations() []sqlObservation {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.sqlObs)
 }
 
 func (s *heartbeatRPCServer) noteSQL(r *sppb.ExecuteSqlRequest, txnID []byte) {
@@ -142,8 +213,19 @@ func (s *heartbeatRPCServer) DeleteSession(context.Context, *sppb.DeleteSessionR
 	return &emptypb.Empty{}, nil
 }
 
-func (s *heartbeatRPCServer) BeginTransaction(context.Context, *sppb.BeginTransactionRequest) (*sppb.Transaction, error) {
-	return &sppb.Transaction{Id: s.newTxnID()}, nil
+func (s *heartbeatRPCServer) BeginTransaction(_ context.Context, r *sppb.BeginTransactionRequest) (*sppb.Transaction, error) {
+	id := s.newTxnID()
+	txn := &sppb.Transaction{Id: id}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ensureTxnMapsLocked()
+	if r.GetOptions().GetReadOnly() != nil {
+		s.roIDs[string(id)] = struct{}{}
+		txn.ReadTimestamp = timestamppb.Now()
+	} else {
+		s.rwIDs[string(id)] = struct{}{}
+	}
+	return txn, nil
 }
 
 func (s *heartbeatRPCServer) Rollback(context.Context, *sppb.RollbackRequest) (*emptypb.Empty, error) {
@@ -155,24 +237,48 @@ func (s *heartbeatRPCServer) Commit(context.Context, *sppb.CommitRequest) (*sppb
 }
 
 func (s *heartbeatRPCServer) ExecuteSql(ctx context.Context, r *sppb.ExecuteSqlRequest) (*sppb.ResultSet, error) {
-	txnID := s.txnIDFor(r)
-	s.noteSQL(r, txnID)
-	if err := s.waitHeartbeatIfNeeded(ctx, r); err != nil {
+	txnID, readTs, err := s.prepareSQL(ctx, r)
+	if err != nil {
 		return nil, err
 	}
-	return s.resultSet(txnID), nil
+	return s.resultSet(txnID, readTs), nil
 }
 
 func (s *heartbeatRPCServer) ExecuteStreamingSql(r *sppb.ExecuteSqlRequest, stream sppb.Spanner_ExecuteStreamingSqlServer) error {
-	txnID := s.txnIDFor(r)
-	s.noteSQL(r, txnID)
-	if err := s.waitHeartbeatIfNeeded(stream.Context(), r); err != nil {
+	txnID, readTs, err := s.prepareSQL(stream.Context(), r)
+	if err != nil {
 		return err
 	}
 	return stream.Send(&sppb.PartialResultSet{
-		Metadata: s.resultSet(txnID).Metadata,
+		Metadata: s.resultSet(txnID, readTs).Metadata,
 		Values:   []*structpb.Value{structpb.NewStringValue("1")},
 	})
+}
+
+func (s *heartbeatRPCServer) prepareSQL(ctx context.Context, r *sppb.ExecuteSqlRequest) ([]byte, *timestamppb.Timestamp, error) {
+	txnID := s.txnIDFor(r)
+	s.noteSQL(r, txnID)
+	if err := s.waitHeartbeatIfNeeded(ctx, r); err != nil {
+		return nil, nil, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ro := s.isReadOnlyLocked(r, txnID)
+	if ro && s.failROQuery != nil {
+		return nil, nil, s.failROQuery
+	}
+	var readTs *timestamppb.Timestamp
+	if ro {
+		readTs = timestamppb.Now()
+	}
+	s.sqlObs = append(s.sqlObs, sqlObservation{
+		sql:       r.GetSql(),
+		reqTag:    r.GetRequestOptions().GetRequestTag(),
+		txnID:     string(txnID),
+		readOnly:  ro,
+		hadReadTs: readTs != nil,
+	})
+	return txnID, readTs, nil
 }
 
 func (s *heartbeatRPCServer) waitHeartbeatIfNeeded(ctx context.Context, r *sppb.ExecuteSqlRequest) error {
@@ -187,13 +293,13 @@ func (s *heartbeatRPCServer) waitHeartbeatIfNeeded(ctx context.Context, r *sppb.
 	}
 }
 
-func (s *heartbeatRPCServer) resultSet(txnID []byte) *sppb.ResultSet {
+func (s *heartbeatRPCServer) resultSet(txnID []byte, readTs *timestamppb.Timestamp) *sppb.ResultSet {
 	return &sppb.ResultSet{
 		Metadata: &sppb.ResultSetMetadata{
 			RowType: &sppb.StructType{Fields: []*sppb.StructType_Field{
 				{Name: "", Type: &sppb.Type{Code: sppb.TypeCode_INT64}},
 			}},
-			Transaction: &sppb.Transaction{Id: txnID},
+			Transaction: &sppb.Transaction{Id: txnID, ReadTimestamp: readTs},
 		},
 	}
 }
@@ -466,4 +572,128 @@ func TestHeartbeatInFlightAcquireStaysOnOriginalOwner(t *testing.T) {
 		t.Fatalf("heartbeats=%v, want A then B (%s, %s)", got, idA, idB)
 	}
 	assertHeartbeatMeta(t, h.server.heartbeatRecords())
+}
+
+func TestHeartbeatPendingActivationKeepsOwner(t *testing.T) {
+	t.Parallel()
+	h := newHeartbeatHarness(t)
+	ctx := t.Context()
+	h.installBeforeAcquireBarrier()
+
+	if err := h.tm.BeginPendingTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+		t.Fatalf("BeginPendingTransaction: %v", err)
+	}
+	pending := txnContext(h.tm)
+	if _, err := h.tm.DetermineTransaction(ctx); err != nil {
+		t.Fatalf("pending activation: %v", err)
+	}
+	if txnContext(h.tm) != pending {
+		t.Fatal("pending activation replaced heartbeat owner identity")
+	}
+
+	iter, _, err := h.tm.RunQuery(ctx, spanner.NewStatement("SELECT 1 AS owner_a"))
+	if err != nil {
+		t.Fatalf("RunQuery: %v", err)
+	}
+	if _, _, _, _, err := consumeRowIterDiscard(iter); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+	if !h.tm.heartbeatEnabled() {
+		t.Fatal("first user operation did not enable heartbeat")
+	}
+	idA := h.server.txnIDForSQL("SELECT 1 AS owner_a")
+	if idA == "" {
+		t.Fatalf("no transaction id captured; records=%v", h.server.heartbeatRecords())
+	}
+
+	sendTick(t, h.ticks)
+	waitChan(t, h.arrived, "owner A eligibility snapshot")
+
+	if err := h.tm.RollbackReadWriteTransaction(ctx); err != nil {
+		t.Fatalf("rollback A: %v", err)
+	}
+	idB := beginRWAndProbe(t, ctx, h, "SELECT 1 AS owner_b")
+	if idA == idB {
+		t.Fatal("replacement owner reused transaction id A")
+	}
+	if txnContext(h.tm) == pending {
+		t.Fatal("replacement owner reused pending identity A")
+	}
+
+	close(h.release)
+	waitChan(t, h.attempt, "owner A delayed acquire attempt")
+
+	if got := h.server.heartbeatIDs(); slices.Contains(got, idB) {
+		t.Fatalf("delayed A tick issued SELECT 1 on replacement owner B (%s); heartbeats=%v A=%s B=%s", got, got, idA, idB)
+	}
+	if got := h.server.heartbeatIDs(); slices.Contains(got, idA) {
+		t.Fatalf("delayed A tick issued SELECT 1 after A ended; heartbeats=%v A=%s", got, idA)
+	}
+
+	sendTick(t, h.ticks)
+	waitChan(t, h.attempt, "owner B heartbeat attempt")
+	got := h.server.heartbeatIDs()
+	if !slices.Contains(got, idB) {
+		t.Fatalf("B heartbeat missing on B; heartbeats=%v B=%s", got, idB)
+	}
+	if slices.Contains(got, idA) {
+		t.Fatalf("B heartbeat also hit A; heartbeats=%v A=%s B=%s", got, idA, idB)
+	}
+	assertHeartbeatMeta(t, h.server.heartbeatRecords())
+}
+
+func TestHeartbeatReadTimestampFollowsTransactionMode(t *testing.T) {
+	t.Parallel()
+	h := newHeartbeatHarness(t)
+	ctx := t.Context()
+
+	if err := h.tm.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+		t.Fatalf("BeginReadWriteTransaction: %v", err)
+	}
+	iter, _, err := h.tm.RunQuery(ctx, spanner.NewStatement("SELECT 1"))
+	if err != nil {
+		t.Fatalf("RW SELECT 1: %v", err)
+	}
+	if _, _, _, _, err := consumeRowIterDiscard(iter); err != nil {
+		t.Fatalf("drain RW SELECT 1: %v", err)
+	}
+	var sawRW bool
+	for _, rec := range h.server.sqlObservations() {
+		if rec.sql != "SELECT 1" || rec.reqTag == "spanner_mycli_heartbeat" {
+			continue
+		}
+		if rec.readOnly {
+			t.Fatal("ordinary RW SELECT 1 classified as read-only")
+		}
+		if rec.hadReadTs {
+			t.Fatal("ordinary RW SELECT 1 received a read timestamp")
+		}
+		sawRW = true
+	}
+	if !sawRW {
+		t.Fatal("ordinary RW SELECT 1 was not observed")
+	}
+	if err := h.tm.RollbackReadWriteTransaction(ctx); err != nil {
+		t.Fatalf("rollback RW: %v", err)
+	}
+
+	if err := h.tm.BeginPendingTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.tm.BeginReadOnlyTransaction(ctx, timestampBoundUnspecified, 0, time.Time{}, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+		t.Fatalf("pending RO activation: %v", err)
+	}
+	var sawRO bool
+	for _, rec := range h.server.sqlObservations() {
+		if !rec.readOnly {
+			continue
+		}
+		if !rec.hadReadTs {
+			t.Fatalf("RO query %q missing read timestamp", rec.sql)
+		}
+		sawRO = true
+	}
+	if !sawRO {
+		t.Fatal("RO activation query was not observed")
+	}
 }
