@@ -25,6 +25,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"text/template"
@@ -152,15 +153,121 @@ func TestBuildCommands(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.Desc, func(t *testing.T) {
 			got, err := buildCommands(test.Input, enums.ParseModeFallback)
-			if test.ExpectError && err == nil {
-				t.Errorf("expect error but not error, input: %v", test.Input)
+			if test.ExpectError {
+				if err == nil {
+					t.Errorf("expect error but not error, input: %v", test.Input)
+				}
+				return
 			}
-			if !test.ExpectError && err != nil {
+			if err != nil {
 				t.Errorf("err: %v, input: %v", err, test.Input)
+				return
 			}
 
-			if !cmp.Equal(got, test.Expected) {
-				t.Errorf("invalid result: %v", cmp.Diff(test.Expected, got))
+			gotStmts := statementsOf(got)
+			if !cmp.Equal(gotStmts, test.Expected) {
+				t.Errorf("invalid result: %v", cmp.Diff(test.Expected, gotStmts))
+			}
+		})
+	}
+}
+
+func statementsOf(cmds []command) []Statement {
+	stmts := make([]Statement, len(cmds))
+	for i, cmd := range cmds {
+		stmts[i] = cmd.stmt
+	}
+	return stmts
+}
+
+func TestBuildCommands_preservesSourceFragments(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		desc     string
+		input    string
+		wantEcho []string
+		wantStmt []Statement
+	}{
+		{
+			desc:     "unterminated last statement",
+			input:    "SHOW VARIABLES",
+			wantEcho: []string{"SHOW VARIABLES"},
+			wantStmt: []Statement{&ShowVariablesStatement{}},
+		},
+		{
+			desc:     "quoted semicolon",
+			input:    `SET CLI_PROMPT = 'a;b';`,
+			wantEcho: []string{`SET CLI_PROMPT = 'a;b';`},
+			wantStmt: []Statement{&SetStatement{VarName: "CLI_PROMPT", Value: "'a;b'"}},
+		},
+		{
+			desc:     "mixed case and unusual spacing",
+			input:    "show   VARIABLES;",
+			wantEcho: []string{"show   VARIABLES;"},
+			wantStmt: []Statement{&ShowVariablesStatement{}},
+		},
+		{
+			desc:     "multiline comment and CRLF inside fragment",
+			input:    "/* keep\r\nme */ SHOW VARIABLES;",
+			wantEcho: []string{"/* keep\r\nme */ SHOW VARIABLES;"},
+			wantStmt: []Statement{&ShowVariablesStatement{}},
+		},
+		{
+			desc:     "hint retained on query",
+			input:    "@{rpc_priority=PRIORITY_HIGH} SELECT 1;",
+			wantEcho: []string{"@{rpc_priority=PRIORITY_HIGH} SELECT 1;"},
+			wantStmt: []Statement{&SelectStatement{Query: "@{rpc_priority=PRIORITY_HIGH} SELECT 1"}},
+		},
+		{
+			desc:  "consecutive DDL grouped with ordered source",
+			input: "CREATE TABLE t1(pk INT64) PRIMARY KEY(pk); ALTER TABLE t1 ADD COLUMN col INT64;",
+			wantEcho: []string{
+				"CREATE TABLE t1(pk INT64) PRIMARY KEY(pk);ALTER TABLE t1 ADD COLUMN col INT64;",
+			},
+			wantStmt: []Statement{&BulkDdlStatement{[]string{
+				"CREATE TABLE t1(pk INT64) PRIMARY KEY(pk)",
+				"ALTER TABLE t1 ADD COLUMN col INT64",
+			}}},
+		},
+		{
+			desc: "DDL before and after an ordinary statement",
+			input: `CREATE TABLE t1 (pk INT64) PRIMARY KEY(pk);
+SELECT * FROM t1;
+DROP TABLE t1;`,
+			wantEcho: []string{
+				"CREATE TABLE t1 (pk INT64) PRIMARY KEY(pk);",
+				"SELECT * FROM t1;",
+				"DROP TABLE t1;",
+			},
+			wantStmt: []Statement{
+				&BulkDdlStatement{[]string{"CREATE TABLE t1 (pk INT64) PRIMARY KEY(pk)"}},
+				&SelectStatement{"SELECT * FROM t1"},
+				&BulkDdlStatement{[]string{"DROP TABLE t1"}},
+			},
+		},
+		{
+			desc:     "comment-only trailing input ignored",
+			input:    "SHOW VARIABLES; /* trailing */",
+			wantEcho: []string{"SHOW VARIABLES;"},
+			wantStmt: []Statement{&ShowVariablesStatement{}},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			got, err := buildCommands(tt.input, enums.ParseModeFallback)
+			if err != nil {
+				t.Fatalf("buildCommands() error = %v", err)
+			}
+			if diff := cmp.Diff(tt.wantStmt, statementsOf(got)); diff != "" {
+				t.Errorf("statements mismatch (-want +got):\n%s", diff)
+			}
+			var gotEcho []string
+			for _, cmd := range got {
+				gotEcho = append(gotEcho, cmd.echoText())
+			}
+			if diff := cmp.Diff(tt.wantEcho, gotEcho); diff != "" {
+				t.Errorf("echo text mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -231,7 +338,7 @@ func TestPrintResult(t *testing.T) {
 					},
 					Feature: FeatureVars{EchoInput: true},
 				},
-				input: "SELECT foo, bar\nFROM input",
+				input: "SELECT foo, bar\nFROM input;",
 				result: &Result{
 					TableHeader: toTableHeader("foo", "bar"),
 					Rows: []Row{
@@ -1790,5 +1897,144 @@ func TestCli_PrintResult_invalidPagerCommand(t *testing.T) {
 	err := cli.PrintResult(80, result, false, "", outBuf)
 	if err == nil || !strings.Contains(err.Error(), "invalid pager command") {
 		t.Fatalf("error = %v, want invalid pager command error", err)
+	}
+}
+
+func writeTempSQL(t *testing.T, content string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "source.sql")
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func newDetachedEchoCli(t *testing.T, out io.Writer) *Cli {
+	t.Helper()
+	session := newDetachedTestSession(out)
+	t.Cleanup(session.Close)
+	session.systemVariables.Query.BuildStatementMode = enums.ParseModeFallback
+	session.systemVariables.Feature.EchoInput = true
+	session.systemVariables.Display.CLIFormat = enums.DisplayModeTab
+	return &Cli{
+		SessionHandler:  NewSessionHandler(session),
+		SystemVariables: session.systemVariables,
+	}
+}
+
+func TestCli_executeSourceFile_echoRawSQL(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name       string
+		content    string
+		wantEcho   []string
+		wantPrompt string
+	}{
+		{
+			name: "comments, quoted semicolon, mixed case, unusual spacing, unterminated last",
+			content: "/* keep me */ SHOW VARIABLE CLI_PROMPT;\n" +
+				"SET CLI_PROMPT = 'a;b';\n" +
+				"show   VARIABLE CLI_PROMPT",
+			wantEcho: []string{
+				"/* keep me */ SHOW VARIABLE CLI_PROMPT;",
+				"SET CLI_PROMPT = 'a;b';",
+				"show   VARIABLE CLI_PROMPT",
+			},
+			wantPrompt: "a;b",
+		},
+		{
+			name:       "CRLF line endings",
+			content:    "SET CLI_PROMPT = 'crlf';\r\nSHOW VARIABLE CLI_PROMPT",
+			wantEcho:   []string{"SET CLI_PROMPT = 'crlf';", "SHOW VARIABLE CLI_PROMPT"},
+			wantPrompt: "crlf",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var out bytes.Buffer
+			cli := newDetachedEchoCli(t, &out)
+			if err := cli.executeSourceFile(context.Background(), writeTempSQL(t, tt.content)); err != nil {
+				t.Fatalf("executeSourceFile: %v", err)
+			}
+			got := out.String()
+			for _, echo := range tt.wantEcho {
+				if strings.Count(got, echo+"\n") != 1 && strings.Count(got, echo) != 1 {
+					t.Errorf("echo %q not found exactly once in output:\n%s", echo, got)
+				}
+			}
+			if strings.Count(got, tt.content) != 0 {
+				t.Errorf("whole-script echo present in output:\n%s", got)
+			}
+			if cli.SystemVariables.Display.Prompt != tt.wantPrompt {
+				t.Errorf("CLI_PROMPT = %q, want %q", cli.SystemVariables.Display.Prompt, tt.wantPrompt)
+			}
+		})
+	}
+}
+
+func TestCli_RunBatch_echoRawSQL(t *testing.T) {
+	t.Parallel()
+	var out bytes.Buffer
+	cli := newDetachedEchoCli(t, &out)
+	input := "SHOW VARIABLE CLI_PROMPT;\nSET CLI_PROMPT = 'batch';"
+	if err := cli.RunBatch(context.Background(), input); err != nil {
+		t.Fatalf("RunBatch: %v", err)
+	}
+	got := out.String()
+	if strings.Count(got, "SHOW VARIABLE CLI_PROMPT;\n") != 1 {
+		t.Errorf("SHOW echo count mismatch in output:\n%s", got)
+	}
+	if strings.Count(got, "SET CLI_PROMPT = 'batch';\n") != 1 {
+		t.Errorf("SET echo count mismatch in output:\n%s", got)
+	}
+	if strings.Contains(got, input) {
+		t.Errorf("whole-script echo present in output:\n%s", got)
+	}
+	if cli.SystemVariables.Display.Prompt != "batch" {
+		t.Errorf("CLI_PROMPT = %q, want batch", cli.SystemVariables.Display.Prompt)
+	}
+}
+
+func TestCli_executeSourceFile_continuesPastExit(t *testing.T) {
+	t.Parallel()
+	var out bytes.Buffer
+	cli := newDetachedEchoCli(t, &out)
+	content := "SET CLI_PROMPT = 'before';\nEXIT;\nSET CLI_PROMPT = 'after';"
+	if err := cli.executeSourceFile(context.Background(), writeTempSQL(t, content)); err != nil {
+		t.Fatalf("executeSourceFile: %v", err)
+	}
+	if cli.SystemVariables.Display.Prompt != "after" {
+		t.Errorf("CLI_PROMPT = %q, want after (SOURCE continues past EXIT)", cli.SystemVariables.Display.Prompt)
+	}
+}
+
+func TestCli_RunBatch_exitEndsExecution(t *testing.T) {
+	t.Parallel()
+	var out bytes.Buffer
+	cli := newDetachedEchoCli(t, &out)
+	err := cli.RunBatch(context.Background(), "SET CLI_PROMPT = 'before';\nEXIT;\nSET CLI_PROMPT = 'after';")
+	if GetExitCode(err) != exitCodeSuccess {
+		t.Fatalf("RunBatch EXIT error = %v, want success exit code", err)
+	}
+	if cli.SystemVariables.Display.Prompt != "before" {
+		t.Errorf("CLI_PROMPT = %q, want before (batch EXIT ends execution)", cli.SystemVariables.Display.Prompt)
+	}
+}
+
+func TestCli_executeSourceFile_parseFailureBeforeExecution(t *testing.T) {
+	t.Parallel()
+	var out bytes.Buffer
+	cli := newDetachedEchoCli(t, &out)
+	err := cli.executeSourceFile(context.Background(), writeTempSQL(t, "SET CLI_PROMPT = 'changed';\nINVALID SYNTAX;"))
+	if err == nil || !strings.Contains(err.Error(), "failed to parse SQL from file") {
+		t.Fatalf("error = %v, want parse failure", err)
+	}
+	if cli.SystemVariables.Display.Prompt != defaultPrompt {
+		t.Errorf("CLI_PROMPT = %q, want %q (parse failure must run before execution)", cli.SystemVariables.Display.Prompt, defaultPrompt)
+	}
+	if out.Len() != 0 {
+		t.Errorf("parse failure produced output: %q", out.String())
 	}
 }

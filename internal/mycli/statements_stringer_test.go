@@ -69,39 +69,6 @@ func TestStatementStringer(t *testing.T) {
 	}
 }
 
-// TestSourceFileEchoIntegration tests that ECHO works correctly with sourced files
-func TestSourceFileEchoIntegration(t *testing.T) {
-	t.Parallel()
-	// This is a conceptual test showing what we want to verify
-	// In a real integration test, this would:
-	// 1. Create a SQL file with various statement types
-	// 2. Execute it with CLI_ECHO_INPUT = TRUE
-	// 3. Verify that all statements are echoed correctly
-
-	stmts := []Statement{
-		&SelectStatement{Query: "SELECT 1"},
-		&DmlStatement{Dml: "UPDATE t SET x = 1"},
-		&DdlStatement{Ddl: "CREATE TABLE t (id INT64) PRIMARY KEY (id)"},
-		&ExplainStatement{Explain: "SELECT * FROM t"},
-		&DescribeStatement{Statement: "SELECT * FROM t"},
-	}
-
-	// Verify all can produce String() output
-	for _, stmt := range stmts {
-		stringer, ok := stmt.(interface{ String() string })
-		if !ok {
-			t.Errorf("%T should implement String() for ECHO support in source files", stmt)
-			continue
-		}
-
-		// Verify String() returns non-empty result
-		str := stringer.String()
-		if str == "" {
-			t.Errorf("%T.String() returned empty string", stmt)
-		}
-	}
-}
-
 // TestStatementStringerConsistency verifies that String() output can be parsed back
 func TestStatementStringerConsistency(t *testing.T) {
 	t.Parallel()
