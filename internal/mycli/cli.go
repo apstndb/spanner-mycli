@@ -28,6 +28,7 @@ import (
 	"os/signal"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/hymkor/go-multiline-ny"
@@ -390,18 +391,32 @@ func (c *Cli) PrintResult(screenWidth int, result *Result, interactive bool, inp
 func (c *Cli) PrintProgressingMark(w io.Writer) func() {
 	// Progress marks use terminal control characters, so they should always
 	// go to TtyOutStream to avoid polluting tee output. If no TTY is available,
-	// disable progress marks.
+	// disable progress marks. w is the statement destination and is intentionally
+	// unused: progress must never enter tee files or MCP capture.
 	ttyStream := c.GetTtyStream()
 	if ttyStream == nil {
 		return func() {}
 	}
-	ttyWriter := ttyStream
+	return startProgressingMark(ttyStream)
+}
+
+// startProgressingMark writes a spinner to w until the returned stop func is
+// called. stop is idempotent: it signals cancellation, waits for the goroutine
+// to exit (so an in-flight write completes), then clears the mark once.
+func startProgressingMark(w io.Writer) func() {
+	if w == nil {
+		return func() {}
+	}
 
 	progressMarks := []string{`-`, `\`, `|`, `/`}
-	ticker := time.NewTicker(time.Millisecond * 100)
+	ticker := time.NewTicker(progressingMarkInterval)
 	done := make(chan struct{})
+	exited := make(chan struct{})
 
 	go func() {
+		defer close(exited)
+		defer ticker.Stop()
+
 		// wait to avoid corruption with first output of command
 		select {
 		case <-ticker.C:
@@ -414,7 +429,7 @@ func (c *Cli) PrintProgressingMark(w io.Writer) func() {
 			select {
 			case <-ticker.C:
 				mark := progressMarks[i%len(progressMarks)]
-				fmt.Fprintf(ttyWriter, "\r%s", mark)
+				fmt.Fprintf(w, "\r%s", mark)
 				i++
 			case <-done:
 				return
@@ -422,13 +437,16 @@ func (c *Cli) PrintProgressingMark(w io.Writer) func() {
 		}
 	}()
 
-	stop := func() {
+	return sync.OnceFunc(func() {
 		close(done)
-		ticker.Stop()
-		fmt.Fprintf(ttyWriter, "\r \r") // ensure to clear progressing mark
-	}
-	return stop
+		<-exited
+		fmt.Fprintf(w, "\r \r") // ensure to clear progressing mark
+	})
 }
+
+// progressingMarkInterval is the spinner tick. Tests may shorten it; they
+// must not run in parallel with other progress-mark tests while it is changed.
+var progressingMarkInterval = 100 * time.Millisecond
 
 var (
 	promptRe               = regexp.MustCompile(`(%[^{])|%\{[^}]+}`)
@@ -519,13 +537,16 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 
 	// Setup progress mark and timing
 	t0 := time.Now()
-	// Only call setupProgressMark in interactive mode
+	// Only call setupProgressMark in interactive mode. The same stop is
+	// handed to the resultSink so first emission joins the spinner, and
+	// deferred so cancellation and error-before-output still reap it.
 	var stop func()
 	if interactive {
 		stop = c.setupProgressMark(stmt, w)
 	} else {
 		stop = func() {}
 	}
+	defer stop()
 
 	// Execute the statement, routing streamed output to the caller-provided
 	// writer. This keeps streaming formats and DUMP on the same destination
@@ -541,6 +562,7 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 	var sink *resultSink
 	if !isMetaCommand {
 		sink = c.newResultSink(ctx, w, input)
+		sink.beforeStart = stop
 		// On the error path abort() closes a fence opened by already-streamed
 		// rows and releases the pager; if nothing was written it stays silent.
 		defer sink.abort()
@@ -554,7 +576,10 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 	}
 	result, err := c.SessionHandler.ExecuteStatementWithOutput(ctx, stmt, out)
 
-	// Stop progress mark
+	// Stop progress after execution so messages written to w (not the sink)
+	// and buffered display do not interleave with the spinner. Streaming
+	// already stopped at the first sink byte via beforeStart; this call is
+	// idempotent. defer stop() still covers panic and error-before-output.
 	stop()
 	elapsed := time.Since(t0).Seconds()
 
@@ -596,17 +621,9 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 // Returns a function to stop the progress mark.
 // Statements that have their own progress displays (like DDL operations or SHOW OPERATION SYNC)
 // or that use streaming output (like DUMP statements) are excluded to avoid conflicting progress indicators.
+// Streaming SELECT is not predicted here: progress may spin until the result
+// sink emits its first byte, which joins this stop before any result output.
 func (c *Cli) setupProgressMark(stmt Statement, w io.Writer) func() {
-	// Check if this is a SELECT statement that might use streaming
-	if _, ok := stmt.(*SelectStatement); ok {
-		// Check if streaming will be used
-		if shouldUseStreaming(c.SystemVariables) {
-			// Disable progress mark for streaming output to prevent
-			// control character interference (Issue #431)
-			return func() {}
-		}
-	}
-
 	switch stmt.(type) {
 	case *DdlStatement, *SyncProtoStatement, *BulkDdlStatement, *RunBatchStatement, *ExitStatement, *ShowOperationStatement,
 		// TODO: This is a temporary fix. DUMP statements will eventually output directly to files in interactive mode,
