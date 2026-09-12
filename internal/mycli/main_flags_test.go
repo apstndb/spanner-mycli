@@ -2684,3 +2684,54 @@ func TestEmbeddedOmniFlag(t *testing.T) {
 		t.Fatal("EmbeddedEmulator unexpectedly set")
 	}
 }
+
+func TestInitCommandFlags(t *testing.T) {
+	t.Parallel()
+
+	gopts, err := parseAndValidate(withRequiredFlags(
+		"--init-command", "SET CLI_PROMPT = 'one'",
+		"--init-command-add", "SET CLI_PROMPT2 = 'two'",
+		"--init-command-add", "SET CLI_VERBOSE = TRUE",
+		"--execute", "SELECT 1",
+	))
+	if err != nil {
+		t.Fatalf("parseAndValidate: %v", err)
+	}
+	if gopts.Spanner.InitCommand != "SET CLI_PROMPT = 'one'" {
+		t.Errorf("InitCommand = %q", gopts.Spanner.InitCommand)
+	}
+	wantAdd := []string{"SET CLI_PROMPT2 = 'two'", "SET CLI_VERBOSE = TRUE"}
+	if diff := cmp.Diff(wantAdd, gopts.Spanner.InitCommandAdd); diff != "" {
+		t.Errorf("InitCommandAdd mismatch (-want +got):\n%s", diff)
+	}
+
+	got := collectStartupSQL(&gopts.Spanner)
+	want := "SET CLI_PROMPT = 'one';\nSET CLI_PROMPT2 = 'two';\nSET CLI_VERBOSE = TRUE;"
+	if got != want {
+		t.Errorf("collectStartupSQL() = %q, want %q", got, want)
+	}
+}
+
+func TestCollectStartupSQL_skipsEmpty(t *testing.T) {
+	t.Parallel()
+	got := collectStartupSQL(&spannerOptions{
+		InitCommand:    "   ",
+		InitCommandAdd: []string{"", "SET CLI_PROMPT = 'x'", " \t "},
+	})
+	if got != "SET CLI_PROMPT = 'x';" {
+		t.Errorf("collectStartupSQL() = %q", got)
+	}
+
+	quoted := collectStartupSQL(&spannerOptions{InitCommand: "SET CLI_PROMPT = 'a;b'"})
+	if quoted != "SET CLI_PROMPT = 'a;b';" {
+		t.Errorf("quoted semicolon collectStartupSQL() = %q", quoted)
+	}
+
+	alreadyTerminated := collectStartupSQL(&spannerOptions{
+		InitCommand:    "SET CLI_PROMPT = 'one';",
+		InitCommandAdd: []string{"SET CLI_PROMPT2 = 'two';"},
+	})
+	if alreadyTerminated != "SET CLI_PROMPT = 'one';\nSET CLI_PROMPT2 = 'two';" {
+		t.Errorf("already-terminated collectStartupSQL() = %q", alreadyTerminated)
+	}
+}

@@ -312,6 +312,33 @@ func (c *Cli) executeSourceFile(ctx context.Context, filePath string) error {
 	return nil
 }
 
+// executeStartupSQL runs --init-command / --init-command-add after connect.
+// Failures abort startup. EXIT is rejected so an init script cannot close the
+// session before the main input or interactive loop.
+func (c *Cli) executeStartupSQL(ctx context.Context, sql string) error {
+	if strings.TrimSpace(sql) == "" {
+		return nil
+	}
+
+	stmts, err := buildCommands(sql, c.SystemVariables.Query.BuildStatementMode)
+	if err != nil {
+		c.PrintBatchError(err)
+		return NewExitCodeError(exitCodeError)
+	}
+
+	for _, stmt := range stmts {
+		if _, ok := stmt.(*ExitStatement); ok {
+			c.PrintBatchError(errors.New("EXIT is not allowed in --init-command"))
+			return NewExitCodeError(exitCodeError)
+		}
+		if _, err := c.executeStatement(ctx, stmt, false, "", c.GetWriter()); err != nil {
+			c.PrintBatchError(err)
+			return NewExitCodeError(exitCodeError)
+		}
+	}
+	return nil
+}
+
 func (c *Cli) RunBatch(ctx context.Context, input string) error {
 	stmts, err := buildCommands(input, c.SystemVariables.Query.BuildStatementMode)
 	if err != nil {

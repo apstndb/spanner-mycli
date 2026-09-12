@@ -1792,3 +1792,64 @@ func TestCli_PrintResult_invalidPagerCommand(t *testing.T) {
 		t.Fatalf("error = %v, want invalid pager command error", err)
 	}
 }
+
+func TestCli_executeStartupSQL(t *testing.T) {
+	t.Parallel()
+
+	newCli := func(t *testing.T) *Cli {
+		t.Helper()
+		session := newDetachedTestSession(io.Discard)
+		t.Cleanup(session.Close)
+		session.systemVariables.Query.BuildStatementMode = enums.ParseModeFallback
+		return &Cli{
+			SessionHandler:  NewSessionHandler(session),
+			SystemVariables: session.systemVariables,
+		}
+	}
+
+	t.Run("runs init-command then init-command-add", func(t *testing.T) {
+		cli := newCli(t)
+		sql := collectStartupSQL(&spannerOptions{
+			InitCommand:    "SET CLI_PROMPT = 'before'",
+			InitCommandAdd: []string{"SET CLI_PROMPT = 'after'"},
+		})
+		if err := cli.executeStartupSQL(context.Background(), sql); err != nil {
+			t.Fatalf("executeStartupSQL: %v", err)
+		}
+		if cli.SystemVariables.Display.Prompt != "after" {
+			t.Errorf("CLI_PROMPT = %q, want after", cli.SystemVariables.Display.Prompt)
+		}
+	})
+
+	t.Run("quoted semicolon stays one statement", func(t *testing.T) {
+		cli := newCli(t)
+		if err := cli.executeStartupSQL(context.Background(), "SET CLI_PROMPT = 'a;b'"); err != nil {
+			t.Fatalf("executeStartupSQL: %v", err)
+		}
+		if cli.SystemVariables.Display.Prompt != "a;b" {
+			t.Errorf("CLI_PROMPT = %q, want a;b", cli.SystemVariables.Display.Prompt)
+		}
+	})
+
+	t.Run("parse failure aborts before execution", func(t *testing.T) {
+		cli := newCli(t)
+		err := cli.executeStartupSQL(context.Background(), "SET CLI_PROMPT = 'changed';\nINVALID SYNTAX;")
+		if GetExitCode(err) != exitCodeError {
+			t.Fatalf("error = %v, want parse failure exit", err)
+		}
+		if cli.SystemVariables.Display.Prompt != defaultPrompt {
+			t.Errorf("CLI_PROMPT = %q, want unchanged default", cli.SystemVariables.Display.Prompt)
+		}
+	})
+
+	t.Run("EXIT is rejected without closing the session", func(t *testing.T) {
+		cli := newCli(t)
+		err := cli.executeStartupSQL(context.Background(), "SET CLI_PROMPT = 'before'; EXIT; SET CLI_PROMPT = 'after';")
+		if GetExitCode(err) != exitCodeError {
+			t.Fatalf("error = %v, want EXIT rejection", err)
+		}
+		if cli.SystemVariables.Display.Prompt != "before" {
+			t.Errorf("CLI_PROMPT = %q, want before (EXIT must not skip remaining after a reject)", cli.SystemVariables.Display.Prompt)
+		}
+	})
+}

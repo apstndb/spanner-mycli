@@ -105,13 +105,18 @@ func (v *caseInsensitiveEnumValue) UnmarshalText(text []byte) error {
 }
 
 type spannerOptions struct {
-	ProjectId           string            `name:"project" short:"p" help:"(required) GCP Project ID ($SPANNER_PROJECT_ID)."`
-	InstanceId          string            `name:"instance" short:"i" help:"(required) Cloud Spanner Instance ID ($SPANNER_INSTANCE_ID)"`
-	DatabaseId          string            `name:"database" short:"d" help:"Cloud Spanner Database ID. Optional when --detached is used ($SPANNER_DATABASE_ID)."`
-	Detached            bool              `name:"detached" help:"Start in detached mode, ignoring database env var/flag"`
-	Execute             string            `name:"execute" short:"e" help:"Execute SQL statement and quit. --sql is an alias."`
-	File                string            `name:"file" short:"f" help:"Execute SQL statement from file and quit. --source is an alias."`
-	Source              string            `name:"source" hidden:"" help:"Hidden alias of --file for Google Cloud Spanner CLI compatibility"`
+	ProjectId  string `name:"project" short:"p" help:"(required) GCP Project ID ($SPANNER_PROJECT_ID)."`
+	InstanceId string `name:"instance" short:"i" help:"(required) Cloud Spanner Instance ID ($SPANNER_INSTANCE_ID)"`
+	DatabaseId string `name:"database" short:"d" help:"Cloud Spanner Database ID. Optional when --detached is used ($SPANNER_DATABASE_ID)."`
+	Detached   bool   `name:"detached" help:"Start in detached mode, ignoring database env var/flag"`
+	Execute    string `name:"execute" short:"e" help:"Execute SQL statement and quit. --sql is an alias."`
+	File       string `name:"file" short:"f" help:"Execute SQL statement from file and quit. --source is an alias."`
+	Source     string `name:"source" hidden:"" help:"Hidden alias of --file for Google Cloud Spanner CLI compatibility"`
+	// InitCommand and InitCommandAdd are startup statements (#353), executed
+	// after connect and before --file/--execute or the interactive loop.
+	// --init-command-add is repeatable and is not a teardown hook.
+	InitCommand         string            `name:"init-command" help:"SQL to execute after connecting, before other input. Failure aborts startup."`
+	InitCommandAdd      []string          `name:"init-command-add" help:"Additional startup SQL (repeatable). Appended after --init-command. Failure aborts startup."`
 	Table               bool              `name:"table" short:"t" help:"Display output in table format for batch mode."`
 	HTML                bool              `name:"html" help:"Display output in HTML format."`
 	XML                 bool              `name:"xml" help:"Display output in XML format."`
@@ -782,8 +787,34 @@ func readStdinCapped(stdin io.Reader, maxSize int64) (string, error) {
 	return string(data), nil
 }
 
+// collectStartupSQL concatenates --init-command then each --init-command-add
+// in flag order. Each flag value is one SQL argument: a terminator is added
+// between values so adjacent flags do not glue together. Splitting inside a
+// value is left to separateInput/buildCommands, including quoted semicolons.
+func collectStartupSQL(opts *spannerOptions) string {
+	var b strings.Builder
+	appendStartupPart := func(part string) {
+		s := strings.TrimRight(part, " \t\r\n")
+		if strings.TrimSpace(s) == "" {
+			return
+		}
+		if b.Len() > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(s)
+		if !strings.HasSuffix(s, ";") {
+			b.WriteByte(';')
+		}
+	}
+	appendStartupPart(opts.InitCommand)
+	for _, s := range opts.InitCommandAdd {
+		appendStartupPart(s)
+	}
+	return b.String()
+}
+
 // determineInputAndMode decides whether to run in interactive or batch mode
-// and returns the input string, interactive flag, and any error
+// and returns the input string, interactive flag, and any error.
 func determineInputAndMode(opts *spannerOptions, stdin io.Reader) (input string, interactive bool, err error) {
 	// Handle alias flags - aliases have lower precedence
 	// Note: This precedence may override normal flag/env/TOML precedence
