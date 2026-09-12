@@ -136,90 +136,90 @@ https://github.com/apstndb/spanner-mycli/pkgs/container/spanner-mycli
 Usage: spanner-mycli [flags]
 
 Flags:
-  -p, --project=STRING                           (required) GCP Project ID ($SPANNER_PROJECT_ID).
-  -i, --instance=STRING                          (required) Cloud Spanner Instance ID ($SPANNER_INSTANCE_ID)
-  -d, --database=STRING                          Cloud Spanner Database ID. Optional when --detached is used
-                                                 ($SPANNER_DATABASE_ID).
-      --detached                                 Start in detached mode, ignoring database env var/flag
-  -e, --execute=STRING                           Execute SQL statement and quit. --sql is an alias.
-  -f, --file=STRING                              Execute SQL statement from file and quit. --source is an alias.
-      --init-command=STRING                      SQL to execute after connecting, before other input. Failure aborts
-                                                 startup.
-      --init-command-add=INIT-COMMAND-ADD,...    Additional startup SQL (repeatable). Appended after --init-command.
-                                                 Failure aborts startup.
-  -t, --table                                    Display output in table format for batch mode.
-      --html                                     Display output in HTML format.
-      --xml                                      Display output in XML format.
-      --csv                                      Display output in CSV format.
-      --format=STRING                            Output format (table, tab, tsv, vertical, html, xml, csv, jsonl)
-  -v, --verbose                                  Display verbose output.
-      --credential=STRING                        Use the specific credential file
-      --prompt=PROMPT                            Set the prompt to the specified format (default: "spanner%t> ")
-      --prompt2=PROMPT2                          Set the prompt2 to the specified format (default: "%P%R> ")
-      --history=HISTORY                          Set the history file to the specified path (default:
-                                                 ~/.spanner_mycli_history)
-      --priority=STRING                          Set default request priority (HIGH|MEDIUM|LOW)
-      --role=STRING                              Use the specific database role. --database-role is an alias.
-      --endpoint=STRING                          Set the Spanner API endpoint (host:port)
-      --host=STRING                              Host on which Spanner server is located
-      --port=INT                                 Port number for Spanner connection
-      --directed-read=STRING                     Directed read option (replica_location:replica_type). The replica_type
-                                                 is optional and either READ_ONLY or READ_WRITE
-      --set=KEY=VALUE                            Set system variables e.g. --set=name1=value1 --set=name2=value2
-      --param=KEY=VALUE                          Set query parameters, it can be literal or type(EXPLAIN/DESCRIBE only)
-                                                 e.g. --param="p1='string_value'" --param=p2=FLOAT64
-      --proto-descriptor-file=STRING             Path of a file that contains a protobuf-serialized
-                                                 google.protobuf.FileDescriptorSet message.
-      --insecure                                 Skip TLS verification and permit plaintext gRPC. --skip-tls-verify is
-                                                 an alias.
-      --embedded-emulator                        Use embedded Cloud Spanner Emulator. --project, --instance, --database,
-                                                 --endpoint, --insecure will be automatically configured.
-      --embedded-omni                            Use embedded experimental Spanner Omni. --project, --instance,
-                                                 --database, --endpoint, --insecure will be automatically configured.
-      --emulator-image=STRING                    container image for embedded runtime (--embedded-emulator or
-                                                 --embedded-omni)
-      --emulator-platform=STRING                 Container platform (e.g. linux/amd64, linux/arm64) for embedded runtime
-      --sample-database=STRING                   Initialize embedded runtime with built-in sample (e.g. fingraph,
-                                                 singers, banking) or path to a metadata file (.json, .yaml, .yml).
-                                                 Requires --embedded-emulator or --embedded-omni. Cannot be combined
-                                                 with --detached.
-      --list-samples                             List available sample databases and exit
-      --output-template=STRING                   Filepath of output template. (EXPERIMENTAL)
-      --log-level=STRING                         Set CLI log level (DEBUG, INFO, WARN, ERROR). INFO and DEBUG include
-                                                 embedded runtime container lifecycle logs. SQL SET CLI_LOG_LEVEL does
-                                                 not change those container logs.
-      --log-grpc                                 Show gRPC logs
-      --query-mode=QUERY-MODE                    Mode in which the query must be processed. Allowed values: NORMAL,
-                                                 PLAN, PROFILE, WITH_STATS, WITH_PLAN_AND_STATS.
-      --strong                                   Perform a strong query.
-      --read-timestamp=STRING                    Perform a query at the given timestamp.
-      --database-dialect=DATABASE-DIALECT        The SQL dialect of the Cloud Spanner Database. Allowed values:
-                                                 POSTGRESQL, GOOGLE_STANDARD_SQL, DATABASE_DIALECT_UNSPECIFIED. Omit
-                                                 this flag to leave it unset.
-      --impersonate-service-account=STRING       Impersonate service account email
-  -h, --help                                     Show this help message and exit.
-      --version                                  Show version string.
-      --enable-partitioned-dml                   Partitioned DML as default (AUTOCOMMIT_DML_MODE=PARTITIONED_NON_ATOMIC)
-      --timeout=STRING                           Statement timeout (e.g., '10s', '5m', '1h'). Omit for 10m on ordinary
-                                                 statements and 24h on partitioned DML.
-      --async                                    Return immediately, without waiting for the operation in progress to
-                                                 complete
-      --try-partition-query                      Test whether the query can be executed as partition query without
-                                                 execution
-      --mcp                                      Run as MCP server
-      --skip-system-command                      Do not allow system commands
-      --system-command=ON|OFF                    Enable or disable system commands (ON/OFF). Default: ON.
-      --tee=STRING                               Append a copy of output to the specified file (both screen and file)
-  -o, --output=STRING                            Redirect query/data output to file (overwrites existing file)
-      --skip-column-names                        Suppress column headers in output
-      --table-streaming="AUTO"                   Table streaming output mode: AUTO/FALSE buffer table output, TRUE
-                                                 streams table output. Non-table formats always stream.
-      --color="AUTO"                             ANSI styling in output: AUTO (styled if TTY), TRUE (always styled),
-                                                 FALSE (never styled)
-  -q, --quiet                                    Suppress result lines like 'rows in set' for clean output
-      --vertexai-project=STRING                  Gemini Enterprise project override
-      --vertexai-model=VERTEXAI-MODEL            Gemini model (default: gemini-3.7-flash)
-      --vertexai-location=VERTEXAI-LOCATION      Gemini Enterprise location (default: global)
+  -p, --project=STRING                         (required) GCP Project ID ($SPANNER_PROJECT_ID).
+  -i, --instance=STRING                        (required) Cloud Spanner Instance ID ($SPANNER_INSTANCE_ID)
+  -d, --database=STRING                        Cloud Spanner Database ID. Optional when --detached is used
+                                               ($SPANNER_DATABASE_ID).
+      --detached                               Start in detached mode, ignoring database env var/flag
+  -e, --execute=STRING                         Execute SQL statement and quit. --sql is an alias.
+  -f, --file=STRING                            Execute SQL statement from file and quit. --source is an alias.
+      --init-command=STRING                    SQL to execute after connecting, before other input. Failure aborts
+                                               startup.
+      --init-command-add=INIT-COMMAND-ADD      Additional startup SQL (repeatable). Appended after --init-command.
+                                               Failure aborts startup.
+  -t, --table                                  Display output in table format for batch mode.
+      --html                                   Display output in HTML format.
+      --xml                                    Display output in XML format.
+      --csv                                    Display output in CSV format.
+      --format=STRING                          Output format (table, tab, tsv, vertical, html, xml, csv, jsonl)
+  -v, --verbose                                Display verbose output.
+      --credential=STRING                      Use the specific credential file
+      --prompt=PROMPT                          Set the prompt to the specified format (default: "spanner%t> ")
+      --prompt2=PROMPT2                        Set the prompt2 to the specified format (default: "%P%R> ")
+      --history=HISTORY                        Set the history file to the specified path (default:
+                                               ~/.spanner_mycli_history)
+      --priority=STRING                        Set default request priority (HIGH|MEDIUM|LOW)
+      --role=STRING                            Use the specific database role. --database-role is an alias.
+      --endpoint=STRING                        Set the Spanner API endpoint (host:port)
+      --host=STRING                            Host on which Spanner server is located
+      --port=INT                               Port number for Spanner connection
+      --directed-read=STRING                   Directed read option (replica_location:replica_type). The replica_type is
+                                               optional and either READ_ONLY or READ_WRITE
+      --set=KEY=VALUE                          Set system variables e.g. --set=name1=value1 --set=name2=value2
+      --param=KEY=VALUE                        Set query parameters, it can be literal or type(EXPLAIN/DESCRIBE only)
+                                               e.g. --param="p1='string_value'" --param=p2=FLOAT64
+      --proto-descriptor-file=STRING           Path of a file that contains a protobuf-serialized
+                                               google.protobuf.FileDescriptorSet message.
+      --insecure                               Skip TLS verification and permit plaintext gRPC. --skip-tls-verify is an
+                                               alias.
+      --embedded-emulator                      Use embedded Cloud Spanner Emulator. --project, --instance, --database,
+                                               --endpoint, --insecure will be automatically configured.
+      --embedded-omni                          Use embedded experimental Spanner Omni. --project, --instance,
+                                               --database, --endpoint, --insecure will be automatically configured.
+      --emulator-image=STRING                  container image for embedded runtime (--embedded-emulator or
+                                               --embedded-omni)
+      --emulator-platform=STRING               Container platform (e.g. linux/amd64, linux/arm64) for embedded runtime
+      --sample-database=STRING                 Initialize embedded runtime with built-in sample (e.g. fingraph,
+                                               singers, banking) or path to a metadata file (.json, .yaml, .yml).
+                                               Requires --embedded-emulator or --embedded-omni. Cannot be combined with
+                                               --detached.
+      --list-samples                           List available sample databases and exit
+      --output-template=STRING                 Filepath of output template. (EXPERIMENTAL)
+      --log-level=STRING                       Set CLI log level (DEBUG, INFO, WARN, ERROR). INFO and DEBUG include
+                                               embedded runtime container lifecycle logs. SQL SET CLI_LOG_LEVEL does not
+                                               change those container logs.
+      --log-grpc                               Show gRPC logs
+      --query-mode=QUERY-MODE                  Mode in which the query must be processed. Allowed values: NORMAL, PLAN,
+                                               PROFILE, WITH_STATS, WITH_PLAN_AND_STATS.
+      --strong                                 Perform a strong query.
+      --read-timestamp=STRING                  Perform a query at the given timestamp.
+      --database-dialect=DATABASE-DIALECT      The SQL dialect of the Cloud Spanner Database. Allowed values:
+                                               POSTGRESQL, GOOGLE_STANDARD_SQL, DATABASE_DIALECT_UNSPECIFIED. Omit this
+                                               flag to leave it unset.
+      --impersonate-service-account=STRING     Impersonate service account email
+  -h, --help                                   Show this help message and exit.
+      --version                                Show version string.
+      --enable-partitioned-dml                 Partitioned DML as default (AUTOCOMMIT_DML_MODE=PARTITIONED_NON_ATOMIC)
+      --timeout=STRING                         Statement timeout (e.g., '10s', '5m', '1h'). Omit for 10m on ordinary
+                                               statements and 24h on partitioned DML.
+      --async                                  Return immediately, without waiting for the operation in progress to
+                                               complete
+      --try-partition-query                    Test whether the query can be executed as partition query without
+                                               execution
+      --mcp                                    Run as MCP server
+      --skip-system-command                    Do not allow system commands
+      --system-command=ON|OFF                  Enable or disable system commands (ON/OFF). Default: ON.
+      --tee=STRING                             Append a copy of output to the specified file (both screen and file)
+  -o, --output=STRING                          Redirect query/data output to file (overwrites existing file)
+      --skip-column-names                      Suppress column headers in output
+      --table-streaming="AUTO"                 Table streaming output mode: AUTO/FALSE buffer table output, TRUE streams
+                                               table output. Non-table formats always stream.
+      --color="AUTO"                           ANSI styling in output: AUTO (styled if TTY), TRUE (always styled),
+                                               FALSE (never styled)
+  -q, --quiet                                  Suppress result lines like 'rows in set' for clean output
+      --vertexai-project=STRING                Gemini Enterprise project override
+      --vertexai-model=VERTEXAI-MODEL          Gemini model (default: gemini-3.7-flash)
+      --vertexai-location=VERTEXAI-LOCATION    Gemini Enterprise location (default: global)
 ```
 <!-- readme-help end -->
 
