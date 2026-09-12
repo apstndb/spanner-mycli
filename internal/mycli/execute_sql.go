@@ -167,6 +167,12 @@ type queryExecution struct {
 	Metrics      *metrics.ExecutionMetrics
 	ValueFmtMode format.ValueFormatMode
 	Processor    RowProcessor // set by executeAndCollect after decideExecutionMode
+	// QueryCacheDest is the caller's LastResult.QueryCache slot. It is captured
+	// from the supplied settings before prepareFormatConfig can return a copy
+	// for SQL-export table-name auto-detection. Nil skips publication (DUMP's
+	// executeSQLWithFormatAndTxn path). Ownership is never inferred from
+	// pointer equality or display format.
+	QueryCacheDest **LastQueryCache
 }
 
 func (qe *queryExecution) outputWriter() io.Writer {
@@ -232,15 +238,16 @@ func executeSQLImplWithTxn(ctx context.Context, session *Session, txn *spanner.R
 	iter := txn.QueryWithOptions(ctx, stmt, opts)
 
 	return executeAndCollect(ctx, &queryExecution{
-		Session:      session,
-		Output:       out,
-		Iter:         iter,
-		ReadOnlyTxn:  txn,
-		FormatConfig: fc,
-		SQL:          sql,
-		SysVars:      sysVars,
-		Metrics:      m,
-		ValueFmtMode: vfm,
+		Session:        session,
+		Output:         out,
+		Iter:           iter,
+		ReadOnlyTxn:    txn,
+		FormatConfig:   fc,
+		SQL:            sql,
+		SysVars:        sysVars,
+		Metrics:        m,
+		ValueFmtMode:   vfm,
+		QueryCacheDest: nil, // DUMP / isolated format+txn execution must not replace the user's cache
 	})
 }
 
@@ -282,6 +289,11 @@ type queryWithStatsRunner func(context.Context, spanner.Statement, bool, sppb.Ex
 func executeSQLImplWithQueryRunner(ctx context.Context, session *Session, sql string, sysVars *systemVariables, run queryWithStatsRunner, rollbackActiveTransactionOnAbort bool) (*Result, error) {
 	m := newMetrics(sysVars)
 
+	// Capture the caller's cache slot before prepareFormatConfig can copy
+	// sysVars when SQL export auto-detects a table name. Publishing through
+	// that copy would leave the live plan/stats cache stale.
+	queryCacheDest := &sysVars.LastResult.QueryCache
+
 	fc, vfm, sysVars, err := prepareFormatConfig(sql, sysVars)
 	if err != nil {
 		return nil, err
@@ -298,14 +310,15 @@ func executeSQLImplWithQueryRunner(ctx context.Context, session *Session, sql st
 	}
 
 	result, err := executeAndCollect(ctx, &queryExecution{
-		Session:      session,
-		Iter:         iter,
-		ReadOnlyTxn:  roTxn,
-		FormatConfig: fc,
-		SQL:          sql,
-		SysVars:      sysVars,
-		Metrics:      m,
-		ValueFmtMode: vfm,
+		Session:        session,
+		Iter:           iter,
+		ReadOnlyTxn:    roTxn,
+		FormatConfig:   fc,
+		SQL:            sql,
+		SysVars:        sysVars,
+		Metrics:        m,
+		ValueFmtMode:   vfm,
+		QueryCacheDest: queryCacheDest,
 	})
 	if err == nil && session != nil && session.txn != nil {
 		err = session.txn.invokeQueryAfterCollectHook()
@@ -383,18 +396,24 @@ func executeWithStreaming(ctx context.Context, qe *queryExecution) (*Result, err
 	return executeStreamingSQL(ctx, qe)
 }
 
-// finalizeQueryResult parses query stats, extracts the read timestamp, and updates the query cache.
-func finalizeQueryResult(result *Result, stats map[string]any, roTxn *spanner.ReadOnlyTransaction, plan *sppb.QueryPlan, sysVars *systemVariables, m *metrics.ExecutionMetrics) error {
+// finalizeQueryResult parses query stats, extracts the read timestamp, and
+// publishes the query cache. Publication uses QueryCacheDest, not SysVars:
+// SQL-export auto-detection may have replaced SysVars with a copy. Timing is
+// after query-stat parsing and read-timestamp collection and before appendix
+// rendering; a later appendix or after-collect hook failure does not clear an
+// already published cache. Iterator or parse failure never reaches here, so
+// the previous cache remains.
+func (qe *queryExecution) finalizeQueryResult(result *Result, stats map[string]any, plan *sppb.QueryPlan) error {
 	queryStats, err := parseQueryStats(stats)
 	if err != nil {
 		return err
 	}
 	result.Stats = queryStats
-	m.ServerElapsedTime = queryStats.ElapsedTime
-	m.ServerCPUTime = queryStats.CPUTime
+	qe.Metrics.ServerElapsedTime = queryStats.ElapsedTime
+	qe.Metrics.ServerCPUTime = queryStats.CPUTime
 
-	if roTxn != nil {
-		ts, err := roTxn.Timestamp()
+	if qe.ReadOnlyTxn != nil {
+		ts, err := qe.ReadOnlyTxn.Timestamp()
 		if err != nil {
 			slog.Warn("failed to get read-only transaction timestamp", "err", err)
 		} else {
@@ -402,13 +421,15 @@ func finalizeQueryResult(result *Result, stats map[string]any, roTxn *spanner.Re
 		}
 	}
 
-	sysVars.LastResult.QueryCache = &LastQueryCache{
-		QueryPlan:     plan,
-		QueryStats:    stats,
-		ReadTimestamp: result.ReadTimestamp,
+	if qe.QueryCacheDest != nil {
+		*qe.QueryCacheDest = &LastQueryCache{
+			QueryPlan:     plan,
+			QueryStats:    stats,
+			ReadTimestamp: result.ReadTimestamp,
+		}
 	}
 
-	return applyQueryModeStatsRendering(result, plan, sysVars)
+	return applyQueryModeStatsRendering(result, plan, qe.SysVars)
 }
 
 // applyQueryModeStatsRendering reflects the user-specified stats query modes
@@ -467,7 +488,7 @@ func executeWithBuffering(ctx context.Context, qe *queryExecution) (*Result, err
 		AffectedRows: len(rows),
 	}
 
-	if err := finalizeQueryResult(result, stats, qe.ReadOnlyTxn, plan, qe.SysVars, qe.Metrics); err != nil {
+	if err := qe.finalizeQueryResult(result, stats, plan); err != nil {
 		return nil, err
 	}
 	return result, nil
