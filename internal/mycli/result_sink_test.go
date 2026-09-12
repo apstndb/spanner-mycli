@@ -48,7 +48,7 @@ func TestExecuteStatement_decorationsPrecedeStreamedRows(t *testing.T) {
 	cli.SystemVariables.Feature.EchoInput = true
 
 	var buf bytes.Buffer
-	if _, err := cli.executeStatement(context.Background(), &ShowVariablesStatement{}, false, "SHOW VARIABLES", &buf); err != nil {
+	if _, err := cli.executeStatement(context.Background(), &ShowVariablesStatement{}, false, "SHOW VARIABLES;", &buf); err != nil {
 		t.Fatalf("executeStatement: %v", err)
 	}
 
@@ -115,7 +115,7 @@ func TestExecuteStatement_errorBeforeOutputEmitsNoDecorations(t *testing.T) {
 	var buf bytes.Buffer
 	// SELECT requires a database connection; the detached session rejects it
 	// before producing any output.
-	_, err := cli.executeStatement(context.Background(), &SelectStatement{Query: "SELECT 1"}, false, "SELECT 1", &buf)
+	_, err := cli.executeStatement(context.Background(), &SelectStatement{Query: "SELECT 1"}, false, "SELECT 1;", &buf)
 	if err == nil {
 		t.Fatal("executeStatement succeeded, want detached-mode rejection")
 	}
@@ -138,7 +138,7 @@ func TestExecuteStatement_setMarkdownDecoratesOwnResult(t *testing.T) {
 
 	var buf bytes.Buffer
 	stmt := &SetStatement{VarName: "CLI_MARKDOWN_CODEBLOCK", Value: "TRUE"}
-	if _, err := cli.executeStatement(context.Background(), stmt, true, "SET CLI_MARKDOWN_CODEBLOCK = TRUE", &buf); err != nil {
+	if _, err := cli.executeStatement(context.Background(), stmt, true, "SET CLI_MARKDOWN_CODEBLOCK = TRUE;", &buf); err != nil {
 		t.Fatalf("executeStatement: %v", err)
 	}
 

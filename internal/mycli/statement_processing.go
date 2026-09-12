@@ -625,11 +625,41 @@ func parseDumpTableIDList(input string) ([]tableID, error) {
 	}
 }
 
+// command is the SOURCE/batch envelope: a named Statement plus the ordered
+// original inputStatement fragments used for echo. It does not embed Statement
+// and does not implement Statement or its marker interfaces.
+type command struct {
+	stmt      Statement
+	fragments []inputStatement
+}
+
+func (c command) echoText() string {
+	var b strings.Builder
+	for _, frag := range c.fragments {
+		b.WriteString(frag.statement)
+		b.WriteString(frag.delim)
+	}
+	return b.String()
+}
+
 // buildCommands parses the input and builds a list of commands for batch execution.
 // It can compose BulkDdlStatement from consecutive DDL statements.
-func buildCommands(input string, mode enums.ParseMode) ([]Statement, error) {
-	var cmds []Statement
+func buildCommands(input string, mode enums.ParseMode) ([]command, error) {
+	var cmds []command
 	var pendingDdls []string
+	var pendingFrags []inputStatement
+
+	flushPendingDdls := func() {
+		if len(pendingDdls) == 0 {
+			return
+		}
+		cmds = append(cmds, command{
+			stmt:      &BulkDdlStatement{pendingDdls},
+			fragments: pendingFrags,
+		})
+		pendingDdls = nil
+		pendingFrags = nil
+	}
 
 	// Check if input starts with a meta command.
 	// This check must be performed before separateInput() because meta-commands
@@ -660,22 +690,17 @@ func buildCommands(input string, mode enums.ParseMode) ([]Statement, error) {
 		}
 		if ddl, ok := stmt.(*DdlStatement); ok {
 			pendingDdls = append(pendingDdls, ddl.Ddl)
+			pendingFrags = append(pendingFrags, separated)
 			continue
 		}
 
-		// Flush pending DDLs
-		if len(pendingDdls) > 0 {
-			cmds = append(cmds, &BulkDdlStatement{pendingDdls})
-			pendingDdls = nil
-		}
-
-		cmds = append(cmds, stmt)
+		flushPendingDdls()
+		cmds = append(cmds, command{
+			stmt:      stmt,
+			fragments: []inputStatement{separated},
+		})
 	}
 
-	// Flush pending DDLs
-	if len(pendingDdls) > 0 {
-		cmds = append(cmds, &BulkDdlStatement{pendingDdls})
-	}
-
+	flushPendingDdls()
 	return cmds, nil
 }
