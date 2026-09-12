@@ -7,7 +7,7 @@ require (
 	cloud.google.com/go/bigquery v1.83.0
 	cloud.google.com/go/longrunning v1.2.0
 	cloud.google.com/go/spanner v1.95.0
-	cloud.google.com/go/storage v1.67.0
+	cloud.google.com/go/storage v1.67.1
 	github.com/MakeNowJust/heredoc/v2 v2.0.1
 	github.com/alecthomas/kong v1.16.1
 	github.com/apstndb/adcplus v0.2.0
@@ -43,7 +43,7 @@ require (
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
 	github.com/klauspost/compress v1.20.0
 	github.com/modelcontextprotocol/go-sdk v1.7.0
-	github.com/nyaosorg/go-readline-ny v1.16.0
+	github.com/nyaosorg/go-readline-ny v1.16.1
 	github.com/olekukonko/tablewriter v1.1.4
 	github.com/pelletier/go-toml v1.9.5
 	github.com/samber/lo v1.53.0
@@ -53,7 +53,7 @@ require (
 	github.com/testcontainers/testcontainers-go v0.44.0
 	github.com/vbauerster/mpb/v8 v8.16.1
 	go.uber.org/zap v1.28.0
-	golang.org/x/term v0.45.0
+	golang.org/x/term v0.46.0
 	golang.org/x/time v0.16.0
 	google.golang.org/api v0.297.0
 	google.golang.org/genai v1.71.0
@@ -193,7 +193,7 @@ require (
 	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/telemetry v0.0.0-20260811182544-a038080d80e5 // indirect
 	golang.org/x/text v0.41.0 // indirect
 	golang.org/x/tools v0.49.0 // indirect
