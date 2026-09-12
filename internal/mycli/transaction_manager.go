@@ -114,7 +114,6 @@ type TransactionManager struct {
 	// Direct access to tc is managed through withTransactionContextWithLock base method.
 	// Helper functions that work with transaction context:
 	// - withTransactionContextWithLock: Base method for all tc manipulation (acquires write lock)
-	// - TransitTransaction: Atomic state transitions with cleanup
 	// - withReadWriteTransaction, withReadWriteTransactionContext, withReadOnlyTransaction: Type-safe transaction access
 	// - clearTransactionContext, TransactionAttrsWithLock: Safe context management
 	// All transaction context access MUST go through these helpers.
@@ -204,28 +203,6 @@ func (tm *TransactionManager) withTransactionContextWithLock(fn func(tc **transa
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
 	return fn(&tm.tc)
-}
-
-// TransitTransaction implements a functional state transition pattern for transaction management.
-// It atomically transitions from one transaction state to another, handling cleanup of the old state.
-// The transition function receives the current context and returns the new context.
-// If an error occurs during transition, the original state is preserved.
-func (tm *TransactionManager) TransitTransaction(ctx context.Context, fn func(tc *transactionContext) (*transactionContext, error)) error {
-	return tm.withTransactionContextWithLock(func(tcPtr **transactionContext) error {
-		oldTc := *tcPtr
-		newTc, err := fn(oldTc)
-		if err != nil {
-			return err
-		}
-
-		// Cleanup old transaction context if it's being replaced
-		if oldTc != nil && oldTc != newTc {
-			oldTc.Close()
-		}
-
-		*tcPtr = newTc
-		return nil
-	})
 }
 
 // withTransactionLocked is a generic helper that executes fn while holding the transaction mutex.
@@ -544,21 +521,19 @@ func (tm *TransactionManager) BeginPendingTransaction(ctx context.Context, isola
 	resolvedIsolationLevel := tm.resolveTransactionIsolationLevel(isolationLevel)
 	resolvedPriority := tm.resolveTransactionPriority(priority)
 
-	return tm.TransitTransaction(ctx, func(tc *transactionContext) (*transactionContext, error) {
-		// Check for any type of existing transaction (including pending)
-		if tc != nil {
-			return nil, fmt.Errorf("%s transaction is already running", tc.attrs.mode)
-		}
-
-		// Return new pending transaction context
-		return &transactionContext{
-			attrs: transactionAttributes{
-				mode:           transactionModePending,
-				priority:       resolvedPriority,
-				isolationLevel: resolvedIsolationLevel,
-			},
-		}, nil
-	})
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+	if tm.tc != nil {
+		return fmt.Errorf("%s transaction is already running", tm.tc.attrs.mode)
+	}
+	tm.tc = &transactionContext{
+		attrs: transactionAttributes{
+			mode:           transactionModePending,
+			priority:       resolvedPriority,
+			isolationLevel: resolvedIsolationLevel,
+		},
+	}
+	return nil
 }
 
 // DetermineTransactionLocked determines the type of transaction to start based on the pending transaction
