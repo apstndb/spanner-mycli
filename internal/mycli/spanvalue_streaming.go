@@ -111,7 +111,7 @@ func executeStreamingSQLWithSpanvalueProcessor(qe *queryExecution) (*Result, err
 }
 
 func newSpanvalueRowIteratorWriter(qe *queryExecution) (writer.RowIteratorWriter, bool, error) {
-	return newSpanvalueRowIteratorWriterFor(qe.Session.outputWriter(), qe.SysVars, qe.FormatConfig)
+	return newSpanvalueRowIteratorWriterFor(qe.outputWriter(), qe.SysVars, qe.FormatConfig)
 }
 
 // usesSpanvalueWriter reports whether mode is emitted by a spanvalue writer
