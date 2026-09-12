@@ -94,7 +94,7 @@ func TestTypedRowsByteIdentity(t *testing.T) {
 			var wantBuf bytes.Buffer
 			if usesSpanvalueWriter(mode) {
 				// Export formats stream through this writer for live queries.
-				w, handled, err := newSpanvalueRowIteratorWriterFor(&wantBuf, sv2, fc)
+				w, handled, err := newSpanvalueRowIteratorWriterFor(&wantBuf, exportWriterOptionsFrom(sv2), fc)
 				if err != nil || !handled {
 					t.Fatalf("newSpanvalueRowIteratorWriterFor: handled=%v err=%v", handled, err)
 				}
@@ -161,6 +161,77 @@ func bodyPayloadCount(r *Result) int {
 		n++
 	}
 	return n
+}
+
+// TestWriteTypedRowsCapturedTableName verifies that typed replay honors
+// Result.SQLTableNameForExport without copying or mutating live settings.
+func TestWriteTypedRowsCapturedTableName(t *testing.T) {
+	t.Parallel()
+
+	enc := spancodec.MustNewRowEncoder[identRow]()
+	md, err := enc.ResultSetMetadata()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rawRows []*spanner.Row
+	for row, err := range enc.Rows([]identRow{{N: 1, S: "Alice", B: true, F: 1.5}}) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		rawRows = append(rawRows, row)
+	}
+
+	tests := []struct {
+		name       string
+		liveTable  string
+		exportName string
+		wantSubstr string
+	}{
+		{
+			name:       "captured name overrides a different live table name",
+			liveTable:  "Live",
+			exportName: "Captured",
+			wantSubstr: "INSERT INTO `Captured`",
+		},
+		{
+			name:       "empty captured name keeps the live table name",
+			liveTable:  "Live",
+			exportName: "",
+			wantSubstr: "INSERT INTO `Live`",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			sv := newSystemVariablesWithDefaults()
+			sv.Display.CLIFormat = enums.DisplayModeSQLInsert
+			sv.Display.SQLTableName = tt.liveTable
+			sv.LastResult.QueryCache = &LastQueryCache{QueryStats: map[string]any{"seed": "A"}}
+
+			result := &Result{
+				Typed:                 &TypedRows{Metadata: md, Rows: rawRows, SQLExportAllowed: true},
+				SQLTableNameForExport: tt.exportName,
+			}
+
+			var buf bytes.Buffer
+			if err := writeTypedRows(&buf, &sv, result); err != nil {
+				t.Fatalf("writeTypedRows: %v", err)
+			}
+			if sv.Display.SQLTableName != tt.liveTable {
+				t.Errorf("live SQLTableName mutated: got %q, want %q", sv.Display.SQLTableName, tt.liveTable)
+			}
+			if sv.LastResult.QueryCache == nil || sv.LastResult.QueryCache.QueryStats["seed"] != "A" {
+				t.Error("live QueryCache must remain untouched")
+			}
+			if !bytes.Contains(buf.Bytes(), []byte(tt.wantSubstr)) {
+				t.Errorf("output %q does not contain %q", buf.String(), tt.wantSubstr)
+			}
+			if tt.exportName != "" && bytes.Contains(buf.Bytes(), []byte("INSERT INTO `Live`")) {
+				t.Errorf("output used live table name despite captured export name: %q", buf.String())
+			}
+		})
+	}
 }
 
 // TestResultBodyPayloadExclusive verifies the at-most-one-body-payload

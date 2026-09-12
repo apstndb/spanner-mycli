@@ -214,7 +214,7 @@ func (s *DropDatabaseStatement) isDetachedCompatible() {}
 
 func (s *DropDatabaseStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
 	if err := session.adminClient.DropDatabase(ctx, &databasepb.DropDatabaseRequest{
-		Database: databasePath(session.systemVariables.Connection.Project, session.systemVariables.Connection.Instance, s.DatabaseId),
+		Database: databasePath(session.connection.Project, session.connection.Instance, s.DatabaseId),
 	}); err != nil {
 		return nil, err
 	}

@@ -20,6 +20,7 @@ import (
 	"io"
 
 	"cloud.google.com/go/spanner"
+	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spanner-mycli/internal/mycli/format"
@@ -54,14 +55,7 @@ func executeStreamingSQLWithSpanvalueWriter(qe *queryExecution) (*Result, bool, 
 		SQLExportAllowed: qe.ValueFmtMode == format.SQLLiteralValues,
 	}
 
-	if err := finalizeQueryResult(
-		result,
-		queryStats,
-		qe.ReadOnlyTxn,
-		queryPlan,
-		qe.SysVars,
-		qe.Metrics,
-	); err != nil {
+	if err := qe.finalizeQueryResult(result, queryStats, queryPlan); err != nil {
 		return nil, true, err
 	}
 	return result, true, nil
@@ -97,21 +91,39 @@ func executeStreamingSQLWithSpanvalueProcessor(qe *queryExecution) (*Result, err
 		SQLExportAllowed: qe.ValueFmtMode == format.SQLLiteralValues,
 	}
 
-	if err := finalizeQueryResult(
-		result,
-		queryStats,
-		qe.ReadOnlyTxn,
-		queryPlan,
-		qe.SysVars,
-		qe.Metrics,
-	); err != nil {
+	if err := qe.finalizeQueryResult(result, queryStats, queryPlan); err != nil {
 		return nil, err
 	}
 	return result, nil
 }
 
 func newSpanvalueRowIteratorWriter(qe *queryExecution) (writer.RowIteratorWriter, bool, error) {
-	return newSpanvalueRowIteratorWriterFor(qe.Session.outputWriter(), qe.SysVars, qe.FormatConfig)
+	return newSpanvalueRowIteratorWriterFor(qe.outputWriter(), exportWriterOptionsFrom(qe.SysVars), qe.FormatConfig)
+}
+
+// exportWriterOptions is the subset of live settings consumed by the shared
+// CSV/JSONL/SQL spanvalue writers. Callers pass io.Writer and FormatConfig
+// separately so this value never carries Registry, callbacks, LastResult,
+// StreamManager, or mutable settings maps.
+type exportWriterOptions struct {
+	CLIFormat       enums.DisplayMode
+	SkipColumnNames bool
+	SQLTableName    string
+	SQLBatchSize    int64
+	DatabaseDialect databasepb.DatabaseDialect
+}
+
+func exportWriterOptionsFrom(sysVars *systemVariables) exportWriterOptions {
+	if sysVars == nil {
+		return exportWriterOptions{}
+	}
+	return exportWriterOptions{
+		CLIFormat:       sysVars.Display.CLIFormat,
+		SkipColumnNames: sysVars.Display.SkipColumnNames,
+		SQLTableName:    sysVars.Display.SQLTableName,
+		SQLBatchSize:    sysVars.Display.SQLBatchSize,
+		DatabaseDialect: sysVars.Feature.DatabaseDialect,
+	}
 }
 
 // usesSpanvalueWriter reports whether mode is emitted by a spanvalue writer
@@ -134,17 +146,17 @@ func usesSpanvalueWriter(mode enums.DisplayMode) bool {
 // the current CLI_FORMAT writing to out, shared by the query streaming path
 // and the client-side virtual result set path (streamStructRows). A nil out
 // requests the buffered fallback.
-func newSpanvalueRowIteratorWriterFor(out io.Writer, sysVars *systemVariables, fc *spanvalue.FormatConfig) (writer.RowIteratorWriter, bool, error) {
+func newSpanvalueRowIteratorWriterFor(out io.Writer, opts exportWriterOptions, fc *spanvalue.FormatConfig) (writer.RowIteratorWriter, bool, error) {
 	if out == nil {
 		return nil, false, nil
 	}
 
-	switch sysVars.Display.CLIFormat {
+	switch opts.CLIFormat {
 	case enums.DisplayModeCSV:
 		w, err := writer.NewCSVWriter(
 			out,
 			writer.WithFormatter(fc),
-			writer.WithHeader(!sysVars.Display.SkipColumnNames),
+			writer.WithHeader(!opts.SkipColumnNames),
 			writer.WithUnnamedFieldNamer(nil),
 			writer.WithFlushEachRow(),
 		)
@@ -163,24 +175,24 @@ func newSpanvalueRowIteratorWriterFor(out io.Writer, sysVars *systemVariables, f
 		}
 		return w, true, nil
 	case enums.DisplayModeSQLInsert, enums.DisplayModeSQLInsertOrIgnore, enums.DisplayModeSQLInsertOrUpdate:
-		if sysVars.Display.SQLTableName == "" {
+		if opts.SQLTableName == "" {
 			return nil, true, fmt.Errorf("SQL export requires a table name. Auto-detection failed (query may be too complex).\n" +
 				"Options:\n" +
 				"  1. Use DUMP TABLE for full table exports\n" +
 				"  2. Set CLI_SQL_TABLE_NAME explicitly for complex queries\n" +
 				"  3. Ensure your query matches: SELECT * FROM table_name [WHERE/ORDER BY/LIMIT]")
 		}
-		batchSize, err := spanvalueSQLBatchSize(sysVars.Display.SQLBatchSize)
+		batchSize, err := spanvalueSQLBatchSize(opts.SQLBatchSize)
 		if err != nil {
 			return nil, true, err
 		}
 		w, err := writer.NewSQLInsertWriter(
 			out,
-			sysVars.Display.SQLTableName,
+			opts.SQLTableName,
 			writer.WithFormatter(fc),
 			writer.WithSQLBatchSize(batchSize),
-			writer.WithSQLDialect(sysVars.Feature.DatabaseDialect),
-			writer.WithSQLInsertKind(spanvalueSQLInsertKind(sysVars.Display.CLIFormat)),
+			writer.WithSQLDialect(opts.DatabaseDialect),
+			writer.WithSQLInsertKind(spanvalueSQLInsertKind(opts.CLIFormat)),
 		)
 		if err != nil {
 			return nil, true, err

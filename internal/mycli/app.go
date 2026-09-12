@@ -391,6 +391,12 @@ func run(ctx context.Context, opts *spannerOptions, features ...Feature) error {
 		return cli.RunMCP(ctx)
 	}
 
+	// Startup statements run after connect and before batch/interactive input
+	// (#353). A failure aborts with a non-zero exit, same as batch mode.
+	if err := cli.executeStartupSQL(ctx, collectStartupSQL(opts)); err != nil {
+		return err
+	}
+
 	input, interactive, err := determineInputAndMode(opts, os.Stdin)
 	if err != nil {
 		return err

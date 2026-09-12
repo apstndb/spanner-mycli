@@ -2684,3 +2684,68 @@ func TestEmbeddedOmniFlag(t *testing.T) {
 		t.Fatal("EmbeddedEmulator unexpectedly set")
 	}
 }
+
+func TestInitCommandFlags(t *testing.T) {
+	t.Parallel()
+
+	gopts, err := parseAndValidate(withRequiredFlags(
+		"--init-command", "SET CLI_PROMPT = 'one'",
+		"--init-command-add", "SET CLI_PROMPT2 = 'two'",
+		"--init-command-add", "SET CLI_VERBOSE = TRUE",
+		"--execute", "SELECT 1",
+	))
+	if err != nil {
+		t.Fatalf("parseAndValidate: %v", err)
+	}
+	if gopts.Spanner.InitCommand != "SET CLI_PROMPT = 'one'" {
+		t.Errorf("InitCommand = %q", gopts.Spanner.InitCommand)
+	}
+	wantAdd := []string{"SET CLI_PROMPT2 = 'two'", "SET CLI_VERBOSE = TRUE"}
+	if diff := cmp.Diff(wantAdd, gopts.Spanner.InitCommandAdd); diff != "" {
+		t.Errorf("InitCommandAdd mismatch (-want +got):\n%s", diff)
+	}
+
+	got := collectStartupSQL(&gopts.Spanner)
+	want := []string{"SET CLI_PROMPT = 'one'", "SET CLI_PROMPT2 = 'two'", "SET CLI_VERBOSE = TRUE"}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("collectStartupSQL() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestCollectStartupSQL_skipsEmpty(t *testing.T) {
+	t.Parallel()
+	got := collectStartupSQL(&spannerOptions{
+		InitCommand:    "   ",
+		InitCommandAdd: []string{"", "SET CLI_PROMPT = 'x'", " \t "},
+	})
+	if diff := cmp.Diff([]string{"SET CLI_PROMPT = 'x'"}, got); diff != "" {
+		t.Errorf("collectStartupSQL() mismatch (-want +got):\n%s", diff)
+	}
+
+	quoted := collectStartupSQL(&spannerOptions{InitCommand: "SET CLI_PROMPT = 'a;b'"})
+	if diff := cmp.Diff([]string{"SET CLI_PROMPT = 'a;b'"}, quoted); diff != "" {
+		t.Errorf("quoted semicolon collectStartupSQL() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestInitCommandAdd_preservesCommas(t *testing.T) {
+	t.Parallel()
+
+	gopts, err := parseAndValidate(withRequiredFlags(
+		"--init-command-add", "SET CLI_PROMPT = 'a,b'",
+		"--init-command-add", "SELECT a, b FROM t",
+		"--init-command-add", "CREATE TABLE t (id INT64, name STRING(MAX))",
+		"--execute", "SELECT 1",
+	))
+	if err != nil {
+		t.Fatalf("parseAndValidate: %v", err)
+	}
+	wantAdd := []string{
+		"SET CLI_PROMPT = 'a,b'",
+		"SELECT a, b FROM t",
+		"CREATE TABLE t (id INT64, name STRING(MAX))",
+	}
+	if diff := cmp.Diff(wantAdd, gopts.Spanner.InitCommandAdd); diff != "" {
+		t.Errorf("InitCommandAdd mismatch (-want +got):\n%s", diff)
+	}
+}

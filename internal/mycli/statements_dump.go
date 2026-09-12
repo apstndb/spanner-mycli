@@ -274,88 +274,30 @@ func prepareDumpWithTxn(ctx context.Context, session *Session, mode dumpMode, sp
 
 func executeDumpBufferedWithTxn(ctx context.Context, session *Session, mode dumpMode, plan *dumpPlan, txn *spanner.ReadOnlyTransaction, dro *sppb.DirectedReadOptions) (*Result, error) {
 	var out bytes.Buffer
-	probed := false
-	probeOutput := func() {
-		if session.dumpReadTxnProbe != nil && !probed {
-			probed = true
-			session.dumpReadTxnProbe("output", txn)
-		}
-	}
-	if len(plan.DDL) > 0 {
-		probeOutput()
-		if _, err := out.Write(plan.DDL); err != nil {
-			return nil, fmt.Errorf("write DDL: %w", err)
-		}
-	}
-	if !mode.shouldExportData() {
-		return &Result{RenderedOutput: out.Bytes()}, nil
-	}
-	var affectedRows int
-	for _, unit := range plan.Data {
-		probeOutput()
-		if unit.Cyclic != nil {
-			if err := unit.Cyclic.writeTo(&out); err != nil {
-				return nil, fmt.Errorf("write cyclic data: %w", err)
-			}
-			affectedRows += len(unit.Cyclic.Statements)
-			continue
-		}
-		table := unit.Table
-		if len(table.Columns) == 0 {
-			fmt.Fprintf(&out, "-- Skipping table %s (no writable columns)\n", table.ID.FQN())
-			continue
-		}
-		if unit.Empty {
-			fmt.Fprintf(&out, "-- Data for table %s\n", table.ID.FQN())
-			continue
-		}
-		selectQuery := buildSelectQueryWithColumns(session.systemVariables.Feature.DatabaseDialect, table.Columns, table.ID)
-		dataResult, dumpOutput, err := executeDumpTableIntoBuffer(ctx, session, txn, selectQuery, table.ID.FQN(), dro)
-		if err != nil {
-			return nil, fmt.Errorf("export table %s: %w", table.ID.FQN(), err)
-		}
-		fmt.Fprintf(&out, "-- Data for table %s\n", table.ID.FQN())
-		if err := writeCapturedDumpOutput(&out, dumpOutput); err != nil {
-			return nil, fmt.Errorf("write data for table %s: %w", table.ID.FQN(), err)
-		}
-		if dataResult.AffectedRows > 0 {
-			fmt.Fprintln(&out)
-		}
-		affectedRows += dataResult.AffectedRows
+	affectedRows, err := writeDumpPlanTo(ctx, session, mode, plan, txn, &out, dro)
+	if err != nil {
+		return nil, err
 	}
 	return &Result{AffectedRows: affectedRows, RenderedOutput: out.Bytes()}, nil
-}
-
-func writeCapturedDumpOutput(out io.Writer, output string) error {
-	if output == "" {
-		return nil
-	}
-	if _, err := io.WriteString(out, strings.TrimRight(output, "\n")); err != nil {
-		return err
-	}
-	_, err := io.WriteString(out, "\n")
-	return err
-}
-
-func executeDumpTableIntoBuffer(ctx context.Context, session *Session, txn *spanner.ReadOnlyTransaction, selectQuery, table string, dro *sppb.DirectedReadOptions) (*Result, string, error) {
-	var buf bytes.Buffer
-	// SQL export is a non-table format and streams into the temporary
-	// per-statement output below; that capture is what makes this DUMP path
-	// buffered.
-	var result *Result
-	err := session.withOutput(outputContext{w: &buf}, func() error {
-		var err error
-		result, err = executeSQLWithFormatAndTxn(ctx, session, txn, selectQuery,
-			enums.DisplayModeSQLInsert, enums.StreamingModeTrue, table, dro)
-		return err
-	})
-	return result, buf.String(), err
 }
 
 // executeDumpStreamingWithTxn writes dump output directly to out.
 // Callers that export data must pass the same read-only transaction used
 // for catalog preflight. SCHEMA has no data txn.
 func executeDumpStreamingWithTxn(ctx context.Context, session *Session, mode dumpMode, plan *dumpPlan, out io.Writer, txn *spanner.ReadOnlyTransaction, dro *sppb.DirectedReadOptions) (*Result, error) {
+	affectedRows, err := writeDumpPlanTo(ctx, session, mode, plan, txn, out, dro)
+	if err != nil {
+		return nil, err
+	}
+	return &Result{AffectedRows: affectedRows, Streamed: true}, nil
+}
+
+// writeDumpPlanTo writes a prepared plan to out. Its caller chooses whether
+// out is an outer buffer, which withholds output on failure, or a streaming
+// destination, which may have received completed units before a later error.
+// Data queries use the same writer and read transaction as the surrounding
+// traversal, so catalog, cyclic planning, and exported values share a snapshot.
+func writeDumpPlanTo(ctx context.Context, session *Session, mode dumpMode, plan *dumpPlan, txn *spanner.ReadOnlyTransaction, out io.Writer, dro *sppb.DirectedReadOptions) (int, error) {
 	probed := false
 	probeOutput := func() {
 		if session.dumpReadTxnProbe != nil && !probed {
@@ -366,46 +308,52 @@ func executeDumpStreamingWithTxn(ctx context.Context, session *Session, mode dum
 	if len(plan.DDL) > 0 {
 		probeOutput()
 		if _, err := out.Write(plan.DDL); err != nil {
-			return nil, fmt.Errorf("failed to write DDL: %w", err)
+			return 0, fmt.Errorf("write DDL: %w", err)
 		}
 	}
 	if !mode.shouldExportData() {
-		return &Result{Streamed: true}, nil
+		return 0, nil
 	}
 	var totalAffectedRows int
 	for _, unit := range plan.Data {
 		probeOutput()
 		if unit.Cyclic != nil {
 			if err := unit.Cyclic.writeTo(out); err != nil {
-				return nil, fmt.Errorf("write cyclic data: %w", err)
+				return 0, fmt.Errorf("write cyclic data: %w", err)
 			}
 			totalAffectedRows += len(unit.Cyclic.Statements)
 			continue
 		}
 		table := unit.Table
 		if len(table.Columns) == 0 {
-			fmt.Fprintf(out, "-- Skipping table %s (no writable columns)\n", table.ID.FQN())
+			if _, err := fmt.Fprintf(out, "-- Skipping table %s (no writable columns)\n", table.ID.FQN()); err != nil {
+				return 0, fmt.Errorf("write data for table %s: %w", table.ID.FQN(), err)
+			}
 			continue
 		}
 		if unit.Empty {
 			if _, err := fmt.Fprintf(out, "-- Data for table %s\n", table.ID.FQN()); err != nil {
-				return nil, err
+				return 0, fmt.Errorf("write data for table %s: %w", table.ID.FQN(), err)
 			}
 			continue
 		}
 		selectQuery := buildSelectQueryWithColumns(session.systemVariables.Feature.DatabaseDialect, table.Columns, table.ID)
-		fmt.Fprintf(out, "-- Data for table %s\n", table.ID.FQN())
+		if _, err := fmt.Fprintf(out, "-- Data for table %s\n", table.ID.FQN()); err != nil {
+			return 0, fmt.Errorf("write data for table %s: %w", table.ID.FQN(), err)
+		}
 		dataResult, err := executeSQLWithFormatAndTxn(ctx, session, txn, selectQuery,
-			enums.DisplayModeSQLInsert, enums.StreamingModeTrue, table.ID.FQN(), dro)
+			enums.DisplayModeSQLInsert, enums.StreamingModeTrue, table.ID.FQN(), dro, out)
 		if err != nil {
-			return nil, fmt.Errorf("failed to export table %s: %w", table.ID.FQN(), err)
+			return 0, fmt.Errorf("export table %s: %w", table.ID.FQN(), err)
 		}
 		totalAffectedRows += dataResult.AffectedRows
 		if dataResult.AffectedRows > 0 {
-			fmt.Fprintln(out, "")
+			if _, err := fmt.Fprintln(out); err != nil {
+				return 0, fmt.Errorf("write data for table %s: %w", table.ID.FQN(), err)
+			}
 		}
 	}
-	return &Result{AffectedRows: totalAffectedRows, Streamed: true}, nil
+	return totalAffectedRows, nil
 }
 
 // exportDDL exports database DDL statements as pre-rendered text (kind (d)).

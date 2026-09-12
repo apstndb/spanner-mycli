@@ -327,8 +327,9 @@ func TestDirectedReadCompletionPreservesTxnCacheAndTag(t *testing.T) {
 
 	sentinel := []fzfItem{{Value: "cached-sentinel"}}
 	f.setCachedCandidates(fuzzyCompleteSchema, sentinel)
-	cacheGen := f.schemaCache.schemaGeneration
-	cacheSession := f.schemaCache.session
+	cache := f.cache[fuzzyCompleteSchema]
+	cacheGen := cache.schemaGeneration
+	cacheSession := cache.session
 	vars.Transaction.RequestTag = "keep-me"
 	srv.takeRequests()
 	items, err := f.fetchSchemaCandidates(ctx)
@@ -341,10 +342,11 @@ func TestDirectedReadCompletionPreservesTxnCacheAndTag(t *testing.T) {
 	if vars.Transaction.RequestTag != "keep-me" {
 		t.Fatal("in-txn completion consumed STATEMENT_TAG")
 	}
-	if f.schemaCache == nil || len(f.schemaCache.candidates) != 1 || f.schemaCache.candidates[0].Value != "cached-sentinel" {
+	cache = f.cache[fuzzyCompleteSchema]
+	if cache == nil || len(cache.candidates) != 1 || cache.candidates[0].Value != "cached-sentinel" {
 		t.Fatal("fetchSchemaCandidates mutated the existing schema cache")
 	}
-	if f.schemaCache.schemaGeneration != cacheGen || f.schemaCache.session != cacheSession {
+	if cache.schemaGeneration != cacheGen || cache.session != cacheSession {
 		t.Fatal("completion changed cache session identity or schema generation")
 	}
 	if !session.txn.InReadOnlyTransaction() {

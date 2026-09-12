@@ -93,15 +93,9 @@ type fuzzyFinderCommand struct {
 	editor *multiline.Editor
 	cli    *Cli
 
-	// Caches for network-dependent candidates.
-	databaseCache     *fuzzyCacheEntry
-	tableCache        *fuzzyCacheEntry
-	viewCache         *fuzzyCacheEntry
-	indexCache        *fuzzyCacheEntry
-	changeStreamCache *fuzzyCacheEntry
-	sequenceCache     *fuzzyCacheEntry
-	modelCache        *fuzzyCacheEntry
-	schemaCache       *fuzzyCacheEntry
+	// Cache only database and schema-object candidates; other network-backed
+	// completions (roles and operations) depend on context or change rapidly.
+	cache map[fuzzyCompletionType]*fuzzyCacheEntry
 }
 
 func (f *fuzzyFinderCommand) String() string {
@@ -652,73 +646,33 @@ func unwrapCustomVar(v Variable) Variable {
 
 // getCachedCandidates returns cached candidates if the cache is valid, or nil.
 func (f *fuzzyFinderCommand) getCachedCandidates(ct fuzzyCompletionType) []fzfItem {
-	session := f.cli.SessionHandler.GetSession()
-	switch ct {
-	case fuzzyCompleteDatabase:
-		if f.databaseCache.valid(session, false) {
-			return f.databaseCache.candidates
-		}
-	case fuzzyCompleteTable:
-		if f.tableCache.valid(session, true) {
-			return f.tableCache.candidates
-		}
-	case fuzzyCompleteView:
-		if f.viewCache.valid(session, true) {
-			return f.viewCache.candidates
-		}
-	case fuzzyCompleteIndex:
-		if f.indexCache.valid(session, true) {
-			return f.indexCache.candidates
-		}
-	case fuzzyCompleteChangeStream:
-		if f.changeStreamCache.valid(session, true) {
-			return f.changeStreamCache.candidates
-		}
-	case fuzzyCompleteSequence:
-		if f.sequenceCache.valid(session, true) {
-			return f.sequenceCache.candidates
-		}
-	case fuzzyCompleteModel:
-		if f.modelCache.valid(session, true) {
-			return f.modelCache.candidates
-		}
-	case fuzzyCompleteSchema:
-		if f.schemaCache.valid(session, true) {
-			return f.schemaCache.candidates
-		}
+	entry := f.cache[ct]
+	if entry.valid(f.cli.SessionHandler.GetSession(), ct != fuzzyCompleteDatabase) {
+		return entry.candidates
 	}
 	return nil
 }
 
-// setCachedCandidates stores candidates in the appropriate cache.
+// setCachedCandidates stores candidates for database and schema-object completion.
 func (f *fuzzyFinderCommand) setCachedCandidates(ct fuzzyCompletionType, candidates []fzfItem) {
+	switch ct {
+	case fuzzyCompleteDatabase, fuzzyCompleteTable, fuzzyCompleteView, fuzzyCompleteIndex,
+		fuzzyCompleteChangeStream, fuzzyCompleteSequence, fuzzyCompleteModel, fuzzyCompleteSchema:
+	default:
+		return
+	}
 	session := f.cli.SessionHandler.GetSession()
 	if session == nil {
 		return
 	}
-	entry := &fuzzyCacheEntry{
+	if f.cache == nil {
+		f.cache = make(map[fuzzyCompletionType]*fuzzyCacheEntry)
+	}
+	f.cache[ct] = &fuzzyCacheEntry{
 		candidates:       candidates,
 		expiresAt:        time.Now().Add(fuzzyCacheTTL),
 		session:          session,
 		schemaGeneration: session.SchemaGeneration(),
-	}
-	switch ct {
-	case fuzzyCompleteDatabase:
-		f.databaseCache = entry
-	case fuzzyCompleteTable:
-		f.tableCache = entry
-	case fuzzyCompleteView:
-		f.viewCache = entry
-	case fuzzyCompleteIndex:
-		f.indexCache = entry
-	case fuzzyCompleteChangeStream:
-		f.changeStreamCache = entry
-	case fuzzyCompleteSequence:
-		f.sequenceCache = entry
-	case fuzzyCompleteModel:
-		f.modelCache = entry
-	case fuzzyCompleteSchema:
-		f.schemaCache = entry
 	}
 }
 

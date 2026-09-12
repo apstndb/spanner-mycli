@@ -143,6 +143,10 @@ Flags:
       --detached                               Start in detached mode, ignoring database env var/flag
   -e, --execute=STRING                         Execute SQL statement and quit. --sql is an alias.
   -f, --file=STRING                            Execute SQL statement from file and quit. --source is an alias.
+      --init-command=STRING                    SQL to execute after connecting, before other input. Failure aborts
+                                               startup.
+      --init-command-add=INIT-COMMAND-ADD      Additional startup SQL (repeatable). Appended after --init-command.
+                                               Failure aborts startup.
   -t, --table                                  Display output in table format for batch mode.
       --html                                   Display output in HTML format.
       --xml                                    Display output in XML format.

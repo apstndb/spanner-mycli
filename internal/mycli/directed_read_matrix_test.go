@@ -91,7 +91,7 @@ func newDirectedReadVars(t *testing.T) *systemVariables {
 func newDirectedReadProductSession(t *testing.T, opts []option.ClientOption, vars *systemVariables) (*Session, spanner.ClientConfig) {
 	t.Helper()
 	var gotCfg spanner.ClientConfig
-	session, err := newSessionWithFactories(t.Context(), vars,
+	session, err := newSessionWithFactories(t.Context(), vars, vars.Connection,
 		func(ctx context.Context, db string, cfg spanner.ClientConfig, clientOpts ...option.ClientOption) (*spanner.Client, error) {
 			gotCfg = cfg
 			return spanner.NewClientWithConfig(ctx, db, cfg, clientOpts...)
