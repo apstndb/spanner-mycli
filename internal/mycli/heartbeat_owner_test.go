@@ -430,15 +430,17 @@ func TestHeartbeatInFlightAcquireStaysOnOriginalOwner(t *testing.T) {
 	sendTick(t, h.ticks)
 	waitChan(t, h.server.heartbeatStarted, "in-flight heartbeat RPC")
 
+	// The server barrier proves the RPC is in flight. Probe its lock directly;
+	// an immediate receive from a rollback goroutine only checks scheduling.
+	if h.tm.mu.TryLock() {
+		h.tm.mu.Unlock()
+		t.Fatal("heartbeat released tm.mu while its RPC was in flight")
+	}
+
 	rolled := make(chan error, 1)
 	go func() {
 		rolled <- h.tm.RollbackReadWriteTransaction(ctx)
 	}()
-	select {
-	case err := <-rolled:
-		t.Fatalf("rollback acquired tm.mu while heartbeat RPC held it: %v", err)
-	default:
-	}
 
 	close(h.unblock)
 	waitChan(t, h.attempt, "in-flight heartbeat completion")
