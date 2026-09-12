@@ -69,7 +69,7 @@ func streamPartitionedQuery(
 	fc *spanvalue.FormatConfig,
 	vfm format.ValueFormatMode,
 ) (*Result, bool, error) {
-	w, handled, err := newSpanvalueRowIteratorWriterFor(out, sysVars, fc)
+	w, handled, err := newSpanvalueRowIteratorWriterFor(out, exportWriterOptionsFrom(sysVars), fc)
 	if err != nil || !handled {
 		return nil, handled, err
 	}
