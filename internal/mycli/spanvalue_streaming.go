@@ -55,14 +55,7 @@ func executeStreamingSQLWithSpanvalueWriter(qe *queryExecution) (*Result, bool, 
 		SQLExportAllowed: qe.ValueFmtMode == format.SQLLiteralValues,
 	}
 
-	if err := finalizeQueryResult(
-		result,
-		queryStats,
-		qe.ReadOnlyTxn,
-		queryPlan,
-		qe.SysVars,
-		qe.Metrics,
-	); err != nil {
+	if err := qe.finalizeQueryResult(result, queryStats, queryPlan); err != nil {
 		return nil, true, err
 	}
 	return result, true, nil
@@ -98,14 +91,7 @@ func executeStreamingSQLWithSpanvalueProcessor(qe *queryExecution) (*Result, err
 		SQLExportAllowed: qe.ValueFmtMode == format.SQLLiteralValues,
 	}
 
-	if err := finalizeQueryResult(
-		result,
-		queryStats,
-		qe.ReadOnlyTxn,
-		queryPlan,
-		qe.SysVars,
-		qe.Metrics,
-	); err != nil {
+	if err := qe.finalizeQueryResult(result, queryStats, queryPlan); err != nil {
 		return nil, err
 	}
 	return result, nil
