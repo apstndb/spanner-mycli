@@ -87,6 +87,56 @@ func TestTransactionAttrs(t *testing.T) {
 	}
 }
 
+func TestBeginPendingTransactionResolvesOptions(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name          string
+		sysVars       *systemVariables
+		priority      sppb.RequestOptions_Priority
+		isolation     sppb.TransactionOptions_IsolationLevel
+		wantPriority  sppb.RequestOptions_Priority
+		wantIsolation sppb.TransactionOptions_IsolationLevel
+	}{
+		{
+			name:          "explicit values do not require settings",
+			priority:      sppb.RequestOptions_PRIORITY_LOW,
+			isolation:     sppb.TransactionOptions_REPEATABLE_READ,
+			wantPriority:  sppb.RequestOptions_PRIORITY_LOW,
+			wantIsolation: sppb.TransactionOptions_REPEATABLE_READ,
+		},
+		{
+			name: "unspecified values use settings",
+			sysVars: &systemVariables{
+				Query:       QueryVars{RPCPriority: sppb.RequestOptions_PRIORITY_HIGH},
+				Transaction: TransactionVars{DefaultIsolationLevel: sppb.TransactionOptions_SERIALIZABLE},
+			},
+			priority:      sppb.RequestOptions_PRIORITY_UNSPECIFIED,
+			isolation:     sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED,
+			wantPriority:  sppb.RequestOptions_PRIORITY_HIGH,
+			wantIsolation: sppb.TransactionOptions_SERIALIZABLE,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			tm := &TransactionManager{sysVars: tt.sysVars}
+			if err := tm.BeginPendingTransaction(t.Context(), tt.isolation, tt.priority); err != nil {
+				t.Fatalf("BeginPendingTransaction() error = %v", err)
+			}
+
+			attrs := tm.TransactionAttrsWithLock()
+			if attrs.mode != transactionModePending {
+				t.Errorf("TransactionAttrsWithLock().mode = %q, want %q", attrs.mode, transactionModePending)
+			}
+			if attrs.priority != tt.wantPriority {
+				t.Errorf("TransactionAttrsWithLock().priority = %v, want %v", attrs.priority, tt.wantPriority)
+			}
+			if attrs.isolationLevel != tt.wantIsolation {
+				t.Errorf("TransactionAttrsWithLock().isolationLevel = %v, want %v", attrs.isolationLevel, tt.wantIsolation)
+			}
+		})
+	}
+}
+
 func TestClearTransactionContext(t *testing.T) {
 	t.Parallel()
 	tm := &TransactionManager{
