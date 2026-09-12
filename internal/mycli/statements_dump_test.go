@@ -46,21 +46,30 @@ func TestBuildSelectQueryWithColumns(t *testing.T) {
 	}
 }
 
-func TestExecuteDumpStreamingWithTxnPropagatesDDLWriteError(t *testing.T) {
+func TestExecuteDumpStreamingWithTxnPropagatesWriteError(t *testing.T) {
 	t.Parallel()
-
-	session := newDetachedTestSession(io.Discard)
-	t.Cleanup(session.Close)
-	want := errors.New("output failed")
-	result, err := executeDumpStreamingWithTxn(
-		t.Context(), session, dumpModeSchema,
-		&dumpPlan{DDL: []byte("CREATE TABLE T (Id INT64) PRIMARY KEY(Id);\n")},
-		dumpFailWriter{err: want}, nil,
-	)
-	if result != nil {
-		t.Fatalf("result = %#v, want nil", result)
-	}
-	if !errors.Is(err, want) {
-		t.Fatalf("error = %v, want wrapped %v", err, want)
+	for _, tt := range []struct {
+		name string
+		mode dumpMode
+		plan dumpPlan
+	}{
+		{name: "DDL", mode: dumpModeSchema, plan: dumpPlan{DDL: []byte("CREATE TABLE T (Id INT64) PRIMARY KEY(Id);\n")}},
+		{name: "no writable columns", mode: dumpModeTables, plan: dumpPlan{Data: []dumpDataPlan{{Table: dumpTablePlan{ID: tableID{Name: "T"}}}}}},
+		{name: "empty table", mode: dumpModeTables, plan: dumpPlan{Data: []dumpDataPlan{{Table: dumpTablePlan{ID: tableID{Name: "T"}, Columns: []string{"Id"}}, Empty: true}}}},
+		{name: "ordinary table header", mode: dumpModeTables, plan: dumpPlan{Data: []dumpDataPlan{{Table: dumpTablePlan{ID: tableID{Name: "T"}, Columns: []string{"Id"}}}}}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			session := newDetachedTestSession(io.Discard)
+			t.Cleanup(session.Close)
+			want := errors.New("output failed")
+			// Header failures must stop before querying, so no data transaction is needed.
+			result, err := executeDumpStreamingWithTxn(t.Context(), session, tt.mode, &tt.plan, dumpFailWriter{err: want}, nil)
+			if result != nil {
+				t.Fatalf("result = %#v, want nil", result)
+			}
+			if !errors.Is(err, want) {
+				t.Fatalf("error = %v, want wrapped %v", err, want)
+			}
+		})
 	}
 }
