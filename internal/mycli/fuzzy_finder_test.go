@@ -1264,3 +1264,39 @@ func TestFuzzyCacheEntryValid(t *testing.T) {
 		})
 	}
 }
+
+func TestFuzzyCandidateCacheScope(t *testing.T) {
+	t.Parallel()
+	handler := &SessionHandler{Session: &Session{}}
+	f := &fuzzyFinderCommand{cli: &Cli{SessionHandler: handler}}
+	cached := []fuzzyCompletionType{
+		fuzzyCompleteDatabase, fuzzyCompleteTable, fuzzyCompleteView,
+		fuzzyCompleteIndex, fuzzyCompleteChangeStream, fuzzyCompleteSequence, fuzzyCompleteModel, fuzzyCompleteSchema,
+	}
+	for _, ct := range cached {
+		assert.Nil(t, f.getCachedCandidates(ct))
+		f.setCachedCandidates(ct, []fzfItem{{Value: ct.String()}})
+	}
+	for _, ct := range cached {
+		assert.Equal(t, []fzfItem{{Value: ct.String()}}, f.getCachedCandidates(ct))
+	}
+	for _, ct := range []fuzzyCompletionType{fuzzyCompleteRole, fuzzyCompleteOperation, fuzzyCompleteVariable, fuzzyCompleteParam} {
+		f.setCachedCandidates(ct, []fzfItem{{Value: "must not be cached"}})
+		assert.Nil(t, f.getCachedCandidates(ct))
+	}
+
+	// DDL invalidates schema objects but not the database list.
+	handler.schemaGeneration++
+	for _, ct := range cached {
+		if ct == fuzzyCompleteDatabase {
+			assert.Equal(t, []fzfItem{{Value: ct.String()}}, f.getCachedCandidates(ct))
+		} else {
+			assert.Nil(t, f.getCachedCandidates(ct))
+		}
+	}
+	// USE invalidates every kind, even when the schema generations match.
+	handler.Session = &Session{}
+	for _, ct := range cached {
+		assert.Nil(t, f.getCachedCandidates(ct))
+	}
+}
