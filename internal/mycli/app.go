@@ -161,18 +161,25 @@ func writeUsageTo(ctx *kong.Context, _ *kong.Kong, w io.Writer) {
 // It returns an error that may contain an exit code.
 // Use GetExitCode(err) to determine the appropriate exit code.
 func run(ctx context.Context, opts *spannerOptions, features ...Feature) error {
+	return runWithOutput(ctx, opts, os.Stdout, features...)
+}
+
+// runWithOutput is the testable implementation of run. Help and sample-list
+// text is written to stdout so tests can assert it without swapping os.Stdout
+// (a process-wide global that races with t.Parallel tests).
+func runWithOutput(ctx context.Context, opts *spannerOptions, stdout io.Writer, features ...Feature) error {
 	if opts.StatementHelp {
-		fmt.Print(renderClientStatementHelp(activeStatementDefs))
+		fmt.Fprint(stdout, renderClientStatementHelp(activeStatementDefs))
 		return nil
 	}
 
 	if opts.SysVarsHelp {
-		fmt.Print(renderSystemVariablesHelp(features...))
+		fmt.Fprint(stdout, renderSystemVariablesHelp(features...))
 		return nil
 	}
 
 	if opts.ListSamples {
-		fmt.Print(ListAvailableSamples())
+		fmt.Fprint(stdout, ListAvailableSamples())
 		return nil
 	}
 
