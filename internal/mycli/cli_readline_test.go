@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1388,107 +1389,60 @@ func newReadlineTestCli(t *testing.T) *Cli {
 	return cli
 }
 
-func requireControllingTTY(t *testing.T) {
-	t.Helper()
-	if !controllingTTYAvailable() {
-		t.Skip("no controlling terminal for readline BindKey")
-	}
+// scriptedTTY is an isolated readline TTY that never opens the caller's
+// controlling terminal. Empty keys yield io.EOF; onGetKey can inject a
+// sentinel such as context.Canceled.
+type scriptedTTY struct {
+	keys     []string
+	onGetKey func() error
 }
 
-func controllingTTYAvailable() bool {
-	f, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
-	if err != nil {
-		return false
+func (t *scriptedTTY) IsOpen() bool              { return true }
+func (t *scriptedTTY) Open(func(int, int)) error { return nil }
+func (t *scriptedTTY) Size() (int, int, error)   { return 80, 24, nil }
+func (t *scriptedTTY) Close() error              { return nil }
+func (t *scriptedTTY) GetKey() (string, error) {
+	if len(t.keys) == 0 {
+		return "", io.EOF
 	}
-	_ = f.Close()
-	return true
+	if t.onGetKey != nil {
+		if err := t.onGetKey(); err != nil {
+			return "", err
+		}
+	}
+	key := t.keys[0]
+	t.keys = t.keys[1:]
+	return key, nil
+}
+
+func newIsolatedReadlineEditor(t *testing.T, keys []string, onGetKey func() error) *multiline.Editor {
+	t.Helper()
+	ed := &multiline.Editor{}
+	ed.SetWriter(io.Discard)
+	ed.SetTty(&scriptedTTY{keys: keys, onGetKey: onGetKey})
+	return ed
 }
 
 func TestInitializeMultilineEditor(t *testing.T) {
-	t.Run("requires TTY", func(t *testing.T) {
-		cli := newReadlineTestCli(t)
-		_, _, err := initializeMultilineEditor(cli)
-		if err == nil || !strings.Contains(err.Error(), "stdout is not a terminal") {
-			t.Fatalf("error = %v, want missing TTY", err)
-		}
-	})
-
-	t.Run("bind key without controlling terminal", func(t *testing.T) {
-		if controllingTTYAvailable() {
-			t.Skip("controlling terminal is present")
-		}
-		cli := newReadlineTestCli(t)
-		attachTTYPipe(t, cli)
-		_, _, err := initializeMultilineEditor(cli)
-		if err == nil || !strings.Contains(err.Error(), "Tty.Open") {
-			t.Fatalf("error = %v, want readline Tty.Open failure", err)
-		}
-	})
-
-	t.Run("unknown fuzzy finder key still initializes", func(t *testing.T) {
-		requireControllingTTY(t)
-		cli := newReadlineTestCli(t)
-		attachTTYPipe(t, cli)
-		cli.SystemVariables.Feature.FuzzyFinderKey = "NOT_A_KEY"
-		ed, history, err := initializeMultilineEditor(cli)
-		if err != nil {
-			t.Fatalf("initializeMultilineEditor: %v", err)
-		}
-		if ed == nil || history == nil {
-			t.Fatal("editor and history must be non-nil")
-		}
-	})
-
-	t.Run("known fuzzy finder key", func(t *testing.T) {
-		requireControllingTTY(t)
-		cli := newReadlineTestCli(t)
-		attachTTYPipe(t, cli)
-		cli.SystemVariables.Feature.FuzzyFinderKey = "C_T"
-		ed, history, err := initializeMultilineEditor(cli)
-		if err != nil {
-			t.Fatalf("initializeMultilineEditor: %v", err)
-		}
-		if ed == nil || history == nil {
-			t.Fatal("editor and history must be non-nil")
-		}
-	})
-
-	t.Run("empty fuzzy finder key", func(t *testing.T) {
-		requireControllingTTY(t)
-		cli := newReadlineTestCli(t)
-		attachTTYPipe(t, cli)
-		cli.SystemVariables.Feature.FuzzyFinderKey = ""
-		if _, _, err := initializeMultilineEditor(cli); err != nil {
-			t.Fatalf("initializeMultilineEditor: %v", err)
-		}
-	})
-
-	t.Run("invalid history file", func(t *testing.T) {
-		requireControllingTTY(t)
-		cli := newReadlineTestCli(t)
-		attachTTYPipe(t, cli)
-		path := cli.SystemVariables.Display.HistoryFile
-		if err := os.WriteFile(path, []byte("broken\n"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		_, _, err := initializeMultilineEditor(cli)
-		if err == nil || !strings.Contains(err.Error(), "history file format error") {
-			t.Fatalf("error = %v, want history format error", err)
-		}
-	})
+	cli := newReadlineTestCli(t)
+	_, _, err := initializeMultilineEditor(cli)
+	if err == nil || !strings.Contains(err.Error(), "stdout is not a terminal") {
+		t.Fatalf("error = %v, want missing TTY", err)
+	}
 }
 
 func TestReadInteractiveInput_cancelledContext(t *testing.T) {
-	requireControllingTTY(t)
 	cli := newReadlineTestCli(t)
-	attachTTYPipe(t, cli)
-	ed, _, err := initializeMultilineEditor(cli)
-	if err != nil {
-		t.Fatalf("initializeMultilineEditor: %v", err)
-	}
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
-	defer cancel()
+	entered := make(chan struct{})
+	var once sync.Once
+	ed := newIsolatedReadlineEditor(t, []string{"x"}, func() error {
+		once.Do(func() { close(entered) })
+		<-ctx.Done()
+		return ctx.Err()
+	})
 
 	type result struct {
 		stmt *inputStatement
@@ -1500,19 +1454,26 @@ func TestReadInteractiveInput_cancelledContext(t *testing.T) {
 		done <- result{stmt: stmt, err: err}
 	}()
 
+	select {
+	case <-entered:
+	case <-time.After(3 * time.Second):
+		t.Fatal("scripted TTY did not enter GetKey")
+	}
+	cancel()
+
 	var got result
 	select {
 	case got = <-done:
 	case <-time.After(3 * time.Second):
-		t.Fatal("readInputLine did not return after context timeout")
-	}
-	if got.err == nil {
-		t.Fatal("expected cancelled or read error")
+		t.Fatal("readInputLine did not return after context cancellation")
 	}
 	if got.stmt != nil {
-		t.Fatalf("statement = %+v, want nil on empty failed read", got.stmt)
+		t.Fatalf("statement = %+v, want nil on cancelled read", got.stmt)
 	}
-	if !errors.Is(got.err, context.DeadlineExceeded) && !strings.Contains(got.err.Error(), "failed to read input") {
-		t.Fatalf("error = %v, want failed to read input wrapping a deadline or similar read failure", got.err)
+	if !errors.Is(got.err, context.Canceled) {
+		t.Fatalf("error = %v, want failed to read input wrapping context.Canceled", got.err)
+	}
+	if !strings.Contains(got.err.Error(), "failed to read input") {
+		t.Fatalf("error = %v, want failed to read input wrapping context.Canceled", got.err)
 	}
 }

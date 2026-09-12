@@ -832,6 +832,10 @@ func TestOutputRedirectAndDisable_Execute(t *testing.T) {
 
 	t.Run("redirect enables silent tee", func(t *testing.T) {
 		session, sysVars := createTestSession(t)
+		base, ok := sysVars.StreamManager.GetWriter().(*bytes.Buffer)
+		if !ok {
+			t.Fatal("test session should capture base output in a *bytes.Buffer")
+		}
 		path := filepath.Join(t.TempDir(), "out.log")
 		result, err := (&OutputRedirectMetaCommand{FilePath: path}).Execute(ctx, session)
 		if err != nil || result == nil {
@@ -840,15 +844,39 @@ func TestOutputRedirectAndDisable_Execute(t *testing.T) {
 		if !sysVars.StreamManager.IsInSilentTeeMode() {
 			t.Fatal("\\o should enable silent tee mode")
 		}
-		original := sysVars.StreamManager.GetWriter()
+
+		const redirected = "redirected-only\n"
+		if _, err := sysVars.StreamManager.GetWriter().Write([]byte(redirected)); err != nil {
+			t.Fatalf("write while redirected: %v", err)
+		}
+		if base.Len() != 0 {
+			t.Fatalf("silent redirect leaked to base output: %q", base.String())
+		}
+
 		if _, err := (&DisableOutputRedirectMetaCommand{}).Execute(ctx, session); err != nil {
 			t.Fatalf("disable: %v", err)
 		}
 		if sysVars.StreamManager.IsInSilentTeeMode() {
 			t.Fatal("\\O / disable should turn silent tee off")
 		}
-		if sysVars.StreamManager.GetWriter() == original && original == nil {
-			t.Fatal("writer should remain usable after disable")
+
+		const afterDisable = "after-disable\n"
+		w := sysVars.StreamManager.GetWriter()
+		if w != base {
+			t.Fatal("disable should restore the original base writer")
+		}
+		if _, err := w.Write([]byte(afterDisable)); err != nil {
+			t.Fatalf("write after disable: %v", err)
+		}
+		if base.String() != afterDisable {
+			t.Fatalf("base output after disable = %q, want %q", base.String(), afterDisable)
+		}
+		got, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read redirect file: %v", err)
+		}
+		if string(got) != redirected {
+			t.Fatalf("redirect file = %q, want %q", got, redirected)
 		}
 	})
 

@@ -33,7 +33,6 @@ import (
 
 	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spanner-mycli/internal/mycli/streamio"
-	"github.com/hymkor/go-multiline-ny"
 )
 
 func newConnectedTestCli(t *testing.T, out io.Writer) *Cli {
@@ -232,30 +231,17 @@ func TestCli_displayResult_nilWriterAndInteractiveNewline(t *testing.T) {
 
 func TestCli_readInputLine_readError(t *testing.T) {
 	cli := newReadlineTestCli(t)
-	ed := &multiline.Editor{}
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
-	defer cancel()
+	ed := newIsolatedReadlineEditor(t, nil, nil)
 
-	type result struct {
-		stmt *inputStatement
-		err  error
+	stmt, err := cli.readInputLine(context.Background(), ed)
+	if stmt != nil {
+		t.Fatalf("statement = %+v, want nil", stmt)
 	}
-	done := make(chan result, 1)
-	go func() {
-		stmt, err := cli.readInputLine(ctx, ed)
-		done <- result{stmt: stmt, err: err}
-	}()
-	var got result
-	select {
-	case got = <-done:
-	case <-time.After(3 * time.Second):
-		t.Fatal("readInputLine did not return")
+	if !errors.Is(err, io.EOF) {
+		t.Fatalf("error = %v, want failed to read input wrapping io.EOF", err)
 	}
-	if got.err == nil {
-		t.Fatal("expected read error from an uninitialized editor")
-	}
-	if got.stmt != nil {
-		t.Fatalf("statement = %+v, want nil", got.stmt)
+	if !strings.Contains(err.Error(), "failed to read input") {
+		t.Fatalf("error = %v, want failed to read input wrapping io.EOF", err)
 	}
 }
 
