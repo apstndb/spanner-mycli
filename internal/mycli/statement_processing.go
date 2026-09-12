@@ -228,9 +228,8 @@ type QueryIndexAdvice struct {
 
 // TypedRows preserves the raw result-set (metadata + typed rows) for a buffered
 // Result so export formats re-render from values, not display text. It is the
-// (c) "typed buffered" body payload described in issue #738: at most one of
-// Result.Rows, Result.Typed, Result.RenderedOutput is set, and Result.Streamed
-// means the body was already emitted during execution.
+// typed-body payload of Result.Body; presentation rows, prepared bytes, and
+// already-delivered output are the other ResultBody kinds.
 type TypedRows struct {
 	// Metadata is the authoritative column names + types for the result set.
 	Metadata *sppb.ResultSetMetadata
@@ -245,20 +244,12 @@ type TypedRows struct {
 
 type Result struct {
 	ColumnAlign []tw.Align // optional
-	Rows        []Row
 
-	// Typed holds the raw typed rows for a buffered query result; rendering
-	// derives display cells or replays raw rows at display time (printTableData).
-	// Mutually exclusive with Rows/RenderedOutput/Streamed (see TypedRows).
-	Typed *TypedRows
+	// Body is the single closed payload. The zero value is no body and does
+	// not mean output was already delivered. Constructors on ResultBody set
+	// presentation rows, typed rows, prepared bytes, or already-delivered output.
+	Body ResultBody
 
-	// RenderedOutput holds pre-rendered text (kind (d)) that should be written
-	// before appendices and result lines. Used when output must stay atomic until
-	// after execution side effects such as implicit DML commit have succeeded.
-	// A non-nil RenderedOutput is the signal to write it instead of formatting a
-	// body payload (printResult); the two producers (DUMP buffered fallback, DML
-	// THEN RETURN) always set it together with their content.
-	RenderedOutput   []byte
 	Predicates       []string
 	Appendices       []ResultAppendix
 	AffectedRows     int
@@ -281,14 +272,14 @@ type Result struct {
 	IndexAdvice []QueryIndexAdvice // Index recommendations from query advisor
 	PreInput    string
 
-	// SQLExportAllowed indicates that the display-text row values in Rows have
-	// been formatted as SQL literals using spanvalue.LiteralFormatConfig instead
-	// of regular display formatting, so they may be replayed into INSERT
-	// statements. This flag governs the display-text (Rows) replay path; the
-	// typed (Typed) path carries its own TypedRows.SQLExportAllowed.
+	// SQLExportAllowed indicates that presentation-body cells were formatted as
+	// SQL literals using spanvalue.LiteralFormatConfig instead of regular display
+	// formatting, so they may be replayed into INSERT statements. This flag
+	// governs the presentation-body replay path; the typed path carries its
+	// own TypedRows.SQLExportAllowed.
 	// This flag is set to true only when:
 	// - executeSQL is called with SQL export format (SQL_INSERT, SQL_INSERT_OR_IGNORE, SQL_INSERT_OR_UPDATE)
-	// - The values in Rows are valid SQL literals that can be used in INSERT statements
+	// - The presentation cells are valid SQL literals that can be used in INSERT statements
 	// When false, SQL export formats will fall back to table format to prevent invalid SQL generation.
 	// Examples of statements that have this as false:
 	// - SHOW CREATE TABLE, SHOW TABLES (metadata queries)
@@ -303,7 +294,6 @@ type Result struct {
 
 	BatchInfo      *BatchInfo
 	PartitionCount int
-	Streamed       bool                      // Indicates rows were streamed and not buffered
 	Metrics        *metrics.ExecutionMetrics // Performance metrics for query execution
 }
 

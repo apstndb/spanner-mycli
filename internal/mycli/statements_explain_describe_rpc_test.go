@@ -39,10 +39,10 @@ func TestExplainDescribeStatementsRPC(t *testing.T) {
 		if err != nil {
 			t.Fatalf("EXPLAIN: %v", err)
 		}
-		if got.AffectedRows == 0 || len(got.Rows) == 0 {
+		if got.AffectedRows == 0 || len(got.presentationRows()) == 0 {
 			t.Fatalf("EXPLAIN result = %+v, want plan rows", got)
 		}
-		joined := rowText(got.Rows[0])
+		joined := rowText(got.presentationRows()[0])
 		if !strings.Contains(joined, "Serialize Result") {
 			t.Fatalf("EXPLAIN row = %q, want Serialize Result", joined)
 		}
@@ -70,8 +70,8 @@ func TestExplainDescribeStatementsRPC(t *testing.T) {
 		if live.LastResult.QueryCache == nil || live.LastResult.QueryCache.QueryPlan == nil {
 			t.Fatal("EXPLAIN ANALYZE did not publish LastQueryCache")
 		}
-		if len(got.Rows) == 0 || !strings.Contains(rowText(got.Rows[0]), "Serialize Result") {
-			t.Fatalf("ANALYZE rows = %v", got.Rows)
+		if len(got.presentationRows()) == 0 || !strings.Contains(rowText(got.presentationRows()[0]), "Serialize Result") {
+			t.Fatalf("ANALYZE rows = %v", got.presentationRows())
 		}
 	})
 
@@ -91,14 +91,14 @@ func TestExplainDescribeStatementsRPC(t *testing.T) {
 		if err != nil {
 			t.Fatalf("DESCRIBE: %v", err)
 		}
-		if got.AffectedRows != 1 || len(got.Rows) != 1 {
+		if got.AffectedRows != 1 || len(got.presentationRows()) != 1 {
 			t.Fatalf("DESCRIBE result = %+v", got)
 		}
-		if got.Rows[0][0].RawText() != "id" {
-			t.Fatalf("Column_Name = %q, want id", got.Rows[0][0].RawText())
+		if got.presentationRows()[0][0].RawText() != "id" {
+			t.Fatalf("Column_Name = %q, want id", got.presentationRows()[0][0].RawText())
 		}
-		if !strings.Contains(got.Rows[0][1].RawText(), "INT64") {
-			t.Fatalf("Column_Type = %q, want INT64", got.Rows[0][1].RawText())
+		if !strings.Contains(got.presentationRows()[0][1].RawText(), "INT64") {
+			t.Fatalf("Column_Type = %q, want INT64", got.presentationRows()[0][1].RawText())
 		}
 	})
 }

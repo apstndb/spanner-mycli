@@ -197,7 +197,7 @@ func TestCli_PrintResult_nilWriterUsesStream(t *testing.T) {
 			StreamManager: streamio.NewStreamManager(io.NopCloser(bytes.NewReader(nil)), &out, io.Discard),
 		},
 	}
-	err := cli.PrintResult(80, &Result{TableHeader: toTableHeader("col"), Rows: []Row{toRow("v")}}, false, "", nil)
+	err := cli.PrintResult(80, &Result{TableHeader: toTableHeader("col"), Body: PresentationBody([]Row{toRow("v")})}, false, "", nil)
 	if err != nil {
 		t.Fatalf("PrintResult: %v", err)
 	}
@@ -215,7 +215,7 @@ func TestCli_displayResult_nilWriterAndInteractiveNewline(t *testing.T) {
 			StreamManager: streamio.NewStreamManager(io.NopCloser(bytes.NewReader(nil)), &out, io.Discard),
 		},
 	}
-	result := &Result{TableHeader: toTableHeader("col"), Rows: []Row{toRow("v")}}
+	result := &Result{TableHeader: toTableHeader("col"), Body: PresentationBody([]Row{toRow("v")})}
 	sink := cli.newResultSink(context.Background(), &out, "")
 	if err := cli.displayResult(sink, result, true, nil); err != nil {
 		t.Fatalf("displayResult: %v", err)
@@ -559,7 +559,7 @@ func TestCli_displayResult_outputError(t *testing.T) {
 	}
 	cause := errors.New("display dest failed")
 	w := &resultFailureWriter{err: cause}
-	err := cli.displayResult(cli.newResultSink(context.Background(), w, ""), &Result{TableHeader: toTableHeader("c"), Rows: []Row{toRow("1")}}, false, w)
+	err := cli.displayResult(cli.newResultSink(context.Background(), w, ""), &Result{TableHeader: toTableHeader("c"), Body: PresentationBody([]Row{toRow("1")})}, false, w)
 	if !errors.Is(err, cause) {
 		t.Fatalf("error = %v, want %v", err, cause)
 	}

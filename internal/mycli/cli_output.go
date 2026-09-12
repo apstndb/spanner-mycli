@@ -44,12 +44,22 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 	columnNames := extractTableColumnNames(result.TableHeader)
 
 	// rows holds the display-text cells to render. For a typed buffered result
-	// (Result.Typed, issue #738) they are derived lazily below; otherwise they
-	// are the presentation cells already on Result.Rows.
-	rows := result.Rows
+	// they are derived lazily below; otherwise they are the presentation cells.
+	var rows []Row
+	var typed *TypedRows
+	switch result.Body.kind {
+	case resultBodyPresentation:
+		rows = result.Body.rows
+	case resultBodyTyped:
+		typed = result.Body.typed
+	default:
+		// no-body, prepared bytes, and delivered output are not tables.
+		return nil
+	}
+
 	bodyRowCount := len(rows)
-	if result.Typed != nil {
-		bodyRowCount = len(result.Typed.Rows)
+	if typed != nil {
+		bodyRowCount = len(typed.Rows)
 	}
 
 	// Log logic error where we have rows but no columns
@@ -64,8 +74,8 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 		"rowCount", bodyRowCount,
 		"format", sysVars.Display.CLIFormat)
 
-	// Skip formatting only if there's no header at all (e.g., SET statements)
-	// Empty query results with columns should still output headers
+	// Skip formatting only if there's no header at all (e.g. SET statements).
+	// Empty query results with columns should still output headers.
 	if len(columnNames) == 0 {
 		return nil
 	}
@@ -79,23 +89,23 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 	}
 
 	// SQL export is allowed only for genuine query results. The typed and
-	// display-text paths carry this distinction on different fields (issue #738).
+	// presentation paths carry this distinction on different fields.
 	sqlExportAllowed := result.SQLExportAllowed
-	if result.Typed != nil {
-		sqlExportAllowed = result.Typed.SQLExportAllowed
+	if typed != nil {
+		sqlExportAllowed = typed.SQLExportAllowed
 	}
 
 	// Typed buffered results carry raw *spanner.Row values. Export formats
 	// (CSV/JSONL/SQL_INSERT*) replay them through the single spanvalue emitters;
 	// table-family formats derive display cells with the same transform as the
-	// query path. This is where lazy formatting happens for issue #738.
-	if t := result.Typed; t != nil {
+	// query path.
+	if typed != nil {
 		if usesSpanvalueWriter(sysVars.Display.CLIFormat) &&
 			(format.ValueFormatModeFor(fmtMode) != format.SQLLiteralValues || sqlExportAllowed) {
 			return writeTypedRows(out, sysVars, result)
 		}
 		var err error
-		if rows, err = deriveDisplayRows(sysVars, t); err != nil {
+		if rows, err = deriveDisplayRows(sysVars, typed); err != nil {
 			return err
 		}
 	}
@@ -146,18 +156,20 @@ func printTableData(sysVars *systemVariables, screenWidth int, out io.Writer, re
 // they order correctly around streamed rows; pass a resultSink as out to get
 // the decorated output.
 func printResult(sysVars *systemVariables, screenWidth int, out io.Writer, result *Result, interactive bool) error {
-	// Skip table data if already streamed or pre-rendered by an execution path
-	// that needs atomic output after side effects such as implicit DML commit.
-	if !result.Streamed {
-		if result.RenderedOutput != nil {
-			if _, err := out.Write(result.RenderedOutput); err != nil {
-				return err
-			}
-		} else {
-			if err := printTableData(sysVars, screenWidth, out, result); err != nil {
-				return err
-			}
+	switch result.Body.kind {
+	case resultBodyDelivered:
+		// Body was already written during execution.
+	case resultBodyPrepared:
+		if _, err := out.Write(result.Body.prepared); err != nil {
+			return err
 		}
+	case resultBodyPresentation, resultBodyTyped:
+		if err := printTableData(sysVars, screenWidth, out, result); err != nil {
+			return err
+		}
+	case resultBodyNone:
+		// No body is not delivered; skip the table and still print appendices
+		// and summaries below.
 	}
 
 	if len(result.Appendices) > 0 {

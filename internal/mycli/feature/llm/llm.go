@@ -324,7 +324,7 @@ func resultFromComposedOutput(composed *output) (*mycli.Result, error) {
 
 	return &mycli.Result{
 		PreInput:    composed.Statement.Text,
-		Rows:        rows,
+		Body:        mycli.PresentationBody(rows),
 		TableHeader: mycli.NewTableHeader("Column", "Value"),
 	}, nil
 }

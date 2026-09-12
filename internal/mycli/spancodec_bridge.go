@@ -5,7 +5,7 @@
 // *spanner.Row values via spancodec.RowEncoder.Rows, then routed through the same
 // pipelines as server query results: spanvalue RowIteratorWriter streaming
 // (writer.WriteRowSeq) for formats that have one, or a typed buffered Result
-// (Result.Typed) otherwise, which printTableData renders lazily with the same
+// otherwise, which printTableData renders lazily with the same
 // transforms as server query results. Cell styling, NULL handling, value
 // formatting, and header metadata therefore stay identical to server-side
 // result sets by construction rather than by parallel implementation.
@@ -122,13 +122,13 @@ func streamStructRows[T any](enc *spancodec.RowEncoder[T], items []T, sysVars *s
 	return &Result{
 		TableHeader:  toTableHeader(metadata.GetRowType().GetFields()),
 		AffectedRows: res.RowsRead,
-		Streamed:     true,
+		Body:         DeliveredBody(),
 	}, true, nil
 }
 
 // resultFromStructRows builds a typed buffered Result from rows of struct type
 // T. Each item is encoded into a *spanner.Row by the compiled
-// spancodec.RowEncoder and carried raw in Result.Typed, so export formats
+// spancodec.RowEncoder and carried raw in a typed Result body, so export formats
 // re-render from values through the single spanvalue emitters while
 // table-family formats derive display cells lazily in printTableData with the
 // same transform as the server query path. The table header carries the row
@@ -154,11 +154,11 @@ func resultFromStructRows[T any](enc *spancodec.RowEncoder[T], items []T) (*Resu
 
 	return &Result{
 		TableHeader: toTableHeader(metadata.GetRowType().GetFields()),
-		Typed: &TypedRows{
+		Body: TypedBody(&TypedRows{
 			Metadata:         metadata,
 			Rows:             rows,
 			SQLExportAllowed: false,
-		},
+		}),
 		AffectedRows: len(rows),
 	}, nil
 }

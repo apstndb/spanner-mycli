@@ -275,7 +275,7 @@ func (s *BigQueryStatement) Execute(ctx context.Context, session *mycli.Session)
 
 	return &mycli.Result{
 		TableHeader:  mycli.NewTableHeader(headers...),
-		Rows:         rows,
+		Body:         mycli.PresentationBody(rows),
 		AffectedRows: len(rows),
 	}, nil
 }

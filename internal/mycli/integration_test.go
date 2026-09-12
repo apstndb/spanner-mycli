@@ -292,7 +292,7 @@ func n(text string) format.NoWrapCell {
 
 // defaultCompareSysVars derives display cells the way a default-configured
 // session does. Integration expectations are written as display Rows, so a
-// typed buffered result (Result.Typed, issue #738 PR1) is normalized to its
+// typed buffered result (issue #738 PR1) is normalized to its
 // display Rows through this before comparison. The test sessions use default
 // display formatting, so this reproduces exactly what the pre-PR1 buffered
 // query path stored in Result.Rows.
@@ -302,21 +302,20 @@ var defaultCompareSysVars = func() *systemVariables {
 }()
 
 // normalizeResultForCompare materializes any typed buffered payload into display
-// Rows so expectations written before the Result.Typed split keep working. It is
+// Rows so expectations written before the typed/presentation split keep working. It is
 // a no-op for non-Result values (compareResult is also used with bools/slices).
 func normalizeResultForCompare[T any](t *testing.T, v T) T {
 	t.Helper()
 	normalize := func(r *Result) *Result {
-		if r == nil || r.Typed == nil {
+		if r == nil || r.typedPayload() == nil {
 			return r
 		}
-		rows, err := deriveDisplayRows(defaultCompareSysVars, r.Typed)
+		rows, err := deriveDisplayRows(defaultCompareSysVars, r.typedPayload())
 		if err != nil {
 			t.Fatalf("normalizeResultForCompare: deriveDisplayRows: %v", err)
 		}
 		cp := *r
-		cp.Rows = rows
-		cp.Typed = nil
+		cp.Body = PresentationBody(rows)
 		return &cp
 	}
 	switch r := any(v).(type) {
@@ -345,11 +344,12 @@ func compareResult[T any](t *testing.T, got T, expected T, customCmpOptions ...c
 		cmpopts.IgnoreFields(Result{}, "CommitStats"),
 		// Metrics are collected but not part of test expectations
 		cmpopts.IgnoreFields(Result{}, "Metrics"),
-		// Rendered output is a display artifact whose exact bytes depend on the
-		// active CLI_FORMAT; the byte content is pinned by dedicated rendering
-		// tests, so struct comparisons ignore it. A THEN RETURN / DUMP result is
-		// still distinguishable here by TableHeader/AffectedRows/IsExecutedDML.
-		cmpopts.IgnoreFields(Result{}, "RenderedOutput"),
+		// Prepared bytes are a display artifact whose exact content depends on
+		// the active CLI_FORMAT; the byte content is pinned by dedicated
+		// rendering tests. A THEN RETURN / DUMP result is still distinguishable
+		// here by TableHeader/AffectedRows/IsExecutedDML and Body kind.
+		cmp.AllowUnexported(ResultBody{}),
+		cmpopts.IgnoreFields(ResultBody{}, "prepared"),
 		cmpopts.EquateEmpty(),
 		protocmp.Transform(),
 	)
@@ -381,12 +381,11 @@ func TestSelect(t *testing.T) {
 	}
 
 	compareResult(t, result, &Result{
-		Rows: sliceOf(
+		AffectedRows: 2,
+		TableHeader:  toTableHeader(testTableRowType), Body: PresentationBody(sliceOf(
 			toRow("1", "true"),
 			toRow("2", "false"),
-		),
-		AffectedRows: 2,
-		TableHeader:  toTableHeader(testTableRowType),
+		)),
 	})
 }
 
@@ -485,7 +484,7 @@ func TestSystemVariables(t *testing.T) {
 				if diff := cmp.Diff(sliceOf(tt.varname), extractTableColumnNames(result.TableHeader)); diff != "" {
 					t.Errorf("SHOW column names differ: %v", diff)
 				}
-				if diff := cmp.Diff(sliceOf(toRow(tt.value)), result.Rows); diff != "" {
+				if diff := cmp.Diff(sliceOf(toRow(tt.value)), result.presentationRows()); diff != "" {
 					t.Errorf("SHOW rows differ: %v", diff)
 				}
 			})
@@ -678,9 +677,9 @@ func paramCasesToStmtResults(paramCases []paramCase) []stmtResult {
 	result = append(result, stmtResult{
 		stmt: "SELECT " + strings.Join(selectParts, ", "),
 		want: &Result{
-			TableHeader:  toTableHeader(fields...),
-			Rows:         sliceOf(row),
-			AffectedRows: 1,
+			TableHeader: toTableHeader(fields...),
+
+			AffectedRows: 1, Body: PresentationBody(sliceOf(row)),
 		},
 	})
 	return result
@@ -719,16 +718,15 @@ func TestParameterStatements(t *testing.T) {
 					&Result{
 						KeepVariables: true,
 						TableHeader:   typedStringHeader("Param_Name", "Param_Kind", "Param_Value"),
-						Rows:          sliceOf(toRow("i", "TYPE", "INT64")),
-						AffectedRows:  1,
+
+						AffectedRows: 1, Body: PresentationBody(sliceOf(toRow("i", "TYPE", "INT64"))),
 					},
 				},
 				{
 					"DESCRIBE SELECT @i AS i",
 					&Result{
 						AffectedRows: 1,
-						TableHeader:  toTableHeader("Column_Name", "Column_Type"),
-						Rows:         sliceOf(toRow("i", "INT64")),
+						TableHeader:  toTableHeader("Column_Name", "Column_Type"), Body: PresentationBody(sliceOf(toRow("i", "INT64"))),
 					},
 				},
 			},
@@ -744,8 +742,8 @@ func TestParameterStatements(t *testing.T) {
 					&Result{
 						KeepVariables: true,
 						TableHeader:   typedStringHeader("Param_Name", "Param_Kind", "Param_Value"),
-						Rows:          sliceOf(toRow("b", "VALUE", "2")),
-						AffectedRows:  1,
+
+						AffectedRows: 1, Body: PresentationBody(sliceOf(toRow("b", "VALUE", "2"))),
 					},
 				},
 			},
@@ -760,8 +758,7 @@ func TestParameterStatements(t *testing.T) {
 					&Result{
 						ForceWrap:    true,
 						AffectedRows: 1,
-						TableHeader:  toTableHeader("Root_Partitionable"),
-						Rows:         sliceOf(toRow("TRUE")),
+						TableHeader:  toTableHeader("Root_Partitionable"), Body: PresentationBody(sliceOf(toRow("TRUE"))),
 					},
 				},
 			},
@@ -784,14 +781,14 @@ func TestTransactionStatements(t *testing.T) {
 					&Result{
 						IsExecutedDML: true,
 						AffectedRows:  2,
-						TableHeader:   toTableHeader(testTableRowType),
+						TableHeader:   toTableHeader(testTableRowType), Body: PreparedBody(nil),
 					},
 				},
 				srEmpty("ROLLBACK"),
 				{
 					"SELECT id, active FROM TestTable ORDER BY id ASC",
 					&Result{
-						TableHeader: toTableHeader(testTableRowType),
+						TableHeader: toTableHeader(testTableRowType), Body: PresentationBody(nil),
 					},
 				},
 			},
@@ -807,8 +804,8 @@ func TestTransactionStatements(t *testing.T) {
 					"SELECT id, active FROM TestTable ORDER BY id ASC",
 					&Result{
 						AffectedRows: 2,
-						Rows:         sliceOf(toRow("1", "true"), toRow("2", "false")),
-						TableHeader:  toTableHeader(testTableRowType),
+
+						TableHeader: toTableHeader(testTableRowType), Body: PresentationBody(sliceOf(toRow("1", "true"), toRow("2", "false"))),
 					},
 				},
 			},
@@ -823,8 +820,8 @@ func TestTransactionStatements(t *testing.T) {
 					"SELECT id, active FROM TestTable ORDER BY id ASC",
 					&Result{
 						AffectedRows: 2,
-						Rows:         sliceOf(toRow("1", "true"), toRow("2", "false")),
-						TableHeader:  toTableHeader(testTableRowType),
+
+						TableHeader: toTableHeader(testTableRowType), Body: PresentationBody(sliceOf(toRow("1", "true"), toRow("2", "false"))),
 					},
 				},
 				srEmpty("COMMIT"),
@@ -834,8 +831,8 @@ func TestTransactionStatements(t *testing.T) {
 					"SELECT id, active FROM TestTable ORDER BY id ASC",
 					&Result{
 						AffectedRows: 2,
-						Rows:         sliceOf(toRow("1", "true"), toRow("2", "false")),
-						TableHeader:  toTableHeader(testTableRowType),
+
+						TableHeader: toTableHeader(testTableRowType), Body: PresentationBody(sliceOf(toRow("1", "true"), toRow("2", "false"))),
 					},
 				},
 				srEmpty("COMMIT"),
@@ -852,7 +849,7 @@ func TestTransactionStatements(t *testing.T) {
 					&Result{
 						IsExecutedDML: true,
 						AffectedRows:  2,
-						TableHeader:   toTableHeader(testTableRowType),
+						TableHeader:   toTableHeader(testTableRowType), Body: PreparedBody(nil),
 					},
 				},
 				srEmpty("ROLLBACK"),
@@ -863,7 +860,7 @@ func TestTransactionStatements(t *testing.T) {
 					&Result{
 						IsExecutedDML: true,
 						AffectedRows:  2,
-						TableHeader:   toTableHeader(testTableRowType),
+						TableHeader:   toTableHeader(testTableRowType), Body: PreparedBody(nil),
 					},
 				},
 				srEmpty("ROLLBACK"),
@@ -873,7 +870,7 @@ func TestTransactionStatements(t *testing.T) {
 					&Result{
 						IsExecutedDML: true,
 						AffectedRows:  2,
-						TableHeader:   toTableHeader(testTableRowType),
+						TableHeader:   toTableHeader(testTableRowType), Body: PreparedBody(nil),
 					},
 				},
 				srEmpty("COMMIT"),
@@ -891,8 +888,7 @@ func TestSetLocalStatements(t *testing.T) {
 	showVerbose := func(want string) stmtResult {
 		return sr("SHOW VARIABLE CLI_VERBOSE", &Result{
 			KeepVariables: true,
-			TableHeader:   toTableHeader("CLI_VERBOSE"),
-			Rows:          sliceOf(toRow(want)),
+			TableHeader:   toTableHeader("CLI_VERBOSE"), Body: PresentationBody(sliceOf(toRow(want))),
 		})
 	}
 
@@ -951,8 +947,7 @@ func TestOrdinarySetAfterSetLocalEnds(t *testing.T) {
 	showFormat := func(want string) stmtResult {
 		return sr("SHOW VARIABLE CLI_FORMAT", &Result{
 			KeepVariables: true,
-			TableHeader:   toTableHeader("CLI_FORMAT"),
-			Rows:          sliceOf(toRow(want)),
+			TableHeader:   toTableHeader("CLI_FORMAT"), Body: PresentationBody(sliceOf(toRow(want))),
 		})
 	}
 	tests := []statementTestCase{
@@ -1015,8 +1010,7 @@ func TestShowStatements(t *testing.T) {
 					`SHOW VARIABLE CLI_VERSION`,
 					&Result{
 						KeepVariables: true,
-						TableHeader:   toTableHeader("CLI_VERSION"),
-						Rows:          sliceOf(toRow(getVersion())),
+						TableHeader:   toTableHeader("CLI_VERSION"), Body: PresentationBody(sliceOf(toRow(getVersion()))),
 					},
 				},
 			},
@@ -1031,9 +1025,9 @@ func TestShowStatements(t *testing.T) {
 				{
 					"SHOW TABLES",
 					&Result{
-						TableHeader:  toTableHeader(""), // Dynamic based on database name
-						Rows:         sliceOf(toRow("TestTable1"), toRow("TestTable2")),
-						AffectedRows: 2,
+						TableHeader: toTableHeader(""), // Dynamic based on database name
+
+						AffectedRows: 2, Body: PresentationBody(sliceOf(toRow("TestTable1"), toRow("TestTable2"))),
 					},
 				},
 			},
@@ -1047,12 +1041,13 @@ func TestShowStatements(t *testing.T) {
 					&Result{
 						// Virtual result sets carry row-type metadata like server results.
 						TableHeader:   typedStringHeader("name", "value"),
-						KeepVariables: true,
-						// Rows and AffectedRows are dynamic, so we don't check them here.
+						KeepVariables: true, Body: PresentationBody(
+							// Rows and AffectedRows are dynamic, so we don't check them here.
+							nil),
 					},
 				},
 			},
-			cmpOpts: sliceOf(cmpopts.IgnoreFields(Result{}, "Rows", "AffectedRows")),
+			cmpOpts: sliceOf(cmpopts.IgnoreFields(ResultBody{}, "rows"), cmpopts.IgnoreFields(Result{}, "AffectedRows")),
 		},
 		{
 			desc: "HELP",
@@ -1084,8 +1079,7 @@ func TestShowStatements(t *testing.T) {
 					"SHOW DDLS",
 					&Result{
 						TableHeader:   toTableHeader(""),
-						KeepVariables: true,
-						Rows: sliceOf(
+						KeepVariables: true, Body: PresentationBody(sliceOf(
 							toRow(heredoc.Doc(`
 							CREATE TABLE Musicians (
 							  SingerId INT64 NOT NULL,
@@ -1101,7 +1095,7 @@ func TestShowStatements(t *testing.T) {
 							) PRIMARY KEY(SingerId);
 							CREATE INDEX SingersByFirstLastName ON Singers(FirstName, LastName);
 							`)),
-						),
+						)),
 					},
 				},
 			},
@@ -1116,9 +1110,9 @@ func TestShowStatements(t *testing.T) {
 				{
 					"SHOW CREATE INDEX TestShowCreateIndexIdx",
 					&Result{
-						TableHeader:  toTableHeader("Name", "DDL"),
-						Rows:         sliceOf(toRow("TestShowCreateIndexIdx", "CREATE INDEX TestShowCreateIndexIdx ON TestShowCreateIndexTbl(val)")),
-						AffectedRows: 1,
+						TableHeader: toTableHeader("Name", "DDL"),
+
+						AffectedRows: 1, Body: PresentationBody(sliceOf(toRow("TestShowCreateIndexIdx", "CREATE INDEX TestShowCreateIndexIdx ON TestShowCreateIndexTbl(val)"))),
 					},
 				},
 			},
@@ -1131,8 +1125,9 @@ func TestShowStatements(t *testing.T) {
 					"DESCRIBE INSERT INTO TestDescribeDMLTbl (id) VALUES (1)",
 					&Result{
 						// For DML without THEN RETURN, result is empty.
-						TableHeader: toTableHeader("Column_Name", "Column_Type"),
-						// No parameters in this DML - Rows and AffectedRows default to nil/0
+						TableHeader: toTableHeader("Column_Name", "Column_Type"), Body: PresentationBody(
+							// No parameters in this DML - Rows and AffectedRows default to nil/0
+							nil),
 					},
 				},
 			},
@@ -1143,8 +1138,9 @@ func TestShowStatements(t *testing.T) {
 				{
 					"SHOW SCHEMA UPDATE OPERATIONS",
 					&Result{
-						TableHeader: toTableHeader("OPERATION_ID", "STATEMENTS", "DONE", "PROGRESS", "COMMIT_TIMESTAMP", "ERROR"),
-						// Expect no operations on a fresh emulator DB - Rows and AffectedRows default to nil/0
+						TableHeader: toTableHeader("OPERATION_ID", "STATEMENTS", "DONE", "PROGRESS", "COMMIT_TIMESTAMP", "ERROR"), Body: PresentationBody(
+							// Expect no operations on a fresh emulator DB - Rows and AffectedRows default to nil/0
+							nil),
 					},
 				},
 			},
@@ -1156,12 +1152,13 @@ func TestShowStatements(t *testing.T) {
 				{
 					"SHOW DATABASES",
 					&Result{
-						TableHeader: typedStringHeader("Database"),
-						// Don't check specific rows since databases vary
+						TableHeader: typedStringHeader("Database"), Body: PresentationBody(
+							// Don't check specific rows since databases vary
+							nil),
 					},
 				},
 			},
-			cmpOpts: sliceOf(cmpopts.IgnoreFields(Result{}, "Rows", "AffectedRows")),
+			cmpOpts: sliceOf(cmpopts.IgnoreFields(ResultBody{}, "rows"), cmpopts.IgnoreFields(Result{}, "AffectedRows")),
 		},
 	}
 
@@ -1183,11 +1180,10 @@ func TestBatchStatements(t *testing.T) {
 					IsExecutedDML:    true,
 					AffectedRows:     2,
 					AffectedRowsType: rowCountTypeUpperBound,
-					TableHeader:      toTableHeader("DML", "Rows"),
-					Rows: sliceOf(
+					TableHeader:      toTableHeader("DML", "Rows"), Body: PresentationBody(sliceOf(
 						toRow("INSERT INTO TestTable (id, active) VALUES (@n, false)", "1"),
 						toRow("UPDATE TestTable SET active = true WHERE id = @n", "1"),
-					),
+					)),
 				}},
 			},
 		},
@@ -1202,19 +1198,18 @@ func TestBatchStatements(t *testing.T) {
 				) PRIMARY KEY(id)`), &Result{BatchInfo: &BatchInfo{Mode: batchModeDDL, Size: 1}}},
 				srBatchDDL(`CREATE TABLE TestTable2 (id INT64, active BOOL) PRIMARY KEY(id)`, 2),
 				{"RUN BATCH", &Result{
-					TableHeader: toTableHeader("Executed", "Commit Timestamp"),
-					Rows: sliceOf(
+					TableHeader: toTableHeader("Executed", "Commit Timestamp"), Body: PresentationBody(sliceOf(
 						toRow(heredoc.Doc(`
 							CREATE TABLE TestTable (
 								id		INT64,
 								active	BOOL,
 							) PRIMARY KEY(id);`), "(ignored)"),
 						toRow(`CREATE TABLE TestTable2 (id INT64, active BOOL) PRIMARY KEY(id);`, "(ignored)"),
-					),
+					)),
 				}},
 			},
 			// Ignore Commit Timestamp column value
-			cmpOpts: sliceOf(ignoreRegexOpt(`\.Rows\[\d*\]\[1\]`)),
+			cmpOpts: sliceOf(ignoreRegexOpt(`\.Body\.rows\[\d*\]\[1\]`)),
 		},
 		{
 			desc: "AUTO_BATCH_DML",
@@ -1227,13 +1222,11 @@ func TestBatchStatements(t *testing.T) {
 				{"COMMIT", &Result{
 					IsExecutedDML: true,
 					AffectedRows:  1,
-					TableHeader:   toTableHeader("DML", "Rows"),
-					Rows:          sliceOf(toRow("INSERT INTO TestTable (id, active) VALUES (2,	false)", "1")), // tab is pass-through
+					TableHeader:   toTableHeader("DML", "Rows"), Body: PresentationBody(sliceOf(toRow("INSERT INTO TestTable (id, active) VALUES (2,	false)", "1"))), // tab is pass-through
 				}},
 				{"SELECT * FROM TestTable ORDER BY id", &Result{
 					AffectedRows: 2,
-					TableHeader:  toTableHeader(testTableRowType),
-					Rows:         sliceOf(toRow("1", "true"), toRow("2", "false")),
+					TableHeader:  toTableHeader(testTableRowType), Body: PresentationBody(sliceOf(toRow("1", "true"), toRow("2", "false"))),
 				}},
 			},
 		},
@@ -1245,9 +1238,9 @@ func TestBatchStatements(t *testing.T) {
 				srBatchDML("INSERT INTO TestAbortBatchDML (id) VALUES (1)", 1),
 				srKeep("ABORT BATCH"),
 				{"SELECT COUNT(*) FROM TestAbortBatchDML", &Result{
-					TableHeader:  toTableHeader(typector.NameTypeToStructTypeField("", typector.CodeToSimpleType(sppb.TypeCode_INT64))),
-					Rows:         sliceOf(toRow("0")),
-					AffectedRows: 1,
+					TableHeader: toTableHeader(typector.NameTypeToStructTypeField("", typector.CodeToSimpleType(sppb.TypeCode_INT64))),
+
+					AffectedRows: 1, Body: PresentationBody(sliceOf(toRow("0"))),
 				}},
 			},
 			// No cmpOpts needed - TableHeader should be nil for batch statements
@@ -1263,13 +1256,11 @@ func TestBatchStatements(t *testing.T) {
 				{"COMMIT", &Result{
 					IsExecutedDML: true,
 					AffectedRows:  1,
-					TableHeader:   toTableHeader("DML", "Rows"),
-					Rows:          sliceOf(toRow("INSERT INTO TestTable (id, active) VALUES (2, false)", "1")),
+					TableHeader:   toTableHeader("DML", "Rows"), Body: PresentationBody(sliceOf(toRow("INSERT INTO TestTable (id, active) VALUES (2, false)", "1"))),
 				}},
 				{"SELECT * FROM TestTable ORDER BY id", &Result{
 					AffectedRows: 1,
-					TableHeader:  toTableHeader(testTableRowType),
-					Rows:         sliceOf(toRow("2", "false")),
+					TableHeader:  toTableHeader(testTableRowType), Body: PresentationBody(sliceOf(toRow("2", "false"))),
 				}},
 			},
 		},
@@ -1286,13 +1277,11 @@ func TestBatchStatements(t *testing.T) {
 				{"COMMIT", &Result{
 					IsExecutedDML: true,
 					AffectedRows:  1,
-					TableHeader:   toTableHeader("DML", "Rows"),
-					Rows:          sliceOf(toRow("INSERT INTO TestTable (id, active) VALUES (2, false)", "1")),
+					TableHeader:   toTableHeader("DML", "Rows"), Body: PresentationBody(sliceOf(toRow("INSERT INTO TestTable (id, active) VALUES (2, false)", "1"))),
 				}},
 				{"SELECT * FROM TestTable ORDER BY id", &Result{
 					AffectedRows: 1,
-					TableHeader:  toTableHeader(testTableRowType),
-					Rows:         sliceOf(toRow("2", "false")),
+					TableHeader:  toTableHeader(testTableRowType), Body: PresentationBody(sliceOf(toRow("2", "false"))),
 				}},
 			},
 		},
@@ -1310,8 +1299,7 @@ func TestPartitionedStatements(t *testing.T) {
 				{"TRY PARTITIONED QUERY SELECT 1", &Result{
 					ForceWrap:    true,
 					AffectedRows: 1,
-					TableHeader:  toTableHeader("Root_Partitionable"),
-					Rows:         sliceOf(toRow("TRUE")),
+					TableHeader:  toTableHeader("Root_Partitionable"), Body: PresentationBody(sliceOf(toRow("TRUE"))),
 				}},
 			},
 		},
@@ -1322,8 +1310,7 @@ func TestPartitionedStatements(t *testing.T) {
 				{"SELECT 1", &Result{
 					ForceWrap:    true,
 					AffectedRows: 1,
-					TableHeader:  toTableHeader("Root_Partitionable"),
-					Rows:         sliceOf(toRow("TRUE")),
+					TableHeader:  toTableHeader("Root_Partitionable"), Body: PresentationBody(sliceOf(toRow("TRUE"))),
 				}},
 			},
 		},
@@ -1335,8 +1322,7 @@ func TestPartitionedStatements(t *testing.T) {
 				{"SELECT @n", &Result{
 					ForceWrap:    true,
 					AffectedRows: 1,
-					TableHeader:  toTableHeader("Root_Partitionable"),
-					Rows:         sliceOf(toRow("TRUE")),
+					TableHeader:  toTableHeader("Root_Partitionable"), Body: PresentationBody(sliceOf(toRow("TRUE"))),
 				}},
 			},
 		},
@@ -1349,8 +1335,7 @@ func TestPartitionedStatements(t *testing.T) {
 				{"RUN PARTITIONED QUERY SELECT id, active FROM TestTable", &Result{
 					AffectedRows:   1,
 					PartitionCount: 2,
-					TableHeader:    toTableHeader(testTableRowType),
-					Rows:           sliceOf(toRow("1", "false")),
+					TableHeader:    toTableHeader(testTableRowType), Body: PresentationBody(sliceOf(toRow("1", "false"))),
 				}},
 			},
 		},
@@ -1360,9 +1345,9 @@ func TestPartitionedStatements(t *testing.T) {
 			stmtResults: []stmtResult{
 				srKeep("SET CLI_FORMAT = CSV"),
 				{"RUN PARTITIONED QUERY SELECT id, active FROM TestTable WHERE FALSE", &Result{
-					TableHeader:  toTableHeader(testTableRowType),
-					Streamed:     true,
-					AffectedRows: 0,
+					TableHeader: toTableHeader(testTableRowType),
+
+					AffectedRows: 0, Body: DeliveredBody(),
 				}},
 			},
 			cmpOpts: []cmp.Option{
@@ -1384,14 +1369,14 @@ func TestProtoStatements(t *testing.T) {
 					stmt: `SHOW LOCAL PROTO`,
 					want: &Result{
 						TableHeader: typedStringHeader("full_name", "kind", "package", "file"),
-						Rows: sliceOf(
+
+						AffectedRows:  4,
+						KeepVariables: true, Body: PresentationBody(sliceOf(
 							toRow("examples.shipping.Order", "PROTO", "examples.shipping", "order_protos.proto"),
 							toRow("examples.shipping.Order.Address", "PROTO", "examples.shipping", "order_protos.proto"),
 							toRow("examples.shipping.Order.Item", "PROTO", "examples.shipping", "order_protos.proto"),
 							toRow("examples.shipping.OrderHistory", "PROTO", "examples.shipping", "order_protos.proto"),
-						),
-						AffectedRows:  4,
-						KeepVariables: true,
+						)),
 					},
 				},
 			},
@@ -1404,14 +1389,14 @@ func TestProtoStatements(t *testing.T) {
 					stmt: `SHOW LOCAL PROTO`,
 					want: &Result{
 						TableHeader: typedStringHeader("full_name", "kind", "package", "file"),
-						Rows: sliceOf(
+
+						AffectedRows:  4,
+						KeepVariables: true, Body: PresentationBody(sliceOf(
 							toRow("examples.spanner.music.SingerInfo", "PROTO", "examples.spanner.music", "testdata/protos/singer.proto"),
 							toRow("examples.spanner.music.CustomSingerInfo", "PROTO", "examples.spanner.music", "testdata/protos/singer.proto"),
 							toRow("examples.spanner.music.Genre", "ENUM", "examples.spanner.music", "testdata/protos/singer.proto"),
 							toRow("examples.spanner.music.CustomGenre", "ENUM", "examples.spanner.music", "testdata/protos/singer.proto"),
-						),
-						AffectedRows:  4,
-						KeepVariables: true,
+						)),
 					},
 				},
 			},
@@ -1427,14 +1412,14 @@ func TestProtoStatements(t *testing.T) {
 					stmt: `SHOW REMOTE PROTO`,
 					want: &Result{
 						TableHeader: typedStringHeader("full_name", "kind", "package"),
-						Rows: sliceOf(
+
+						AffectedRows:  4,
+						KeepVariables: true, Body: PresentationBody(sliceOf(
 							toRow("examples.shipping.Order", "PROTO", "examples.shipping"),
 							toRow("examples.shipping.Order.Address", "PROTO", "examples.shipping"),
 							toRow("examples.shipping.Order.Item", "PROTO", "examples.shipping"),
 							toRow("examples.shipping.OrderHistory", "PROTO", "examples.shipping"),
-						),
-						AffectedRows:  4,
-						KeepVariables: true,
+						)),
 					},
 				},
 			},
@@ -1443,7 +1428,7 @@ func TestProtoStatements(t *testing.T) {
 			desc: "PROTO BUNDLE statements",
 			// Note: CREATE/ALTER/SYNC PROTO BUNDLE still exercise the CLI session path.
 			stmtResults: []stmtResult{
-				sr("SHOW REMOTE PROTO", &Result{KeepVariables: true, TableHeader: typedStringHeader("full_name", "kind", "package")}),
+				sr("SHOW REMOTE PROTO", &Result{KeepVariables: true, TableHeader: typedStringHeader("full_name", "kind", "package"), Body: PresentationBody(nil)}),
 				srKeep(`SET PROTO_DESCRIPTORS_FILE_PATH = "testdata/protos/order_descriptors.pb"`),
 				srEmpty("CREATE PROTO BUNDLE (`examples.shipping.Order`)"),
 				srEmpty("ALTER PROTO BUNDLE DELETE (`examples.shipping.Order`)"),
@@ -1480,10 +1465,10 @@ func TestImportedProtoStatements(t *testing.T) {
 	execute("CREATE TABLE ProtoRows (Id INT64 NOT NULL, P imported.Root) PRIMARY KEY (Id)")
 	execute(`INSERT INTO ProtoRows (Id, P) VALUES (1, CAST('child { value: "kept" }' AS imported.Root))`)
 	result := execute("SELECT P FROM ProtoRows WHERE Id = 1")
-	if result.AffectedRows != 1 || result.Typed == nil || len(result.Typed.Rows) != 1 {
+	if result.AffectedRows != 1 || result.typedPayload() == nil || len(result.typedPayload().Rows) != 1 {
 		t.Fatalf("proto query returned no value: %+v", result)
 	}
-	rows, err := deriveDisplayRows(session.systemVariables, result.Typed)
+	rows, err := deriveDisplayRows(session.systemVariables, result.typedPayload())
 	if err != nil || len(rows) != 1 || len(rows[0]) != 1 {
 		t.Fatalf("CLI proto display rows = %v, err=%v", rows, err)
 	}
@@ -1522,20 +1507,22 @@ func TestAdminStatements(t *testing.T) {
 				{
 					stmt: "SHOW DATABASES",
 					want: &Result{
-						TableHeader: typedStringHeader("Database"),
-						// Don't check specific content
+						TableHeader: typedStringHeader("Database"), Body: PresentationBody(
+							// Don't check specific content
+							nil),
 					},
 				},
 				srEmpty("DROP DATABASE test_workflow_db"), // DROP DATABASE should also be mutation
 				{
 					stmt: "SHOW DATABASES",
 					want: &Result{
-						TableHeader: typedStringHeader("Database"),
-						// Don't check specific content
+						TableHeader: typedStringHeader("Database"), Body: PresentationBody(
+							// Don't check specific content
+							nil),
 					},
 				},
 			},
-			cmpOpts: sliceOf(cmpopts.IgnoreFields(Result{}, "Rows", "AffectedRows")),
+			cmpOpts: sliceOf(cmpopts.IgnoreFields(ResultBody{}, "rows"), cmpopts.IgnoreFields(Result{}, "AffectedRows")),
 		},
 		{
 			desc:     "DETACH and USE workflow with database creation",
@@ -1545,16 +1532,15 @@ func TestAdminStatements(t *testing.T) {
 					stmt: "SHOW VARIABLE CLI_DATABASE", // Should show test-database (connected)
 					want: &Result{
 						KeepVariables: true,
-						TableHeader:   toTableHeader("CLI_DATABASE"),
-						Rows:          sliceOf(toRow("test-database")),
+						TableHeader:   toTableHeader("CLI_DATABASE"), Body: PresentationBody(sliceOf(toRow("test-database"))),
 					},
 				},
 				{
 					stmt: "SELECT 1 AS connected", // Should work from database mode
 					want: &Result{
-						TableHeader:  toTableHeader(typector.NameTypeToStructTypeField("connected", typector.CodeToSimpleType(sppb.TypeCode_INT64))),
-						Rows:         sliceOf(toRow("1")),
-						AffectedRows: 1,
+						TableHeader: toTableHeader(typector.NameTypeToStructTypeField("connected", typector.CodeToSimpleType(sppb.TypeCode_INT64))),
+
+						AffectedRows: 1, Body: PresentationBody(sliceOf(toRow("1"))),
 					},
 				},
 				srEmpty("DETACH"), // Switch to admin-only mode, returns empty result
@@ -1563,17 +1549,17 @@ func TestAdminStatements(t *testing.T) {
 					want: &Result{
 						KeepVariables: true,
 						TableHeader:   toTableHeader("CLI_DATABASE"),
-						Rows:          sliceOf(toRow("")), // Empty string in detached mode
-						AffectedRows:  0,
+						// Empty string in detached mode
+						AffectedRows: 0, Body: PresentationBody(sliceOf(toRow(""))),
 					},
 				},
 				srEmpty("CREATE DATABASE `test_detach_db`"), // Should work from admin-only mode
 				{
 					stmt: "SHOW DATABASES", // Should show both databases
 					want: &Result{
-						TableHeader:  typedStringHeader("Database"),
-						Rows:         sliceOf(toRow("test-database"), toRow("test_detach_db")), // Both databases
-						AffectedRows: 2,
+						TableHeader: typedStringHeader("Database"),
+						// Both databases
+						AffectedRows: 2, Body: PresentationBody(sliceOf(toRow("test-database"), toRow("test_detach_db"))),
 					},
 				},
 				srEmpty("USE `test_detach_db`"), // Switch to new database
@@ -1582,16 +1568,16 @@ func TestAdminStatements(t *testing.T) {
 					want: &Result{
 						KeepVariables: true,
 						TableHeader:   toTableHeader("CLI_DATABASE"),
-						Rows:          sliceOf(toRow("test_detach_db")), // Shows new database name after USE
-						AffectedRows:  0,
+						// Shows new database name after USE
+						AffectedRows: 0, Body: PresentationBody(sliceOf(toRow("test_detach_db"))),
 					},
 				},
 				{
 					stmt: "SELECT 1 AS reconnected", // Should work from database mode after USE
 					want: &Result{
-						TableHeader:  toTableHeader(typector.NameTypeToStructTypeField("reconnected", typector.CodeToSimpleType(sppb.TypeCode_INT64))),
-						Rows:         sliceOf(toRow("1")),
-						AffectedRows: 1,
+						TableHeader: toTableHeader(typector.NameTypeToStructTypeField("reconnected", typector.CodeToSimpleType(sppb.TypeCode_INT64))),
+
+						AffectedRows: 1, Body: PresentationBody(sliceOf(toRow("1"))),
 					},
 				},
 				srEmpty("DETACH"),                         // Switch to admin-only mode again
@@ -1605,23 +1591,23 @@ func TestAdminStatements(t *testing.T) {
 			stmtResults: []stmtResult{
 				{
 					stmt: "SHOW DATABASES",
-					want: &Result{TableHeader: typedStringHeader("Database"), Rows: sliceOf(toRow("test-database")), AffectedRows: 1},
+					want: &Result{TableHeader: typedStringHeader("Database"), AffectedRows: 1, Body: PresentationBody(sliceOf(toRow("test-database")))},
 				},
 				srEmpty("CREATE DATABASE `new-database`"), // CREATE DATABASE returns empty result
 				{
 					stmt: "SHOW DATABASES",
-					want: &Result{TableHeader: typedStringHeader("Database"), Rows: sliceOf(toRow("new-database"), toRow("test-database")), AffectedRows: 2},
+					want: &Result{TableHeader: typedStringHeader("Database"), AffectedRows: 2, Body: PresentationBody(sliceOf(toRow("new-database"), toRow("test-database")))},
 				},
 				srEmpty("USE `new-database` ROLE spanner_info_reader"), // nop
 				srEmpty("USE `test-database`"),                         // nop
 				srEmpty("DROP DATABASE `new-database`"),                // DROP DATABASE
 				{
 					stmt: "SHOW DATABASES",
-					want: &Result{TableHeader: typedStringHeader("Database"), Rows: sliceOf(toRow("test-database")), AffectedRows: 1},
+					want: &Result{TableHeader: typedStringHeader("Database"), AffectedRows: 1, Body: PresentationBody(sliceOf(toRow("test-database")))},
 				},
 			},
 			// Ignore duration field in CREATE DATABASE result
-			cmpOpts: sliceOf(ignorePathOpt(`.Rows[0][2]`)),
+			cmpOpts: sliceOf(ignorePathOpt(`.Body.rows[0][2]`)),
 		},
 		{
 			desc: "PARTITION SELECT query",
@@ -1632,12 +1618,12 @@ func TestAdminStatements(t *testing.T) {
 					want: &Result{
 						TableHeader:  toTableHeader("Partition_Token"),
 						AffectedRows: 2, // Emulator usually creates a couple of partitions for simple queries
-						ForceWrap:    true,
+						ForceWrap:    true, Body: PresentationBody(nil),
 					},
 				},
 			},
 			// Ignore actual token values
-			cmpOpts: sliceOf(cmpopts.IgnoreFields(Result{}, "Rows")),
+			cmpOpts: sliceOf(cmpopts.IgnoreFields(ResultBody{}, "rows")),
 		},
 	}
 
@@ -1677,8 +1663,8 @@ func TestMiscStatements(t *testing.T) {
 					want: &Result{
 						KeepVariables: true,
 						TableHeader:   toTableHeader("PROTO_DESCRIPTORS_FILE_PATH"),
-						Rows:          sliceOf(toRow("testdata/protos/order_descriptors.pb")),
-						AffectedRows:  0,
+
+						AffectedRows: 0, Body: PresentationBody(sliceOf(toRow("testdata/protos/order_descriptors.pb"))),
 					},
 				},
 				srKeep(`SET PROTO_DESCRIPTORS_FILE_PATH += "testdata/protos/singer.proto"`),
@@ -1687,8 +1673,8 @@ func TestMiscStatements(t *testing.T) {
 					want: &Result{
 						KeepVariables: true,
 						TableHeader:   toTableHeader("PROTO_DESCRIPTORS_FILE_PATH"),
-						Rows:          sliceOf(toRow("testdata/protos/order_descriptors.pb,testdata/protos/singer.proto")),
-						AffectedRows:  0,
+
+						AffectedRows: 0, Body: PresentationBody(sliceOf(toRow("testdata/protos/order_descriptors.pb,testdata/protos/singer.proto"))),
 					},
 				},
 			},
@@ -1713,9 +1699,9 @@ func TestMiscStatements(t *testing.T) {
 				{
 					stmt: "SELECT COUNT(*) FROM TestMutateDeleteTbl",
 					want: &Result{
-						TableHeader:  toTableHeader(typector.NameTypeToStructTypeField("", typector.CodeToSimpleType(sppb.TypeCode_INT64))),
-						Rows:         sliceOf(toRow("0")),
-						AffectedRows: 1,
+						TableHeader: toTableHeader(typector.NameTypeToStructTypeField("", typector.CodeToSimpleType(sppb.TypeCode_INT64))),
+
+						AffectedRows: 1, Body: PresentationBody(sliceOf(toRow("0"))),
 					},
 				},
 			},
@@ -1989,13 +1975,11 @@ func TestReadOnlyTransaction(t *testing.T) {
 		}
 
 		compareResult(t, result, &Result{
-			Rows: sliceOf(
+			TableHeader:  toTableHeader(testTableRowType),
+			AffectedRows: 2, Body: PresentationBody(sliceOf(
 				toRow("1", "true"),
 				toRow("2", "false"),
-			),
-
-			TableHeader:  toTableHeader(testTableRowType),
-			AffectedRows: 2,
+			)),
 		})
 
 		// close
@@ -2091,12 +2075,11 @@ func TestReadOnlyTransaction(t *testing.T) {
 
 		// should not include id=3 and id=4
 		compareResult(t, result, &Result{
-			Rows: sliceOf(
+			TableHeader:  toTableHeader(testTableRowType),
+			AffectedRows: 2, Body: PresentationBody(sliceOf(
 				toRow("1", "true"),
 				toRow("2", "false"),
-			),
-			TableHeader:  toTableHeader(testTableRowType),
-			AffectedRows: 2,
+			)),
 		})
 
 		// close
@@ -2134,10 +2117,10 @@ func TestShowCreateTable(t *testing.T) {
 
 	compareResult(t, result, &Result{
 		TableHeader: toTableHeader("Name", "DDL"),
-		Rows: sliceOf(
+
+		AffectedRows: 1, Body: PresentationBody(sliceOf(
 			toRow("tbl", "CREATE TABLE tbl (\n  id INT64 NOT NULL,\n  active BOOL NOT NULL,\n) PRIMARY KEY(id)"),
-		),
-		AffectedRows: 1,
+		)),
 	})
 }
 
@@ -2163,11 +2146,11 @@ func TestShowColumns(t *testing.T) {
 
 	compareResult(t, result, &Result{
 		TableHeader: toTableHeader("Field", "Type", "NULL", "Key", "Key_Order", "Options"),
-		Rows: sliceOf(
+
+		AffectedRows: 2, Body: PresentationBody(sliceOf(
 			Row{p("id"), p("INT64"), p("NO"), p("PRIMARY_KEY"), p("ASC"), n("NULL")},
 			Row{p("active"), p("BOOL"), p("NO"), n("NULL"), n("NULL"), n("NULL")},
-		),
-		AffectedRows: 2,
+		)),
 	})
 }
 
@@ -2193,10 +2176,10 @@ func TestShowIndexes(t *testing.T) {
 
 	compareResult(t, result, &Result{
 		TableHeader: toTableHeader("Table", "Parent_table", "Index_name", "Index_type", "Is_unique", "Is_null_filtered", "Index_state"),
-		Rows: sliceOf(
+
+		AffectedRows: 1, Body: PresentationBody(sliceOf(
 			Row{p("tbl"), p(""), p("PRIMARY_KEY"), p("PRIMARY_KEY"), p("true"), p("false"), n("NULL")},
-		),
-		AffectedRows: 1,
+		)),
 	})
 }
 
@@ -2302,7 +2285,7 @@ func TestShowOperation(t *testing.T) {
 	// Extract operation ID by matching the DDL statement
 	var operationID string
 	var foundOp bool
-	for _, row := range result.Rows {
+	for _, row := range result.presentationRows() {
 		// Assuming DDL statement is in the second column (index 1) and operation ID in the first (index 0)
 		if len(row) > 1 && strings.Contains(row[1].RawText(), "CREATE TABLE TestShowOperationTable") {
 			if len(row[0].RawText()) > 0 {
@@ -2342,26 +2325,26 @@ func TestShowOperation(t *testing.T) {
 	}
 
 	// Verify we have at least one row (our CREATE TABLE statement)
-	if len(opResult.Rows) == 0 {
+	if len(opResult.presentationRows()) == 0 {
 		t.Fatal("Expected at least one row in SHOW OPERATION result")
 	}
 
 	// Verify the operation ID matches what we requested
-	if len(opResult.Rows[0]) > 0 && opResult.Rows[0][0].RawText() != operationID {
-		t.Errorf("Expected operation ID %s, got %s", operationID, opResult.Rows[0][0].RawText())
+	if len(opResult.presentationRows()[0]) > 0 && opResult.presentationRows()[0][0].RawText() != operationID {
+		t.Errorf("Expected operation ID %s, got %s", operationID, opResult.presentationRows()[0][0].RawText())
 	}
 
 	// Verify the statement contains our DDL
-	if len(opResult.Rows[0]) > 1 {
-		statement := opResult.Rows[0][1].RawText()
+	if len(opResult.presentationRows()[0]) > 1 {
+		statement := opResult.presentationRows()[0][1].RawText()
 		if !strings.Contains(statement, "CREATE TABLE TestShowOperationTable") {
 			t.Errorf("Expected statement to contain CREATE TABLE TestShowOperationTable, got: %s", statement)
 		}
 	}
 
 	// Verify the operation is done (DDL should complete quickly in emulator)
-	if len(opResult.Rows[0]) > 2 {
-		done := opResult.Rows[0][2].RawText()
+	if len(opResult.presentationRows()[0]) > 2 {
+		done := opResult.presentationRows()[0][2].RawText()
 		if done != "true" {
 			t.Logf("Note: Operation is not done yet: %s (this may be expected for slow operations)", done)
 		}
@@ -2385,9 +2368,9 @@ func TestShowOperation(t *testing.T) {
 	}
 
 	// Results should be identical whether using short ID or full name
-	if len(fullOpResult.Rows) != len(opResult.Rows) {
+	if len(fullOpResult.presentationRows()) != len(opResult.presentationRows()) {
 		t.Errorf("Expected same number of rows for short ID (%d) and full name (%d)",
-			len(opResult.Rows), len(fullOpResult.Rows))
+			len(opResult.presentationRows()), len(fullOpResult.presentationRows()))
 	}
 
 	// Test error case: non-existent operation
@@ -2414,9 +2397,9 @@ func TestShowOperation(t *testing.T) {
 	}
 
 	// Results should be identical for default and SYNC mode when operation is already completed
-	if len(syncResult.Rows) != len(opResult.Rows) {
+	if len(syncResult.presentationRows()) != len(opResult.presentationRows()) {
 		t.Errorf("Expected same number of rows for default (%d) and SYNC mode (%d)",
-			len(opResult.Rows), len(syncResult.Rows))
+			len(opResult.presentationRows()), len(syncResult.presentationRows()))
 	}
 
 	// Test explicit ASYNC mode (should work same as default)
@@ -2431,9 +2414,9 @@ func TestShowOperation(t *testing.T) {
 	}
 
 	// Results should be identical for default and explicit ASYNC mode
-	if len(asyncResult.Rows) != len(opResult.Rows) {
+	if len(asyncResult.presentationRows()) != len(opResult.presentationRows()) {
 		t.Errorf("Expected same number of rows for default (%d) and ASYNC mode (%d)",
-			len(opResult.Rows), len(asyncResult.Rows))
+			len(opResult.presentationRows()), len(asyncResult.presentationRows()))
 	}
 
 	_ = emulator // Ensure emulator is used to avoid unused variable

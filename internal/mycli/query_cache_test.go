@@ -146,8 +146,8 @@ func TestQueryCachePublicationBufferedAndStreamingEmitters(t *testing.T) {
 			if err != nil {
 				t.Fatalf("executeSQLImplWithQueryRunner: %v", err)
 			}
-			if result.Streamed != tt.wantStreamed {
-				t.Fatalf("Streamed = %v, want %v (wrong emitter route)", result.Streamed, tt.wantStreamed)
+			if result.alreadyDelivered() != tt.wantStreamed {
+				t.Fatalf("Streamed = %v, want %v (wrong emitter route)", result.alreadyDelivered(), tt.wantStreamed)
 			}
 			assertLiveQueryCacheReplaced(t, live, seed, planB, statsB)
 		})
@@ -269,11 +269,11 @@ func TestQueryCachePublicationExplainLastQueryAndPlanNodes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EXPLAIN LAST QUERY: %v", err)
 	}
-	if explain == nil || len(explain.Rows) == 0 {
+	if explain == nil || len(explain.presentationRows()) == 0 {
 		t.Fatal("EXPLAIN LAST QUERY returned no plan rows")
 	}
 	var sawNewPlan, sawOldPlan bool
-	for _, row := range explain.Rows {
+	for _, row := range explain.presentationRows() {
 		joined := rowText(row)
 		if strings.Contains(joined, "Serialize Result") {
 			sawNewPlan = true
@@ -283,17 +283,17 @@ func TestQueryCachePublicationExplainLastQueryAndPlanNodes(t *testing.T) {
 		}
 	}
 	if !sawNewPlan {
-		t.Errorf("EXPLAIN LAST QUERY did not see the newly published plan; rows=%v", explain.Rows)
+		t.Errorf("EXPLAIN LAST QUERY did not see the newly published plan; rows=%v", explain.presentationRows())
 	}
 	if sawOldPlan {
-		t.Errorf("EXPLAIN LAST QUERY still showed the seed plan; rows=%v", explain.Rows)
+		t.Errorf("EXPLAIN LAST QUERY still showed the seed plan; rows=%v", explain.presentationRows())
 	}
 
 	show, err := (&ShowPlanNodeStatement{NodeID: 1}).Execute(t.Context(), session)
 	if err != nil {
 		t.Fatalf("SHOW PLAN NODE 1: %v", err)
 	}
-	if show == nil || len(show.Rows) == 0 || !strings.Contains(show.Rows[0][0].RawText(), "Scan") {
+	if show == nil || len(show.presentationRows()) == 0 || !strings.Contains(show.presentationRows()[0][0].RawText(), "Scan") {
 		t.Errorf("SHOW PLAN NODE 1 = %v, want cached Scan node from the new plan", show)
 	}
 

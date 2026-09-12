@@ -213,7 +213,7 @@ func (cs *CQLStatement) Execute(ctx context.Context, session *mycli.Session) (re
 		rows = append(rows, mycli.NewRow(rowStrs...))
 	}
 
-	result = &mycli.Result{TableHeader: mycli.NewTableHeader(headers...), Rows: rows, AffectedRows: len(rows)}
+	result = &mycli.Result{TableHeader: mycli.NewTableHeader(headers...), Body: mycli.PresentationBody(rows), AffectedRows: len(rows)}
 	return result, nil
 }
 

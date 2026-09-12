@@ -307,11 +307,10 @@ func TestPrintResult(t *testing.T) {
 					Display: DisplayVars{CLIFormat: enums.DisplayModeTable},
 				},
 				result: &Result{
-					TableHeader: toTableHeader("foo", "bar"),
-					Rows: []Row{
+					TableHeader: toTableHeader("foo", "bar"), Body: PresentationBody([]Row{
 						toRow("1", "2"),
 						toRow("3", "4"),
-					},
+					}),
 				},
 				want: strings.TrimPrefix(`
 +-----+-----+
@@ -328,11 +327,10 @@ func TestPrintResult(t *testing.T) {
 					Display: DisplayVars{CLIFormat: enums.DisplayModeTableComment},
 				},
 				result: &Result{
-					TableHeader: toTableHeader("foo", "bar"),
-					Rows: []Row{
+					TableHeader: toTableHeader("foo", "bar"), Body: PresentationBody([]Row{
 						toRow("1", "2"),
 						toRow("3", "4"),
-					},
+					}),
 				},
 				want: strings.TrimPrefix(`
 /*-----+-----+
@@ -355,11 +353,10 @@ func TestPrintResult(t *testing.T) {
 				},
 				input: "SELECT foo, bar\nFROM input;",
 				result: &Result{
-					TableHeader: toTableHeader("foo", "bar"),
-					Rows: []Row{
+					TableHeader: toTableHeader("foo", "bar"), Body: PresentationBody([]Row{
 						toRow("1", "2"),
 						toRow("3", "4"),
-					},
+					}),
 				},
 				want: "```sql" + `
 SELECT foo, bar
@@ -387,11 +384,10 @@ Empty set
 					TableHeader: toTableHeader(typector.MustNameCodeSlicesToStructTypeFields(
 						sliceOf("NAME", "LONG_NAME"),
 						sliceOf(sppb.TypeCode_STRING, sppb.TypeCode_STRING),
-					)),
-					Rows: sliceOf(
+					)), Body: PresentationBody(sliceOf(
 						toRow("1", "2"),
 						toRow("3", "4"),
-					),
+					)),
 				},
 				want: strings.TrimPrefix(`
 +--------+---------+
@@ -418,11 +414,10 @@ Empty set
 					TableHeader: toTableHeader(typector.MustNameCodeSlicesToStructTypeFields(
 						sliceOf("NAME", "LONG_NAME"),
 						sliceOf(sppb.TypeCode_STRING, sppb.TypeCode_STRING),
-					)),
-					Rows: sliceOf(
+					)), Body: PresentationBody(sliceOf(
 						toRow("1", "2"),
 						toRow("3", "4"),
-					),
+					)),
 				},
 				want: strings.TrimPrefix(`
 +--------+--------+
@@ -449,11 +444,10 @@ Empty set
 					TableHeader: toTableHeader(typector.MustNameCodeSlicesToStructTypeFields(
 						sliceOf("English", "Japanese"),
 						sliceOf(sppb.TypeCode_STRING, sppb.TypeCode_STRING),
-					)),
-					Rows: sliceOf(
+					)), Body: PresentationBody(sliceOf(
 						toRow("Hello World", "こんにちは"),
 						toRow("Bye", "さようなら"),
-					),
+					)),
 				},
 				want: strings.TrimPrefix(`
 +----------+------------+
@@ -495,11 +489,10 @@ Empty set
 	t.Run("DisplayModeVertical", func(t *testing.T) {
 		out := &bytes.Buffer{}
 		result := &Result{
-			TableHeader: toTableHeader("foo", "bar"),
-			Rows: sliceOf(
+			TableHeader: toTableHeader("foo", "bar"), Body: PresentationBody(sliceOf(
 				toRow("1", "2"),
 				toRow("3", "4"),
-			),
+			)),
 		}
 		err := printResult(&systemVariables{Display: DisplayVars{CLIFormat: enums.DisplayModeVertical}}, math.MaxInt, out, result, false)
 		if err != nil {
@@ -524,11 +517,10 @@ bar: 4
 	t.Run("DisplayModeTab", func(t *testing.T) {
 		out := &bytes.Buffer{}
 		result := &Result{
-			TableHeader: toTableHeader("foo", "bar"),
-			Rows: sliceOf(
+			TableHeader: toTableHeader("foo", "bar"), Body: PresentationBody(sliceOf(
 				toRow("1", "2"),
 				toRow("3", "4"),
-			),
+			)),
 		}
 		err := printResult(&systemVariables{Display: DisplayVars{CLIFormat: enums.DisplayModeTab}}, math.MaxInt, out, result, false)
 		if err != nil {
@@ -548,11 +540,10 @@ bar: 4
 	t.Run("DisplayModeTSV", func(t *testing.T) {
 		out := &bytes.Buffer{}
 		result := &Result{
-			TableHeader: toTableHeader("foo", "bar"),
-			Rows: sliceOf(
+			TableHeader: toTableHeader("foo", "bar"), Body: PresentationBody(sliceOf(
 				toRow("tab\there", "line\nbreak"),
 				toRow("back\\slash", "NULL"),
-			),
+			)),
 		}
 		err := printResult(&systemVariables{Display: DisplayVars{CLIFormat: enums.DisplayModeTSV}}, math.MaxInt, out, result, false)
 		if err != nil {
@@ -572,11 +563,10 @@ bar: 4
 	t.Run("SkipColumnNames with DisplayModeTable", func(t *testing.T) {
 		out := &bytes.Buffer{}
 		result := &Result{
-			TableHeader: toTableHeader("foo", "bar"),
-			Rows: sliceOf(
+			TableHeader: toTableHeader("foo", "bar"), Body: PresentationBody(sliceOf(
 				toRow("1", "2"),
 				toRow("3", "4"),
-			),
+			)),
 		}
 		err := printResult(&systemVariables{Display: DisplayVars{CLIFormat: enums.DisplayModeTable, SkipColumnNames: true}}, math.MaxInt, out, result, false)
 		if err != nil {
@@ -599,11 +589,10 @@ bar: 4
 	t.Run("SkipColumnNames with DisplayModeTab", func(t *testing.T) {
 		out := &bytes.Buffer{}
 		result := &Result{
-			TableHeader: toTableHeader("foo", "bar"),
-			Rows: sliceOf(
+			TableHeader: toTableHeader("foo", "bar"), Body: PresentationBody(sliceOf(
 				toRow("1", "2"),
 				toRow("3", "4"),
-			),
+			)),
 		}
 		err := printResult(&systemVariables{Display: DisplayVars{CLIFormat: enums.DisplayModeTab, SkipColumnNames: true}}, math.MaxInt, out, result, false)
 		if err != nil {
@@ -1544,8 +1533,7 @@ func TestCli_PrintResult(t *testing.T) {
 			desc:     "UsePager is false, simple result",
 			usePager: false,
 			result: &Result{
-				TableHeader: toTableHeader("col1"),
-				Rows:        []Row{toRow("foo")},
+				TableHeader: toTableHeader("col1"), Body: PresentationBody([]Row{toRow("foo")}),
 			},
 			interactive: false,
 			input:       "SELECT 'foo'",
@@ -1908,7 +1896,7 @@ func TestCli_PrintResult_invalidPagerCommand(t *testing.T) {
 	}
 	cli := &Cli{SystemVariables: sysVars}
 
-	result := &Result{TableHeader: toTableHeader("col1"), Rows: []Row{toRow("foo")}}
+	result := &Result{TableHeader: toTableHeader("col1"), Body: PresentationBody([]Row{toRow("foo")})}
 	err := cli.PrintResult(80, result, false, "", outBuf)
 	if err == nil || !strings.Contains(err.Error(), "invalid pager command") {
 		t.Fatalf("error = %v, want invalid pager command error", err)

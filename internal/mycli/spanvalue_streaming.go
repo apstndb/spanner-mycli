@@ -48,10 +48,9 @@ func executeStreamingSQLWithSpanvalueWriter(qe *queryExecution) (*Result, bool, 
 
 	fields, queryStats, queryPlan := rowIteratorResultParts(rowIterResult)
 	result := &Result{
-		Rows:             nil,
 		TableHeader:      toTableHeader(fields),
 		AffectedRows:     int(rowCount),
-		Streamed:         true,
+		Body:             DeliveredBody(),
 		SQLExportAllowed: qe.Render.ValueFmtMode == format.SQLLiteralValues,
 	}
 
@@ -84,10 +83,9 @@ func executeStreamingSQLWithSpanvalueProcessor(qe *queryExecution) (*Result, err
 
 	fields, queryStats, queryPlan := rowIteratorResultParts(rowIterResult)
 	result := &Result{
-		Rows:             nil,
 		TableHeader:      toTableHeader(fields),
 		AffectedRows:     int(rowCount),
-		Streamed:         true,
+		Body:             DeliveredBody(),
 		SQLExportAllowed: qe.Render.ValueFmtMode == format.SQLLiteralValues,
 	}
 

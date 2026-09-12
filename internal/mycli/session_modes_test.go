@@ -325,10 +325,10 @@ func TestAdminSessionStatementExecution(t *testing.T) {
 			t.Errorf("SHOW VARIABLES failed in admin session: %v", err)
 		} else if result == nil {
 			t.Error("SHOW VARIABLES returned nil result")
-		} else if result.Typed == nil {
+		} else if result.typedPayload() == nil {
 			t.Error("SHOW VARIABLES returned no typed rows")
 		} else {
-			t.Logf("SHOW VARIABLES returned %d rows", len(result.Typed.Rows))
+			t.Logf("SHOW VARIABLES returned %d rows", len(result.typedPayload().Rows))
 		}
 	})
 
@@ -351,8 +351,8 @@ func TestAdminSessionStatementExecution(t *testing.T) {
 			t.Errorf("SHOW VARIABLE failed in admin session: %v", err)
 		} else if result == nil {
 			t.Error("SHOW VARIABLE returned nil result")
-		} else if len(result.Rows) != 1 {
-			t.Errorf("Expected 1 row, got %d", len(result.Rows))
+		} else if len(result.presentationRows()) != 1 {
+			t.Errorf("Expected 1 row, got %d", len(result.presentationRows()))
 		}
 	})
 

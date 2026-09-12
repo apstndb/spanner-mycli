@@ -59,8 +59,8 @@ func TestExplainResultHeaderWidth(t *testing.T) {
 				if len(got) < 2 || !slices.Equal(got[:2], []string{"ID", tt.want}) {
 					t.Errorf("%s header = %v, want base [ID %s]", name, got, tt.want)
 				}
-				if len(result.Rows) != 3 {
-					t.Errorf("%s rows = %d, want 3", name, len(result.Rows))
+				if len(result.presentationRows()) != 3 {
+					t.Errorf("%s rows = %d, want 3", name, len(result.presentationRows()))
 				}
 				if !slices.Equal(result.ColumnAlign[:2], explainColumnAlign) {
 					t.Errorf("%s alignment changed", name)

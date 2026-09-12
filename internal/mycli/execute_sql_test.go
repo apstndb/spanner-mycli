@@ -644,7 +644,7 @@ func TestExecuteSQLBufferedAndStreamingEmptyResults(t *testing.T) {
 		if err != nil {
 			t.Fatalf("executeSQL: %v", err)
 		}
-		if result.Streamed {
+		if result.alreadyDelivered() {
 			t.Fatal("TABLE without a writer should buffer")
 		}
 		if result.AffectedRows != 0 {
@@ -671,7 +671,7 @@ func TestExecuteSQLBufferedAndStreamingEmptyResults(t *testing.T) {
 		if err != nil {
 			t.Fatalf("executeSQL: %v", err)
 		}
-		if !result.Streamed {
+		if !result.alreadyDelivered() {
 			t.Fatal("TAB with a writer should stream")
 		}
 		if result.AffectedRows != 0 {

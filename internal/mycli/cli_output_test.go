@@ -122,8 +122,7 @@ func TestPrintTableDataEdgeCases(t *testing.T) {
 			name: "HTML with nil header and empty rows",
 			mode: enums.DisplayModeHTML,
 			result: &Result{
-				TableHeader: nil,
-				Rows:        []Row{},
+				TableHeader: nil, Body: PresentationBody([]Row{}),
 			},
 			wantOutput: false,
 			wantError:  false, // Now we skip formatting for empty results
@@ -132,8 +131,7 @@ func TestPrintTableDataEdgeCases(t *testing.T) {
 			name: "XML with nil header and empty rows",
 			mode: enums.DisplayModeXML,
 			result: &Result{
-				TableHeader: nil,
-				Rows:        []Row{},
+				TableHeader: nil, Body: PresentationBody([]Row{}),
 			},
 			wantOutput: false,
 			wantError:  false, // Now we skip formatting for empty results
@@ -142,8 +140,7 @@ func TestPrintTableDataEdgeCases(t *testing.T) {
 			name: "HTML with empty column names but data rows",
 			mode: enums.DisplayModeHTML,
 			result: &Result{
-				TableHeader: nil,
-				Rows:        []Row{toRow("data")},
+				TableHeader: nil, Body: PresentationBody([]Row{toRow("data")}),
 			},
 			wantOutput: false,
 			wantError:  false, // Now we skip formatting for empty results
@@ -152,11 +149,10 @@ func TestPrintTableDataEdgeCases(t *testing.T) {
 			name: "Non-table mode with buffered data rows uses streaming formatter",
 			mode: enums.DisplayModeHTML,
 			result: &Result{
-				TableHeader: toTableHeader("列1", "列2"),
-				Rows: []Row{
+				TableHeader: toTableHeader("列1", "列2"), Body: PresentationBody([]Row{
 					toRow("データ1", "データ2"),
 					toRow("🌟", "🌙"),
-				},
+				}),
 			},
 			wantOutput: true,
 		},
@@ -191,8 +187,7 @@ func TestPrintTableDataStreamsBufferedRowsForNonTableModes(t *testing.T) {
 			name: "CSV",
 			mode: enums.DisplayModeCSV,
 			result: &Result{
-				TableHeader: toTableHeader("col1"),
-				Rows:        []Row{toRow("value")},
+				TableHeader: toTableHeader("col1"), Body: PresentationBody([]Row{toRow("value")}),
 			},
 			wantOutput: "col1\nvalue\n",
 		},
@@ -200,9 +195,9 @@ func TestPrintTableDataStreamsBufferedRowsForNonTableModes(t *testing.T) {
 			name: "SQL export without SQL literals falls back to table",
 			mode: enums.DisplayModeSQLInsert,
 			result: &Result{
-				TableHeader:      toTableHeader("col1"),
-				Rows:             []Row{toRow("value")},
-				SQLExportAllowed: false,
+				TableHeader: toTableHeader("col1"),
+
+				SQLExportAllowed: false, Body: PresentationBody([]Row{toRow("value")}),
 			},
 			wantOutput: "+-------+\n| col1  |\n+-------+\n| value |\n+-------+\n",
 		},
@@ -221,14 +216,13 @@ func TestPrintTableDataStreamsBufferedRowsForNonTableModes(t *testing.T) {
 	}
 }
 
-func TestPrintResultWritesRenderedOutput(t *testing.T) {
+func TestPrintResultWritesPreparedBody(t *testing.T) {
 	t.Parallel()
 
 	result := &Result{
-		TableHeader:    toTableHeader("col1"),
-		Rows:           []Row{toRow("should not be formatted")},
-		RenderedOutput: []byte("rendered output\n"),
-		AffectedRows:   1,
+		TableHeader:  toTableHeader("col1"),
+		AffectedRows: 1,
+		Body:         PreparedBody([]byte("rendered output\n")),
 	}
 	sysVars := &systemVariables{
 		Display: DisplayVars{CLIFormat: enums.DisplayModeTable},
@@ -243,8 +237,8 @@ func TestPrintResultWritesRenderedOutput(t *testing.T) {
 	if !strings.Contains(got, "rendered output\n") {
 		t.Fatalf("printResult() = %q, want rendered output", got)
 	}
-	if strings.Contains(got, "should not be formatted") {
-		t.Fatalf("printResult() formatted Rows despite RenderedOutput: %q", got)
+	if strings.Contains(got, "col1") {
+		t.Fatalf("printResult() formatted a table despite prepared body: %q", got)
 	}
 }
 
@@ -276,15 +270,14 @@ func TestSuppressResultLines(t *testing.T) {
 	// Create a standard test result for reuse
 	createTestResult := func() *Result {
 		return &Result{
-			Rows: []Row{
-				toRow("value1", "value2"),
-				toRow("value3", "value4"),
-			},
 			TableHeader:  toTableHeader("Column1", "Column2"),
 			AffectedRows: 2,
 			Stats: QueryStats{
 				ElapsedTime: "0.5 sec",
-			},
+			}, Body: PresentationBody([]Row{
+				toRow("value1", "value2"),
+				toRow("value3", "value4"),
+			}),
 		}
 	}
 
@@ -405,12 +398,11 @@ func TestSuppressResultLinesDMLAndDDL(t *testing.T) {
 			suppressResultLines: true,
 			interactive:         true,
 			result: &Result{
-				Rows:         []Row{},
 				TableHeader:  toTableHeader("Column1"),
 				AffectedRows: 0,
 				Stats: QueryStats{
 					ElapsedTime: "0.1 sec",
-				},
+				}, Body: PresentationBody([]Row{}),
 			},
 			expectedHasResult: false,
 		},

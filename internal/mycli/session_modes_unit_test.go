@@ -57,10 +57,10 @@ func TestDetachedSessionSystemVariables(t *testing.T) {
 			t.Errorf("SHOW VARIABLES failed: %v", err)
 		} else if result == nil {
 			t.Error("SHOW VARIABLES returned nil result")
-		} else if result.Typed == nil || len(result.Typed.Rows) == 0 {
+		} else if result.typedPayload() == nil || len(result.typedPayload().Rows) == 0 {
 			t.Error("SHOW VARIABLES returned no rows")
 		} else {
-			t.Logf("SHOW VARIABLES returned %d rows successfully", len(result.Typed.Rows))
+			t.Logf("SHOW VARIABLES returned %d rows successfully", len(result.typedPayload().Rows))
 		}
 	})
 
@@ -80,10 +80,10 @@ func TestDetachedSessionSystemVariables(t *testing.T) {
 			t.Errorf("SHOW PARAMS failed: %v", err)
 		} else if result == nil {
 			t.Error("SHOW PARAMS returned nil result")
-		} else if result.Typed == nil {
+		} else if result.typedPayload() == nil {
 			t.Error("SHOW PARAMS returned no typed rows")
 		} else {
-			t.Logf("SHOW PARAMS returned %d rows successfully", len(result.Typed.Rows))
+			t.Logf("SHOW PARAMS returned %d rows successfully", len(result.typedPayload().Rows))
 		}
 	})
 }

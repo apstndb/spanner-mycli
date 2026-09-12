@@ -41,7 +41,7 @@ func (s *ShowCreateStatement) Execute(ctx context.Context, session *Session) (*R
 
 	result := &Result{
 		TableHeader:  toTableHeader("Name", "DDL"),
-		Rows:         rows,
+		Body:         PresentationBody(rows),
 		AffectedRows: len(rows),
 	}
 
@@ -135,7 +135,7 @@ func (s *ShowDdlsStatement) Execute(ctx context.Context, session *Session) (*Res
 		KeepVariables: true,
 		// intentionally empty column name to make TAB format valid DDL
 		TableHeader: toTableHeader(""),
-		Rows:        sliceOf(toRow(strings.Join(slices.Collect(loi.Map(slices.Values(resp.GetStatements()), func(s string) string { return s + ";\n" })), ""))),
+		Body:        PresentationBody(sliceOf(toRow(strings.Join(slices.Collect(loi.Map(slices.Values(resp.GetStatements()), func(s string) string { return s + ";\n" })), "")))),
 	}, nil
 }
 
@@ -176,7 +176,7 @@ func executeInformationSchemaBasedStatementImpl(ctx context.Context, session *Se
 		// Pre-render only column names when forceVerbose is false
 		TableHeader:  lo.Ternary[TableHeader](forceVerbose, tableHeader, toTableHeader(extractTableColumnNames(tableHeader))),
 		ForceVerbose: forceVerbose,
-		Rows:         rows,
+		Body:         PresentationBody(rows),
 		AffectedRows: len(rows),
 	}, nil
 }

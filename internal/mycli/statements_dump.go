@@ -184,7 +184,11 @@ func prepareDumpSchema(ctx context.Context, session *Session) (*dumpPlan, error)
 	if err != nil {
 		return nil, fmt.Errorf("export DDL: %w", err)
 	}
-	return &dumpPlan{DDL: ddlResult.RenderedOutput}, nil
+	ddl, ok := ddlResult.Body.PreparedBytes()
+	if !ok {
+		return nil, fmt.Errorf("export DDL returned no prepared body")
+	}
+	return &dumpPlan{DDL: ddl}, nil
 }
 
 func prepareDumpWithTxn(ctx context.Context, session *Session, mode dumpMode, specificTables []tableID, txn *spanner.ReadOnlyTransaction, dro *sppb.DirectedReadOptions) (*dumpPlan, error) {
@@ -278,7 +282,7 @@ func executeDumpBufferedWithTxn(ctx context.Context, session *Session, mode dump
 	if err != nil {
 		return nil, err
 	}
-	return &Result{AffectedRows: affectedRows, RenderedOutput: out.Bytes()}, nil
+	return &Result{AffectedRows: affectedRows, Body: PreparedBody(out.Bytes())}, nil
 }
 
 // executeDumpStreamingWithTxn writes dump output directly to out.
@@ -289,7 +293,7 @@ func executeDumpStreamingWithTxn(ctx context.Context, session *Session, mode dum
 	if err != nil {
 		return nil, err
 	}
-	return &Result{AffectedRows: affectedRows, Streamed: true}, nil
+	return &Result{AffectedRows: affectedRows, Body: DeliveredBody()}, nil
 }
 
 // writeDumpPlanTo writes a prepared plan to out. Its caller chooses whether
@@ -358,7 +362,7 @@ func writeDumpPlanTo(ctx context.Context, session *Session, mode dumpMode, plan 
 
 // exportDDL exports database DDL statements as pre-rendered text (kind (d)).
 // Each statement is terminated with ';' and followed by a blank line, matching
-// the previous per-row rendering; callers write Result.RenderedOutput directly.
+// the previous per-row rendering; callers write the prepared body bytes directly.
 func exportDDL(ctx context.Context, session *Session) (*Result, error) {
 	ddl, err := session.GetDatabaseDdlFresh(ctx)
 	if err != nil {
@@ -368,7 +372,7 @@ func exportDDL(ctx context.Context, session *Session) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Result{RenderedOutput: rendered}, nil
+	return &Result{Body: PreparedBody(rendered)}, nil
 }
 
 func renderDDLStatements(statements []string) []byte {

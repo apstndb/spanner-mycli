@@ -155,8 +155,9 @@ func TestBigQueryExecuteFakeClient(t *testing.T) {
 	if gotNames := got.TableHeader.Render(false); len(gotNames) != 1 || gotNames[0] != "col" {
 		t.Errorf("headers = %v, want [col]", gotNames)
 	}
-	if len(got.Rows) != 1 || len(got.Rows[0]) != 1 || got.Rows[0][0].RawText() != "hello" {
-		t.Errorf("rows = %#v, want hello", got.Rows)
+	rows, ok := got.Body.PresentationRows()
+	if !ok || len(rows) != 1 || len(rows[0]) != 1 || rows[0][0].RawText() != "hello" {
+		t.Errorf("rows = %#v, want hello", rows)
 	}
 	if !strings.Contains(gotPath, "/projects/bq-project/queries") {
 		t.Errorf("request path = %q, want jobs.query", gotPath)
