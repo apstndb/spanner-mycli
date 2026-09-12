@@ -1,8 +1,8 @@
 package mycli
 
 import (
-	"context"
-	"fmt"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"cloud.google.com/go/spanner"
@@ -344,67 +344,128 @@ func TestTransactionHelperErrorHandling(t *testing.T) {
 	}
 }
 
-func TestTransactionValidation(t *testing.T) {
+func TestBeginPendingTransactionRejectsExistingContext(t *testing.T) {
 	t.Parallel()
+
 	tests := []struct {
 		name    string
-		setupTC func() *transactionContext
-		wantErr bool
+		setupTC func(closed *bool) *transactionContext
+		wantErr string
 	}{
 		{
-			name:    "no transaction",
-			setupTC: func() *transactionContext { return nil },
-			wantErr: false,
+			name:    "idle to pending succeeds",
+			setupTC: func(*bool) *transactionContext { return nil },
 		},
 		{
-			name: "pending transaction",
-			setupTC: func() *transactionContext {
+			name: "pending to pending fails without replacing",
+			setupTC: func(closed *bool) *transactionContext {
 				return &transactionContext{
-					attrs: transactionAttributes{mode: transactionModePending},
+					attrs: transactionAttributes{
+						mode:           transactionModePending,
+						tag:            "pending-tag",
+						priority:       sppb.RequestOptions_PRIORITY_LOW,
+						isolationLevel: sppb.TransactionOptions_REPEATABLE_READ,
+					},
+					heartbeatCancel: func() { *closed = true },
 				}
 			},
-			wantErr: false, // Pending transactions are allowed for new transactions
+			wantErr: "pending transaction is already running",
 		},
 		{
-			name: "read-write transaction",
-			setupTC: func() *transactionContext {
+			name: "read-write to pending fails without replacing or closing",
+			setupTC: func(closed *bool) *transactionContext {
 				return &transactionContext{
-					attrs: transactionAttributes{mode: transactionModeReadWrite},
+					attrs: transactionAttributes{
+						mode:           transactionModeReadWrite,
+						tag:            "rw-tag",
+						priority:       sppb.RequestOptions_PRIORITY_HIGH,
+						isolationLevel: sppb.TransactionOptions_SERIALIZABLE,
+					},
+					heartbeatCancel: func() { *closed = true },
 				}
 			},
-			wantErr: true,
+			wantErr: "read-write transaction is already running",
 		},
 		{
-			name: "read-only transaction",
-			setupTC: func() *transactionContext {
+			name: "read-only to pending fails without replacing or closing",
+			setupTC: func(closed *bool) *transactionContext {
 				return &transactionContext{
-					attrs: transactionAttributes{mode: transactionModeReadOnly},
+					attrs: transactionAttributes{
+						mode:           transactionModeReadOnly,
+						tag:            "ro-tag",
+						priority:       sppb.RequestOptions_PRIORITY_MEDIUM,
+						isolationLevel: sppb.TransactionOptions_SERIALIZABLE,
+					},
+					heartbeatCancel: func() { *closed = true },
 				}
 			},
-			wantErr: true,
+			wantErr: "read-only transaction is already running",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tm := &TransactionManager{
-				tc: tt.setupTC(),
-			}
-
-			// Test validation through TransitTransaction which now handles validation
-			err := tm.TransitTransaction(context.Background(), func(tc *transactionContext) (*transactionContext, error) {
-				// Check if we can start a new transaction
-				if tc != nil && (tc.attrs.mode == transactionModeReadWrite || tc.attrs.mode == transactionModeReadOnly) {
-					return nil, fmt.Errorf("%s transaction is already running", tc.attrs.mode)
+			t.Parallel()
+			var closed bool
+			existing := tt.setupTC(&closed)
+			tm := &TransactionManager{tc: existing}
+			err := tm.BeginPendingTransaction(t.Context(), sppb.TransactionOptions_SERIALIZABLE, sppb.RequestOptions_PRIORITY_HIGH)
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("BeginPendingTransaction() error = %v", err)
 				}
-				// Return existing context (no actual transition for this test)
-				return tc, nil
-			})
-
-			if (err != nil) != tt.wantErr {
-				t.Errorf("TransitTransaction validation error = %v, wantErr %v", err, tt.wantErr)
+				attrs := tm.TransactionAttrsWithLock()
+				if attrs.mode != transactionModePending {
+					t.Errorf("mode = %q, want pending", attrs.mode)
+				}
+				if attrs.priority != sppb.RequestOptions_PRIORITY_HIGH {
+					t.Errorf("priority = %v, want HIGH", attrs.priority)
+				}
+				if attrs.isolationLevel != sppb.TransactionOptions_SERIALIZABLE {
+					t.Errorf("isolation = %v, want SERIALIZABLE", attrs.isolationLevel)
+				}
+				return
+			}
+			if err == nil || err.Error() != tt.wantErr {
+				t.Fatalf("error = %v, want %q", err, tt.wantErr)
+			}
+			if tm.tc != existing {
+				t.Fatal("existing transaction context was replaced")
+			}
+			if closed {
+				t.Error("existing transaction context was closed")
+			}
+			if existing != nil {
+				if tm.tc.attrs.tag != existing.attrs.tag ||
+					tm.tc.attrs.priority != existing.attrs.priority ||
+					tm.tc.attrs.isolationLevel != existing.attrs.isolationLevel ||
+					tm.tc.attrs.mode != existing.attrs.mode {
+					t.Errorf("existing options/tags changed: %+v", tm.tc.attrs)
+				}
 			}
 		})
+	}
+}
+
+func TestBeginPendingTransactionConcurrent(t *testing.T) {
+	t.Parallel()
+
+	tm := &TransactionManager{}
+	var success atomic.Int32
+	var wg sync.WaitGroup
+	for range 32 {
+		wg.Go(func() {
+			if err := tm.BeginPendingTransaction(t.Context(), sppb.TransactionOptions_SERIALIZABLE, sppb.RequestOptions_PRIORITY_HIGH); err == nil {
+				success.Add(1)
+			}
+		})
+	}
+	wg.Wait()
+	if got := success.Load(); got != 1 {
+		t.Fatalf("concurrent BEGIN published %d contexts, want 1", got)
+	}
+	if attrs := tm.TransactionAttrsWithLock(); attrs.mode != transactionModePending {
+		t.Errorf("mode = %q, want pending", attrs.mode)
 	}
 }
 
