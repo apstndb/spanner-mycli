@@ -217,6 +217,14 @@ func TestExecuteDdlStatementsRPC(t *testing.T) {
 
 		waitForClosed(t, guard, server.accepted, "accepted UpdateDatabaseDdl")
 		waitForClosed(t, guard, server.polled, "first GetOperation poll")
+		// The fake has served GetOperation. Wait until executeDdlStatements has
+		// left op.Poll and blocked in the wait-loop select before canceling.
+		// This is not a production deadline; cancel remains explicit.
+		select {
+		case err := <-errc:
+			t.Fatalf("executeDdlStatements returned before wait-loop cancel: %v", err)
+		case <-time.After(100 * time.Millisecond):
+		}
 		cancel()
 
 		var err error
