@@ -76,8 +76,7 @@ func (d *varDef) resettable() bool {
 // significant (listings sort by name); it mirrors the historical grouping for
 // readability.
 //
-// Note: COMMIT_RESPONSE and CLI_DIRECT_READ require special handling outside
-// the registry (see system_variables_registry.go).
+// Note: COMMIT_RESPONSE is a multi-valued registry def (GetMulti).
 var varDefs = []varDef{
 	{
 		name:  "CLI_DUMP_CYCLIC_MODE",
@@ -108,6 +107,32 @@ var varDefs = []varDef{
 		scope:    scopeSession,
 		txnGuard: true,
 		bind:     func(sv *systemVariables) Variable { return BoolVar(&sv.Transaction.ReadOnly) },
+	},
+	{
+		name:     "DIRECTED_READ",
+		desc:     "Directed read options for supported read-only queries, as replica_location or replica_location:READ_ONLY|READ_WRITE. Empty string clears. SET is rejected while a transaction is pending or active; SET LOCAL is not supported. Not applied to read-write queries, DML, heartbeat, or partitioned DML. This is not JDBC protobuf JSON.",
+		scope:    scopeSession,
+		txnGuard: true,
+		noLocal:  true,
+		bind: func(sv *systemVariables) Variable {
+			return &CustomVar{
+				customGetter: func() (string, error) {
+					return formatDirectedReadOption(sv.Query.DirectedRead), nil
+				},
+				customSetter: func(value string) error {
+					if strings.TrimSpace(value) == "" {
+						sv.Query.DirectedRead = nil
+						return nil
+					}
+					parsed, err := parseDirectedReadOption(value)
+					if err != nil {
+						return err
+					}
+					sv.Query.DirectedRead = parsed
+					return nil
+				},
+			}
+		},
 	},
 	{
 		name:  "AUTO_PARTITION_MODE",

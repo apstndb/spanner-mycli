@@ -84,7 +84,7 @@ func catalogInterleaveParent(t *testing.T, session *Session, selected []tableID,
 	t.Helper()
 	dr := NewDependencyResolver()
 	err := session.txn.withReadOnlyTransactionOrStart(t.Context(), func(txn *spanner.ReadOnlyTransaction) error {
-		return dr.BuildDependencyGraphWithTxn(t.Context(), txn)
+		return dr.BuildDependencyGraphWithTxn(t.Context(), txn, nil)
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -365,7 +365,7 @@ func TestDumpCatalogCrossSchemaFKAndView(t *testing.T) {
 
 	err := session.txn.withReadOnlyTransactionOrStart(t.Context(), func(txn *spanner.ReadOnlyTransaction) error {
 		dr := NewDependencyResolver()
-		if err := dr.BuildDependencyGraphWithTxn(t.Context(), txn); err != nil {
+		if err := dr.BuildDependencyGraphWithTxn(t.Context(), txn, nil); err != nil {
 			return err
 		}
 		alpha := dr.tables[tidn("Alpha", "Child")]
@@ -419,7 +419,7 @@ func TestDumpPlanSkipsNoWritableColumns(t *testing.T) {
 	var result *Result
 	err := session.txn.withReadOnlyTransactionOrStart(t.Context(), func(txn *spanner.ReadOnlyTransaction) error {
 		var err error
-		result, err = executeDumpBufferedWithTxn(t.Context(), session, dumpModeTables, plan, txn)
+		result, err = executeDumpBufferedWithTxn(t.Context(), session, dumpModeTables, plan, txn, nil)
 		return err
 	})
 	if err != nil {

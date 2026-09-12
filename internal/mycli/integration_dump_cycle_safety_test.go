@@ -642,7 +642,7 @@ func TestDumpCyclicMutateNoWritableColumns(t *testing.T) {
 	check := func(wantPopulated bool) {
 		t.Helper()
 		err := session.txn.withReadOnlyTransactionOrStart(t.Context(), func(txn *spanner.ReadOnlyTransaction) error {
-			data, err := prepareDumpCyclicData(t.Context(), session, txn, []dumpTablePlan{{ID: tid("T")}}, &dumpCyclicBudget{limit: 64 << 20})
+			data, err := prepareDumpCyclicData(t.Context(), session, txn, []dumpTablePlan{{ID: tid("T")}}, &dumpCyclicBudget{limit: 64 << 20}, nil)
 			if wantPopulated {
 				if err == nil || !strings.Contains(err.Error(), "populated cyclic DUMP table T has no writable columns") {
 					t.Fatalf("got %v, want populated-table rejection", err)
