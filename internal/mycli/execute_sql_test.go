@@ -76,10 +76,11 @@ func TestSQLLiteralFormatConfigFloat32(t *testing.T) {
 				sv := newSystemVariablesWithDefaults()
 				sv.Display.CLIFormat = mode
 				sv.Display.SQLTableName = "Values"
-				streaming, _, _, err := prepareFormatConfig("SELECT V FROM Values", &sv)
+				render, err := prepareFormatConfig("SELECT V FROM Values", &sv, queryRenderingFrom(&sv))
 				if err != nil {
 					t.Fatal(err)
 				}
+				streaming := render.Spanvalue
 				buffered, _, err := typedReplayFormatConfig(&sv)
 				if err != nil {
 					t.Fatal(err)
@@ -112,4 +113,67 @@ func TestSQLLiteralFormatConfigInvalidFloat32(t *testing.T) {
 	if _, err := config.FormatToplevelColumn(value); err == nil {
 		t.Fatal("expected invalid FLOAT32 error")
 	}
+}
+
+func TestPrepareFormatConfigSQLExportTableName(t *testing.T) {
+	t.Parallel()
+
+	t.Run("auto-detect fills render only", func(t *testing.T) {
+		t.Parallel()
+		sv := newSystemVariablesWithDefaults()
+		sv.Display.CLIFormat = enums.DisplayModeSQLInsert
+		sv.Display.SQLTableName = ""
+		sv.LastResult.QueryCache = seedQueryCacheA()
+		origRegistry := sv.Registry
+
+		render, err := prepareFormatConfig("SELECT * FROM Users", &sv, queryRenderingFrom(&sv))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if render.Export.SQLTableName != "Users" {
+			t.Errorf("render SQLTableName = %q, want Users", render.Export.SQLTableName)
+		}
+		if sv.Display.SQLTableName != "" {
+			t.Errorf("live SQLTableName = %q, want empty", sv.Display.SQLTableName)
+		}
+		if sv.LastResult.QueryCache == nil || sv.LastResult.QueryCache.QueryStats["query"] != "A" {
+			t.Error("live QueryCache mutated")
+		}
+		if sv.Registry != origRegistry {
+			t.Error("live Registry pointer changed")
+		}
+	})
+
+	t.Run("explicit name wins over auto-detect", func(t *testing.T) {
+		t.Parallel()
+		sv := newSystemVariablesWithDefaults()
+		sv.Display.CLIFormat = enums.DisplayModeSQLInsert
+		sv.Display.SQLTableName = "Explicit"
+		render, err := prepareFormatConfig("SELECT * FROM Users", &sv, queryRenderingFrom(&sv))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if render.Export.SQLTableName != "Explicit" {
+			t.Errorf("render SQLTableName = %q, want Explicit", render.Export.SQLTableName)
+		}
+		if sv.Display.SQLTableName != "Explicit" {
+			t.Errorf("live SQLTableName = %q, want Explicit", sv.Display.SQLTableName)
+		}
+	})
+
+	t.Run("failed auto-detect does not fail the query", func(t *testing.T) {
+		t.Parallel()
+		sv := newSystemVariablesWithDefaults()
+		sv.Display.CLIFormat = enums.DisplayModeSQLInsert
+		render, err := prepareFormatConfig("SELECT 1", &sv, queryRenderingFrom(&sv))
+		if err != nil {
+			t.Fatalf("prepareFormatConfig: %v", err)
+		}
+		if render.Export.SQLTableName != "" {
+			t.Errorf("render SQLTableName = %q, want empty", render.Export.SQLTableName)
+		}
+		if sv.Display.SQLTableName != "" {
+			t.Errorf("live SQLTableName = %q, want empty", sv.Display.SQLTableName)
+		}
+	})
 }

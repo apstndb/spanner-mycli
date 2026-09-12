@@ -19,7 +19,8 @@ import (
 )
 
 func runPartitionedQuery(ctx context.Context, session *Session, sql string) (*Result, error) {
-	fc, vfm, sysVars, err := prepareFormatConfig(sql, session.systemVariables)
+	sysVars := session.systemVariables
+	render, err := prepareFormatConfig(sql, sysVars, queryRenderingFrom(sysVars))
 	if err != nil {
 		return nil, err
 	}
@@ -44,7 +45,7 @@ func runPartitionedQuery(ctx context.Context, session *Session, sql string) (*Re
 
 	// Formats backed by a spanvalue RowIteratorWriter (CSV, JSONL, SQL_INSERT*)
 	// stream merged partition rows without buffering, like the query path.
-	result, handled, err := streamPartitionedQuery(ctx, session.outputWriter(), batchROTx, partitions, parallelism, sysVars, fc, vfm)
+	result, handled, err := streamPartitionedQuery(ctx, session.outputWriter(), batchROTx, partitions, parallelism, render.Export, render.Spanvalue, render.ValueFmtMode)
 	if err != nil {
 		return nil, err
 	}
@@ -52,7 +53,7 @@ func runPartitionedQuery(ctx context.Context, session *Session, sql string) (*Re
 		return result, nil
 	}
 
-	return bufferPartitionedQuery(ctx, batchROTx, partitions, parallelism, vfm)
+	return bufferPartitionedQuery(ctx, batchROTx, partitions, parallelism, render.ValueFmtMode)
 }
 
 // streamPartitionedQuery streams merged partition rows through the same
@@ -65,11 +66,11 @@ func streamPartitionedQuery(
 	batchROTx *spanner.BatchReadOnlyTransaction,
 	partitions []*spanner.Partition,
 	parallelism int,
-	sysVars *systemVariables,
+	opts exportWriterOptions,
 	fc *spanvalue.FormatConfig,
 	vfm format.ValueFormatMode,
 ) (*Result, bool, error) {
-	w, handled, err := newSpanvalueRowIteratorWriterFor(out, exportWriterOptionsFrom(sysVars), fc)
+	w, handled, err := newSpanvalueRowIteratorWriterFor(out, opts, fc)
 	if err != nil || !handled {
 		return nil, handled, err
 	}
