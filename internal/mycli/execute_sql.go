@@ -37,9 +37,10 @@ func effectiveQueryMode(userMode *sppb.ExecuteSqlRequest_QueryMode) sppb.Execute
 	}
 }
 
-// executeSQLWithFormatAndTxn executes SQL with specific format settings and within a given transaction.
-// This is for use within withReadOnlyTransaction callbacks where we already have a transaction.
-func executeSQLWithFormatAndTxn(ctx context.Context, session *Session, txn *spanner.ReadOnlyTransaction, sql string, format enums.DisplayMode, streamingMode enums.StreamingMode, sqlTableName string) (*Result, error) {
+// executeSQLWithFormatAndTxn executes SQL with specific format settings and
+// within a given transaction. out, when non-nil, is the explicit destination
+// for streaming output instead of the session's statement-level destination.
+func executeSQLWithFormatAndTxn(ctx context.Context, session *Session, txn *spanner.ReadOnlyTransaction, sql string, format enums.DisplayMode, streamingMode enums.StreamingMode, sqlTableName string, out io.Writer) (*Result, error) {
 	// Create a copy of the system variables for this specific execution
 	tempVars := *session.systemVariables
 
@@ -54,7 +55,7 @@ func executeSQLWithFormatAndTxn(ctx context.Context, session *Session, txn *span
 	tempVars.Display.EnableProgressBar = false
 
 	// Execute with the transaction directly
-	return executeSQLImplWithTxn(ctx, session, txn, sql, &tempVars)
+	return executeSQLImplWithTxn(ctx, session, txn, sql, &tempVars, out)
 }
 
 func executeSQL(ctx context.Context, session *Session, sql string) (*Result, error) {
@@ -157,6 +158,7 @@ func finalizeMetrics(m *metrics.ExecutionMetrics, sysVars *systemVariables) {
 // avoiding 9+ individual parameters through executeAndCollect and its downstream functions.
 type queryExecution struct {
 	Session      *Session
+	Output       io.Writer
 	Iter         *spanner.RowIterator
 	ReadOnlyTxn  *spanner.ReadOnlyTransaction
 	FormatConfig *spanvalue.FormatConfig
@@ -165,6 +167,13 @@ type queryExecution struct {
 	Metrics      *metrics.ExecutionMetrics
 	ValueFmtMode format.ValueFormatMode
 	Processor    RowProcessor // set by executeAndCollect after decideExecutionMode
+}
+
+func (qe *queryExecution) outputWriter() io.Writer {
+	if qe.Output != nil {
+		return qe.Output
+	}
+	return qe.Session.outputWriter()
 }
 
 // executeAndCollect runs the query iterator (streaming or buffered) and attaches metrics to the result.
@@ -201,7 +210,7 @@ func executeAndCollect(ctx context.Context, qe *queryExecution) (*Result, error)
 
 // executeSQLImplWithTxn executes SQL with specific system variables and within a given transaction.
 // This is for use when we have a specific transaction to use.
-func executeSQLImplWithTxn(ctx context.Context, session *Session, txn *spanner.ReadOnlyTransaction, sql string, sysVars *systemVariables) (*Result, error) {
+func executeSQLImplWithTxn(ctx context.Context, session *Session, txn *spanner.ReadOnlyTransaction, sql string, sysVars *systemVariables, out io.Writer) (*Result, error) {
 	m := newMetrics(sysVars)
 
 	fc, vfm, sysVars, err := prepareFormatConfig(sql, sysVars)
@@ -224,6 +233,7 @@ func executeSQLImplWithTxn(ctx context.Context, session *Session, txn *spanner.R
 
 	return executeAndCollect(ctx, &queryExecution{
 		Session:      session,
+		Output:       out,
 		Iter:         iter,
 		ReadOnlyTxn:  txn,
 		FormatConfig: fc,
@@ -321,9 +331,9 @@ func executeSQLImplWithQueryRunner(ctx context.Context, session *Session, sql st
 // RowProcessor: executeStreamingSQLWithSpanvalueWriter creates and validates
 // the writer itself.
 func decideExecutionMode(qe *queryExecution) (bool, RowProcessor, error) {
-	// The per-statement output destination (respects tee/redirect settings
-	// and the MCP handler's capture buffer).
-	outStream := qe.Session.outputWriter()
+	// The explicit operation destination takes precedence over the statement
+	// destination, which respects tee/redirect settings and MCP capture.
+	outStream := qe.outputWriter()
 	if outStream == nil {
 		return false, nil, nil
 	}

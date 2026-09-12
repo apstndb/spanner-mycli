@@ -1,7 +1,8 @@
 package mycli
 
 import (
-	"bytes"
+	"errors"
+	"io"
 	"testing"
 
 	dbadminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
@@ -45,55 +46,21 @@ func TestBuildSelectQueryWithColumns(t *testing.T) {
 	}
 }
 
-func TestWriteCapturedDumpOutput(t *testing.T) {
+func TestExecuteDumpStreamingWithTxnPropagatesDDLWriteError(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name   string
-		output string
-		want   string
-	}{
-		{
-			name:   "empty output stays empty",
-			output: "",
-			want:   "",
-		},
-		{
-			name:   "missing trailing newline is added",
-			output: "INSERT INTO Singers VALUES (1)",
-			want:   "INSERT INTO Singers VALUES (1)\n",
-		},
-		{
-			name:   "single trailing newline is preserved",
-			output: "INSERT INTO Singers VALUES (1)\n",
-			want:   "INSERT INTO Singers VALUES (1)\n",
-		},
-		{
-			name:   "extra trailing newlines are collapsed",
-			output: "INSERT INTO Singers VALUES (1)\n\n",
-			want:   "INSERT INTO Singers VALUES (1)\n",
-		},
-		{
-			name:   "internal blank lines are preserved",
-			output: "INSERT INTO Singers VALUES (1)\n\nINSERT INTO Singers VALUES (2)\n",
-			want:   "INSERT INTO Singers VALUES (1)\n\nINSERT INTO Singers VALUES (2)\n",
-		},
-		{
-			name:   "only newlines collapse to one newline",
-			output: "\n\n",
-			want:   "\n",
-		},
+	session := newDetachedTestSession(io.Discard)
+	t.Cleanup(session.Close)
+	want := errors.New("output failed")
+	result, err := executeDumpStreamingWithTxn(
+		t.Context(), session, dumpModeSchema,
+		&dumpPlan{DDL: []byte("CREATE TABLE T (Id INT64) PRIMARY KEY(Id);\n")},
+		dumpFailWriter{err: want}, nil,
+	)
+	if result != nil {
+		t.Fatalf("result = %#v, want nil", result)
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var buf bytes.Buffer
-			if err := writeCapturedDumpOutput(&buf, tt.output); err != nil {
-				t.Fatalf("writeCapturedDumpOutput() error = %v", err)
-			}
-			if got := buf.String(); got != tt.want {
-				t.Fatalf("writeCapturedDumpOutput() = %q, want %q", got, tt.want)
-			}
-		})
+	if !errors.Is(err, want) {
+		t.Fatalf("error = %v, want wrapped %v", err, want)
 	}
 }

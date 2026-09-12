@@ -548,6 +548,17 @@ func TestDumpWithGeneratedColumns(t *testing.T) {
 	if diff := cmp.Diff(expectedOutput, dumpRenderedOutputForTest(t, result)); diff != "" {
 		t.Errorf("DUMP output mismatch (-want +got):\n%s", diff)
 	}
+
+	streamedResult, streamedOutput, err := executeSQLExportForTest(t, ctx, session, "DUMP TABLES Users")
+	if err != nil {
+		t.Fatalf("streamed DUMP TABLES failed: %v", err)
+	}
+	if !streamedResult.Streamed {
+		t.Fatal("expected streamed DUMP")
+	}
+	if diff := cmp.Diff(expectedOutput, streamedOutput); diff != "" {
+		t.Errorf("streamed DUMP output mismatch (-want +got):\n%s", diff)
+	}
 }
 
 func TestDumpFloat32NegativeZeroReplay(t *testing.T) {
