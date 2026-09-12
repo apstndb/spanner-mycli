@@ -42,6 +42,22 @@ func mustGetVar(t *testing.T, session *Session, name string) string {
 	return value
 }
 
+func txnContext(tm *TransactionManager) *transactionContext {
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+	return tm.tc
+}
+
+func outstandingLocalUndo(tm *TransactionManager) int {
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+	n := len(tm.pendingLocalVarRestore)
+	if tm.tc != nil {
+		n += len(tm.tc.localVarUndo)
+	}
+	return n
+}
+
 func TestSetLocalRequiresTransaction(t *testing.T) {
 	t.Parallel()
 	session := newSessionForLocalVarTest(t)
@@ -343,11 +359,11 @@ func TestSessionCloseRestoresOutstandingLocal(t *testing.T) {
 		if got := mustGetVar(t, session, "CLI_FORMAT"); got != "JSONL" {
 			t.Fatalf("Close lost session SET CLI_FORMAT: %q", got)
 		}
-		if n := len(session.txn.localVarUndo); n != 0 {
+		if n := outstandingLocalUndo(session.txn); n != 0 {
 			t.Fatalf("Close left %d stale undo entries", n)
 		}
 		session.Close()
-		if n := len(session.txn.localVarUndo); n != 0 {
+		if n := outstandingLocalUndo(session.txn); n != 0 {
 			t.Fatalf("repeated Close left %d undo entries", n)
 		}
 		if got := mustGetVar(t, session, "CLI_FORMAT"); got != "JSONL" {
@@ -372,7 +388,7 @@ func TestSessionCloseRestoresOutstandingLocal(t *testing.T) {
 		if got := mustGetVar(t, session, "CLI_FORMAT"); got != "JSONL" {
 			t.Fatalf("Close left LOCAL over session SET: %q", got)
 		}
-		if n := len(session.txn.localVarUndo); n != 0 {
+		if n := outstandingLocalUndo(session.txn); n != 0 {
 			t.Fatalf("Close left %d stale undo entries", n)
 		}
 	})
@@ -410,7 +426,7 @@ func TestOrdinarySetSurvivesAutomaticQueryAbort(t *testing.T) {
 	if session.txn.InTransaction() {
 		t.Fatal("query abort left an active transaction")
 	}
-	if n := len(session.txn.localVarUndo); n != 0 {
+	if n := outstandingLocalUndo(session.txn); n != 0 {
 		t.Fatalf("query abort left %d stale undo entries", n)
 	}
 	if got := mustGetVar(t, session, "CLI_PROMPT"); got != wantPrompt {
@@ -432,7 +448,7 @@ func TestOrdinarySetSurvivesAutomaticQueryAbort(t *testing.T) {
 	if session.txn.InTransaction() {
 		t.Fatal("later ROLLBACK left an active transaction")
 	}
-	if n := len(session.txn.localVarUndo); n != 0 {
+	if n := outstandingLocalUndo(session.txn); n != 0 {
 		t.Fatalf("later transaction left %d undo entries", n)
 	}
 	if got := mustGetVar(t, session, "CLI_VERBOSE"); got != "FALSE" {
@@ -466,6 +482,136 @@ func TestSetLocalTypeStylesRestoreDerivedState(t *testing.T) {
 	}
 	if session.systemVariables.typeStyles[sppb.TypeCode_STRING] != wantDerived {
 		t.Fatal("derived typeStyles not restored on LOCAL rollback")
+	}
+}
+
+func TestSetLocalOwnerADoesNotRestoreIntoB(t *testing.T) {
+	t.Parallel()
+	session := newSessionForLocalVarTest(t)
+	ctx := t.Context()
+	wantPrompt := mustGetVar(t, session, "CLI_PROMPT")
+
+	if _, err := session.ExecuteStatement(ctx, &BeginStatement{}); err != nil {
+		t.Fatal(err)
+	}
+	ownerA := txnContext(session.txn)
+	if _, err := session.ExecuteStatement(ctx, &SetLocalStatement{VarName: "CLI_VERBOSE", Value: "TRUE"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.ExecuteStatement(ctx, &CommitStatement{}); err != nil {
+		t.Fatal(err)
+	}
+	if got := mustGetVar(t, session, "CLI_VERBOSE"); got != "FALSE" {
+		t.Fatalf("A COMMIT left LOCAL CLI_VERBOSE: %s", got)
+	}
+	if outstandingLocalUndo(session.txn) != 0 {
+		t.Fatal("A COMMIT left detached undo")
+	}
+
+	if _, err := session.ExecuteStatement(ctx, &BeginStatement{}); err != nil {
+		t.Fatal(err)
+	}
+	ownerB := txnContext(session.txn)
+	if ownerB == nil || ownerB == ownerA {
+		t.Fatal("B reused transaction A identity")
+	}
+	if _, err := session.ExecuteStatement(ctx, &SetStatement{VarName: "CLI_VERBOSE", Value: "TRUE"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.ExecuteStatement(ctx, &SetLocalStatement{VarName: "CLI_PROMPT", Value: "'B> '"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.ExecuteStatement(ctx, &CommitStatement{}); err != nil {
+		t.Fatal(err)
+	}
+	if got := mustGetVar(t, session, "CLI_VERBOSE"); got != "TRUE" {
+		t.Fatalf("A undo restored into B: CLI_VERBOSE=%s", got)
+	}
+	if got := mustGetVar(t, session, "CLI_PROMPT"); got != wantPrompt {
+		t.Fatalf("B LOCAL CLI_PROMPT not restored: %q want %q", got, wantPrompt)
+	}
+}
+
+func TestSetLocalNestedRunBatchDoesNotRestoreWhileActive(t *testing.T) {
+	t.Parallel()
+	session := newSessionForLocalVarTest(t)
+	ctx := t.Context()
+
+	if _, err := session.ExecuteStatement(ctx, &BeginStatement{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.ExecuteStatement(ctx, &SetLocalStatement{VarName: "CLI_VERBOSE", Value: "TRUE"}); err != nil {
+		t.Fatal(err)
+	}
+	session.batch.SetCurrent(&ShowVariableStatement{VarName: "CLI_VERBOSE"})
+	if _, err := session.ExecuteStatement(ctx, &RunBatchStatement{}); err != nil {
+		t.Fatalf("nested RUN BATCH: %v", err)
+	}
+	if !session.txn.InTransaction() {
+		t.Fatal("nested RUN BATCH restored/retired an active transaction")
+	}
+	if got := mustGetVar(t, session, "CLI_VERBOSE"); got != "TRUE" {
+		t.Fatalf("nested RUN BATCH restored LOCAL while A was active: %s", got)
+	}
+	if outstandingLocalUndo(session.txn) == 0 {
+		t.Fatal("nested RUN BATCH detached A's undo while A was active")
+	}
+	if _, err := session.ExecuteStatement(ctx, &RollbackStatement{}); err != nil {
+		t.Fatal(err)
+	}
+	if got := mustGetVar(t, session, "CLI_VERBOSE"); got != "FALSE" {
+		t.Fatalf("ROLLBACK after nested RUN BATCH: %s", got)
+	}
+}
+
+func TestSetLocalNestedRunBatchEndThenBeginB(t *testing.T) {
+	t.Parallel()
+	session := newSessionForLocalVarTest(t)
+	ctx := t.Context()
+	wantPrompt := mustGetVar(t, session, "CLI_PROMPT")
+
+	if _, err := session.ExecuteStatement(ctx, &BeginStatement{}); err != nil {
+		t.Fatal(err)
+	}
+	ownerA := txnContext(session.txn)
+	if _, err := session.ExecuteStatement(ctx, &SetLocalStatement{VarName: "CLI_VERBOSE", Value: "TRUE"}); err != nil {
+		t.Fatal(err)
+	}
+	session.batch.SetCurrent(&RollbackStatement{})
+	if _, err := session.ExecuteStatement(ctx, &RunBatchStatement{}); err != nil {
+		t.Fatalf("nested RUN BATCH ROLLBACK: %v", err)
+	}
+	if session.txn.InTransaction() {
+		t.Fatal("nested RUN BATCH ROLLBACK left a transaction")
+	}
+	if got := mustGetVar(t, session, "CLI_VERBOSE"); got != "FALSE" {
+		t.Fatalf("nested ROLLBACK did not restore before next BEGIN: %s", got)
+	}
+	if outstandingLocalUndo(session.txn) != 0 {
+		t.Fatal("nested ROLLBACK left detached undo for B")
+	}
+
+	if _, err := session.ExecuteStatement(ctx, &BeginStatement{}); err != nil {
+		t.Fatal(err)
+	}
+	ownerB := txnContext(session.txn)
+	if ownerB == nil || ownerB == ownerA {
+		t.Fatal("B reused transaction A identity")
+	}
+	if _, err := session.ExecuteStatement(ctx, &SetStatement{VarName: "CLI_VERBOSE", Value: "TRUE"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.ExecuteStatement(ctx, &SetLocalStatement{VarName: "CLI_PROMPT", Value: "'B> '"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.ExecuteStatement(ctx, &CommitStatement{}); err != nil {
+		t.Fatal(err)
+	}
+	if got := mustGetVar(t, session, "CLI_VERBOSE"); got != "TRUE" {
+		t.Fatalf("A undo restored into B after nested RUN BATCH: CLI_VERBOSE=%s", got)
+	}
+	if got := mustGetVar(t, session, "CLI_PROMPT"); got != wantPrompt {
+		t.Fatalf("B LOCAL CLI_PROMPT: %q want %q", got, wantPrompt)
 	}
 }
 

@@ -93,8 +93,8 @@ func (s *SetStatement) Execute(ctx context.Context, session *Session) (*Result, 
 
 // SetLocalStatement implements `SET LOCAL <name> = <value>`: the change is
 // scoped to the current transaction. The previous value is recorded in the
-// transaction's undo log (TransactionManager.localVarUndo) and restored when
-// the transaction ends, whether by COMMIT, ROLLBACK, or CLOSE.
+// transactionContext undo log and restored when the transaction ends, whether
+// by COMMIT, ROLLBACK, or CLOSE.
 // Following java-spanner, SET LOCAL outside a transaction is an error.
 type SetLocalStatement struct {
 	VarName string

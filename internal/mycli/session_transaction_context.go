@@ -31,14 +31,21 @@ type transaction interface {
 	Query(ctx context.Context, statement spanner.Statement) *spanner.RowIterator
 }
 
-// transactionContext encapsulates the transaction state and attributes.
-// It provides safe access to the underlying transaction while maintaining
-// metadata about the transaction's mode and properties.
+// transactionContext is the logical transaction lifetime. It is allocated on
+// BEGIN (pending or direct RO/RW), kept as the same pointer through pending
+// activation, and retired only on a terminal path. Heartbeat, tag, and SET
+// LOCAL undo all live on this object so they cannot be split across replacement
+// owners.
 type transactionContext struct {
 	attrs           transactionAttributes
 	txn             transaction
 	heartbeatCancel context.CancelFunc
 	heartbeatFunc   func(ctx context.Context) // Function to run heartbeat
+	// localVarUndo is this transaction's SET LOCAL undo log. It survives
+	// pending activation and is detached into
+	// TransactionManager.pendingLocalVarRestore only when the context is
+	// retired.
+	localVarUndo []savedLocalVar
 }
 
 // EnableHeartbeat enables sending periodic heartbeats for this transaction.

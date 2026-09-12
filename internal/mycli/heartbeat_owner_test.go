@@ -160,7 +160,7 @@ func (s *heartbeatRPCServer) ExecuteSql(ctx context.Context, r *sppb.ExecuteSqlR
 	if err := s.waitHeartbeatIfNeeded(ctx, r); err != nil {
 		return nil, err
 	}
-	return s.resultSet(txnID), nil
+	return s.resultSet(txnID, readTimestampFor(r)), nil
 }
 
 func (s *heartbeatRPCServer) ExecuteStreamingSql(r *sppb.ExecuteSqlRequest, stream sppb.Spanner_ExecuteStreamingSqlServer) error {
@@ -170,7 +170,7 @@ func (s *heartbeatRPCServer) ExecuteStreamingSql(r *sppb.ExecuteSqlRequest, stre
 		return err
 	}
 	return stream.Send(&sppb.PartialResultSet{
-		Metadata: s.resultSet(txnID).Metadata,
+		Metadata: s.resultSet(txnID, readTimestampFor(r)).Metadata,
 		Values:   []*structpb.Value{structpb.NewStringValue("1")},
 	})
 }
@@ -187,15 +187,24 @@ func (s *heartbeatRPCServer) waitHeartbeatIfNeeded(ctx context.Context, r *sppb.
 	}
 }
 
-func (s *heartbeatRPCServer) resultSet(txnID []byte) *sppb.ResultSet {
+func (s *heartbeatRPCServer) resultSet(txnID []byte, readTs *timestamppb.Timestamp) *sppb.ResultSet {
 	return &sppb.ResultSet{
 		Metadata: &sppb.ResultSetMetadata{
 			RowType: &sppb.StructType{Fields: []*sppb.StructType_Field{
 				{Name: "", Type: &sppb.Type{Code: sppb.TypeCode_INT64}},
 			}},
-			Transaction: &sppb.Transaction{Id: txnID},
+			Transaction: &sppb.Transaction{Id: txnID, ReadTimestamp: readTs},
 		},
 	}
+}
+
+func readTimestampFor(r *sppb.ExecuteSqlRequest) *timestamppb.Timestamp {
+	// ReadWriteStmtBasedTransaction.setTimestamp recurses if a read timestamp
+	// is present. Only the pending->RO SELECT 1 probe needs one.
+	if r.GetRequestOptions().GetRequestTag() == "spanner_mycli_heartbeat" || r.GetSql() != heartbeatSQL {
+		return nil
+	}
+	return timestamppb.Now()
 }
 
 type heartbeatHarness struct {
@@ -464,6 +473,74 @@ func TestHeartbeatInFlightAcquireStaysOnOriginalOwner(t *testing.T) {
 	got = h.server.heartbeatIDs()
 	if !slices.Equal(got, []string{idA, idB}) {
 		t.Fatalf("heartbeats=%v, want A then B (%s, %s)", got, idA, idB)
+	}
+	assertHeartbeatMeta(t, h.server.heartbeatRecords())
+}
+
+func TestHeartbeatPendingActivationKeepsOwner(t *testing.T) {
+	t.Parallel()
+	h := newHeartbeatHarness(t)
+	ctx := t.Context()
+	h.installBeforeAcquireBarrier()
+
+	if err := h.tm.BeginPendingTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+		t.Fatalf("BeginPendingTransaction: %v", err)
+	}
+	pending := txnContext(h.tm)
+	if _, err := h.tm.DetermineTransaction(ctx); err != nil {
+		t.Fatalf("pending activation: %v", err)
+	}
+	if txnContext(h.tm) != pending {
+		t.Fatal("pending activation replaced heartbeat owner identity")
+	}
+
+	iter, _, err := h.tm.RunQuery(ctx, spanner.NewStatement("SELECT 1 AS owner_a"))
+	if err != nil {
+		t.Fatalf("RunQuery: %v", err)
+	}
+	if _, _, _, _, err := consumeRowIterDiscard(iter); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+	if !h.tm.heartbeatEnabled() {
+		t.Fatal("first user operation did not enable heartbeat")
+	}
+	idA := h.server.txnIDForSQL("SELECT 1 AS owner_a")
+	if idA == "" {
+		t.Fatalf("no transaction id captured; records=%v", h.server.heartbeatRecords())
+	}
+
+	sendTick(t, h.ticks)
+	waitChan(t, h.arrived, "owner A eligibility snapshot")
+
+	if err := h.tm.RollbackReadWriteTransaction(ctx); err != nil {
+		t.Fatalf("rollback A: %v", err)
+	}
+	idB := beginRWAndProbe(t, ctx, h, "SELECT 1 AS owner_b")
+	if idA == idB {
+		t.Fatal("replacement owner reused transaction id A")
+	}
+	if txnContext(h.tm) == pending {
+		t.Fatal("replacement owner reused pending identity A")
+	}
+
+	close(h.release)
+	waitChan(t, h.attempt, "owner A delayed acquire attempt")
+
+	if got := h.server.heartbeatIDs(); slices.Contains(got, idB) {
+		t.Fatalf("delayed A tick issued SELECT 1 on replacement owner B (%s); heartbeats=%v A=%s B=%s", got, got, idA, idB)
+	}
+	if got := h.server.heartbeatIDs(); slices.Contains(got, idA) {
+		t.Fatalf("delayed A tick issued SELECT 1 after A ended; heartbeats=%v A=%s", got, idA)
+	}
+
+	sendTick(t, h.ticks)
+	waitChan(t, h.attempt, "owner B heartbeat attempt")
+	got := h.server.heartbeatIDs()
+	if !slices.Contains(got, idB) {
+		t.Fatalf("B heartbeat missing on B; heartbeats=%v B=%s", got, idB)
+	}
+	if slices.Contains(got, idA) {
+		t.Fatalf("B heartbeat also hit A; heartbeats=%v A=%s B=%s", got, idA, idB)
 	}
 	assertHeartbeatMeta(t, h.server.heartbeatRecords())
 }
