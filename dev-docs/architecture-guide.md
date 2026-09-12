@@ -46,8 +46,10 @@ code comments before changing anything nearby; do not re-document them here.
   decomposition, and the single-instance contract (the struct is never copied;
   the registry holds raw pointers into it).
 - **Database switching**: `SessionHandler.switchSession` in
-  `internal/mycli/session.go` - USE/DETACH mutate the single live
-  `systemVariables` in place.
+  `internal/mycli/session.go` - candidates are constructed with an explicit
+  connection identity while live registry values stay unchanged; successful
+  USE/DETACH then publishes Database/Role and TransactionManager callbacks
+  in one adoption step.
 - **Transactions and locking**: `TransactionManager` in
   `internal/mycli/transaction_manager.go` - mutex rationale, the mandatory
   closure-based access helpers, the `WithLock` / `Locked` method-suffix

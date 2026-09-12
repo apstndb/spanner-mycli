@@ -41,6 +41,7 @@ func TestDetachedSessionSystemVariables(t *testing.T) {
 		client:          nil, // no database client in detached mode
 		adminClient:     nil, // we won't actually use the admin client in these tests
 		systemVariables: sysVars,
+		connection:      sysVars.Connection,
 	}
 	// Zero-value &Session{} needs a real (client-less) manager now that
 	// callers dispatch to session.txn directly instead of the deleted mirror.

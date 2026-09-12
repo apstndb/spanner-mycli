@@ -567,12 +567,14 @@ func newShowOperationTestSession(t *testing.T, server longrunningpb.OperationsSe
 	}
 	t.Cleanup(func() { _ = adminClient.Close() })
 
+	identity := ConnectionVars{
+		Project:  "test",
+		Instance: "test",
+		Database: "test",
+	}
 	return &Session{
-		adminClient: adminClient,
-		systemVariables: &systemVariables{Connection: ConnectionVars{
-			Project:  "test",
-			Instance: "test",
-			Database: "test",
-		}},
+		adminClient:     adminClient,
+		systemVariables: &systemVariables{Connection: identity},
+		connection:      identity,
 	}
 }
