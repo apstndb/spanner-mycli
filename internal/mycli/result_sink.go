@@ -30,7 +30,7 @@ import (
 )
 
 // resultSink is the per-statement output sink shared by streamed rows (via
-// outputContext) and buffered display (via printResult). It owns the output
+// OperationOutput) and buffered display (via printResult). It owns the output
 // decorations (CLI_MARKDOWN_CODEBLOCK fence, CLI_ECHO_INPUT echo) and the
 // CLI_USE_PAGER pager so both apply in the correct order regardless of
 // whether the statement streams.

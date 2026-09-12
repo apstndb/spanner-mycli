@@ -18,7 +18,11 @@ import (
 	"github.com/sourcegraph/conc/pool"
 )
 
-func runPartitionedQuery(ctx context.Context, session *Session, sql string) (*Result, error) {
+func runPartitionedQuery(ctx context.Context, session *Session, sql string, out OperationOutput) (*Result, error) {
+	// Direct Execute tests often pass a zero OperationOutput after swapping
+	// StreamManager. Resolve here so a nil writer still uses StreamManager,
+	// without mutating Session. Caller-provided writers still win.
+	out = session.resolveOperationOutput(out)
 	sysVars := session.systemVariables
 	render, err := prepareFormatConfig(sql, sysVars, queryRenderingFrom(sysVars))
 	if err != nil {
@@ -45,7 +49,7 @@ func runPartitionedQuery(ctx context.Context, session *Session, sql string) (*Re
 
 	// Formats backed by a spanvalue RowIteratorWriter (CSV, JSONL, SQL_INSERT*)
 	// stream merged partition rows without buffering, like the query path.
-	result, handled, err := streamPartitionedQuery(ctx, session.outputWriter(), batchROTx, partitions, parallelism, render.Export, render.Spanvalue, render.ValueFmtMode)
+	result, handled, err := streamPartitionedQuery(ctx, out.Writer(), batchROTx, partitions, parallelism, render.Export, render.Spanvalue, render.ValueFmtMode)
 	if err != nil {
 		return nil, err
 	}

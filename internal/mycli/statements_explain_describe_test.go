@@ -886,7 +886,7 @@ func TestExplainLastQueryStatement_Execute(t *testing.T) {
 			got, err := tt.statement.Execute(context.Background(), &Session{systemVariables: &systemVariables{
 				Display:    DisplayVars{ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns},
 				LastResult: LastResult{QueryCache: tt.lastQueryCache},
-			}})
+			}}, OperationOutput{})
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Execute() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -1041,7 +1041,7 @@ func TestShowPlanNodeStatement_Execute(t *testing.T) {
 			got, err := tt.statement.Execute(context.Background(), &Session{systemVariables: &systemVariables{
 				Display:    DisplayVars{ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns},
 				LastResult: LastResult{QueryCache: tt.lastQueryCache},
-			}})
+			}}, OperationOutput{})
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Execute() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -1093,7 +1093,7 @@ func TestShowLastQueryPlanStatement_Execute(t *testing.T) {
 		t.Parallel()
 		_, err := (&ShowLastQueryPlanStatement{}).Execute(context.Background(), &Session{
 			systemVariables: &systemVariables{},
-		})
+		}, OperationOutput{})
 		if err == nil {
 			t.Fatal("Execute() error = nil, want error")
 		}
@@ -1103,7 +1103,7 @@ func TestShowLastQueryPlanStatement_Execute(t *testing.T) {
 		t.Parallel()
 		_, err := (&ShowLastQueryPlanStatement{}).Execute(context.Background(), &Session{
 			systemVariables: &systemVariables{LastResult: LastResult{QueryCache: &LastQueryCache{}}},
-		})
+		}, OperationOutput{})
 		if err == nil {
 			t.Fatal("Execute() error = nil, want error")
 		}
@@ -1113,7 +1113,7 @@ func TestShowLastQueryPlanStatement_Execute(t *testing.T) {
 		t.Parallel()
 		got, err := (&ShowLastQueryPlanStatement{}).Execute(context.Background(), &Session{
 			systemVariables: &systemVariables{LastResult: LastResult{QueryCache: &LastQueryCache{QueryPlan: plan}}},
-		})
+		}, OperationOutput{})
 		if err != nil {
 			t.Fatalf("Execute() error = %v", err)
 		}
@@ -1134,7 +1134,7 @@ func TestShowLastQueryPlanStatement_Execute(t *testing.T) {
 		t.Parallel()
 		_, err := (&ShowLastQueryPlanStatement{WithStats: true}).Execute(context.Background(), &Session{
 			systemVariables: &systemVariables{LastResult: LastResult{QueryCache: &LastQueryCache{QueryPlan: plan}}},
-		})
+		}, OperationOutput{})
 		if err == nil {
 			t.Fatal("Execute() error = nil, want missing-stats error")
 		}
@@ -1147,7 +1147,7 @@ func TestShowLastQueryPlanStatement_Execute(t *testing.T) {
 				QueryPlan:  plan,
 				QueryStats: statsMap,
 			}}},
-		})
+		}, OperationOutput{})
 		if err != nil {
 			t.Fatalf("Execute() error = %v", err)
 		}
@@ -1167,7 +1167,7 @@ func TestShowLastQueryPlanStatement_Execute(t *testing.T) {
 		path := dir + "/plan.json"
 		got, err := (&ShowLastQueryPlanStatement{IntoPath: path}).Execute(context.Background(), &Session{
 			systemVariables: &systemVariables{LastResult: LastResult{QueryCache: &LastQueryCache{QueryPlan: plan}}},
-		})
+		}, OperationOutput{})
 		if err != nil {
 			t.Fatalf("Execute() error = %v", err)
 		}
@@ -1190,7 +1190,7 @@ func TestShowLastQueryPlanStatement_Execute(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "query plan"+extension)
 			got, err := (&ShowLastQueryPlanStatement{IntoPath: path}).Execute(context.Background(), &Session{
 				systemVariables: &systemVariables{LastResult: LastResult{QueryCache: &LastQueryCache{QueryPlan: plan}}},
-			})
+			}, OperationOutput{})
 			if err != nil {
 				t.Fatalf("Execute() error = %v", err)
 			}
@@ -1219,7 +1219,7 @@ func TestShowLastQueryPlanStatement_Execute(t *testing.T) {
 				QueryPlan:  plan,
 				QueryStats: statsMap,
 			}}},
-		})
+		}, OperationOutput{})
 		if err != nil {
 			t.Fatalf("Execute() error = %v", err)
 		}
@@ -1241,7 +1241,7 @@ func TestShowLastQueryPlanStatement_Execute(t *testing.T) {
 		dir := t.TempDir()
 		_, err := (&ShowLastQueryPlanStatement{IntoPath: dir}).Execute(context.Background(), &Session{
 			systemVariables: &systemVariables{LastResult: LastResult{QueryCache: &LastQueryCache{QueryPlan: plan}}},
-		})
+		}, OperationOutput{})
 		if err == nil {
 			t.Fatal("Execute() error = nil, want directory rejection")
 		}
@@ -1251,7 +1251,7 @@ func TestShowLastQueryPlanStatement_Execute(t *testing.T) {
 		t.Parallel()
 		_, err := (&ShowLastQueryPlanStatement{IntoPath: "   "}).Execute(context.Background(), &Session{
 			systemVariables: &systemVariables{LastResult: LastResult{QueryCache: &LastQueryCache{QueryPlan: plan}}},
-		})
+		}, OperationOutput{})
 		if err == nil {
 			t.Fatal("Execute() error = nil, want empty-path rejection")
 		}
@@ -1261,7 +1261,7 @@ func TestShowLastQueryPlanStatement_Execute(t *testing.T) {
 		t.Parallel()
 		_, err := (&ShowLastQueryPlanStatement{IntoPath: "plan\x00.json"}).Execute(context.Background(), &Session{
 			systemVariables: &systemVariables{LastResult: LastResult{QueryCache: &LastQueryCache{QueryPlan: plan}}},
-		})
+		}, OperationOutput{})
 		if err == nil || !strings.Contains(err.Error(), "NUL") {
 			t.Fatalf("Execute() error = %v, want NUL rejection", err)
 		}
@@ -1271,7 +1271,7 @@ func TestShowLastQueryPlanStatement_Execute(t *testing.T) {
 		t.Parallel()
 		_, err := (&ShowLastQueryPlanStatement{IntoPath: os.DevNull}).Execute(context.Background(), &Session{
 			systemVariables: &systemVariables{LastResult: LastResult{QueryCache: &LastQueryCache{QueryPlan: plan}}},
-		})
+		}, OperationOutput{})
 		if err == nil || !strings.Contains(err.Error(), "not a regular file") {
 			t.Fatalf("Execute() error = %v, want non-regular rejection", err)
 		}
@@ -1282,7 +1282,7 @@ func TestShowLastQueryPlanStatement_Execute(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "missing", "plan.json")
 		_, err := (&ShowLastQueryPlanStatement{IntoPath: path}).Execute(context.Background(), &Session{
 			systemVariables: &systemVariables{LastResult: LastResult{QueryCache: &LastQueryCache{QueryPlan: plan}}},
-		})
+		}, OperationOutput{})
 		if err == nil || !strings.Contains(err.Error(), "invalid INTO path parent") {
 			t.Fatalf("Execute() error = %v, want missing-parent rejection", err)
 		}
@@ -1296,7 +1296,7 @@ func TestShowPlanNodeStatementMissingCache(t *testing.T) {
 		t.Parallel()
 		_, err := (&ShowPlanNodeStatement{NodeID: 0}).Execute(context.Background(), &Session{
 			systemVariables: &systemVariables{},
-		})
+		}, OperationOutput{})
 		if err == nil || !strings.Contains(err.Error(), "no query plan cached") {
 			t.Fatalf("error = %v, want missing-cache", err)
 		}
@@ -1308,7 +1308,7 @@ func TestShowPlanNodeStatementMissingCache(t *testing.T) {
 			systemVariables: &systemVariables{LastResult: LastResult{QueryCache: &LastQueryCache{
 				QueryPlan: selectProfileResultSet.GetStats().GetQueryPlan(),
 			}}},
-		})
+		}, OperationOutput{})
 		if err == nil || !strings.Contains(err.Error(), "node with ID 99 not found") {
 			t.Fatalf("error = %v, want out-of-range", err)
 		}

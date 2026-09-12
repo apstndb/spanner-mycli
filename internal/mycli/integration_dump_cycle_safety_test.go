@@ -46,7 +46,7 @@ func parentChildOtherDDL() []string {
 
 func dumpExpectCycleReject(t *testing.T, session *Session, stmt Statement) {
 	t.Helper()
-	_, err := stmt.Execute(t.Context(), session)
+	_, err := stmt.Execute(t.Context(), session, OperationOutput{})
 	if err == nil || !strings.Contains(err.Error(), dumpCyclicInsertUnsupported) {
 		t.Fatalf("error = %v, want %q", err, dumpCyclicInsertUnsupported)
 	}
@@ -58,7 +58,7 @@ func dumpExpectCycleRejectStreaming(t *testing.T, session *Session, stmt Stateme
 	original := session.systemVariables.StreamManager
 	session.systemVariables.StreamManager = streamio.NewStreamManager(original.GetInStream(), &buf, original.GetErrStream())
 	defer func() { session.systemVariables.StreamManager = original }()
-	_, err := stmt.Execute(t.Context(), session)
+	_, err := stmt.Execute(t.Context(), session, OperationOutput{})
 	if err == nil || !strings.Contains(err.Error(), dumpCyclicInsertUnsupported) {
 		t.Fatalf("error = %v, want %q", err, dumpCyclicInsertUnsupported)
 	}
@@ -204,7 +204,7 @@ func TestDumpNotEnforcedCycleDoesNotReject(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := stmt.Execute(t.Context(), session); err != nil {
+		if _, err := stmt.Execute(t.Context(), session, OperationOutput{}); err != nil {
 			t.Skipf("emulator did not accept NOT ENFORCED foreign keys: %v", err)
 		}
 	}
@@ -260,7 +260,7 @@ func TestDumpCyclePreflightOrchestrationErrorIsZeroOutput(t *testing.T) {
 	original := session.systemVariables.StreamManager
 	session.systemVariables.StreamManager = streamio.NewStreamManager(original.GetInStream(), &buf, original.GetErrStream())
 	defer func() { session.systemVariables.StreamManager = original }()
-	_, err := (&DumpDatabaseStatement{}).Execute(t.Context(), session)
+	_, err := (&DumpDatabaseStatement{}).Execute(t.Context(), session, OperationOutput{})
 	if !errors.Is(err, injected) {
 		t.Fatalf("error = %v, want injected", err)
 	}
@@ -290,7 +290,7 @@ func TestDumpCycleRowQueryCanceled(t *testing.T) {
 				session.systemVariables.StreamManager = streamio.NewStreamManager(original.GetInStream(), &buf, original.GetErrStream())
 				defer func() { session.systemVariables.StreamManager = original }()
 			}
-			_, err := (&DumpDatabaseStatement{}).Execute(ctx, session)
+			_, err := (&DumpDatabaseStatement{}).Execute(ctx, session, OperationOutput{})
 			t.Logf("row-query cancel error chain: %v", err)
 			for e := err; e != nil; e = errors.Unwrap(e) {
 				t.Logf("unwrap %T: %v grpc=%v", e, e, status.Code(e))
@@ -344,7 +344,7 @@ func TestDumpMixedEnforcementOrdersAndReplays(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := stmt.Execute(t.Context(), target); err != nil {
+		if _, err := stmt.Execute(t.Context(), target, OperationOutput{}); err != nil {
 			t.Fatalf("%s: %v", text, err)
 		}
 	}
@@ -540,7 +540,7 @@ func TestDumpCyclicMutateSubsetKeepsTargetConstraints(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					if _, replayErr = stmt.Execute(t.Context(), target); replayErr != nil {
+					if _, replayErr = stmt.Execute(t.Context(), target, OperationOutput{}); replayErr != nil {
 						break
 					}
 				}
@@ -723,12 +723,11 @@ func TestDumpCyclicMutatePlanningFailures(t *testing.T) {
 					var out strings.Builder
 					var result *Result
 					var err error
-					run := func() error { result, err = (&DumpDatabaseStatement{}).Execute(ctx, source); return err }
+					var opOut OperationOutput
 					if streaming {
-						err = source.withOutput(outputContext{w: &out}, run)
-					} else {
-						err = run()
+						opOut = OperationOutput{w: &out}
 					}
+					result, err = (&DumpDatabaseStatement{}).Execute(ctx, source, opOut)
 					if err == nil {
 						t.Fatal("expected pre-output failure")
 					}
@@ -780,7 +779,7 @@ func TestDumpCyclicMutateSecondCommitFailure(t *testing.T) {
 		if isCommit {
 			commits++
 		}
-		if _, err := stmt.Execute(t.Context(), target); err != nil {
+		if _, err := stmt.Execute(t.Context(), target, OperationOutput{}); err != nil {
 			if !isCommit || commits != 2 {
 				t.Fatalf("failure before second COMMIT: %s: %v", part.statement, err)
 			}

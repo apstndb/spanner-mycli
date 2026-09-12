@@ -93,7 +93,7 @@ func TestMutationTypedDeleteKeysIntegration(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := stmt.Execute(t.Context(), session); err != nil {
+		if _, err := stmt.Execute(t.Context(), session, OperationOutput{}); err != nil {
 			t.Fatalf("%s: %v", sql, err)
 		}
 	}
@@ -164,7 +164,7 @@ func TestMutationTypedCompositeDeleteTransaction(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := stmt.Execute(t.Context(), session); err != nil {
+		if _, err := stmt.Execute(t.Context(), session, OperationOutput{}); err != nil {
 			t.Fatalf("%s: %v", sql, err)
 		}
 	}

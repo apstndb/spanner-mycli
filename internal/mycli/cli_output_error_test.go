@@ -149,8 +149,8 @@ type resultErrorStatement struct{ cause error }
 
 func (resultErrorStatement) isDetachedCompatible() {}
 
-func (s resultErrorStatement) Execute(_ context.Context, session *Session) (*Result, error) {
-	if _, err := io.WriteString(session.outputWriter(), "BODY\n"); err != nil {
+func (s resultErrorStatement) Execute(_ context.Context, _ *Session, out OperationOutput) (*Result, error) {
+	if _, err := io.WriteString(out.Writer(), "BODY\n"); err != nil {
 		return nil, err
 	}
 	return nil, s.cause

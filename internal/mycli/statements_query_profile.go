@@ -60,7 +60,7 @@ optimizer_statistics_package: {{.OptimizerStatisticsPackage}}
 
 type ShowQueryProfilesStatement struct{}
 
-func (s *ShowQueryProfilesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *ShowQueryProfilesStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	if session.txn.InReadWriteTransaction() {
 		// INFORMATION_SCHEMA can't be used in read-write transaction.
 		// https://cloud.google.com/spanner/docs/information-schema
@@ -142,7 +142,7 @@ type ShowQueryProfileStatement struct {
 	Fprint int64
 }
 
-func (s *ShowQueryProfileStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *ShowQueryProfileStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	if session.txn.InReadWriteTransaction() {
 		// INFORMATION_SCHEMA can't be used in read-write transaction.
 		// https://cloud.google.com/spanner/docs/information-schema

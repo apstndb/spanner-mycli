@@ -17,86 +17,93 @@ package mycli
 import (
 	"context"
 	"io"
+	"math"
 )
 
-// outputContext is the per-statement output destination for streamed results
-// (streaming formats, DUMP). It is resolved once at the statement entry point
-// (Cli.executeStatement, which also serves the MCP handler through its writer
-// argument) and carried by the Session for the duration of one statement.
+// OperationOutput is the per-statement output destination for streamed results
+// (streaming formats, DUMP, shell). It is resolved once at the statement entry
+// point (Cli.executeStatement, which also serves the MCP handler through its
+// writer argument, and Session.ExecuteStatement for direct callers) and
+// carried through Execute and every nested execution path.
 //
 // Before this type existed, streaming paths wrote to the process-global
 // StreamManager writer regardless of which writer the caller passed to
 // Cli.executeStatement. Under --mcp that writer is the JSON-RPC stdout, so
-// any streamed statement corrupted the protocol stream. Routing all statement
-// output through the session's outputContext makes the caller-provided writer
-// authoritative on every path.
-type outputContext struct {
-	// w receives streamed statement output. When nil, the session falls back
-	// to the StreamManager writer (direct Session.ExecuteStatement callers,
-	// e.g. tests).
+// any streamed statement corrupted the protocol stream. The caller-provided
+// writer is authoritative on every path. A statement that does not emit
+// output ignores the value.
+type OperationOutput struct {
+	// w receives streamed statement output. When nil after entry-point
+	// resolution, streaming paths treat it as "buffer instead".
 	w io.Writer
 
 	// screenWidth resolves the display width for streamed table rendering.
 	// It is a function rather than a value so the terminal size is read when
-	// rendering starts, not when the statement was submitted. When nil, the
-	// session falls back to displayScreenWidth on the live settings.
+	// rendering starts, not when the statement was submitted. Width is
+	// resolved against the original destination, not a pager pipe.
 	screenWidth func() int
 }
 
-// outputWriter returns the destination for streamed statement output: the
-// per-statement outputContext writer when one is set, otherwise the
-// StreamManager writer. May return nil (no output destination); streaming
-// paths treat nil as "buffer instead".
-func (s *Session) outputWriter() io.Writer {
-	if s.output.w != nil {
-		return s.output.w
-	}
-	if s.systemVariables != nil && s.systemVariables.StreamManager != nil {
-		return s.systemVariables.StreamManager.GetWriter()
-	}
-	return nil
+// Writer returns the destination for streamed statement output. Nil means
+// streaming paths should buffer instead.
+func (o OperationOutput) Writer() io.Writer {
+	return o.w
 }
 
-// displayWidthFor returns the screen width for streamed rendering. Width
-// comes from the live session settings (AutoWrap/FixedWidth/StreamManager)
-// or the per-statement outputContext override.
-func (s *Session) displayWidthFor() int {
-	if s.output.screenWidth != nil {
-		return s.output.screenWidth()
+// ScreenWidth returns the screen width for streamed rendering. When no
+// resolver is set, wrapping is disabled.
+func (o OperationOutput) ScreenWidth() int {
+	if o.screenWidth != nil {
+		return o.screenWidth()
 	}
-	return displayScreenWidth(s.systemVariables)
+	return math.MaxInt
 }
 
-// withOutput runs fn with the session's per-statement output redirected to
-// out, restoring the previous destination afterwards. Statement execution is
-// serialized per session (single-goroutine REPL/batch loops; the MCP handler
-// holds a mutex around each call), so plain save/restore is safe here.
-func (s *Session) withOutput(out outputContext, fn func() error) error {
-	prev := s.output
-	s.output = out
-	defer func() {
-		s.output = prev
-	}()
-	return fn()
+// withWriter returns a copy that writes to w while keeping the original lazy
+// width resolver. DUMP uses this for internal buffering so the outer
+// publication destination and width stay those of the caller.
+func (o OperationOutput) withWriter(w io.Writer) OperationOutput {
+	o.w = w
+	return o
+}
+
+// resolveOperationOutput fills a nil writer from StreamManager and a nil
+// width resolver from the live session settings. Caller-provided fields win.
+// Width stays lazy so the terminal is measured at render time against the
+// original destination. Streaming helpers also call this so a direct
+// Execute with a zero OperationOutput still sees StreamManager, matching
+// the former session.outputWriter() fallback without mutating Session.
+func (s *Session) resolveOperationOutput(out OperationOutput) OperationOutput {
+	if out.w == nil && s != nil && s.systemVariables != nil && s.systemVariables.StreamManager != nil {
+		out.w = s.systemVariables.StreamManager.GetWriter()
+	}
+	if out.screenWidth == nil {
+		var sysVars *systemVariables
+		if s != nil {
+			sysVars = s.systemVariables
+		}
+		out.screenWidth = func() int {
+			if sysVars == nil {
+				return math.MaxInt
+			}
+			return displayScreenWidth(sysVars)
+		}
+	}
+	return out
 }
 
 // ExecuteStatementWithOutput executes stmt with out as the per-statement
-// output destination. Statements executed re-entrantly during stmt (e.g.
-// RUN BATCH re-entering ExecuteStatement) inherit the same destination.
-func (s *Session) ExecuteStatementWithOutput(ctx context.Context, stmt Statement, out outputContext) (*Result, error) {
-	var result *Result
-	err := s.withOutput(out, func() error {
-		var err error
-		result, err = s.ExecuteStatement(ctx, stmt)
-		return err
-	})
-	return result, err
+// output destination. Fallback writer and width are resolved here; nested
+// execution (e.g. RUN BATCH) must forward the same value rather than re-entering
+// ExecuteStatement, which would rebuild a default destination.
+func (s *Session) ExecuteStatementWithOutput(ctx context.Context, stmt Statement, out OperationOutput) (*Result, error) {
+	return s.executeStatement(ctx, stmt, s.resolveOperationOutput(out))
 }
 
 // ExecuteStatementWithOutput executes a statement like ExecuteStatement,
 // routing streamed output to out. Session-changing statements (USE/DETACH)
 // produce no streamed output and take their normal path.
-func (h *SessionHandler) ExecuteStatementWithOutput(ctx context.Context, stmt Statement, out outputContext) (*Result, error) {
+func (h *SessionHandler) ExecuteStatementWithOutput(ctx context.Context, stmt Statement, out OperationOutput) (*Result, error) {
 	switch stmt.(type) {
 	case *UseStatement, *UseDatabaseMetaCommand, *DetachStatement:
 		return h.ExecuteStatement(ctx, stmt)

@@ -174,12 +174,11 @@ func TestDumpCyclicMutateWireFailureBeforeOutput(t *testing.T) {
 					}
 					var out strings.Builder
 					var result *Result
-					run := func() error { result, err = (&DumpDatabaseStatement{}).Execute(t.Context(), session); return err }
+					var opOut OperationOutput
 					if streaming {
-						err = session.withOutput(outputContext{w: &out}, run)
-					} else {
-						err = run()
+						opOut = OperationOutput{w: &out}
 					}
+					result, err = (&DumpDatabaseStatement{}).Execute(t.Context(), session, opOut)
 					if writeCalls.Load() != 0 {
 						t.Fatalf("DUMP attempted %d source write RPCs: %v", writeCalls.Load(), err)
 					}

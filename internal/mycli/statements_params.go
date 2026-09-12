@@ -34,7 +34,7 @@ func paramKind(v ast.Node) string {
 	}
 }
 
-func (s *ShowParamsStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *ShowParamsStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	items := lo.MapToSlice(session.systemVariables.Params, func(k string, v ast.Node) paramRow {
 		return paramRow{
 			Name:  k,
@@ -44,7 +44,7 @@ func (s *ShowParamsStatement) Execute(ctx context.Context, session *Session) (*R
 	})
 	slices.SortFunc(items, func(lhs, rhs paramRow) int { return cmp.Compare(lhs.Name, rhs.Name) })
 
-	result, err := executeStructRows(showParamsRowEncoder, items, session)
+	result, err := executeStructRows(showParamsRowEncoder, items, session, out)
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +58,7 @@ type UnsetParamStatement struct {
 
 func (s *UnsetParamStatement) isDetachedCompatible() {}
 
-func (s *UnsetParamStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *UnsetParamStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	if _, ok := session.systemVariables.Params[s.Name]; !ok {
 		return nil, fmt.Errorf("unknown parameter: %s", s.Name)
 	}
@@ -73,7 +73,7 @@ type SetParamTypeStatement struct {
 
 func (s *SetParamTypeStatement) isDetachedCompatible() {}
 
-func (s *SetParamTypeStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *SetParamTypeStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	if expr, err := parseMemefishType("", s.Type); err != nil {
 		return nil, err
 	} else {
@@ -89,7 +89,7 @@ type SetParamValueStatement struct {
 
 func (s *SetParamValueStatement) isDetachedCompatible() {}
 
-func (s *SetParamValueStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *SetParamValueStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	if expr, err := parseMemefishExpr("", s.Value); err != nil {
 		return nil, err
 	} else {

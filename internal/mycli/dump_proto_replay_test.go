@@ -65,12 +65,9 @@ func TestDumpProtoDescriptorReplay(t *testing.T) {
 					var result *Result
 					var err error
 					if streamed {
-						err = source.withOutput(outputContext{w: &out}, func() error {
-							result, err = executeDump(t.Context(), source, mode, nil)
-							return err
-						})
+						result, err = executeDump(t.Context(), source, mode, nil, OperationOutput{w: &out})
 					} else {
-						result, err = executeDump(t.Context(), source, mode, nil)
+						result, err = executeDump(t.Context(), source, mode, nil, OperationOutput{})
 						if err == nil {
 							_, _ = out.Write(result.preparedOutput())
 						}
@@ -313,18 +310,13 @@ func tryDumpProto(t *testing.T, session *Session, mode dumpMode, streamed bool, 
 	var out bytes.Buffer
 	var result *Result
 	var err error
-	run := func() error {
-		var inner error
-		result, inner = executeDump(t.Context(), session, mode, tables)
-		return inner
-	}
+	var opOut OperationOutput
 	if streamed {
-		err = session.withOutput(outputContext{w: &out}, run)
-	} else {
-		err = run()
-		if result != nil {
-			_, _ = out.Write(result.preparedOutput())
-		}
+		opOut = OperationOutput{w: &out}
+	}
+	result, err = executeDump(t.Context(), session, mode, tables, opOut)
+	if err == nil && !streamed && result != nil {
+		_, _ = out.Write(result.preparedOutput())
 	}
 	return out.String(), result, err
 }

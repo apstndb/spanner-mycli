@@ -226,7 +226,7 @@ func TestDirectedReadSelectedROPathsABClear(t *testing.T) {
 			}
 			srv.takeRequests()
 			srv.takePartitionQueries()
-			result, err := runPartitionedQuery(ctx, session, "SELECT 'observed'")
+			result, err := runPartitionedQuery(ctx, session, "SELECT 'observed'", session.resolveOperationOutput(OperationOutput{}))
 			if err != nil || result == nil || result.AffectedRows != 1 || result.PartitionCount != 1 {
 				t.Fatalf("%s partition result=%v error=%v", sel.name, result, err)
 			}

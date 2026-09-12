@@ -259,7 +259,7 @@ type GeminiStatement struct {
 	cfg  *config
 }
 
-func (s *GeminiStatement) Execute(ctx context.Context, session *mycli.Session) (*mycli.Result, error) {
+func (s *GeminiStatement) Execute(ctx context.Context, session *mycli.Session, out mycli.OperationOutput) (*mycli.Result, error) {
 	totalStart := time.Now()
 
 	ddlStart := time.Now()

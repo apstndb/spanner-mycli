@@ -32,7 +32,7 @@ var _ MetaCommandStatement = (*ShellMetaCommand)(nil)
 func (s *ShellMetaCommand) isMetaCommand() {}
 
 // Execute runs the shell command
-func (s *ShellMetaCommand) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *ShellMetaCommand) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	// Check if system commands are disabled
 	if session.systemVariables.Config.SkipSystemCommand {
 		return nil, errors.New("system commands are disabled")
@@ -50,7 +50,7 @@ func (s *ShellMetaCommand) Execute(ctx context.Context, session *Session) (*Resu
 	// The raw command text is intentionally not logged: it can contain
 	// sensitive data, and this is an internal invariant violation where the
 	// command content is irrelevant to diagnosis.
-	stdout := session.outputWriter()
+	stdout := session.resolveOperationOutput(out).Writer()
 	if stdout == nil {
 		slog.Error("no output destination configured, cannot execute shell command")
 		return nil, errors.New("internal error: no output destination configured")
@@ -190,7 +190,7 @@ var _ MetaCommandStatement = (*SourceMetaCommand)(nil)
 func (s *SourceMetaCommand) isMetaCommand() {}
 
 // Execute is not used for SourceMetaCommand as it's handled specially in CLI
-func (s *SourceMetaCommand) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *SourceMetaCommand) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	// This should not be called as SourceMetaCommand is handled in handleSpecialStatements.
 	// While panic might be more appropriate for this logic error, we follow the
 	// codebase convention of avoiding panics and return an error instead.
@@ -209,7 +209,7 @@ var _ MetaCommandStatement = (*PromptMetaCommand)(nil)
 func (p *PromptMetaCommand) isMetaCommand() {}
 
 // Execute updates the CLI_PROMPT system variable
-func (p *PromptMetaCommand) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (p *PromptMetaCommand) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	// Add a trailing space to the prompt for better UX (separation between prompt and input)
 	// This ensures compatibility with Google Cloud Spanner CLI behavior
 	promptWithSpace := p.PromptString + " "
@@ -238,7 +238,7 @@ func (s *UseDatabaseMetaCommand) isMetaCommand() {}
 func (s *UseDatabaseMetaCommand) isDetachedCompatible() {}
 
 // Execute is required by Statement interface but the actual logic is handled in SessionHandler
-func (s *UseDatabaseMetaCommand) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *UseDatabaseMetaCommand) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	// This should not be called as UseDatabaseMetaCommand is handled in SessionHandler.
 	// While panic might be more appropriate for this logic error, we follow the
 	// codebase convention of avoiding panics and return an error instead.
@@ -268,7 +268,7 @@ var _ MetaCommandStatement = (*TeeOutputMetaCommand)(nil)
 func (t *TeeOutputMetaCommand) isMetaCommand() {}
 
 // Execute enables tee output to the specified file (both screen and file)
-func (t *TeeOutputMetaCommand) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (t *TeeOutputMetaCommand) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	// Validate that we have system variables and stream manager available
 	if session.systemVariables == nil {
 		return nil, errors.New("internal error: system variables not initialized")
@@ -292,7 +292,7 @@ var _ MetaCommandStatement = (*OutputRedirectMetaCommand)(nil)
 func (o *OutputRedirectMetaCommand) isMetaCommand() {}
 
 // Execute enables output redirect to the specified file (file only)
-func (o *OutputRedirectMetaCommand) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (o *OutputRedirectMetaCommand) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	// Validate that we have system variables and stream manager available
 	if session.systemVariables == nil {
 		return nil, errors.New("internal error: system variables not initialized")
@@ -344,11 +344,11 @@ func disableOutput(session *Session) (*Result, error) {
 }
 
 // Execute disables tee output
-func (d *DisableTeeMetaCommand) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (d *DisableTeeMetaCommand) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	return disableOutput(session)
 }
 
 // Execute disables output redirect (returns to stdout)
-func (d *DisableOutputRedirectMetaCommand) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (d *DisableOutputRedirectMetaCommand) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	return disableOutput(session)
 }

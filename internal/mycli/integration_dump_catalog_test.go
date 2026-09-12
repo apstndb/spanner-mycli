@@ -53,7 +53,7 @@ func fourParentCatalogDDL() []string {
 
 func dumpSQL(t *testing.T, session *Session, stmt Statement) string {
 	t.Helper()
-	result, err := stmt.Execute(t.Context(), session)
+	result, err := stmt.Execute(t.Context(), session, OperationOutput{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func dumpStreamingSQL(t *testing.T, session *Session, stmt Statement) string {
 		original.GetErrStream(),
 	)
 	defer func() { session.systemVariables.StreamManager = original }()
-	result, err := stmt.Execute(t.Context(), session)
+	result, err := stmt.Execute(t.Context(), session, OperationOutput{w: &buf})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -225,7 +225,7 @@ func TestDumpCatalogNamedUsersBufferedStreamingReplay(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		result, err := stmt.Execute(t.Context(), dest)
+		result, err := stmt.Execute(t.Context(), dest, OperationOutput{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -258,7 +258,7 @@ func replayDumpSQL(t *testing.T, dest *Session, sql string) {
 		if err != nil {
 			t.Fatalf("replay parse %q: %v", stripped, err)
 		}
-		if _, err := stmt.Execute(t.Context(), dest); err != nil {
+		if _, err := stmt.Execute(t.Context(), dest, OperationOutput{}); err != nil {
 			t.Fatalf("replay exec %q: %v", stripped, err)
 		}
 	}
@@ -332,7 +332,7 @@ func TestDumpCatalogConditionalGetDdlAndPermission(t *testing.T) {
 	var buf strings.Builder
 	original := session.systemVariables.StreamManager
 	session.systemVariables.StreamManager = streamio.NewStreamManager(original.GetInStream(), &buf, original.GetErrStream())
-	_, err := (&DumpTablesStatement{Tables: []tableID{tidn("Beta", "CrossChild"), tidn("Alpha", "Parent")}}).Execute(t.Context(), session)
+	_, err := (&DumpTablesStatement{Tables: []tableID{tidn("Beta", "CrossChild"), tidn("Alpha", "Parent")}}).Execute(t.Context(), session, OperationOutput{})
 	if err == nil || !strings.Contains(err.Error(), "spanner.databases.getDdl") {
 		t.Fatalf("PermissionDenied = %v", err)
 	}
@@ -401,11 +401,11 @@ func TestDumpCatalogCrossSchemaFKAndView(t *testing.T) {
 		t.Fatalf("absent FK parent was added:\n%s", childOnly)
 	}
 
-	_, err = (&DumpTablesStatement{Tables: []tableID{tid("V")}}).Execute(t.Context(), session)
+	_, err = (&DumpTablesStatement{Tables: []tableID{tid("V")}}).Execute(t.Context(), session, OperationOutput{})
 	if err == nil || !strings.Contains(err.Error(), "not a base table") {
 		t.Fatalf("view dump error = %v", err)
 	}
-	_, err = (&DumpTablesStatement{Tables: []tableID{tid("Missing")}}).Execute(t.Context(), session)
+	_, err = (&DumpTablesStatement{Tables: []tableID{tid("Missing")}}).Execute(t.Context(), session, OperationOutput{})
 	if err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Fatalf("missing dump error = %v", err)
 	}
@@ -419,7 +419,7 @@ func TestDumpPlanSkipsNoWritableColumns(t *testing.T) {
 	var result *Result
 	err := session.txn.withReadOnlyTransactionOrStart(t.Context(), func(txn *spanner.ReadOnlyTransaction) error {
 		var err error
-		result, err = executeDumpBufferedWithTxn(t.Context(), session, dumpModeTables, plan, txn, nil)
+		result, err = executeDumpBufferedWithTxn(t.Context(), session, dumpModeTables, plan, txn, nil, OperationOutput{})
 		return err
 	})
 	if err != nil {
@@ -513,7 +513,7 @@ func TestDumpSameReadTransaction(t *testing.T) {
 					if mode == "tables" {
 						stmt = &DumpTablesStatement{Tables: []tableID{tid("Parent"), tid("Child")}}
 					}
-					result, err := stmt.Execute(t.Context(), session)
+					result, err := stmt.Execute(t.Context(), session, OperationOutput{})
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -559,7 +559,7 @@ func TestDumpInvalidSameBasenameCandidateDoesNotGetDdl(t *testing.T) {
 	}
 	for _, tt := range cases {
 		t.Run(tt.name+"_buffered", func(t *testing.T) {
-			_, err := (&DumpTablesStatement{Tables: tt.tables}).Execute(t.Context(), session)
+			_, err := (&DumpTablesStatement{Tables: tt.tables}).Execute(t.Context(), session, OperationOutput{})
 			if err == nil || !strings.Contains(err.Error(), tt.errSub) {
 				t.Fatalf("error = %v, want %q", err, tt.errSub)
 			}
@@ -569,7 +569,7 @@ func TestDumpInvalidSameBasenameCandidateDoesNotGetDdl(t *testing.T) {
 			original := session.systemVariables.StreamManager
 			session.systemVariables.StreamManager = streamio.NewStreamManager(original.GetInStream(), &buf, original.GetErrStream())
 			defer func() { session.systemVariables.StreamManager = original }()
-			_, err := (&DumpTablesStatement{Tables: tt.tables}).Execute(t.Context(), session)
+			_, err := (&DumpTablesStatement{Tables: tt.tables}).Execute(t.Context(), session, OperationOutput{})
 			if err == nil || !strings.Contains(err.Error(), tt.errSub) {
 				t.Fatalf("error = %v, want %q", err, tt.errSub)
 			}
@@ -618,7 +618,7 @@ func TestDumpDDLRewriteFailureBeforeOutput(t *testing.T) {
 				if streaming {
 					session.systemVariables.StreamManager = streamio.NewStreamManager(original.GetInStream(), &buf, original.GetErrStream())
 				}
-				result, err := statement.Execute(t.Context(), session)
+				result, err := statement.Execute(t.Context(), session, OperationOutput{})
 				session.systemVariables.StreamManager = original
 				if err == nil || result != nil || buf.Len() != 0 {
 					t.Fatalf("%T streaming=%v: result=%+v error=%v output=%q; want error before any output", statement, streaming, result, err, buf.String())

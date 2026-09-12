@@ -33,7 +33,7 @@ type mcpAdmissionBlockingStatement struct {
 	release <-chan struct{}
 }
 
-func (s *mcpAdmissionBlockingStatement) Execute(ctx context.Context, _ *Session) (*Result, error) {
+func (s *mcpAdmissionBlockingStatement) Execute(ctx context.Context, _ *Session, out OperationOutput) (*Result, error) {
 	close(s.entered)
 	select {
 	case <-s.release:

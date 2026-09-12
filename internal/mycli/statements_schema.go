@@ -20,7 +20,7 @@ type ShowCreateStatement struct {
 	Name       string
 }
 
-func (s *ShowCreateStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *ShowCreateStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	ddlResponse, err := session.GetDatabaseDdlCached(ctx)
 	if err != nil {
 		return nil, err
@@ -52,7 +52,7 @@ type ShowTablesStatement struct {
 	Schema string
 }
 
-func (s *ShowTablesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *ShowTablesStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	alias := fmt.Sprintf("Tables_in_%s", session.systemVariables.Connection.Database)
 	stmt := spanner.Statement{
 		SQL:    fmt.Sprintf("SELECT t.TABLE_NAME AS %s FROM INFORMATION_SCHEMA.TABLES AS t WHERE t.TABLE_CATALOG = '' and t.TABLE_SCHEMA = @schema", spanvalue.QuoteIdentifier(session.systemVariables.Feature.DatabaseDialect, alias)),
@@ -67,7 +67,7 @@ type ShowColumnsStatement struct {
 	Table  string
 }
 
-func (s *ShowColumnsStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *ShowColumnsStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	stmt := spanner.Statement{
 		SQL: `SELECT
   C.COLUMN_NAME as Field,
@@ -101,7 +101,7 @@ type ShowIndexStatement struct {
 	Table  string
 }
 
-func (s *ShowIndexStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *ShowIndexStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	stmt := spanner.Statement{
 		SQL: `SELECT
   TABLE_NAME as Table,
@@ -125,7 +125,7 @@ WHERE
 
 type ShowDdlsStatement struct{}
 
-func (s *ShowDdlsStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *ShowDdlsStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	resp, err := session.GetDatabaseDdlCached(ctx)
 	if err != nil {
 		return nil, err

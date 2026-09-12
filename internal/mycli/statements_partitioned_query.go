@@ -12,7 +12,7 @@ import (
 
 type PartitionStatement struct{ SQL string }
 
-func (s *PartitionStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *PartitionStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	stmt, err := newStatement(s.SQL, session.systemVariables.Params, false)
 	if err != nil {
 		return nil, err
@@ -50,7 +50,7 @@ func (s *PartitionStatement) Execute(ctx context.Context, session *Session) (*Re
 
 type TryPartitionedQueryStatement struct{ SQL string }
 
-func (s *TryPartitionedQueryStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *TryPartitionedQueryStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	stmt, err := newStatement(s.SQL, session.systemVariables.Params, false)
 	if err != nil {
 		return nil, err
@@ -82,12 +82,12 @@ func (s *TryPartitionedQueryStatement) Execute(ctx context.Context, session *Ses
 
 type RunPartitionedQueryStatement struct{ SQL string }
 
-func (s *RunPartitionedQueryStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	return runPartitionedQuery(ctx, session, s.SQL)
+func (s *RunPartitionedQueryStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
+	return runPartitionedQuery(ctx, session, s.SQL, out)
 }
 
 type RunPartitionStatement struct{ Token string }
 
-func (s *RunPartitionStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *RunPartitionStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	return nil, errors.New("unsupported statement")
 }

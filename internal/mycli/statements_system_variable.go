@@ -19,7 +19,7 @@ type ShowVariableStatement struct {
 
 func (s *ShowVariableStatement) isDetachedCompatible() {}
 
-func (s *ShowVariableStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *ShowVariableStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	value, err := session.systemVariables.Get(s.VarName)
 	if err != nil {
 		return nil, err
@@ -41,7 +41,7 @@ type ShowVariablesStatement struct{}
 
 func (s *ShowVariablesStatement) isDetachedCompatible() {}
 
-func (s *ShowVariablesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *ShowVariablesStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	// Get all single-valued variables from the registry.
 	merged := session.systemVariables.ListVariables()
 
@@ -56,7 +56,7 @@ func (s *ShowVariablesStatement) Execute(ctx context.Context, session *Session) 
 		return cmp.Compare(lhs.Name, rhs.Name)
 	})
 
-	result, err := executeStructRows(nameValueRowEncoder, items, session)
+	result, err := executeStructRows(nameValueRowEncoder, items, session, out)
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +71,7 @@ type SetStatement struct {
 
 func (s *SetStatement) isDetachedCompatible() {}
 
-func (s *SetStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *SetStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	sysVars := session.systemVariables
 	sysVars.ensureRegistry()
 	if strings.EqualFold(s.VarName, protoDescriptorsVarName) && session.batch.IsActive() {
@@ -101,7 +101,7 @@ type SetLocalStatement struct {
 	Value   string
 }
 
-func (s *SetLocalStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *SetLocalStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	if session.txn == nil || !session.txn.InTransaction() {
 		return nil, errors.New("SET LOCAL requires an active transaction; start one with BEGIN")
 	}
@@ -158,7 +158,7 @@ type SetAddStatement struct {
 
 func (s *SetAddStatement) isDetachedCompatible() {}
 
-func (s *SetAddStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *SetAddStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	// The only ADD handler is PROTO_DESCRIPTORS_FILE_PATH, which is noLocal, so
 	// SET += cannot retire SET LOCAL undo. Do not hook ADD into that lifecycle.
 	if err := session.systemVariables.AddFromGoogleSQL(s.VarName, s.Value); err != nil {
@@ -219,7 +219,7 @@ func helpVariableRows(sysVars *systemVariables) []helpVariableRow {
 	return merged
 }
 
-func (s *HelpVariablesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *HelpVariablesStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	var sysVars *systemVariables
 	if session != nil {
 		sysVars = session.systemVariables
@@ -234,7 +234,7 @@ func (s *HelpVariablesStatement) Execute(ctx context.Context, session *Session) 
 
 	// executeStructRows handles a nil session by rendering a buffered result
 	// with default formatting, preserving the pre-existing detached behavior.
-	result, err := executeStructRows(helpVariablesRowEncoder, merged, session)
+	result, err := executeStructRows(helpVariablesRowEncoder, merged, session, out)
 	if err != nil {
 		return nil, err
 	}

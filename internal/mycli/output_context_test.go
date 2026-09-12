@@ -58,6 +58,14 @@ func newDetachedTestSession(global io.Writer) *Session {
 	return session
 }
 
+// newClientlessDatabaseSession is a client-less DatabaseConnected session.
+// RUN BATCH is not DetachedCompatible, so nested-dispatch tests use this.
+func newClientlessDatabaseSession(global io.Writer) *Session {
+	session := newDetachedTestSession(global)
+	session.mode = DatabaseConnected
+	return session
+}
+
 // TestExecuteStatementWithOutput_routesStreamedOutput is the regression test
 // for the MCP protocol corruption bug: streamed statement output (here, SHOW
 // VARIABLES under CLI_FORMAT=CSV) must go to the per-statement writer, not to
@@ -68,7 +76,7 @@ func TestExecuteStatementWithOutput_routesStreamedOutput(t *testing.T) {
 	var global, perCall bytes.Buffer
 	session := newDetachedTestSession(&global)
 
-	result, err := session.ExecuteStatementWithOutput(context.Background(), &ShowVariablesStatement{}, outputContext{w: &perCall})
+	result, err := session.ExecuteStatementWithOutput(context.Background(), &ShowVariablesStatement{}, OperationOutput{w: &perCall})
 	if err != nil {
 		t.Fatalf("ExecuteStatementWithOutput: %v", err)
 	}
@@ -82,13 +90,10 @@ func TestExecuteStatementWithOutput_routesStreamedOutput(t *testing.T) {
 	if global.Len() != 0 {
 		t.Errorf("StreamManager writer got %q, want empty (rows must not leak to the global stream)", global.String())
 	}
-	if session.output.w != nil || session.output.screenWidth != nil {
-		t.Errorf("session.output not restored after execution: %+v", session.output)
-	}
 }
 
 // TestExecuteStatement_fallsBackToStreamManager pins the fallback behavior:
-// without a per-statement outputContext (direct Session.ExecuteStatement
+// without a per-statement OperationOutput writer (direct Session.ExecuteStatement
 // callers), streamed output still goes to the StreamManager writer.
 func TestExecuteStatement_fallsBackToStreamManager(t *testing.T) {
 	t.Parallel()
@@ -109,31 +114,120 @@ func TestExecuteStatement_fallsBackToStreamManager(t *testing.T) {
 	}
 }
 
-// TestWithOutput_nestedRestore verifies that nested withOutput calls (e.g.
-// buffered DUMP capturing SQL export while a per-statement destination is
-// active) restore the previous destination on unwind.
-func TestWithOutput_nestedRestore(t *testing.T) {
+// TestOperationOutput_nestedRunBatchDispatch covers the #918 forwarding
+// boundary: RUN BATCH must re-enter ExecuteStatementWithOutput with the
+// caller destination. Dropping that value (ExecuteStatement) sends streamed
+// rows to StreamManager instead. Subtests share no session; each is sequential
+// so the next-statement default destination is deterministic.
+func TestOperationOutput_nestedRunBatchDispatch(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	t.Run("success then default next statement", func(t *testing.T) {
+		t.Parallel()
+
+		var global, caller bytes.Buffer
+		session := newClientlessDatabaseSession(&global)
+		t.Cleanup(session.Close)
+		session.batch.SetCurrent(&ShowVariablesStatement{})
+		callerOut := OperationOutput{w: &caller}
+
+		result, err := session.ExecuteStatementWithOutput(ctx, &RunBatchStatement{}, callerOut)
+		if err != nil {
+			t.Fatalf("RUN BATCH: %v", err)
+		}
+		if !result.alreadyDelivered() {
+			t.Errorf("Streamed = false, want true (CSV should stream)")
+		}
+		if caller.Len() == 0 || !strings.Contains(caller.String(), "CLI_FORMAT") {
+			t.Errorf("caller writer got %q, want CSV rows including CLI_FORMAT", caller.String())
+		}
+		if global.Len() != 0 {
+			t.Errorf("StreamManager writer got %q, want empty during nested RUN BATCH", global.String())
+		}
+
+		callerLen := caller.Len()
+		next, err := session.ExecuteStatement(ctx, &ShowVariablesStatement{})
+		if err != nil {
+			t.Fatalf("next ExecuteStatement: %v", err)
+		}
+		if !next.alreadyDelivered() {
+			t.Errorf("next Streamed = false, want true")
+		}
+		if global.Len() == 0 || !strings.Contains(global.String(), "CLI_FORMAT") {
+			t.Errorf("next statement StreamManager writer got %q, want CSV rows", global.String())
+		}
+		if caller.Len() != callerLen {
+			t.Errorf("caller writer grew from %d to %d after next statement", callerLen, caller.Len())
+		}
+	})
+
+	t.Run("nested error then default next statement", func(t *testing.T) {
+		t.Parallel()
+
+		var global, caller bytes.Buffer
+		session := newClientlessDatabaseSession(&global)
+		t.Cleanup(session.Close)
+		session.batch.SetCurrent(&SetLocalStatement{VarName: "CLI_VERBOSE", Value: "TRUE"})
+		callerOut := OperationOutput{w: &caller}
+
+		_, err := session.ExecuteStatementWithOutput(ctx, &RunBatchStatement{}, callerOut)
+		if err == nil || !strings.Contains(err.Error(), "SET LOCAL requires an active transaction") {
+			t.Fatalf("RUN BATCH nested error = %v, want SET LOCAL transaction error", err)
+		}
+		if global.Len() != 0 {
+			t.Errorf("StreamManager writer got %q, want empty on nested error", global.String())
+		}
+		if caller.Len() != 0 {
+			t.Errorf("caller writer got %q, want empty on nested SET LOCAL error", caller.String())
+		}
+		if session.batch.IsActive() {
+			t.Error("batch still active after nested error; TakeForExecution should have consumed it")
+		}
+
+		next, err := session.ExecuteStatement(ctx, &ShowVariablesStatement{})
+		if err != nil {
+			t.Fatalf("next ExecuteStatement: %v", err)
+		}
+		if !next.alreadyDelivered() {
+			t.Errorf("next Streamed = false, want true")
+		}
+		if global.Len() == 0 || !strings.Contains(global.String(), "CLI_FORMAT") {
+			t.Errorf("next statement StreamManager writer got %q, want CSV rows", global.String())
+		}
+		if caller.Len() != 0 {
+			t.Errorf("caller writer got %q after next statement, want unchanged empty", caller.String())
+		}
+	})
+}
+
+// TestDumpBuffered_isolatesLocalWriter checks DUMP internal buffering: the
+// caller's OperationOutput writer stays unused and unmutated while the
+// prepared body receives the dumped bytes.
+func TestDumpBuffered_isolatesLocalWriter(t *testing.T) {
 	t.Parallel()
 
-	var outer, inner bytes.Buffer
+	var caller bytes.Buffer
 	session := newDetachedTestSession(io.Discard)
-
-	err := session.withOutput(outputContext{w: &outer}, func() error {
-		if got := session.outputWriter(); got != &outer {
-			t.Errorf("outputWriter() = %v, want outer buffer", got)
-		}
-		return session.withOutput(outputContext{w: &inner}, func() error {
-			if got := session.outputWriter(); got != &inner {
-				t.Errorf("outputWriter() = %v, want inner buffer", got)
-			}
-			return nil
-		})
-	})
+	t.Cleanup(session.Close)
+	out := OperationOutput{w: &caller}
+	ddl := []byte("CREATE TABLE T (Id INT64) PRIMARY KEY(Id);\n")
+	result, err := executeDumpBufferedWithTxn(t.Context(), session, dumpModeSchema, &dumpPlan{DDL: ddl}, nil, nil, out)
 	if err != nil {
-		t.Fatalf("withOutput: %v", err)
+		t.Fatalf("executeDumpBufferedWithTxn: %v", err)
 	}
-	if session.output.w != nil || session.output.screenWidth != nil {
-		t.Errorf("session.output not restored after nested withOutput: %+v", session.output)
+	if caller.Len() != 0 {
+		t.Errorf("caller writer got %q, want empty (DUMP buffers locally)", caller.String())
+	}
+	if got := out.Writer(); got != &caller {
+		t.Errorf("caller OperationOutput.Writer() = %v after DUMP, want original buffer", got)
+	}
+	got, ok := result.Body.PreparedBytes()
+	if !ok {
+		t.Fatalf("result body kind = %v, want prepared bytes", result.Body)
+	}
+	if !bytes.Equal(got, ddl) {
+		t.Errorf("prepared body = %q, want %q", got, ddl)
 	}
 }
 

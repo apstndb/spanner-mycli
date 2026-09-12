@@ -495,8 +495,8 @@ type streamThenErrorStatement struct{}
 
 func (streamThenErrorStatement) isDetachedCompatible() {}
 
-func (streamThenErrorStatement) Execute(_ context.Context, session *Session) (*Result, error) {
-	w := session.outputWriter()
+func (streamThenErrorStatement) Execute(_ context.Context, _ *Session, out OperationOutput) (*Result, error) {
+	w := out.Writer()
 	if w == nil {
 		return nil, errors.New("no output writer")
 	}

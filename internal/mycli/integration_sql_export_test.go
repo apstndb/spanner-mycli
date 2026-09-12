@@ -31,7 +31,7 @@ func executeSQLExportForTest(t *testing.T, ctx context.Context, session *Session
 		t.Fatalf("Failed to build export statement: %v", err)
 	}
 
-	result, err := stmt.Execute(ctx, session)
+	result, err := stmt.Execute(ctx, session, OperationOutput{})
 	return result, buf.String(), err
 }
 
@@ -145,7 +145,7 @@ CREATE TABLE DestTable (
 			if err != nil {
 				t.Fatalf("Failed to build count statement: %v", err)
 			}
-			countResult, err := countStmt.Execute(ctx, session)
+			countResult, err := countStmt.Execute(ctx, session, OperationOutput{})
 			if err != nil {
 				t.Fatalf("Failed to count source data: %v", err)
 			}
@@ -193,7 +193,7 @@ CREATE TABLE DestTable (
 				if err != nil {
 					t.Fatalf("Failed to build INSERT statement: %v\nSQL: %s", err, sqlStmt)
 				}
-				_, err = insertStmt.Execute(ctx, session)
+				_, err = insertStmt.Execute(ctx, session, OperationOutput{})
 				if err != nil {
 					t.Fatalf("Failed to execute generated SQL: %v\nSQL: %s", err, sqlStmt)
 				}
@@ -294,7 +294,7 @@ CREATE TABLE ComplexDest (
 		if err != nil {
 			t.Fatalf("Failed to build INSERT statement: %v\nSQL: %s", err, sqlStmt)
 		}
-		_, err = insertStmt.Execute(ctx, session)
+		_, err = insertStmt.Execute(ctx, session, OperationOutput{})
 		if err != nil {
 			t.Fatalf("Failed to execute generated SQL: %v\nSQL: %s", err, sqlStmt)
 		}
@@ -454,7 +454,7 @@ CREATE TABLE TestTable (
 			}
 
 			// Execute will stream directly to the buffer via StreamManager
-			result, err := stmt.Execute(ctx, session)
+			result, err := stmt.Execute(ctx, session, OperationOutput{})
 			if err != nil {
 				t.Fatalf("Failed to execute query: %v", err)
 			}
@@ -639,7 +639,7 @@ func TestSQLExportWithUnnamedColumns(t *testing.T) {
 			t.Fatalf("Failed to build statement: %v", err)
 		}
 
-		result, err := stmt.Execute(ctx, session)
+		result, err := stmt.Execute(ctx, session, OperationOutput{})
 
 		t.Logf("Streaming mode test:")
 		t.Logf("Query: %s", query)
@@ -682,7 +682,7 @@ func TestSQLExportWithUnnamedColumns(t *testing.T) {
 			t.Fatalf("Failed to build statement: %v", err)
 		}
 
-		result, err := stmt.Execute(ctx, session)
+		result, err := stmt.Execute(ctx, session, OperationOutput{})
 
 		t.Logf("Streaming mode test with named columns:")
 		t.Logf("Query: %s", query)

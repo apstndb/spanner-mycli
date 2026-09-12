@@ -596,7 +596,7 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 		defer sink.abort()
 		outW = sink
 	}
-	out := outputContext{
+	out := OperationOutput{
 		w: outW,
 		// Resolve the width against the caller's writer, not the sink: the
 		// pager pipe is never a terminal.

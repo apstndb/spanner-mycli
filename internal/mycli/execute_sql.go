@@ -84,21 +84,21 @@ func (r queryRendering) withExecuteOverrides(mode enums.DisplayMode, streaming e
 }
 
 // executeSQLWithFormatAndTxn executes SQL with specific format settings and
-// within a given transaction. out, when non-nil, is the explicit destination
-// for streaming output instead of the session's statement-level destination.
+// within a given transaction. out is the operation destination; DUMP overrides
+// a local copy's writer for internal buffering while keeping the outer width.
 // dro is the caller's captured directed-read option for this read-only request.
-func executeSQLWithFormatAndTxn(ctx context.Context, session *Session, txn *spanner.ReadOnlyTransaction, sql string, format enums.DisplayMode, streamingMode enums.StreamingMode, sqlTableName string, dro *sppb.DirectedReadOptions, out io.Writer) (*Result, error) {
+func executeSQLWithFormatAndTxn(ctx context.Context, session *Session, txn *spanner.ReadOnlyTransaction, sql string, format enums.DisplayMode, streamingMode enums.StreamingMode, sqlTableName string, dro *sppb.DirectedReadOptions, out OperationOutput) (*Result, error) {
 	render := queryRenderingFrom(session.systemVariables).withExecuteOverrides(format, streamingMode, sqlTableName)
 	return executeSQLImplWithTxn(ctx, session, txn, sql, render, dro, out)
 }
 
-func executeSQL(ctx context.Context, session *Session, sql string) (*Result, error) {
-	return executeSQLImpl(ctx, session, sql)
+func executeSQL(ctx context.Context, session *Session, sql string, out OperationOutput) (*Result, error) {
+	return executeSQLImpl(ctx, session, sql, out)
 }
 
 // executeSQLImpl delegates to executeSQLImplWithVars with the session's system variables
-func executeSQLImpl(ctx context.Context, session *Session, sql string) (*Result, error) {
-	return executeSQLImplWithVars(ctx, session, sql, session.systemVariables)
+func executeSQLImpl(ctx context.Context, session *Session, sql string, out OperationOutput) (*Result, error) {
+	return executeSQLImplWithVars(ctx, session, sql, session.systemVariables, out)
 }
 
 // prepareFormatConfig fills the spanvalue formatter, value-format mode, and
@@ -185,7 +185,7 @@ func finalizeMetrics(m *metrics.ExecutionMetrics, sysVars *systemVariables) {
 // avoiding 9+ individual parameters through executeAndCollect and its downstream functions.
 type queryExecution struct {
 	Session     *Session
-	Output      io.Writer
+	Out         OperationOutput
 	Iter        *spanner.RowIterator
 	ReadOnlyTxn *spanner.ReadOnlyTransaction
 	SQL         string
@@ -201,10 +201,7 @@ type queryExecution struct {
 }
 
 func (qe *queryExecution) outputWriter() io.Writer {
-	if qe.Output != nil {
-		return qe.Output
-	}
-	return qe.Session.outputWriter()
+	return qe.Out.Writer()
 }
 
 // executeAndCollect runs the query iterator (streaming or buffered) and attaches metrics to the result.
@@ -242,7 +239,7 @@ func executeAndCollect(ctx context.Context, qe *queryExecution) (*Result, error)
 // executeSQLImplWithTxn executes SQL within a given transaction using live
 // session settings for parameters, Mode/Priority, and metrics. render carries
 // DUMP format/streaming/table/header overrides; dro is captured for the DUMP request.
-func executeSQLImplWithTxn(ctx context.Context, session *Session, txn *spanner.ReadOnlyTransaction, sql string, render queryRendering, dro *sppb.DirectedReadOptions, out io.Writer) (*Result, error) {
+func executeSQLImplWithTxn(ctx context.Context, session *Session, txn *spanner.ReadOnlyTransaction, sql string, render queryRendering, dro *sppb.DirectedReadOptions, out OperationOutput) (*Result, error) {
 	sysVars := session.systemVariables
 	m := newMetrics(sysVars)
 
@@ -267,7 +264,7 @@ func executeSQLImplWithTxn(ctx context.Context, session *Session, txn *spanner.R
 
 	return executeAndCollect(ctx, &queryExecution{
 		Session:        session,
-		Output:         out,
+		Out:            out,
 		Iter:           iter,
 		ReadOnlyTxn:    txn,
 		SQL:            sql,
@@ -281,15 +278,17 @@ func executeSQLImplWithTxn(ctx context.Context, session *Session, txn *spanner.R
 // executeSQLImplWithVars runs SQL against the live settings object (Params,
 // QueryMode, cache destination, metrics). Per-query display overrides live on
 // queryRendering, not a copy of sysVars.
-func executeSQLImplWithVars(ctx context.Context, session *Session, sql string, sysVars *systemVariables) (*Result, error) {
+func executeSQLImplWithVars(ctx context.Context, session *Session, sql string, sysVars *systemVariables, out OperationOutput) (*Result, error) {
 	if _, err := session.txn.FlushAutomaticDML(ctx); err != nil {
 		return nil, err
 	}
-	return executeSQLImplWithQueryRunner(ctx, session, sql, sysVars, session.txn.RunQueryWithStats, true)
+	return executeSQLImplWithQueryRunner(ctx, session, sql, sysVars, session.txn.RunQueryWithStats, true, out)
 }
 
 // rollbackReadWriteIfAborted rolls back a live RW owner when err is Aborted so
 // RecreateClient can replace the session. The initiating error is preserved.
+// Rollback emits no statement output, so this calls the transaction manager
+// directly instead of manufacturing a nested Statement.Execute destination.
 func rollbackReadWriteIfAborted(ctx context.Context, session *Session, err error) error {
 	if err == nil || session == nil || session.txn == nil {
 		return err
@@ -297,7 +296,7 @@ func rollbackReadWriteIfAborted(ctx context.Context, session *Session, err error
 	if !session.txn.InReadWriteTransaction() || spanner.ErrCode(err) != codes.Aborted {
 		return err
 	}
-	if _, rollbackErr := (&RollbackStatement{}).Execute(ctx, session); rollbackErr != nil {
+	if rollbackErr := session.txn.RollbackReadWriteTransaction(ctx); rollbackErr != nil {
 		return errors.Join(err, fmt.Errorf("error on rollback: %w", rollbackErr))
 	}
 	return err
@@ -306,16 +305,20 @@ func rollbackReadWriteIfAborted(ctx context.Context, session *Session, err error
 // executeSQLImplSingleUse executes SQL outside the session's explicit
 // transaction while preserving normal query options and one-shot request-tag
 // consumption.
-func executeSQLImplSingleUse(ctx context.Context, session *Session, sql string, sysVars *systemVariables) (*Result, error) {
+func executeSQLImplSingleUse(ctx context.Context, session *Session, sql string, sysVars *systemVariables, out OperationOutput) (*Result, error) {
 	run := func(ctx context.Context, stmt spanner.Statement, _ bool, mode sppb.ExecuteSqlRequest_QueryMode) (*spanner.RowIterator, *spanner.ReadOnlyTransaction, error) {
 		return session.txn.RunSingleUseQueryWithStats(ctx, stmt, mode)
 	}
-	return executeSQLImplWithQueryRunner(ctx, session, sql, sysVars, run, false)
+	return executeSQLImplWithQueryRunner(ctx, session, sql, sysVars, run, false, out)
 }
 
 type queryWithStatsRunner func(context.Context, spanner.Statement, bool, sppb.ExecuteSqlRequest_QueryMode) (*spanner.RowIterator, *spanner.ReadOnlyTransaction, error)
 
-func executeSQLImplWithQueryRunner(ctx context.Context, session *Session, sql string, sysVars *systemVariables, run queryWithStatsRunner, rollbackActiveTransactionOnAbort bool) (*Result, error) {
+func executeSQLImplWithQueryRunner(ctx context.Context, session *Session, sql string, sysVars *systemVariables, run queryWithStatsRunner, rollbackActiveTransactionOnAbort bool, out OperationOutput) (*Result, error) {
+	// Direct Execute tests often pass a zero OperationOutput after swapping
+	// StreamManager. Resolve here so a nil writer still uses StreamManager,
+	// without mutating Session. Caller-provided writers still win.
+	out = session.resolveOperationOutput(out)
 	m := newMetrics(sysVars)
 
 	// Capture the caller's cache slot before prepareFormatConfig fills
@@ -339,6 +342,7 @@ func executeSQLImplWithQueryRunner(ctx context.Context, session *Session, sql st
 
 	result, err := executeAndCollect(ctx, &queryExecution{
 		Session:        session,
+		Out:            out,
 		Iter:           iter,
 		ReadOnlyTxn:    roTxn,
 		SQL:            sql,
@@ -381,7 +385,7 @@ func decideExecutionMode(qe *queryExecution) (bool, RowProcessor, error) {
 		return true, nil, nil
 	}
 
-	screenWidth := qe.Session.displayWidthFor()
+	screenWidth := qe.Out.ScreenWidth()
 
 	// Try to create streaming processor based on settings
 	processor, err := streamingProcessorFor(qe.Render, outStream, screenWidth)

@@ -39,7 +39,7 @@ import (
 )
 
 type Statement interface {
-	Execute(ctx context.Context, session *Session) (*Result, error)
+	Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error)
 }
 
 // MutationStatement is a marker interface for mutation statements.

@@ -32,7 +32,7 @@ type BeginRwStatement struct {
 
 func (BeginRwStatement) isMutationStatement() {}
 
-func (s *BeginRwStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *BeginRwStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	if session.txn.InReadWriteTransaction() {
 		return nil, errors.New("you're in read-write transaction. Please finish the transaction by 'COMMIT;' or 'ROLLBACK;'")
 	}
@@ -53,7 +53,7 @@ type BeginStatement struct {
 	Priority       sppb.RequestOptions_Priority
 }
 
-func (s *BeginStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *BeginStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	if session.txn.InTransaction() {
 		return nil, errors.New("you're in transaction. Please finish the transaction by 'COMMIT;' or 'ROLLBACK;'")
 	}
@@ -81,7 +81,7 @@ type SetTransactionStatement struct {
 	IsReadOnly bool
 }
 
-func (s *SetTransactionStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *SetTransactionStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	result := &Result{}
 
 	// Get transaction attributes atomically to avoid check-then-act race
@@ -138,7 +138,7 @@ func closeNonRWTransaction(session *Session, mode transactionMode, isActive bool
 
 type CommitStatement struct{}
 
-func (s *CommitStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *CommitStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	mode, isActive := session.txn.TransactionState()
 	if result, handled, err := closeNonRWTransaction(session, mode, isActive); handled || err != nil {
 		return result, err
@@ -169,7 +169,7 @@ func (s *CommitStatement) Execute(ctx context.Context, session *Session) (*Resul
 
 type RollbackStatement struct{}
 
-func (s *RollbackStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *RollbackStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	mode, isActive := session.txn.TransactionState()
 	if result, handled, err := closeNonRWTransaction(session, mode, isActive); handled || err != nil {
 		return result, err
@@ -182,14 +182,14 @@ func (s *RollbackStatement) Execute(ctx context.Context, session *Session) (*Res
 	return &Result{}, nil
 }
 
-func (s *BeginRoStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *BeginRoStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	if session.txn.InReadWriteTransaction() {
 		return nil, errors.New("invalid state: You're in read-write transaction. Please finish the transaction by 'COMMIT;' or 'ROLLBACK;'")
 	}
 
 	if session.txn.InReadOnlyTransaction() {
 		// close current transaction implicitly
-		if _, err := (&RollbackStatement{}).Execute(ctx, session); err != nil {
+		if _, err := (&RollbackStatement{}).Execute(ctx, session, out); err != nil {
 			return nil, fmt.Errorf("error on close current transaction: %w", err)
 		}
 	}

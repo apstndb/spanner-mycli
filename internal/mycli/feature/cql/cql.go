@@ -159,7 +159,7 @@ func (h *cqlSessionHolder) get(session *mycli.Session) (*gocql.Session, error) {
 
 // Execute runs the CQL statement and returns the result rows as display
 // strings.
-func (cs *CQLStatement) Execute(ctx context.Context, session *mycli.Session) (result *mycli.Result, err error) {
+func (cs *CQLStatement) Execute(ctx context.Context, session *mycli.Session, out mycli.OperationOutput) (result *mycli.Result, err error) {
 	holder, err := mycli.FeatureState(ctx, session, sessionStateKey,
 		func(context.Context, *mycli.Session) (*cqlSessionHolder, error) {
 			return &cqlSessionHolder{}, nil

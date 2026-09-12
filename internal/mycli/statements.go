@@ -56,7 +56,7 @@ func (s *SelectStatement) String() string {
 	return s.Query
 }
 
-func (s *SelectStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *SelectStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	// Single lock acquisition for both DetermineTransaction and InTransaction check
 	_, inTransaction, err := session.txn.DetermineTransactionAndState(ctx)
 	if err != nil {
@@ -66,7 +66,7 @@ func (s *SelectStatement) Execute(ctx context.Context, session *Session) (*Resul
 	qm := session.systemVariables.Query.QueryMode
 	switch {
 	case session.systemVariables.Query.TryPartitionQuery:
-		return (&TryPartitionedQueryStatement{SQL: s.Query}).Execute(ctx, session)
+		return (&TryPartitionedQueryStatement{SQL: s.Query}).Execute(ctx, session, out)
 	case qm != nil && *qm == sppb.ExecuteSqlRequest_PLAN:
 		return executeExplain(ctx, session, s.Query, false, enums.ExplainFormatUnspecified, 0, nil)
 	case qm != nil && *qm == sppb.ExecuteSqlRequest_PROFILE:
@@ -76,9 +76,9 @@ func (s *SelectStatement) Execute(ctx context.Context, session *Session) (*Resul
 		// effectiveQueryMode() resolves the request-level mode and
 		// finalizeQueryResult() adjusts stats/plan rendering.
 		if !inTransaction && session.systemVariables.Query.AutoPartitionMode {
-			return runPartitionedQuery(ctx, session, s.Query)
+			return runPartitionedQuery(ctx, session, s.Query, out)
 		}
-		return executeSQL(ctx, session, s.Query)
+		return executeSQL(ctx, session, s.Query, out)
 	}
 }
 
@@ -98,7 +98,7 @@ func (s *ExportDataStatement) String() string {
 
 func (ExportDataStatement) isNonTransactionalMutationStatement() {}
 
-func (s *ExportDataStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *ExportDataStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	if session.systemVariables.Query.TryPartitionQuery {
 		return nil, errors.New("EXPORT DATA cannot be executed with CLI_TRY_PARTITION_QUERY=TRUE")
 	}
@@ -110,7 +110,7 @@ func (s *ExportDataStatement) Execute(ctx context.Context, session *Session) (*R
 		return nil, errors.New("EXPORT DATA cannot be executed with CLI_QUERY_MODE=PLAN")
 	}
 
-	return executeSQLImplSingleUse(ctx, session, s.SQL, session.systemVariables)
+	return executeSQLImplSingleUse(ctx, session, s.SQL, session.systemVariables, out)
 }
 
 type DmlStatement struct {
@@ -123,10 +123,10 @@ func (s *DmlStatement) String() string {
 
 func (DmlStatement) isMutationStatement() {}
 
-func (s *DmlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *DmlStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	switch {
 	case session.systemVariables.Query.TryPartitionQuery:
-		return (&TryPartitionedQueryStatement{SQL: s.Dml}).Execute(ctx, session)
+		return (&TryPartitionedQueryStatement{SQL: s.Dml}).Execute(ctx, session, out)
 	case lo.FromPtr(session.systemVariables.Query.QueryMode) == sppb.ExecuteSqlRequest_PLAN:
 		return executeExplain(ctx, session, s.Dml, true, enums.ExplainFormatUnspecified, 0, nil)
 	case lo.FromPtr(session.systemVariables.Query.QueryMode) == sppb.ExecuteSqlRequest_PROFILE:
@@ -148,7 +148,7 @@ func (s *DdlStatement) String() string {
 
 func (DdlStatement) isMutationStatement() {}
 
-func (s *DdlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *DdlStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	return bufferOrExecuteDdlStatements(ctx, session, []string{s.Ddl})
 }
 
@@ -164,7 +164,7 @@ func (CreateDatabaseStatement) isMutationStatement() {}
 
 func (s *CreateDatabaseStatement) isDetachedCompatible() {}
 
-func (s *CreateDatabaseStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *CreateDatabaseStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	op, err := session.adminClient.CreateDatabase(ctx, &databasepb.CreateDatabaseRequest{
 		Parent:          session.InstancePath(),
 		CreateStatement: s.CreateStatement,
@@ -212,7 +212,7 @@ func (DropDatabaseStatement) isMutationStatement() {}
 
 func (s *DropDatabaseStatement) isDetachedCompatible() {}
 
-func (s *DropDatabaseStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *DropDatabaseStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	if err := session.adminClient.DropDatabase(ctx, &databasepb.DropDatabaseRequest{
 		Database: databasePath(session.connection.Project, session.connection.Instance, s.DatabaseId),
 	}); err != nil {
@@ -235,7 +235,7 @@ type databaseNameRow struct {
 
 var showDatabasesRowEncoder = spancodec.MustNewRowEncoder[databaseNameRow]()
 
-func (s *ShowDatabasesStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *ShowDatabasesStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	dbIter := session.adminClient.ListDatabases(ctx, &databasepb.ListDatabasesRequest{
 		Parent: session.InstancePath(),
 	})
@@ -253,7 +253,7 @@ func (s *ShowDatabasesStatement) Execute(ctx context.Context, session *Session) 
 		items = append(items, databaseNameRow{Database: matched[1]})
 	}
 
-	return executeStructRows(showDatabasesRowEncoder, items, session)
+	return executeStructRows(showDatabasesRowEncoder, items, session, out)
 }
 
 // Split Points
@@ -264,7 +264,7 @@ func (s *ShowDatabasesStatement) Execute(ctx context.Context, session *Session) 
 
 type ShowSchemaUpdateOperations struct{}
 
-func (s *ShowSchemaUpdateOperations) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *ShowSchemaUpdateOperations) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	num := 0
 
 	var rows []Row
@@ -319,7 +319,7 @@ type ShowOperationStatement struct {
 	Mode        string // "ASYNC" or "SYNC"
 }
 
-func (s *ShowOperationStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *ShowOperationStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	// Check mode support
 	if s.Mode == "SYNC" {
 		return s.executeSyncMode(ctx, session)
@@ -605,7 +605,7 @@ type TruncateTableStatement struct {
 
 func (TruncateTableStatement) isMutationStatement() {}
 
-func (s *TruncateTableStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *TruncateTableStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	if session.txn.InReadWriteTransaction() {
 		// PartitionedUpdate creates a new transaction and it could cause dead lock with the current running transaction.
 		return nil, errors.New(`"TRUNCATE TABLE" can not be used in a read-write transaction`)
@@ -634,7 +634,7 @@ type PartitionedDmlStatement struct {
 
 func (PartitionedDmlStatement) isMutationStatement() {}
 
-func (s *PartitionedDmlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *PartitionedDmlStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	if session.txn.InReadWriteTransaction() {
 		// PartitionedUpdate creates a new transaction and it could cause dead lock with the current running transaction.
 		return nil, errors.New(`partitioned DML statement can not be run in a read-write transaction`)
@@ -670,7 +670,7 @@ func (s *BulkDdlStatement) String() string {
 
 func (BulkDdlStatement) isMutationStatement() {}
 
-func (s *BulkDdlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *BulkDdlStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	return executeDdlStatements(ctx, session, s.Ddls)
 }
 
@@ -680,7 +680,7 @@ type BatchDMLStatement struct {
 
 func (BatchDMLStatement) isMutationStatement() {}
 
-func (s *BatchDMLStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *BatchDMLStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	return executeBatchDML(ctx, session, s.DMLs)
 }
 
@@ -688,7 +688,7 @@ type StartBatchStatement struct {
 	Mode batchMode
 }
 
-func (s *StartBatchStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *StartBatchStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	if session.txn != nil && session.txn.HasAutomaticDML() {
 		return nil, fmt.Errorf("already in batch, you should execute ABORT BATCH")
 	}
@@ -700,7 +700,7 @@ func (s *StartBatchStatement) Execute(ctx context.Context, session *Session) (*R
 
 type AbortBatchStatement struct{}
 
-func (s *AbortBatchStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *AbortBatchStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	session.batch.Abort()
 	if session.txn != nil {
 		session.txn.DiscardAutomaticDML()
@@ -710,11 +710,11 @@ func (s *AbortBatchStatement) Execute(ctx context.Context, session *Session) (*R
 
 type RunBatchStatement struct{}
 
-func (s *RunBatchStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
-	return runBatch(ctx, session)
+func (s *RunBatchStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
+	return runBatch(ctx, session, out)
 }
 
-func runBatch(ctx context.Context, session *Session) (*Result, error) {
+func runBatch(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	if err := session.failStatementIfReadOnly(); err != nil {
 		return nil, err
 	}
@@ -724,7 +724,7 @@ func runBatch(ctx context.Context, session *Session) (*Result, error) {
 			return nil, err
 		}
 
-		result, err := session.ExecuteStatement(ctx, batch)
+		result, err := session.ExecuteStatementWithOutput(ctx, batch, out)
 		if err != nil {
 			return nil, err
 		}
@@ -772,7 +772,7 @@ type helpRow struct {
 
 var helpRowEncoder = spancodec.MustNewRowEncoder[helpRow]()
 
-func (s *HelpStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *HelpStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	var items []helpRow
 	for _, stmt := range activeStatementDefs {
 		for _, desc := range stmt.Descriptions {
@@ -781,7 +781,7 @@ func (s *HelpStatement) Execute(ctx context.Context, session *Session) (*Result,
 	}
 
 	// session is nil when HELP is rendered without a connection.
-	result, err := executeStructRows(helpRowEncoder, items, session)
+	result, err := executeStructRows(helpRowEncoder, items, session, out)
 	if err != nil {
 		return nil, err
 	}
@@ -797,7 +797,7 @@ func (s *ExitStatement) isDetachedCompatible() {}
 
 type NopStatement struct{}
 
-func (s *NopStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *NopStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	// do nothing
 	return &Result{}, nil
 }

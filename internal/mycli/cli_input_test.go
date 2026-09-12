@@ -342,7 +342,7 @@ type abortStatement struct{}
 
 func (abortStatement) isDetachedCompatible() {}
 
-func (abortStatement) Execute(context.Context, *Session) (*Result, error) {
+func (abortStatement) Execute(context.Context, *Session, OperationOutput) (*Result, error) {
 	return nil, spanner.ToSpannerError(status.Error(codes.Aborted, "txn aborted"))
 }
 
@@ -430,7 +430,7 @@ type timestampResultStatement struct{ ts time.Time }
 
 func (timestampResultStatement) isDetachedCompatible() {}
 
-func (s timestampResultStatement) Execute(context.Context, *Session) (*Result, error) {
+func (s timestampResultStatement) Execute(context.Context, *Session, OperationOutput) (*Result, error) {
 	return &Result{
 		ReadTimestamp:   s.ts,
 		CommitTimestamp: s.ts,
@@ -542,7 +542,7 @@ type keepVariablesStatement struct{}
 
 func (keepVariablesStatement) isDetachedCompatible() {}
 
-func (keepVariablesStatement) Execute(context.Context, *Session) (*Result, error) {
+func (keepVariablesStatement) Execute(context.Context, *Session, OperationOutput) (*Result, error) {
 	return &Result{
 		KeepVariables: true,
 		ReadTimestamp: time.Date(2026, 9, 12, 0, 0, 0, 0, time.UTC),

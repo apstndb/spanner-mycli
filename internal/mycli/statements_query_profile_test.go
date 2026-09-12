@@ -304,7 +304,7 @@ func TestShowQueryProfileStatementsRejectReadWriteTransaction(t *testing.T) {
 			t.Parallel()
 			session := newSessionForLocalVarTest(t)
 			session.txn.tc = &transactionContext{attrs: transactionAttributes{mode: transactionModeReadWrite}}
-			_, err := stmt.Execute(t.Context(), session)
+			_, err := stmt.Execute(t.Context(), session, OperationOutput{})
 			if err == nil || err.Error() != want {
 				t.Fatalf("Execute() error = %v, want %q", err, want)
 			}
@@ -331,7 +331,7 @@ func TestShowQueryProfilesStatementExecute(t *testing.T) {
 	t.Run("empty result", func(t *testing.T) {
 		t.Parallel()
 		session, server := newQueryProfileRPCSession(t, nil)
-		got, err := (&ShowQueryProfilesStatement{}).Execute(t.Context(), session)
+		got, err := (&ShowQueryProfilesStatement{}).Execute(t.Context(), session, OperationOutput{})
 		if err != nil {
 			t.Fatalf("Execute() error = %v", err)
 		}
@@ -352,7 +352,7 @@ func TestShowQueryProfilesStatementExecute(t *testing.T) {
 			latency:     0.01109,
 			profile:     profile,
 		}})
-		got, err := (&ShowQueryProfilesStatement{}).Execute(t.Context(), session)
+		got, err := (&ShowQueryProfilesStatement{}).Execute(t.Context(), session, OperationOutput{})
 		if err != nil {
 			t.Fatalf("Execute() error = %v", err)
 		}
@@ -390,7 +390,7 @@ func TestShowQueryProfilesStatementExecute(t *testing.T) {
 			fingerprint: 1,
 			profile:     "{",
 		}})
-		_, err := (&ShowQueryProfilesStatement{}).Execute(t.Context(), session)
+		_, err := (&ShowQueryProfilesStatement{}).Execute(t.Context(), session, OperationOutput{})
 		if err == nil || (!strings.Contains(err.Error(), "cannot decode") && !strings.Contains(err.Error(), "unexpected EOF")) {
 			t.Fatalf("Execute() error = %v, want malformed JSON decode failure", err)
 		}
@@ -403,7 +403,7 @@ func TestShowQueryProfilesStatementExecute(t *testing.T) {
 			fingerprint: 1,
 			profile:     `[]`,
 		}})
-		_, err := (&ShowQueryProfilesStatement{}).Execute(t.Context(), session)
+		_, err := (&ShowQueryProfilesStatement{}).Execute(t.Context(), session, OperationOutput{})
 		if err == nil || !strings.Contains(err.Error(), "cannot unmarshal") {
 			t.Fatalf("Execute() error = %v, want non-object profile JSON", err)
 		}
@@ -413,7 +413,7 @@ func TestShowQueryProfilesStatementExecute(t *testing.T) {
 		t.Parallel()
 		session, server := newQueryProfileRPCSession(t, nil)
 		server.execErr = status.Error(codes.NotFound, "QUERY_PROFILES_TOP_HOUR missing")
-		_, err := (&ShowQueryProfilesStatement{}).Execute(t.Context(), session)
+		_, err := (&ShowQueryProfilesStatement{}).Execute(t.Context(), session, OperationOutput{})
 		if err == nil || !strings.Contains(err.Error(), "QUERY_PROFILES_TOP_HOUR missing") {
 			t.Fatalf("Execute() error = %v, want injected query error", err)
 		}
@@ -439,7 +439,7 @@ func TestShowQueryProfileStatementExecute(t *testing.T) {
 	t.Run("empty result", func(t *testing.T) {
 		t.Parallel()
 		session, server := newQueryProfileRPCSession(t, nil)
-		_, err := (&ShowQueryProfileStatement{Fprint: queryProfileFingerprint}).Execute(t.Context(), session)
+		_, err := (&ShowQueryProfileStatement{Fprint: queryProfileFingerprint}).Execute(t.Context(), session, OperationOutput{})
 		if err == nil || err.Error() != "empty result" {
 			t.Fatalf("Execute() error = %v, want empty result", err)
 		}
@@ -456,7 +456,7 @@ func TestShowQueryProfileStatementExecute(t *testing.T) {
 			latency:     0.00023,
 			profile:     profile,
 		}})
-		got, err := (&ShowQueryProfileStatement{Fprint: queryProfileFingerprint}).Execute(t.Context(), session)
+		got, err := (&ShowQueryProfileStatement{Fprint: queryProfileFingerprint}).Execute(t.Context(), session, OperationOutput{})
 		if err != nil {
 			t.Fatalf("Execute() error = %v", err)
 		}
@@ -487,7 +487,7 @@ func TestShowQueryProfileStatementExecute(t *testing.T) {
 			fingerprint: queryProfileFingerprint,
 			profile:     `{"queryPlan":123,"queryStats":{}}`,
 		}})
-		_, err := (&ShowQueryProfileStatement{Fprint: queryProfileFingerprint}).Execute(t.Context(), session)
+		_, err := (&ShowQueryProfileStatement{Fprint: queryProfileFingerprint}).Execute(t.Context(), session, OperationOutput{})
 		if err == nil || !strings.Contains(err.Error(), "syntax error") {
 			t.Fatalf("Execute() error = %v, want malformed plan", err)
 		}

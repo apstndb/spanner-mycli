@@ -216,7 +216,7 @@ func (c *clientCache) get(ctx context.Context, session *mycli.Session) (*bq.Clie
 }
 
 // Execute runs the BigQuery SQL and returns the result rows as display strings.
-func (s *BigQueryStatement) Execute(ctx context.Context, session *mycli.Session) (*mycli.Result, error) {
+func (s *BigQueryStatement) Execute(ctx context.Context, session *mycli.Session, out mycli.OperationOutput) (*mycli.Result, error) {
 	cache, err := mycli.FeatureState(ctx, session, clientStateKey,
 		func(context.Context, *mycli.Session) (*clientCache, error) {
 			return &clientCache{cfg: s.cfg}, nil
