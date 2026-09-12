@@ -45,7 +45,7 @@ func TestDumpProtoDescriptorReplay(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, cmd := range cmds {
-		if _, err := source.ExecuteStatement(t.Context(), cmd); err != nil {
+		if _, err := source.ExecuteStatement(t.Context(), cmd.stmt); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -94,12 +94,12 @@ func TestDumpProtoDescriptorReplay(t *testing.T) {
 					if len(commands) == 0 {
 						t.Fatal("no replay commands")
 					}
-					if _, ok := commands[0].(*SetStatement); !ok {
-						t.Fatalf("first command = %T, want SET", commands[0])
+					if _, ok := commands[0].stmt.(*SetStatement); !ok {
+						t.Fatalf("first command = %T, want SET", commands[0].stmt)
 					}
 					_, target := initializeWithRandomDB(t, nil, nil)
 					for _, command := range commands {
-						if _, err := target.ExecuteStatement(t.Context(), command); err != nil {
+						if _, err := target.ExecuteStatement(t.Context(), command.stmt); err != nil {
 							t.Fatalf("unassisted replay: %v", err)
 						}
 					}
@@ -128,7 +128,7 @@ func TestDumpProtoDescriptorImportedNestedReplay(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, cmd := range cmds {
-		if _, err := source.ExecuteStatement(t.Context(), cmd); err != nil {
+		if _, err := source.ExecuteStatement(t.Context(), cmd.stmt); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -180,7 +180,7 @@ func TestDumpProtoReplayWithoutPreamble(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, cmd := range cmds {
-		if _, err := source.ExecuteStatement(t.Context(), cmd); err != nil {
+		if _, err := source.ExecuteStatement(t.Context(), cmd.stmt); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -195,14 +195,14 @@ func TestDumpProtoReplayWithoutPreamble(t *testing.T) {
 	if len(commands) < 2 {
 		t.Fatalf("replay commands = %d, want SET plus DDL/data", len(commands))
 	}
-	if _, ok := commands[0].(*SetStatement); !ok {
-		t.Fatalf("first command = %T, want SET", commands[0])
+	if _, ok := commands[0].stmt.(*SetStatement); !ok {
+		t.Fatalf("first command = %T, want SET", commands[0].stmt)
 	}
 
 	_, stripped := initializeWithRandomDB(t, nil, nil)
 	var strippedErr error
 	for _, command := range commands[1:] {
-		if _, strippedErr = stripped.ExecuteStatement(t.Context(), command); strippedErr != nil {
+		if _, strippedErr = stripped.ExecuteStatement(t.Context(), command.stmt); strippedErr != nil {
 			break
 		}
 	}
@@ -215,7 +215,7 @@ func TestDumpProtoReplayWithoutPreamble(t *testing.T) {
 
 	_, control := initializeWithRandomDB(t, nil, nil)
 	for _, command := range commands {
-		if _, err := control.ExecuteStatement(t.Context(), command); err != nil {
+		if _, err := control.ExecuteStatement(t.Context(), command.stmt); err != nil {
 			t.Fatalf("descriptor-supplied control: %v", err)
 		}
 	}
@@ -344,11 +344,11 @@ func replayCommands(t *testing.T, target *Session, sql string) {
 	if len(commands) == 0 {
 		t.Fatal("no replay commands")
 	}
-	if _, ok := commands[0].(*SetStatement); !ok {
-		t.Fatalf("first command = %T, want SET", commands[0])
+	if _, ok := commands[0].stmt.(*SetStatement); !ok {
+		t.Fatalf("first command = %T, want SET", commands[0].stmt)
 	}
 	for _, command := range commands {
-		if _, err := target.ExecuteStatement(t.Context(), command); err != nil {
+		if _, err := target.ExecuteStatement(t.Context(), command.stmt); err != nil {
 			t.Fatalf("unassisted replay: %v", err)
 		}
 	}
