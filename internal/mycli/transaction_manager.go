@@ -135,14 +135,6 @@ type TransactionManager struct {
 	// calls do not acquire a new automatic restoration contract.
 	pendingLocalVarRestore []savedLocalVar
 
-	// autoDML is the transaction-owned automatic DML queue. Manual START/RUN/ABORT
-	// batches stay on Session.batch. The queue remains on TransactionManager
-	// with generation/owner guards so leftover statements cannot execute in a
-	// later RW owner.
-	autoDML           []spanner.Statement
-	autoDMLOwner      uint64
-	autoDMLGeneration uint64
-
 	// Test seams. Production remains nil.
 	// queryAfterCollectHook runs after the ordinary collector or PROFILE
 	// iterator consumer returns, so injected errors share those error branches.
@@ -370,19 +362,20 @@ func (tm *TransactionManager) restoreLocalVarsIfIdle() {
 }
 
 // retireTransactionContextLocked stops heartbeat, detaches SET LOCAL undo into
-// pendingLocalVarRestore, clears tc, and discards leftover automatic DML.
+// pendingLocalVarRestore, discards this owner's automatic DML, and clears tc.
 // Caller must hold tm.mu. Safe when tc is already nil. Does not call
 // registry setters.
 func (tm *TransactionManager) retireTransactionContextLocked() {
-	if tm.tc != nil {
-		tm.tc.Close()
-		if n := len(tm.tc.localVarUndo); n > 0 {
-			tm.pendingLocalVarRestore = append(tm.pendingLocalVarRestore, tm.tc.localVarUndo...)
-			tm.tc.localVarUndo = nil
-		}
-		tm.tc = nil
+	if tm.tc == nil {
+		return
 	}
-	tm.discardAutomaticDMLLocked()
+	tm.tc.Close()
+	if n := len(tm.tc.localVarUndo); n > 0 {
+		tm.pendingLocalVarRestore = append(tm.pendingLocalVarRestore, tm.tc.localVarUndo...)
+		tm.tc.localVarUndo = nil
+	}
+	tm.tc.autoDML = nil
+	tm.tc = nil
 }
 
 // activateTransactionLocked installs an SDK handle and resolved attributes on
@@ -675,12 +668,6 @@ func (tm *TransactionManager) BeginReadWriteTransactionLocked(ctx context.Contex
 	if tm.sysVars != nil {
 		tm.sysVars.Transaction.TransactionTag = ""
 	}
-
-	// A new RW owner must not inherit leftover automatic work. Pending
-	// activation is not a terminal discard of a live owner; any residual
-	// here is cross-owner and is dropped rather than replayed.
-	tm.autoDMLGeneration++
-	tm.discardAutomaticDMLLocked()
 
 	// Keep the pending pointer through activation. The heartbeat loop closes
 	// over this owner so a delayed tick cannot borrow a later replacement (#922).

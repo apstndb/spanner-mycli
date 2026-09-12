@@ -46,6 +46,9 @@ type transactionContext struct {
 	// TransactionManager.pendingLocalVarRestore only when the context is
 	// retired.
 	localVarUndo []savedLocalVar
+	// autoDML is this transaction's automatic DML queue. Access it only under
+	// tm.mu. Manual START/RUN/ABORT BATCH state stays on Session.batch.
+	autoDML []spanner.Statement
 }
 
 // EnableHeartbeat enables sending periodic heartbeats for this transaction.

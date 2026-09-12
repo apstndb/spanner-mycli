@@ -53,17 +53,24 @@ type sqlObservation struct {
 	hadReadTs bool
 }
 
+type batchDMLObservation struct {
+	txnID string
+	sqls  []string
+}
+
 type heartbeatRPCServer struct {
 	sppb.UnimplementedSpannerServer
 
-	mu          sync.Mutex
-	next        atomic.Uint64
-	sqlTxn      map[string]string
-	roIDs       map[string]struct{}
-	rwIDs       map[string]struct{}
-	heartbeats  []heartbeatRecord
-	sqlObs      []sqlObservation
-	failROQuery error
+	mu           sync.Mutex
+	next         atomic.Uint64
+	sqlTxn       map[string]string
+	roIDs        map[string]struct{}
+	rwIDs        map[string]struct{}
+	heartbeats   []heartbeatRecord
+	sqlObs       []sqlObservation
+	batchObs     []batchDMLObservation
+	failROQuery  error
+	failBatchDML error
 
 	heartbeatStarted     chan struct{}
 	heartbeatStartedOnce sync.Once
@@ -133,6 +140,22 @@ func (s *heartbeatRPCServer) setFailROQuery(err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.failROQuery = err
+}
+
+func (s *heartbeatRPCServer) setFailBatchDML(err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.failBatchDML = err
+}
+
+func (s *heartbeatRPCServer) batchObservations() []batchDMLObservation {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]batchDMLObservation, len(s.batchObs))
+	for i, obs := range s.batchObs {
+		out[i] = batchDMLObservation{txnID: obs.txnID, sqls: slices.Clone(obs.sqls)}
+	}
+	return out
 }
 
 func (s *heartbeatRPCServer) sqlObservations() []sqlObservation {
@@ -234,6 +257,38 @@ func (s *heartbeatRPCServer) Rollback(context.Context, *sppb.RollbackRequest) (*
 
 func (s *heartbeatRPCServer) Commit(context.Context, *sppb.CommitRequest) (*sppb.CommitResponse, error) {
 	return &sppb.CommitResponse{CommitTimestamp: timestamppb.Now()}, nil
+}
+
+func (s *heartbeatRPCServer) ExecuteBatchDml(_ context.Context, r *sppb.ExecuteBatchDmlRequest) (*sppb.ExecuteBatchDmlResponse, error) {
+	var id []byte
+	if existing := r.GetTransaction().GetId(); len(existing) > 0 {
+		id = slices.Clone(existing)
+	} else {
+		id = s.newTxnID()
+		s.mu.Lock()
+		s.noteSelectorLocked(id, r.GetTransaction())
+		s.mu.Unlock()
+	}
+	sqls := make([]string, 0, len(r.GetStatements()))
+	for _, st := range r.GetStatements() {
+		sqls = append(sqls, st.GetSql())
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.batchObs = append(s.batchObs, batchDMLObservation{txnID: string(id), sqls: sqls})
+	if s.failBatchDML != nil {
+		return nil, s.failBatchDML
+	}
+	results := make([]*sppb.ResultSet, len(r.GetStatements()))
+	for i := range results {
+		results[i] = &sppb.ResultSet{
+			Stats: &sppb.ResultSetStats{
+				RowCount: &sppb.ResultSetStats_RowCountExact{RowCountExact: 1},
+			},
+		}
+	}
+	return &sppb.ExecuteBatchDmlResponse{ResultSets: results}, nil
 }
 
 func (s *heartbeatRPCServer) ExecuteSql(ctx context.Context, r *sppb.ExecuteSqlRequest) (*sppb.ResultSet, error) {

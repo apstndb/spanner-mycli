@@ -17,12 +17,14 @@ package mycli
 import (
 	"context"
 	"errors"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"cloud.google.com/go/spanner"
+	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -500,7 +502,6 @@ func TestEnqueueAutomaticDMLEnablesHeartbeat(t *testing.T) {
 		},
 	}
 	t.Cleanup(tm.tc.Close)
-	tm.autoDMLGeneration = 1
 	ok, err := tm.TryEnqueueAutomaticDML(spanner.NewStatement("INSERT INTO t (id) VALUES (1)"))
 	if err != nil || !ok {
 		t.Fatalf("TryEnqueueAutomaticDML: ok=%v err=%v", ok, err)
@@ -522,12 +523,204 @@ func TestAutomaticDMLDiscardedOnClear(t *testing.T) {
 	t.Parallel()
 	sysVars := newSystemVariablesWithDefaultsForTest()
 	tm := NewTransactionManager(nil, sysVars, spanner.ClientConfig{})
-	tm.autoDML = []spanner.Statement{{SQL: "INSERT INTO t (id) VALUES (1)"}}
-	tm.autoDMLOwner = 1
+	owner := &transactionContext{
+		attrs:   transactionAttributes{mode: transactionModeReadWrite},
+		autoDML: []spanner.Statement{{SQL: "INSERT INTO t (id) VALUES (1)"}},
+	}
+	tm.tc = owner
 	tm.clearTransactionContext()
 	if tm.HasAutomaticDML() {
 		t.Fatal("clearTransactionContext left automatic DML")
 	}
+	if len(owner.autoDML) != 0 {
+		t.Fatal("retired owner still held automatic DML")
+	}
+}
+
+func TestFlushAutomaticDMLEmptyDoesNotStartTransaction(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	t.Run("idle manager", func(t *testing.T) {
+		t.Parallel()
+		sysVars := newSystemVariablesWithDefaultsForTest()
+		tm := NewTransactionManager(nil, sysVars, spanner.ClientConfig{})
+		res, err := tm.FlushAutomaticDML(ctx)
+		if err != nil || res != nil {
+			t.Fatalf("empty idle flush: res=%v err=%v", res, err)
+		}
+		if txnContext(tm) != nil {
+			t.Fatal("empty flush created a transaction")
+		}
+	})
+
+	t.Run("empty RW owner", func(t *testing.T) {
+		t.Parallel()
+		h := newHeartbeatHarness(t)
+		if err := h.tm.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+			t.Fatal(err)
+		}
+		owner := txnContext(h.tm)
+		res, err := h.tm.FlushAutomaticDML(ctx)
+		if err != nil || res != nil {
+			t.Fatalf("empty RW flush: res=%v err=%v", res, err)
+		}
+		if txnContext(h.tm) != owner || owner.attrs.mode != transactionModeReadWrite {
+			t.Fatal("empty flush replaced or retired the RW owner")
+		}
+		if len(h.server.batchObservations()) != 0 {
+			t.Fatal("empty flush issued BatchUpdate")
+		}
+	})
+}
+
+func TestAutomaticDMLStaleWorkDoesNotCrossReplacementOwner(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	const staleSQL = "INSERT INTO AutoDMLStale (id) VALUES (1)"
+	injectedFlush := status.Error(codes.PermissionDenied, "injected automatic DML BatchUpdate failure")
+	injectedAbort := status.Error(codes.Aborted, "injected collector abort for automatic DML")
+
+	for _, tc := range []struct {
+		name         string
+		endA         func(t *testing.T, ctx context.Context, session *Session, h *heartbeatHarness)
+		wantStaleOnA bool
+	}{
+		{
+			name: "commit",
+			endA: func(t *testing.T, ctx context.Context, session *Session, h *heartbeatHarness) {
+				t.Helper()
+				if _, err := h.tm.CommitReadWriteTransaction(ctx); err != nil {
+					t.Fatalf("commit A: %v", err)
+				}
+			},
+			wantStaleOnA: true,
+		},
+		{
+			name: "rollback",
+			endA: func(t *testing.T, ctx context.Context, session *Session, h *heartbeatHarness) {
+				t.Helper()
+				if err := h.tm.RollbackReadWriteTransaction(ctx); err != nil {
+					t.Fatalf("rollback A: %v", err)
+				}
+			},
+		},
+		{
+			name: "close",
+			endA: func(t *testing.T, ctx context.Context, session *Session, h *heartbeatHarness) {
+				t.Helper()
+				session.txn.clearTransactionContext()
+			},
+		},
+		{
+			name: "abort",
+			endA: func(t *testing.T, ctx context.Context, session *Session, h *heartbeatHarness) {
+				t.Helper()
+				if _, err := session.ExecuteStatement(ctx, &AbortBatchStatement{}); err != nil {
+					t.Fatalf("ABORT BATCH: %v", err)
+				}
+				if session.txn.HasAutomaticDML() {
+					t.Fatal("ABORT BATCH left automatic DML")
+				}
+				if txnContext(h.tm) == nil || txnContext(h.tm).attrs.mode != transactionModeReadWrite {
+					t.Fatal("ABORT BATCH retired the RW owner")
+				}
+				if _, err := h.tm.CommitReadWriteTransaction(ctx); err != nil {
+					t.Fatalf("commit after ABORT BATCH: %v", err)
+				}
+			},
+		},
+		{
+			name: "failure",
+			endA: func(t *testing.T, ctx context.Context, session *Session, h *heartbeatHarness) {
+				t.Helper()
+				h.server.setFailBatchDML(injectedFlush)
+				_, err := h.tm.FlushAutomaticDML(ctx)
+				h.server.setFailBatchDML(nil)
+				if err == nil || !strings.Contains(err.Error(), "injected automatic DML BatchUpdate failure") {
+					t.Fatalf("flush failure: %v", err)
+				}
+			},
+			wantStaleOnA: true,
+		},
+		{
+			name: "query abort",
+			endA: func(t *testing.T, ctx context.Context, session *Session, h *heartbeatHarness) {
+				t.Helper()
+				h.tm.queryAfterCollectHook = func() error { return injectedAbort }
+				t.Cleanup(func() { h.tm.queryAfterCollectHook = nil })
+				_, err := execSQL(t, ctx, session, "SELECT 1")
+				h.tm.queryAfterCollectHook = nil
+				if spanner.ErrCode(err) != codes.Aborted {
+					t.Fatalf("query abort: %v", err)
+				}
+			},
+			wantStaleOnA: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			h := newHeartbeatHarness(t)
+			session := sessionForTM(t, h.tm)
+			if err := h.tm.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+				t.Fatal(err)
+			}
+			ok, err := h.tm.TryEnqueueAutomaticDML(spanner.NewStatement(staleSQL))
+			if err != nil || !ok {
+				t.Fatalf("enqueue on A: ok=%v err=%v", ok, err)
+			}
+			ownerA := txnContext(h.tm)
+			if ownerA == nil {
+				t.Fatal("BEGIN RW did not allocate owner A")
+			}
+
+			tc.endA(t, ctx, session, h)
+			if h.tm.HasAutomaticDML() {
+				t.Fatal("A left replayable automatic DML")
+			}
+			if len(ownerA.autoDML) != 0 {
+				t.Fatal("retired or aborted owner A still held automatic DML")
+			}
+
+			beforeB := h.server.batchObservations()
+			if tc.wantStaleOnA != batchObsContainsSQL(beforeB, staleSQL) {
+				t.Fatalf("stale SQL on A before replacement: observed=%v want %v", batchObsContainsSQL(beforeB, staleSQL), tc.wantStaleOnA)
+			}
+
+			if err := h.tm.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+				t.Fatal(err)
+			}
+			ownerB := txnContext(h.tm)
+			if ownerB == nil || ownerB == ownerA {
+				t.Fatal("replacement owner B reused A")
+			}
+			if h.tm.HasAutomaticDML() {
+				t.Fatal("B inherited automatic DML")
+			}
+
+			res, err := h.tm.FlushAutomaticDML(ctx)
+			if err != nil || res != nil {
+				t.Fatalf("empty flush on B: res=%v err=%v", res, err)
+			}
+			if _, err := h.tm.CommitReadWriteTransaction(ctx); err != nil {
+				t.Fatalf("commit B: %v", err)
+			}
+
+			afterB := h.server.batchObservations()[len(beforeB):]
+			if batchObsContainsSQL(afterB, staleSQL) {
+				t.Fatalf("stale work executed under replacement owner B: %v", afterB)
+			}
+		})
+	}
+}
+
+func batchObsContainsSQL(obs []batchDMLObservation, sql string) bool {
+	for _, o := range obs {
+		if slices.Contains(o.sqls, sql) {
+			return true
+		}
+	}
+	return false
 }
 
 func newAutoBatchSession(t *testing.T) *Session {

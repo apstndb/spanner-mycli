@@ -22,7 +22,8 @@ Key files in `internal/mycli`:
 - **session.go**: `Session` (Spanner clients, statement execution boundary) and
   `SessionHandler` (USE/DETACH database switching).
 - **transaction_manager.go**: `TransactionManager` (transaction state, mutex,
-  pending SET LOCAL restore). `transactionContext` owns active SET LOCAL undo.
+  pending SET LOCAL restore). `transactionContext` owns active SET LOCAL undo
+  and the automatic DML queue.
 - **statements.go / statements_*.go**: statement implementations grouped by
   area (schema, mutations, transactions, proto, LLM, dump, ...).
 - **client_side_statement_def.go**: **CRITICAL** - all client-side statement
@@ -53,7 +54,7 @@ code comments before changing anything nearby; do not re-document them here.
 - **Transactions and locking**: `TransactionManager` in
   `internal/mycli/transaction_manager.go` - mutex rationale, the mandatory
   closure-based access helpers, the `WithLock` / `Locked` method-suffix
-  convention, and SET LOCAL undo owned by `transactionContext`.
+  convention, and SET LOCAL undo and automatic DML owned by `transactionContext`.
 - **Statement timeouts**: `Session.getTimeoutForStatement` in
   `internal/mycli/session.go` - timeouts are applied exactly once, at the
   `ExecuteStatement` boundary.
