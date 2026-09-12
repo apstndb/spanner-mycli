@@ -133,7 +133,7 @@ func executeStatementHandler(cli *Cli) func(context.Context, *mcp.CallToolReques
 		output := newMCPOutputCapture(mcpMaxOutputBytes)
 
 		// Execute the statement with the capped capture as the output
-		_, err = cli.executeStatement(ctx, stmt, false, statement, output)
+		_, err = cli.executeStatement(ctx, stmt, false, interactiveEchoText(statement), output)
 		if err != nil {
 			slog.Debug("MCP execution failed",
 				"error", err.Error(),

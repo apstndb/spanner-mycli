@@ -241,7 +241,7 @@ func (c *Cli) handleSpecialStatements(ctx context.Context, stmt Statement) (exit
 
 // executeStatementInteractive executes the statement and displays the result.
 func (c *Cli) executeStatementInteractive(ctx context.Context, stmt Statement, input *inputStatement) (string, error) {
-	preInput, err := c.executeStatement(ctx, stmt, true, input.statement, c.GetWriter())
+	preInput, err := c.executeStatement(ctx, stmt, true, interactiveEchoText(input.statement), c.GetWriter())
 	if err != nil {
 		return "", err
 	}
@@ -275,35 +275,26 @@ func (c *Cli) executeSourceFile(ctx context.Context, filePath string) error {
 		return err
 	}
 
-	// Parse the contents using buildCommands (same as batch mode)
+	// Parse the entire file before executing any statement (same as batch mode).
 	// IMPORTANT: buildCommands explicitly rejects meta-commands (including \.) with the error
 	// "meta commands are not supported in batch mode". This means nested sourcing
 	// (i.e., having \. commands within a sourced file) is not possible by design.
 	// Meta-commands are only processed in the interactive mode's main loop.
-	stmts, err := buildCommands(string(contents), c.SystemVariables.Query.BuildStatementMode)
+	cmds, err := buildCommands(string(contents), c.SystemVariables.Query.BuildStatementMode)
 	if err != nil {
 		return fmt.Errorf("failed to parse SQL from file %s: %w", filePath, err)
 	}
 
 	// Execute each statement sequentially
-	for i, fileStmt := range stmts {
-		// Skip ExitStatement in source files (exit should only end the file, not the session)
-		if _, ok := fileStmt.(*ExitStatement); ok {
+	for i, cmd := range cmds {
+		// SOURCE continues past EXIT without closing the session. Batch mode
+		// treats EXIT as the end of execution (see RunBatch).
+		if _, ok := cmd.stmt.(*ExitStatement); ok {
 			continue
 		}
 
-		// Extract SQL text for ECHO support
-		// TODO: Currently we reconstruct the SQL text using Statement.String() method.
-		// Ideally, buildCommands() should return the original text from the file
-		// to echo exactly what was written in the source file.
-		// See: https://github.com/apstndb/spanner-mycli/issues/380
-		sqlText := ""
-		if stringer, ok := fileStmt.(fmt.Stringer); ok {
-			sqlText = stringer.String()
-		}
-
 		// Execute the statement in interactive mode to get proper output formatting
-		_, err = c.executeStatement(ctx, fileStmt, true, sqlText, c.GetWriter())
+		_, err = c.executeStatement(ctx, cmd.stmt, true, cmd.echoText(), c.GetWriter())
 		if err != nil {
 			return fmt.Errorf("error executing statement %d from file %s: %w", i+1, filePath, err)
 		}
@@ -313,7 +304,7 @@ func (c *Cli) executeSourceFile(ctx context.Context, filePath string) error {
 }
 
 func (c *Cli) RunBatch(ctx context.Context, input string) error {
-	stmts, err := buildCommands(input, c.SystemVariables.Query.BuildStatementMode)
+	cmds, err := buildCommands(input, c.SystemVariables.Query.BuildStatementMode)
 	if err != nil {
 		c.PrintBatchError(err)
 		return NewExitCodeError(exitCodeError)
@@ -323,12 +314,12 @@ func (c *Cli) RunBatch(ctx context.Context, input string) error {
 	defer cancel()
 	go handleInterrupt(ctx, cancel)
 
-	for _, stmt := range stmts {
-		if _, ok := stmt.(*ExitStatement); ok {
+	for _, cmd := range cmds {
+		if _, ok := cmd.stmt.(*ExitStatement); ok {
 			return NewExitCodeError(c.handleExit())
 		}
 
-		_, err = c.executeStatement(ctx, stmt, false, input, c.GetWriter())
+		_, err = c.executeStatement(ctx, cmd.stmt, false, cmd.echoText(), c.GetWriter())
 		if err != nil {
 			c.PrintBatchError(err)
 			return NewExitCodeError(exitCodeError)

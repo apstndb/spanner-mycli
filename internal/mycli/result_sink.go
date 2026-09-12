@@ -23,6 +23,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 
 	"github.com/kballard/go-shellquote"
@@ -49,7 +50,7 @@ type resultSink struct {
 	c     *Cli
 	ctx   context.Context // statement context; PrintResult uses Background
 	dst   io.Writer       // caller-provided destination
-	input string          // raw statement text for CLI_ECHO_INPUT
+	input string          // already prepared CLI_ECHO_INPUT text; no extra semicolon is appended
 
 	out       io.Writer    // active destination once started (pager pipe or dst)
 	startErr  error        // sticky pager start failure
@@ -58,9 +59,12 @@ type resultSink struct {
 	done      bool
 }
 
-// newResultSink returns a sink writing to dst. input is echoed when
-// CLI_ECHO_INPUT is enabled. ctx bounds the pager child only; it cannot
-// interrupt an independently blocking dst (unpaged output).
+// newResultSink returns a sink writing to dst. input is already prepared echo
+// text: the sink writes it as-is when CLI_ECHO_INPUT is enabled and does not
+// append another semicolon. A display newline is added only when the text
+// does not already end with one, so subsequent output stays separated.
+// ctx bounds the pager child only; it cannot interrupt an independently
+// blocking dst (unpaged output).
 func (c *Cli) newResultSink(ctx context.Context, dst io.Writer, input string) *resultSink {
 	if ctx == nil {
 		ctx = context.Background()
@@ -113,12 +117,28 @@ func (s *resultSink) start() error {
 	// is captured in tee files, providing complete context in logs showing
 	// which queries produced which results.
 	if s.c.SystemVariables.Feature.EchoInput && s.input != "" {
-		if _, err := fmt.Fprintln(out, s.input+";"); err != nil {
+		if _, err := io.WriteString(out, s.input); err != nil {
 			s.startErr = s.wrapPagerWrite(err)
 			return s.startErr
 		}
+		if !strings.HasSuffix(s.input, "\n") {
+			if _, err := fmt.Fprint(out, "\n"); err != nil {
+				s.startErr = s.wrapPagerWrite(err)
+				return s.startErr
+			}
+		}
 	}
 	return nil
+}
+
+// interactiveEchoText prepares CLI_ECHO_INPUT text for interactive and MCP
+// callers using the historical convention: the statement with a semicolon
+// terminator. Empty input stays empty so the sink skips the echo.
+func interactiveEchoText(statement string) string {
+	if statement == "" {
+		return ""
+	}
+	return statement + delimiterHorizontal
 }
 
 func (s *resultSink) Write(p []byte) (int, error) {
