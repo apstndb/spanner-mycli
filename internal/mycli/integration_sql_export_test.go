@@ -149,7 +149,7 @@ CREATE TABLE DestTable (
 			if err != nil {
 				t.Fatalf("Failed to count source data: %v", err)
 			}
-			t.Logf("Source table row count: %v", countResult.Rows)
+			t.Logf("Source table row count: %v", countResult.presentationRows())
 
 			// Set up system variables for SQL export
 			session.systemVariables.Display.CLIFormat = tt.exportMode
@@ -165,7 +165,7 @@ CREATE TABLE DestTable (
 			}
 
 			// Debug: Log result details
-			t.Logf("Query result: rows=%d, header=%v", len(result.Rows), result.TableHeader)
+			t.Logf("Query result: rows=%d, header=%v", len(result.presentationRows()), result.TableHeader)
 
 			t.Logf("Generated SQL:\n%s", sqlOutput)
 
@@ -464,8 +464,8 @@ CREATE TABLE TestTable (
 			t.Logf("Streamed SQL output:\n%s", sqlOutput)
 
 			// In streaming mode, result should be minimal (no buffered rows)
-			if result != nil && len(result.Rows) > 0 {
-				t.Logf("Warning: Got %d buffered rows in streaming mode", len(result.Rows))
+			if result != nil && len(result.presentationRows()) > 0 {
+				t.Logf("Warning: Got %d buffered rows in streaming mode", len(result.presentationRows()))
 			}
 
 			// Verify the output contains expected SQL statements
@@ -583,7 +583,7 @@ func TestSQLExportWithUnnamedColumns(t *testing.T) {
 			t.Logf("Test: %s", tc.desc)
 			t.Logf("Query: %s", tc.query)
 			if result != nil {
-				t.Logf("Row count: %d", len(result.Rows))
+				t.Logf("Row count: %d", len(result.presentationRows()))
 			}
 
 			if tc.expectErr {
@@ -653,7 +653,7 @@ func TestSQLExportWithUnnamedColumns(t *testing.T) {
 		} else {
 			t.Errorf("Expected error for unnamed columns in streaming mode but got none")
 			if result != nil {
-				t.Logf("Result returned (rows: %d)", len(result.Rows))
+				t.Logf("Result returned (rows: %d)", len(result.presentationRows()))
 			}
 		}
 
@@ -692,7 +692,7 @@ func TestSQLExportWithUnnamedColumns(t *testing.T) {
 		} else {
 			t.Logf("Execution successful")
 			if result != nil {
-				t.Logf("Result returned (rows: %d)", len(result.Rows))
+				t.Logf("Result returned (rows: %d)", len(result.presentationRows()))
 			}
 		}
 
@@ -842,7 +842,7 @@ CREATE TABLE TestTable (
 					t.Fatalf("Expected successful execution with auto-detection, got error: %v", err)
 				}
 
-				if result == nil || !result.Streamed {
+				if result == nil || !result.alreadyDelivered() {
 					t.Fatalf("Expected streamed SQL export result, got %#v", result)
 				}
 

@@ -404,8 +404,8 @@ func TestDirectedReadROVariantsGuardsAndOmits(t *testing.T) {
 		if err != nil || result.AffectedRows != 1 || !result.IsExecutedDML {
 			t.Fatalf("DML %s result=%v error=%v", sql, result, err)
 		}
-		if strings.Contains(sql, "THEN RETURN") && !strings.Contains(string(result.RenderedOutput), "observed") {
-			t.Fatalf("returning DML output=%q", result.RenderedOutput)
+		if strings.Contains(sql, "THEN RETURN") && !strings.Contains(string(result.preparedOutput()), "observed") {
+			t.Fatalf("returning DML output=%q", result.preparedOutput())
 		}
 		reqs := srv.takeRequests()
 		if len(reqs) != 1 || reqs[0].Sql != sql || string(reqs[0].GetTransaction().GetId()) != "probe-rw" {
@@ -562,7 +562,7 @@ func TestDirectedReadDumpSnapshotWire(t *testing.T) {
 						if err != nil || result.AffectedRows != 1 {
 							t.Fatalf("DUMP result=%v error=%v", result, err)
 						}
-						output := string(result.RenderedOutput)
+						output := string(result.preparedOutput())
 						if streaming {
 							output = out.String()
 						}

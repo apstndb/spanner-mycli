@@ -95,14 +95,14 @@ func TestExecuteDdlStatementsRPC(t *testing.T) {
 		if got.TableHeader == nil {
 			t.Fatal("TableHeader = nil, want echo columns")
 		}
-		if len(got.Rows) != 1 {
-			t.Fatalf("len(Rows) = %d, want 1", len(got.Rows))
+		if len(got.presentationRows()) != 1 {
+			t.Fatalf("len(Rows) = %d, want 1", len(got.presentationRows()))
 		}
-		if got.Rows[0][0].RawText() != ddl+";" {
-			t.Fatalf("executed DDL = %q, want %q", got.Rows[0][0].RawText(), ddl+";")
+		if got.presentationRows()[0][0].RawText() != ddl+";" {
+			t.Fatalf("executed DDL = %q, want %q", got.presentationRows()[0][0].RawText(), ddl+";")
 		}
-		if got.Rows[0][1].RawText() != commitTS.Format(time.RFC3339Nano) {
-			t.Fatalf("commit timestamp cell = %q, want %q", got.Rows[0][1].RawText(), commitTS.Format(time.RFC3339Nano))
+		if got.presentationRows()[0][1].RawText() != commitTS.Format(time.RFC3339Nano) {
+			t.Fatalf("commit timestamp cell = %q, want %q", got.presentationRows()[0][1].RawText(), commitTS.Format(time.RFC3339Nano))
 		}
 	})
 
@@ -120,17 +120,17 @@ func TestExecuteDdlStatementsRPC(t *testing.T) {
 		if session.SchemaGeneration() != before+1 {
 			t.Fatalf("schema generation = %d, want %d", session.SchemaGeneration(), before+1)
 		}
-		if got.AffectedRows != 1 || len(got.Rows) != 1 {
+		if got.AffectedRows != 1 || len(got.presentationRows()) != 1 {
 			t.Fatalf("async result = %+v", got)
 		}
-		if got.Rows[0][0].RawText() != "op-ddl" {
-			t.Fatalf("OPERATION_ID = %q, want op-ddl", got.Rows[0][0].RawText())
+		if got.presentationRows()[0][0].RawText() != "op-ddl" {
+			t.Fatalf("OPERATION_ID = %q, want op-ddl", got.presentationRows()[0][0].RawText())
 		}
-		if got.Rows[0][1].RawText() != ddl+";" {
-			t.Fatalf("STATEMENTS = %q, want %q", got.Rows[0][1].RawText(), ddl+";")
+		if got.presentationRows()[0][1].RawText() != ddl+";" {
+			t.Fatalf("STATEMENTS = %q, want %q", got.presentationRows()[0][1].RawText(), ddl+";")
 		}
-		if got.Rows[0][2].RawText() != "false" {
-			t.Fatalf("DONE = %q, want false", got.Rows[0][2].RawText())
+		if got.presentationRows()[0][2].RawText() != "false" {
+			t.Fatalf("DONE = %q, want false", got.presentationRows()[0][2].RawText())
 		}
 		if server.getCalls.Load() != 0 {
 			t.Fatalf("async path polled GetOperation %d times, want 0", server.getCalls.Load())

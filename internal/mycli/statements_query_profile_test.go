@@ -335,7 +335,7 @@ func TestShowQueryProfilesStatementExecute(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Execute() error = %v", err)
 		}
-		if got.AffectedRows != 0 || len(got.Rows) != 0 {
+		if got.AffectedRows != 0 || len(got.presentationRows()) != 0 {
 			t.Fatalf("empty result = %+v, want no rows", got)
 		}
 		if names := extractTableColumnNames(got.TableHeader); !cmp.Equal(names, []string{"Plan"}) {
@@ -356,10 +356,10 @@ func TestShowQueryProfilesStatementExecute(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Execute() error = %v", err)
 		}
-		if got.AffectedRows != 1 || len(got.Rows) != 1 {
-			t.Fatalf("AffectedRows/len(Rows) = %d/%d, want 1", got.AffectedRows, len(got.Rows))
+		if got.AffectedRows != 1 || len(got.presentationRows()) != 1 {
+			t.Fatalf("AffectedRows/len(Rows) = %d/%d, want 1", got.AffectedRows, len(got.presentationRows()))
 		}
-		text := rowText(got.Rows[0])
+		text := rowText(got.presentationRows()[0])
 		for _, want := range []string{
 			"SELECT * FROM Singers",
 			"Serialize Result",
@@ -467,13 +467,13 @@ func TestShowQueryProfileStatementExecute(t *testing.T) {
 			t.Fatal("ANALYZE result has no plan rows")
 		}
 		var sawSerialize bool
-		for _, row := range got.Rows {
+		for _, row := range got.presentationRows() {
 			if strings.Contains(rowText(row), "Serialize Result") {
 				sawSerialize = true
 			}
 		}
 		if !sawSerialize {
-			t.Errorf("plan rows missing Serialize Result: %v", got.Rows)
+			t.Errorf("plan rows missing Serialize Result: %v", got.presentationRows())
 		}
 		assertQueryProfileSQL(t, server.lastRequest(), "WHERE TEXT_FINGERPRINT = @fprint", map[string]string{
 			"fprint": fmt.Sprint(queryProfileFingerprint),

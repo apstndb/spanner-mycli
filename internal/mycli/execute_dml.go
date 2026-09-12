@@ -148,9 +148,9 @@ func newBatchDMLResult(dmls []spanner.Statement, affectedRowSlice []int64, resul
 		IsExecutedDML:   true, // This is a batch DML statement
 		CommitTimestamp: commit.CommitTs,
 		CommitStats:     commit.CommitStats,
-		Rows: slices.Collect(iterutil.ZipShortestBy(slices.Values(dmls), slices.Values(affectedRowSlice), func(s spanner.Statement, affectedRows int64) Row {
+		Body: PresentationBody(slices.Collect(iterutil.ZipShortestBy(slices.Values(dmls), slices.Values(affectedRowSlice), func(s spanner.Statement, affectedRows int64) Row {
 			return toRow(s.SQL, strconv.FormatInt(affectedRows, 10))
-		})),
+		}))),
 		TableHeader:      toTableHeader("DML", "Rows"),
 		AffectedRows:     int(lo.Sum(affectedRowSlice)),
 		AffectedRowsType: lo.Ternary(len(dmls) > 1, rowCountTypeUpperBound, rowCountTypeExact),
@@ -176,9 +176,8 @@ func executeDML(ctx context.Context, session *Session, sql string) (*Result, err
 		if tableHeader != nil {
 			// Render inside the transaction callback so a formatting error
 			// aborts the implicit commit instead of committing without output.
-			// renderedOutput may be empty (e.g. JSONL with zero returned rows);
-			// printResult re-derives the same empty body when it is nil, so a
-			// separate "has rendered output" flag is unnecessary.
+			// Zero-length bytes (e.g. JSONL with zero returned rows) are still a
+			// prepared body; printResult writes them as-is after commit.
 			renderedOutput, err = renderDMLReturnedRows(session.systemVariables, tableHeader, updateResult.Metadata, updateResult.Rows)
 			if err != nil {
 				return 0, nil, nil, err
@@ -219,9 +218,14 @@ func buildDMLResult(dmlResult *DMLResult, stats QueryStats, tableHeader TableHea
 		CommitStats:      dmlResult.CommitResponse.CommitStats,
 		Stats:            stats,
 		TableHeader:      tableHeader,
-		RenderedOutput:   renderedOutput,
 		AffectedRows:     int(dmlResult.Affected),
 		SQLExportAllowed: false, // DML with THEN RETURN uses regular formatting, not SQL literals
+	}
+	if tableHeader != nil {
+		// Publish prepared bytes only after the implicit commit succeeded.
+		// Zero-length output is still prepared and must not fall through to
+		// table rendering.
+		result.Body = PreparedBody(renderedOutput)
 	}
 
 	if err := applyQueryModeStatsRendering(result, dmlResult.Plan, sysVars); err != nil {
@@ -245,11 +249,11 @@ func renderDMLReturnedRows(sysVars *systemVariables, tableHeader TableHeader, me
 	var buf bytes.Buffer
 	result := &Result{
 		TableHeader: tableHeader,
-		Typed: &TypedRows{
+		Body: TypedBody(&TypedRows{
 			Metadata:         metadata,
 			Rows:             rows,
 			SQLExportAllowed: false,
-		},
+		}),
 	}
 	if err := printTableData(sysVars, displayScreenWidth(sysVars), &buf, result); err != nil {
 		return nil, err

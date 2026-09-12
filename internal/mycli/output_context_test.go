@@ -73,7 +73,7 @@ func TestExecuteStatementWithOutput_routesStreamedOutput(t *testing.T) {
 		t.Fatalf("ExecuteStatementWithOutput: %v", err)
 	}
 
-	if !result.Streamed {
+	if !result.alreadyDelivered() {
 		t.Errorf("Streamed = false, want true (CSV should stream)")
 	}
 	if perCall.Len() == 0 || !strings.Contains(perCall.String(), "CLI_FORMAT") {
@@ -101,7 +101,7 @@ func TestExecuteStatement_fallsBackToStreamManager(t *testing.T) {
 		t.Fatalf("ExecuteStatement: %v", err)
 	}
 
-	if !result.Streamed {
+	if !result.alreadyDelivered() {
 		t.Errorf("Streamed = false, want true (CSV should stream)")
 	}
 	if global.Len() == 0 || !strings.Contains(global.String(), "CLI_FORMAT") {

@@ -53,8 +53,8 @@ func TestProtoDescriptorsFilePathSQL(t *testing.T) {
 	if got := result.TableHeader.Render(false); !slices.Equal(got, []string{"PROTO_DESCRIPTORS_FILE_PATH"}) {
 		t.Fatalf("SHOW header = %v", got)
 	}
-	if len(result.Rows) != 1 || len(result.Rows[0]) != 1 || result.Rows[0][0].RawText() != path {
-		t.Fatalf("SHOW rows = %v, want path %q", result.Rows, path)
+	if len(result.presentationRows()) != 1 || len(result.presentationRows()[0]) != 1 || result.presentationRows()[0][0].RawText() != path {
+		t.Fatalf("SHOW rows = %v, want path %q", result.presentationRows(), path)
 	}
 	added := writeDescriptorSet(t, filepath.Join(t.TempDir(), "added.pb"), descriptorFile("added.proto", "added"))
 	execute(fmt.Sprintf("SET PROTO_DESCRIPTORS_FILE_PATH += %q", added))

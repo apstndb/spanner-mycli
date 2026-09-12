@@ -28,8 +28,7 @@ func TestCli_displayResult(t *testing.T) {
 			autowrap:   false,
 			fixedWidth: nil,
 			result: &Result{
-				TableHeader: toTableHeader("col1"),
-				Rows:        []Row{toRow("value")},
+				TableHeader: toTableHeader("col1"), Body: PresentationBody([]Row{toRow("value")}),
 			},
 			interactive: false,
 			input:       "SELECT 'value'",
@@ -40,8 +39,7 @@ func TestCli_displayResult(t *testing.T) {
 			autowrap:   true,
 			fixedWidth: int64Ptr(80),
 			result: &Result{
-				TableHeader: toTableHeader("col1"),
-				Rows:        []Row{toRow("value")},
+				TableHeader: toTableHeader("col1"), Body: PresentationBody([]Row{toRow("value")}),
 			},
 			interactive: false,
 			input:       "SELECT 'value'",

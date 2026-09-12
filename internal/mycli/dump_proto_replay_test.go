@@ -72,13 +72,13 @@ func TestDumpProtoDescriptorReplay(t *testing.T) {
 					} else {
 						result, err = executeDump(t.Context(), source, mode, nil)
 						if err == nil {
-							_, _ = out.Write(result.RenderedOutput)
+							_, _ = out.Write(result.preparedOutput())
 						}
 					}
 					if err != nil {
 						t.Fatalf("dump failed: %v", err)
 					}
-					if result.Streamed != streamed {
+					if result.alreadyDelivered() != streamed {
 						t.Fatalf("wrong output path: %+v", result)
 					}
 					if source.systemVariables.Internal.ProtoDescriptor != before {
@@ -142,7 +142,7 @@ func TestDumpProtoDescriptorImportedNestedReplay(t *testing.T) {
 				if err != nil {
 					t.Fatalf("dump failed: %v", err)
 				}
-				if result.Streamed != streamed {
+				if result.alreadyDelivered() != streamed {
 					t.Fatalf("wrong output path: %+v", result)
 				}
 				if source.systemVariables.Internal.ProtoDescriptor != before {
@@ -268,7 +268,7 @@ func TestDumpProtoFailClosedAndOrdinaryControls(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Streamed {
+	if result.alreadyDelivered() {
 		t.Fatal("TABLES-only dump used streaming unexpectedly")
 	}
 	if strings.Contains(tablesOut, "SET PROTO_DESCRIPTORS") {
@@ -323,7 +323,7 @@ func tryDumpProto(t *testing.T, session *Session, mode dumpMode, streamed bool, 
 	} else {
 		err = run()
 		if result != nil {
-			_, _ = out.Write(result.RenderedOutput)
+			_, _ = out.Write(result.preparedOutput())
 		}
 	}
 	return out.String(), result, err

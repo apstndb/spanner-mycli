@@ -37,7 +37,7 @@ type identRow struct {
 
 // TestTypedRowsByteIdentity is the byte-identity regression suite for the typed
 // buffered producer (issue #738 section 6). For every CLI_FORMAT, rendering a
-// typed buffered result (Result.Typed) must be byte-identical to the canonical
+// typed buffered result must be byte-identical to the canonical
 // emitter for that format:
 //
 //   - Export formats (CSV/JSONL/SQL_INSERT*): the streaming writer that a live
@@ -118,9 +118,8 @@ func TestTypedRowsByteIdentity(t *testing.T) {
 					oldRows = append(oldRows, cells)
 				}
 				oldResult := &Result{
-					Rows:         oldRows,
 					TableHeader:  header,
-					AffectedRows: len(rawRows),
+					AffectedRows: len(rawRows), Body: PresentationBody(oldRows),
 				}
 				if err := printTableData(&sv, 0, &wantBuf, oldResult); err != nil {
 					t.Fatalf("printTableData(reference): %v", err)
@@ -128,10 +127,9 @@ func TestTypedRowsByteIdentity(t *testing.T) {
 			}
 
 			newResult := &Result{
-				Typed:                 &TypedRows{Metadata: md, Rows: rawRows, SQLExportAllowed: sqlExport},
 				TableHeader:           header,
 				AffectedRows:          len(rawRows),
-				SQLTableNameForExport: render.Export.SQLTableName,
+				SQLTableNameForExport: render.Export.SQLTableName, Body: TypedBody(&TypedRows{Metadata: md, Rows: rawRows, SQLExportAllowed: sqlExport}),
 			}
 
 			var newBuf bytes.Buffer
@@ -146,23 +144,6 @@ func TestTypedRowsByteIdentity(t *testing.T) {
 			}
 		})
 	}
-}
-
-// bodyPayloadCount reports how many mutually-exclusive body payloads a Result
-// carries. The exclusivity invariant (issue #738 section 2) requires at most
-// one of Rows, Typed, RenderedOutput to be set.
-func bodyPayloadCount(r *Result) int {
-	n := 0
-	if len(r.Rows) > 0 {
-		n++
-	}
-	if r.Typed != nil {
-		n++
-	}
-	if len(r.RenderedOutput) > 0 {
-		n++
-	}
-	return n
 }
 
 // TestWriteTypedRowsCapturedTableName verifies that typed replay honors
@@ -212,8 +193,7 @@ func TestWriteTypedRowsCapturedTableName(t *testing.T) {
 			sv.LastResult.QueryCache = &LastQueryCache{QueryStats: map[string]any{"seed": "A"}}
 
 			result := &Result{
-				Typed:                 &TypedRows{Metadata: md, Rows: rawRows, SQLExportAllowed: true},
-				SQLTableNameForExport: tt.exportName,
+				SQLTableNameForExport: tt.exportName, Body: TypedBody(&TypedRows{Metadata: md, Rows: rawRows, SQLExportAllowed: true}),
 			}
 
 			var buf bytes.Buffer
@@ -231,58 +211,6 @@ func TestWriteTypedRowsCapturedTableName(t *testing.T) {
 			}
 			if tt.exportName != "" && bytes.Contains(buf.Bytes(), []byte("INSERT INTO `Live`")) {
 				t.Errorf("output used live table name despite captured export name: %q", buf.String())
-			}
-		})
-	}
-}
-
-// TestResultBodyPayloadExclusive verifies the at-most-one-body-payload
-// invariant: the typed buffered producer sets only Typed, and a Result that
-// sets two payloads is detectable as a violation.
-func TestResultBodyPayloadExclusive(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name   string
-		result *Result
-		want   int
-	}{
-		{
-			name:   "typed buffered query result sets only Typed",
-			result: &Result{Typed: &TypedRows{Rows: []*spanner.Row{}}, TableHeader: toTableHeader("n")},
-			want:   1,
-		},
-		{
-			name:   "presentation table sets only Rows",
-			result: &Result{Rows: []Row{toRow("1")}, TableHeader: toTableHeader("n")},
-			want:   1,
-		},
-		{
-			name:   "rendered output only",
-			result: &Result{RenderedOutput: []byte("x")},
-			want:   1,
-		},
-		{
-			name:   "streamed result carries no body payload",
-			result: &Result{Streamed: true, TableHeader: toTableHeader("n")},
-			want:   0,
-		},
-		{
-			name:   "two payloads violate exclusivity",
-			result: &Result{Rows: []Row{toRow("1")}, Typed: &TypedRows{}},
-			want:   2,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			got := bodyPayloadCount(tt.result)
-			if got != tt.want {
-				t.Errorf("bodyPayloadCount = %d, want %d", got, tt.want)
-			}
-			if tt.want <= 1 && got > 1 {
-				t.Errorf("result violates at-most-one-body-payload invariant")
 			}
 		})
 	}

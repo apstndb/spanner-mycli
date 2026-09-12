@@ -120,8 +120,8 @@ func TestAutoBatchDMLLifecycle(t *testing.T) {
 			t.Fatalf("THEN RETURN: executed=%v affected=%d header=%v batch=%+v",
 				res.IsExecutedDML, res.AffectedRows, res.TableHeader, res.BatchInfo)
 		}
-		if !strings.Contains(string(res.RenderedOutput), "2") {
-			t.Fatalf("THEN RETURN rendered output %q does not contain returned Id 2", res.RenderedOutput)
+		if !strings.Contains(string(res.preparedOutput()), "2") {
+			t.Fatalf("THEN RETURN rendered output %q does not contain returned Id 2", res.preparedOutput())
 		}
 		if session.txn.HasAutomaticDML() {
 			t.Fatal("THEN RETURN left automatic work queued")

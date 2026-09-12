@@ -33,8 +33,8 @@ func assertTagSurfaces(t *testing.T, session *Session, want string) {
 	if err != nil {
 		t.Fatalf("SHOW VARIABLE TRANSACTION_TAG: %v", err)
 	}
-	if len(res.Rows) != 1 || len(res.Rows[0]) != 1 || res.Rows[0][0].RawText() != want {
-		t.Fatalf("SHOW VARIABLE TRANSACTION_TAG rows=%v want %q", res.Rows, want)
+	if len(res.presentationRows()) != 1 || len(res.presentationRows()[0]) != 1 || res.presentationRows()[0][0].RawText() != want {
+		t.Fatalf("SHOW VARIABLE TRANSACTION_TAG rows=%v want %q", res.presentationRows(), want)
 	}
 }
 

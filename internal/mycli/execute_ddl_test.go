@@ -190,8 +190,8 @@ func TestExecuteDdlStatementsEmpty(t *testing.T) {
 		if diff := cmp.Diff(want, got.TableHeader); diff != "" {
 			t.Fatalf("TableHeader mismatch (-want +got):\n%s", diff)
 		}
-		if len(got.Rows) != 0 {
-			t.Fatalf("Rows = %v, want empty", got.Rows)
+		if len(got.presentationRows()) != 0 {
+			t.Fatalf("Rows = %v, want empty", got.presentationRows())
 		}
 	})
 }

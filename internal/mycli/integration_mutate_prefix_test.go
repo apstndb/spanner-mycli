@@ -54,11 +54,11 @@ func TestMutateQuotedNamedSchemaAndLowercaseDelete(t *testing.T) {
 			t.Fatal(err)
 		}
 		res = normalizeResultForCompare(t, res)
-		if len(res.Rows) == 0 {
+		if len(res.presentationRows()) == 0 {
 			return ""
 		}
 		var out []string
-		for _, row := range res.Rows {
+		for _, row := range res.presentationRows() {
 			out = append(out, row[0].RawText())
 		}
 		return strings.Join(out, ",")

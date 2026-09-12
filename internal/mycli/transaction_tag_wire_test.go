@@ -84,11 +84,11 @@ func mustReadProbeID(t *testing.T, ctx context.Context, session *Session, id int
 	if res.AffectedRows != 1 {
 		t.Fatalf("%s: AffectedRows=%d want 1 (empty success is vacuous)", query, res.AffectedRows)
 	}
-	if res.Typed == nil || len(res.Typed.Rows) != 1 {
-		t.Fatalf("%s typed rows=%v want 1", query, res.Typed)
+	if res.typedPayload() == nil || len(res.typedPayload().Rows) != 1 {
+		t.Fatalf("%s typed rows=%v want 1", query, res.typedPayload())
 	}
 	var got int64
-	if err := res.Typed.Rows[0].Column(0, &got); err != nil {
+	if err := res.typedPayload().Rows[0].Column(0, &got); err != nil {
 		t.Fatal(err)
 	}
 	if got != int64(id) {
@@ -471,8 +471,8 @@ func assertWireTagSurfaces(t *testing.T, ctx context.Context, session *Session, 
 		t.Fatalf("ListVariables TRANSACTION_TAG=%q want=%q", listed, want)
 	}
 	res := mustExec(t, ctx, session, "SHOW VARIABLE TRANSACTION_TAG")
-	if len(res.Rows) != 1 || len(res.Rows[0]) != 1 || res.Rows[0][0].RawText() != want {
-		t.Fatalf("SHOW VARIABLE TRANSACTION_TAG rows=%v want %q", res.Rows, want)
+	if len(res.presentationRows()) != 1 || len(res.presentationRows()[0]) != 1 || res.presentationRows()[0][0].RawText() != want {
+		t.Fatalf("SHOW VARIABLE TRANSACTION_TAG rows=%v want %q", res.presentationRows(), want)
 	}
 }
 

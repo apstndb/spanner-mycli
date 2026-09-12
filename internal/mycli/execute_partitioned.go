@@ -95,13 +95,13 @@ func streamPartitionedQuery(
 		TableHeader:      toTableHeader(runResult.Metadata.GetRowType().GetFields()),
 		AffectedRows:     runResult.RowsRead,
 		PartitionCount:   len(partitions),
-		Streamed:         true,
+		Body:             DeliveredBody(),
 		SQLExportAllowed: vfm == format.SQLLiteralValues,
 	}, true, nil
 }
 
 // bufferPartitionedQuery collects all partition rows into memory as a typed
-// buffered Result (Result.Typed) for formats that need the full result set
+// buffered Result for formats that need the full result set
 // (table width calculation) or have no streaming writer. Rows are captured raw
 // via the identity transform; printTableData derives display cells (or replays
 // export formats through the single spanvalue emitters) lazily, exactly like
@@ -156,11 +156,11 @@ func bufferPartitionedQuery(
 	}
 
 	return &Result{
-		Typed: &TypedRows{
+		Body: TypedBody(&TypedRows{
 			Metadata:         metadata,
 			Rows:             allRows,
 			SQLExportAllowed: vfm == format.SQLLiteralValues,
-		},
+		}),
 		TableHeader:    toTableHeader(metadata.GetRowType().GetFields()),
 		AffectedRows:   len(allRows),
 		PartitionCount: len(partitions),

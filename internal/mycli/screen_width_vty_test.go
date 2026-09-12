@@ -109,8 +109,7 @@ func TestDisplayResultWithPty(t *testing.T) {
 			termWidth:  100,
 			termHeight: 30,
 			result: &Result{
-				TableHeader: toTableHeader("col1"),
-				Rows:        []Row{toRow("value")},
+				TableHeader: toTableHeader("col1"), Body: PresentationBody([]Row{toRow("value")}),
 			},
 			interactive: false,
 			input:       "SELECT 'value'",
@@ -122,8 +121,7 @@ func TestDisplayResultWithPty(t *testing.T) {
 			termWidth:  100,
 			termHeight: 30,
 			result: &Result{
-				TableHeader: toTableHeader("col1"),
-				Rows:        []Row{toRow("value")},
+				TableHeader: toTableHeader("col1"), Body: PresentationBody([]Row{toRow("value")}),
 			},
 			interactive: false,
 			input:       "SELECT 'value'",
@@ -135,8 +133,7 @@ func TestDisplayResultWithPty(t *testing.T) {
 			termWidth:  100,
 			termHeight: 30,
 			result: &Result{
-				TableHeader: toTableHeader("col1"),
-				Rows:        []Row{toRow("value")},
+				TableHeader: toTableHeader("col1"), Body: PresentationBody([]Row{toRow("value")}),
 			},
 			interactive: false,
 			input:       "SELECT 'value'",
@@ -189,7 +186,7 @@ func TestDisplayResultWithPty(t *testing.T) {
 			// header name and cell value rather than on exact bytes.
 			var want []string
 			want = append(want, tt.result.TableHeader.Render(false)...)
-			for _, row := range tt.result.Rows {
+			for _, row := range tt.result.presentationRows() {
 				want = append(want, format.Texts(row)...)
 			}
 

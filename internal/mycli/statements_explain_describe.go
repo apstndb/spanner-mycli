@@ -163,7 +163,7 @@ func (s *ShowPlanNodeStatement) Execute(ctx context.Context, session *Session) (
 
 	return &Result{
 		TableHeader:  toTableHeader(fmt.Sprintf("Content of Node %v", s.NodeID)),
-		Rows:         sliceOf(toRow(string(y)), toRow(parentLinksInfo)),
+		Body:         PresentationBody(sliceOf(toRow(string(y)), toRow(parentLinksInfo))),
 		AffectedRows: 2,
 	}, nil
 }
@@ -224,14 +224,14 @@ func (s *ShowLastQueryPlanStatement) Execute(ctx context.Context, session *Sessi
 		}
 		return &Result{
 			TableHeader:  toTableHeader("Exported"),
-			Rows:         sliceOf(toRow(exportPath)),
+			Body:         PresentationBody(sliceOf(toRow(exportPath))),
 			AffectedRows: 1,
 		}, nil
 	}
 
 	return &Result{
 		TableHeader:  toTableHeader(header),
-		Rows:         sliceOf(toRow(string(payload))),
+		Body:         PresentationBody(sliceOf(toRow(string(payload)))),
 		AffectedRows: 1,
 	}, nil
 }
@@ -386,7 +386,7 @@ func (s *DescribeStatement) Execute(ctx context.Context, session *Session) (*Res
 		AffectedRows:  len(rows),
 		TableHeader:   toTableHeader(describeColumnNames),
 		ReadTimestamp: timestamp,
-		Rows:          rows,
+		Body:          PresentationBody(rows),
 	}
 
 	return result, nil
@@ -430,7 +430,7 @@ func generateExplainResult(sysVars *systemVariables, queryPlan *sppb.QueryPlan, 
 		TableHeader:  toTableHeader(explainBaseColumnNames(width)),
 		ColumnAlign:  explainColumnAlign,
 		AffectedRows: len(rows),
-		Rows:         rows,
+		Body:         PresentationBody(rows),
 		Predicates:   predicates,
 		Appendices:   appendices,
 		LintResults:  lo.TernaryF(sysVars.Query.LintPlan, func() []string { return lintPlan(queryPlan) }, lo.Empty[[]string]),
@@ -541,7 +541,7 @@ func buildExplainAnalyzeResult(sysVars *systemVariables, plan *sppb.QueryPlan, q
 		ForceVerbose: true,
 		AffectedRows: len(rows),
 		Stats:        queryStats,
-		Rows:         rows,
+		Body:         PresentationBody(rows),
 		Predicates:   predicates,
 		Appendices:   appendices,
 		LintResults:  lintResults,

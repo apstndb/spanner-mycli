@@ -36,7 +36,7 @@ import (
 // whether the statement streams.
 //
 // Whether a statement will stream is not knowable with certainty before
-// execution (Result.Streamed is the truth only afterwards). Instead of
+// execution (DeliveredBody is the truth only afterwards). Instead of
 // predicting, the sink binds lazily: the pager is started and the pre-result
 // decorations are emitted on the first byte written through it, wherever that
 // byte comes from. For streamed statements the first byte is the first row,

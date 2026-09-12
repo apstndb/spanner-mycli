@@ -32,7 +32,7 @@ func (s *ShowVariableStatement) Execute(ctx context.Context, session *Session) (
 	}
 	return &Result{
 		TableHeader:   toTableHeader(columnNames),
-		Rows:          sliceOf(toRow(row...)),
+		Body:          PresentationBody(sliceOf(toRow(row...))),
 		KeepVariables: true,
 	}, nil
 }

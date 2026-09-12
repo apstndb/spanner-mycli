@@ -844,16 +844,14 @@ func TestExplainLastQueryStatement_Execute(t *testing.T) {
 			QueryPlan:  selectProfileResultSet.GetStats().GetQueryPlan(),
 			QueryStats: selectProfileResultSet.GetStats().GetQueryStats().AsMap(),
 		}, &Result{
-			Rows:         sliceOf(toRow("0", "Serialize Result <Row>"), toRow("1", "+- Unit Relation <Row>")),
 			AffectedRows: 2,
 			ColumnAlign:  sliceOf(tw.AlignRight, tw.AlignLeft),
-			TableHeader:  toTableHeader("ID", "Operator <execution_method> (metadata, ...)"),
+			TableHeader:  toTableHeader("ID", "Operator <execution_method> (metadata, ...)"), Body: PresentationBody(sliceOf(toRow("0", "Serialize Result <Row>"), toRow("1", "+- Unit Relation <Row>"))),
 		}, false},
 		{"EXPLAIN ANALYZE", &ExplainLastQueryStatement{Analyze: true}, &LastQueryCache{
 			QueryPlan:  selectProfileResultSet.GetStats().GetQueryPlan(),
 			QueryStats: selectProfileResultSet.GetStats().GetQueryStats().AsMap(),
 		}, &Result{
-			Rows:         sliceOf(toRow("0", "Serialize Result <Row>", "1", "1", "0 msecs"), toRow("1", "+- Unit Relation <Row>", "1", "1", "0 msecs")),
 			AffectedRows: 2,
 			ColumnAlign:  sliceOf(tw.AlignRight, tw.AlignLeft, tw.AlignRight, tw.AlignRight, tw.AlignRight),
 			TableHeader:  toTableHeader("ID", "Operator <execution_method> (metadata, ...)", "Rows", "Exec.", "Total Latency"),
@@ -880,7 +878,7 @@ func TestExplainLastQueryStatement_Execute(t *testing.T) {
 				RuntimeCached:              "true",
 				QueryPlanCached:            "true",
 			},
-			ForceVerbose: true,
+			ForceVerbose: true, Body: PresentationBody(sliceOf(toRow("0", "Serialize Result <Row>", "1", "1", "0 msecs"), toRow("1", "+- Unit Relation <Row>", "1", "1", "0 msecs"))),
 		}, false},
 	}
 	for _, tt := range tests {
@@ -1061,7 +1059,7 @@ func TestShowPlanNodeStatement_Execute(t *testing.T) {
 				// whose exact wording is not stable; assert only our prefix and
 				// that some upstream detail follows, then compare the rest of
 				// the Result exactly by substituting the observed value.
-				gotIncoming := got.Rows[1][0].RawText()
+				gotIncoming := got.presentationRows()[1][0].RawText()
 				if !strings.HasPrefix(gotIncoming, tt.wantIncoming) {
 					t.Errorf("incoming row = %q, want prefix %q", gotIncoming, tt.wantIncoming)
 					return
@@ -1074,9 +1072,8 @@ func TestShowPlanNodeStatement_Execute(t *testing.T) {
 			}
 
 			want := &Result{
-				Rows:         sliceOf(toRow(tt.wantContent), toRow(wantIncoming)),
 				AffectedRows: 2,
-				TableHeader:  toTableHeader(fmt.Sprintf("Content of Node %v", tt.statement.NodeID)),
+				TableHeader:  toTableHeader(fmt.Sprintf("Content of Node %v", tt.statement.NodeID)), Body: PresentationBody(sliceOf(toRow(tt.wantContent), toRow(wantIncoming))),
 			}
 			if diff := cmp.Diff(got, want); diff != "" {
 				t.Errorf("Execute() diff = %v", diff)
@@ -1120,10 +1117,10 @@ func TestShowLastQueryPlanStatement_Execute(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Execute() error = %v", err)
 		}
-		if got.AffectedRows != 1 || len(got.Rows) != 1 {
+		if got.AffectedRows != 1 || len(got.presentationRows()) != 1 {
 			t.Fatalf("unexpected result shape: %+v", got)
 		}
-		raw := got.Rows[0][0].RawText()
+		raw := got.presentationRows()[0][0].RawText()
 		var roundTrip sppb.QueryPlan
 		if err := protojson.Unmarshal([]byte(raw), &roundTrip); err != nil {
 			t.Fatalf("ProtoJSON round-trip unmarshal: %v\npayload:\n%s", err, raw)
@@ -1154,7 +1151,7 @@ func TestShowLastQueryPlanStatement_Execute(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Execute() error = %v", err)
 		}
-		raw := got.Rows[0][0].RawText()
+		raw := got.presentationRows()[0][0].RawText()
 		var roundTrip sppb.ResultSetStats
 		if err := protojson.Unmarshal([]byte(raw), &roundTrip); err != nil {
 			t.Fatalf("ProtoJSON round-trip unmarshal: %v\npayload:\n%s", err, raw)
@@ -1174,8 +1171,8 @@ func TestShowLastQueryPlanStatement_Execute(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Execute() error = %v", err)
 		}
-		if got.Rows[0][0].RawText() != path {
-			t.Fatalf("exported path = %q, want %q", got.Rows[0][0].RawText(), path)
+		if got.presentationRows()[0][0].RawText() != path {
+			t.Fatalf("exported path = %q, want %q", got.presentationRows()[0][0].RawText(), path)
 		}
 		b, err := os.ReadFile(path)
 		if err != nil {
@@ -1197,8 +1194,8 @@ func TestShowLastQueryPlanStatement_Execute(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Execute() error = %v", err)
 			}
-			if got.Rows[0][0].RawText() != path {
-				t.Fatalf("exported path = %q, want %q", got.Rows[0][0].RawText(), path)
+			if got.presentationRows()[0][0].RawText() != path {
+				t.Fatalf("exported path = %q, want %q", got.presentationRows()[0][0].RawText(), path)
 			}
 			b, err := os.ReadFile(path)
 			if err != nil {

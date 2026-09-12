@@ -183,8 +183,7 @@ func TestPrintTableDataDisplayReplay(t *testing.T) {
 	t.Parallel()
 
 	result := &Result{
-		TableHeader: toTableHeader("id", "name"),
-		Rows:        []Row{toRow("1", "Alice")},
+		TableHeader: toTableHeader("id", "name"), Body: PresentationBody([]Row{toRow("1", "Alice")}),
 	}
 
 	got, err := runPrintTableData(t, enums.DisplayModeJSONL, false, result)

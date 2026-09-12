@@ -426,7 +426,7 @@ func (largeStreamStatement) Execute(_ context.Context, session *Session) (*Resul
 	if _, err := io.WriteString(w, largePagerInput()); err != nil {
 		return nil, err
 	}
-	return &Result{Streamed: true, KeepVariables: true}, nil
+	return &Result{KeepVariables: true, Body: DeliveredBody()}, nil
 }
 
 func TestExecuteStatementPagerEarlyExit(t *testing.T) {
@@ -477,7 +477,7 @@ func TestPrintResultPagerEarlyExit(t *testing.T) {
 		StreamManager: streamio.NewStreamManager(io.NopCloser(bytes.NewReader(nil)), outBuf, outBuf),
 	}
 	cli := &Cli{SystemVariables: sysVars}
-	result := &Result{TableHeader: toTableHeader("col1"), Rows: []Row{toRow(largePagerInput())}}
+	result := &Result{TableHeader: toTableHeader("col1"), Body: PresentationBody([]Row{toRow(largePagerInput())})}
 	done := make(chan error, 1)
 	go func() {
 		done <- cli.PrintResult(80, result, false, "", outBuf)

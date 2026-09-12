@@ -505,11 +505,11 @@ func executeWithBuffering(ctx context.Context, qe *queryExecution) (*Result, err
 		"rowCount", len(rows))
 
 	result := &Result{
-		Typed: &TypedRows{
+		Body: TypedBody(&TypedRows{
 			Metadata:         metadata,
 			Rows:             rows,
 			SQLExportAllowed: qe.Render.ValueFmtMode == format.SQLLiteralValues,
-		},
+		}),
 		TableHeader:  toTableHeader(metadata.GetRowType().GetFields()),
 		AffectedRows: len(rows),
 	}

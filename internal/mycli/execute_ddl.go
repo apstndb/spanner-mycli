@@ -57,9 +57,12 @@ func newProgressWithTTY(ctx context.Context, session *Session) *mpb.Progress {
 
 func executeDdlStatements(ctx context.Context, session *Session, ddls []string) (*Result, error) {
 	if len(ddls) == 0 {
-		return &Result{
-			TableHeader: toTableHeader(lo.Ternary(session.systemVariables.Feature.EchoExecutedDDL, sliceOf("Executed", "Commit Timestamp"), lo.Empty[[]string]())),
-		}, nil
+		result := &Result{}
+		if session.systemVariables.Feature.EchoExecutedDDL {
+			result.TableHeader = toTableHeader("Executed", "Commit Timestamp")
+			result.Body = PresentationBody(nil)
+		}
+		return result, nil
 	}
 
 	b, err := proto.Marshal(session.systemVariables.Internal.ProtoDescriptor)
@@ -201,10 +204,10 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 	result := &Result{CommitTimestamp: lastCommitTS}
 	if session.systemVariables.Feature.EchoExecutedDDL {
 		result.TableHeader = toTableHeader("Executed", "Commit Timestamp")
-		result.Rows = slices.Collect(iterutil.ZipShortestBy(slices.Values(ddls), slices.Values(metadata.GetCommitTimestamps()),
+		result.Body = PresentationBody(slices.Collect(iterutil.ZipShortestBy(slices.Values(ddls), slices.Values(metadata.GetCommitTimestamps()),
 			func(ddl string, commitTimestamp *timestamppb.Timestamp) Row {
 				return toRow(ddl+";", commitTimestamp.AsTime().Format(time.RFC3339Nano))
-			}))
+			})))
 	}
 
 	return result, nil
@@ -286,7 +289,7 @@ func formatAsyncDdlResult(op *adminapi.UpdateDatabaseDdlOperation) (*Result, err
 
 	return &Result{
 		TableHeader:  toTableHeader("OPERATION_ID", "STATEMENTS", "DONE", "PROGRESS", "COMMIT_TIMESTAMP", "ERROR"),
-		Rows:         rows,
+		Body:         PresentationBody(rows),
 		AffectedRows: 1,
 	}, nil
 }

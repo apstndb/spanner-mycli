@@ -74,7 +74,7 @@ func dumpStreamingSQL(t *testing.T, session *Session, stmt Statement) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.Streamed {
+	if !result.alreadyDelivered() {
 		t.Fatal("expected streamed dump")
 	}
 	return buf.String()
@@ -230,10 +230,10 @@ func TestDumpCatalogNamedUsersBufferedStreamingReplay(t *testing.T) {
 			t.Fatal(err)
 		}
 		result = normalizeResultForCompare(t, result)
-		if len(result.Rows) != 1 {
-			t.Fatalf("%s: rows=%d affected=%d", sql, len(result.Rows), result.AffectedRows)
+		if len(result.presentationRows()) != 1 {
+			t.Fatalf("%s: rows=%d affected=%d", sql, len(result.presentationRows()), result.AffectedRows)
 		}
-		got := result.Rows[0][0].RawText()
+		got := result.presentationRows()[0][0].RawText()
 		if !strings.Contains(got, want) {
 			t.Fatalf("%s got %q want substring %q", sql, got, want)
 		}

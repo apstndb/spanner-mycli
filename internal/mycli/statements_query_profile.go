@@ -110,7 +110,7 @@ func (s *ShowQueryProfilesStatement) Execute(ctx context.Context, session *Sessi
 
 	return &Result{
 		TableHeader:  toTableHeader("Plan"),
-		Rows:         resultRows,
+		Body:         PresentationBody(resultRows),
 		AffectedRows: len(resultRows),
 	}, nil
 }

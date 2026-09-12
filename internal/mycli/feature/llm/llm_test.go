@@ -95,8 +95,13 @@ func TestResultFromComposedOutput(t *testing.T) {
 			if got.PreInput != tt.wantPreInput {
 				t.Errorf("PreInput = %q, want %q", got.PreInput, tt.wantPreInput)
 			}
-			if len(got.Rows) != tt.wantRows {
-				t.Errorf("len(Rows) = %d, want %d", len(got.Rows), tt.wantRows)
+			rows, ok := got.Body.PresentationRows()
+			if tt.wantRows == 0 {
+				if ok && len(rows) != 0 {
+					t.Errorf("len(Rows) = %d, want 0", len(rows))
+				}
+			} else if !ok || len(rows) != tt.wantRows {
+				t.Errorf("len(Rows) = %d ok=%v, want %d", len(rows), ok, tt.wantRows)
 			}
 		})
 	}

@@ -503,13 +503,13 @@ func assertDoneShowOperationRow(t *testing.T, result *Result) {
 	if result == nil {
 		t.Fatal("result = nil")
 	}
-	if len(result.Rows) != 1 {
-		t.Fatalf("len(result.Rows) = %d, want 1", len(result.Rows))
+	if len(result.presentationRows()) != 1 {
+		t.Fatalf("len(result.presentationRows()) = %d, want 1", len(result.presentationRows()))
 	}
-	if got := result.Rows[0][0].RawText(); got != "auto_op_123" {
+	if got := result.presentationRows()[0][0].RawText(); got != "auto_op_123" {
 		t.Errorf("OPERATION_ID = %q, want auto_op_123", got)
 	}
-	if got := result.Rows[0][2].RawText(); got != "true" {
+	if got := result.presentationRows()[0][2].RawText(); got != "true" {
 		t.Errorf("DONE = %q, want true", got)
 	}
 }

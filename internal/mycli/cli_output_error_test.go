@@ -65,9 +65,9 @@ func TestPrintResultOutputErrors(t *testing.T) {
 		want     string
 	}{
 		{name: "summary", want: "Query OK\n"},
-		{name: "body and summary", result: Result{RenderedOutput: []byte("BODY\n")}, want: "BODY\nQuery OK\n"},
-		{name: "streamed summary", result: Result{Streamed: true, RenderedOutput: []byte("not repeated")}, want: "Query OK\n"},
-		{name: "appendices", result: Result{RenderedOutput: []byte("BODY\n"), Appendices: []ResultAppendix{{Title: "Empty"}, {Title: "Appendix", Lines: []string{"one", "two"}}, {Title: "Next", Lines: []string{"three"}}}, Predicates: []string{"hidden"}}, suppress: true, want: "BODY\nAppendix\n one\n two\n\nNext\n three\n\n"},
+		{name: "body and summary", result: Result{Body: PreparedBody([]byte("BODY\n"))}, want: "BODY\nQuery OK\n"},
+		{name: "streamed summary", result: Result{Body: DeliveredBody()}, want: "Query OK\n"},
+		{name: "appendices", result: Result{Appendices: []ResultAppendix{{Title: "Empty"}, {Title: "Appendix", Lines: []string{"one", "two"}}, {Title: "Next", Lines: []string{"three"}}}, Predicates: []string{"hidden"}, Body: PreparedBody([]byte("BODY\n"))}, suppress: true, want: "BODY\nAppendix\n one\n two\n\nNext\n three\n\n"},
 		{name: "predicates", result: Result{Predicates: []string{"one", "two"}}, suppress: true, want: "Predicates(identified by ID):\n one\n two\n\n"},
 		{name: "lint", result: Result{LintResults: []string{"one", "two"}}, suppress: true, want: "Experimental Lint Result:\n one\n two\n\n"},
 		{name: "advice", result: Result{IndexAdvice: []QueryIndexAdvice{{DDL: []string{"first", "second"}, ImprovementFactor: 2}, {DDL: []string{"third"}}}}, suppress: true, want: "Query Advisor Recommendations:\n  first  -- Est. improvement: 50.00%\n  second  -- Est. improvement: 50.00%\n  third\n\n"},
@@ -112,7 +112,7 @@ func TestPrintResultPublicOutputError(t *testing.T) {
 			c := &Cli{SessionHandler: NewSessionHandler(session), SystemVariables: session.systemVariables}
 			cause := errors.New("public result destination failed")
 			w := &resultFailureWriter{err: cause}
-			err := c.PrintResult(80, &Result{Streamed: streamed}, true, "", w)
+			err := c.PrintResult(80, &Result{Body: deliveredBodyIf(streamed)}, true, "", w)
 			if !errors.Is(err, cause) || !w.failed || w.afterFailure != 0 {
 				t.Fatalf("error=%v, writer=%+v", err, w)
 			}

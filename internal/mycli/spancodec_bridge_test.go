@@ -27,13 +27,13 @@ func TestResultFromStructRows_helpVariablesShape(t *testing.T) {
 		t.Fatalf("resultFromStructRows: %v", err)
 	}
 
-	if result.Rows != nil {
-		t.Fatalf("typed buffered result must not set Rows, got %v", result.Rows)
+	if result.presentationRows() != nil {
+		t.Fatalf("typed buffered result must not set Rows, got %v", result.presentationRows())
 	}
-	if result.Typed == nil {
+	if result.typedPayload() == nil {
 		t.Fatal("typed buffered result must set Typed")
 	}
-	if result.Typed.SQLExportAllowed {
+	if result.typedPayload().SQLExportAllowed {
 		t.Error("client-side result must not allow SQL export")
 	}
 	if got := result.TableHeader.Render(false); !cmp.Equal(got, []string{"name", "operations", "desc"}) {
@@ -42,7 +42,7 @@ func TestResultFromStructRows_helpVariablesShape(t *testing.T) {
 
 	// The typed rows derive to the same display cells the eager path produced.
 	sysVars := newSystemVariablesWithDefaults()
-	rows, err := deriveDisplayRows(&sysVars, result.Typed)
+	rows, err := deriveDisplayRows(&sysVars, result.typedPayload())
 	if err != nil {
 		t.Fatalf("deriveDisplayRows: %v", err)
 	}
@@ -76,8 +76,8 @@ func TestResultFromStructRows_showVariablesShape(t *testing.T) {
 	if got := result.TableHeader.Render(false); !cmp.Equal(got, []string{"name", "value"}) {
 		t.Fatalf("headers: %v", got)
 	}
-	if result.Typed == nil || len(result.Typed.Rows) != 2 {
-		t.Fatalf("typed rows: got %v", result.Typed)
+	if result.typedPayload() == nil || len(result.typedPayload().Rows) != 2 {
+		t.Fatalf("typed rows: got %v", result.typedPayload())
 	}
 }
 
@@ -184,7 +184,7 @@ func TestResultFromStructRows_jsonValueMode(t *testing.T) {
 		t.Fatalf("resultFromStructRows: %v", err)
 	}
 
-	rows, err := deriveDisplayRows(&sysVars, result.Typed)
+	rows, err := deriveDisplayRows(&sysVars, result.typedPayload())
 	if err != nil {
 		t.Fatalf("deriveDisplayRows: %v", err)
 	}
@@ -216,7 +216,7 @@ func TestResultFromStructRows_displayMode(t *testing.T) {
 		t.Fatalf("resultFromStructRows: %v", err)
 	}
 
-	rows, err := deriveDisplayRows(&sysVars, result.Typed)
+	rows, err := deriveDisplayRows(&sysVars, result.typedPayload())
 	if err != nil {
 		t.Fatalf("deriveDisplayRows: %v", err)
 	}
@@ -278,22 +278,22 @@ func TestExecuteStructRows_streaming(t *testing.T) {
 				t.Fatalf("executeStructRows: %v", err)
 			}
 
-			if result.Streamed != tt.wantStream {
-				t.Fatalf("Streamed = %v, want %v", result.Streamed, tt.wantStream)
+			if result.alreadyDelivered() != tt.wantStream {
+				t.Fatalf("Streamed = %v, want %v", result.alreadyDelivered(), tt.wantStream)
 			}
 			if result.AffectedRows != 2 {
 				t.Errorf("AffectedRows = %d, want 2", result.AffectedRows)
 			}
 			if tt.wantStream {
-				if result.Typed != nil || len(result.Rows) != 0 {
-					t.Errorf("streamed result must carry no body payload, got Typed=%v Rows=%v", result.Typed, result.Rows)
+				if result.typedPayload() != nil || len(result.presentationRows()) != 0 {
+					t.Errorf("streamed result must carry no body payload, got Typed=%v Rows=%v", result.typedPayload(), result.presentationRows())
 				}
 				if got := buf.String(); got != tt.wantOutput {
 					t.Errorf("output = %q, want %q", got, tt.wantOutput)
 				}
 			} else {
-				if result.Typed == nil || len(result.Typed.Rows) != 2 {
-					t.Errorf("Typed = %v, want 2 buffered typed rows", result.Typed)
+				if result.typedPayload() == nil || len(result.typedPayload().Rows) != 2 {
+					t.Errorf("Typed = %v, want 2 buffered typed rows", result.typedPayload())
 				}
 				if buf.Len() != 0 {
 					t.Errorf("output = %q, want empty for buffered result", buf.String())

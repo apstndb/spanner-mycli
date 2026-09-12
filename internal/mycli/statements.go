@@ -309,7 +309,7 @@ func (s *ShowSchemaUpdateOperations) Execute(ctx context.Context, session *Sessi
 	}
 	return &Result{
 		TableHeader:  toTableHeader("OPERATION_ID", "STATEMENTS", "DONE", "PROGRESS", "COMMIT_TIMESTAMP", "ERROR"),
-		Rows:         rows,
+		Body:         PresentationBody(rows),
 		AffectedRows: num,
 	}, nil
 }
@@ -532,7 +532,7 @@ func formatShowOperation(op *longrunningpb.Operation) (*Result, error) {
 
 	return &Result{
 		TableHeader:  toTableHeader("OPERATION_ID", "STATEMENTS", "DONE", "PROGRESS", "COMMIT_TIMESTAMP", "ERROR"),
-		Rows:         rows,
+		Body:         PresentationBody(rows),
 		AffectedRows: 1, // We're showing one operation
 	}, nil
 }

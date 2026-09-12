@@ -27,7 +27,7 @@ import (
 )
 
 // typedReplayFormatConfig picks the FormatConfig used to render a typed
-// buffered result (Result.Typed) for the current CLI_FORMAT. It mirrors
+// buffered result for the current CLI_FORMAT. It mirrors
 // prepareFormatConfig's format decision without the SQL table-name
 // auto-detection (that ran at execution time and is stored in
 // Result.SQLTableNameForExport), so replay produces the same bytes the
@@ -63,6 +63,11 @@ func writeTypedRows(out io.Writer, sysVars *systemVariables, result *Result) err
 		opts.SQLTableName = n
 	}
 
+	typed, ok := result.Body.Typed()
+	if !ok || typed == nil {
+		return fmt.Errorf("typed replay requires a typed body")
+	}
+
 	w, handled, err := newSpanvalueRowIteratorWriterFor(out, opts, fc)
 	if err != nil {
 		return err
@@ -74,7 +79,7 @@ func writeTypedRows(out io.Writer, sysVars *systemVariables, result *Result) err
 		// format sets ever diverge.
 		return fmt.Errorf("no spanvalue writer for typed replay in format %v", opts.CLIFormat)
 	}
-	if _, err := writer.WriteRowSeq(result.Typed.Metadata, writer.RowSeq(result.Typed.Rows...), w); err != nil {
+	if _, err := writer.WriteRowSeq(typed.Metadata, writer.RowSeq(typed.Rows...), w); err != nil {
 		return normalizeSpanvalueWriterError(err)
 	}
 	return nil
@@ -82,7 +87,7 @@ func writeTypedRows(out io.Writer, sysVars *systemVariables, result *Result) err
 
 // deriveDisplayRows converts a typed buffered result to display-text cells using
 // the same transform as the buffered query path, so table-family formats render
-// identically whether the rows arrived as Result.Rows or Result.Typed.
+// identically whether the rows arrived as a presentation body or typed body.
 func deriveDisplayRows(sysVars *systemVariables, t *TypedRows) ([]Row, error) {
 	fc, vfm, err := clientSideFormatContext(sysVars)
 	if err != nil {
@@ -112,7 +117,7 @@ func deriveDisplayRows(sysVars *systemVariables, t *TypedRows) ([]Row, error) {
 // pass-through-GCV replay).
 //
 // Presentation tables never allow SQL export (Result.SQLExportAllowed is false
-// and they carry no Typed payload), so printTableData falls back to TABLE before
+// and they carry no typed payload), so printTableData falls back to TABLE before
 // a SQL mode reaches here; only CSV and JSONL are handled in practice. Under
 // those modes a STRING value renders identically to the previous SimpleFormatConfig
 // (CSV: raw text) / JSONFormatConfig (JSONL: JSON string) replay. Returns
@@ -127,7 +132,7 @@ func writeDisplayRows(out io.Writer, sysVars *systemVariables, columnNames []str
 	if err != nil {
 		return true, err
 	}
-	return true, writeTypedRows(out, sysVars, &Result{Typed: typed})
+	return true, writeTypedRows(out, sysVars, &Result{Body: TypedBody(typed)})
 }
 
 // stringRowsToTyped builds a TypedRows whose columns are all STRING and whose

@@ -88,8 +88,7 @@ func TestRenderDMLReturnedRowsJSONLTypedFidelity(t *testing.T) {
 		displayRows = append(displayRows, cells)
 	}
 	oldOut, err := runPrintTableData(t, enums.DisplayModeJSONL, false, &Result{
-		TableHeader: tableHeader,
-		Rows:        displayRows,
+		TableHeader: tableHeader, Body: PresentationBody(displayRows),
 	})
 	if err != nil {
 		t.Fatalf("printTableData(old shape): %v", err)
@@ -151,7 +150,7 @@ func TestThenReturnRenderFailureAbortsImplicitCommit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("verification select failed: %v", err)
 	}
-	rows, err := deriveDisplayRows(session.systemVariables, res.Typed)
+	rows, err := deriveDisplayRows(session.systemVariables, res.typedPayload())
 	if err != nil {
 		t.Fatalf("deriveDisplayRows: %v", err)
 	}

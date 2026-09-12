@@ -17,13 +17,14 @@ import (
 func dumpRenderedOutputForTest(t *testing.T, result *Result) string {
 	t.Helper()
 
-	if result.RenderedOutput == nil {
-		t.Fatalf("expected DUMP fallback to return pre-rendered output")
+	output, ok := result.Body.PreparedBytes()
+	if !ok {
+		t.Fatalf("expected DUMP fallback to return a prepared body")
 	}
-	if len(result.Rows) > 0 {
-		t.Fatalf("expected DUMP fallback to return no rows, got %d", len(result.Rows))
+	if _, ok := result.Body.PresentationRows(); ok {
+		t.Fatalf("expected DUMP fallback to return no presentation table")
 	}
-	return string(result.RenderedOutput)
+	return string(output)
 }
 
 func TestDumpStatements(t *testing.T) {
@@ -270,7 +271,7 @@ func TestDumpWithStreaming(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute failed: %v", err)
 	}
-	if !result.Streamed {
+	if !result.alreadyDelivered() {
 		t.Errorf("Expected Streamed to be true")
 	}
 
@@ -553,7 +554,7 @@ func TestDumpWithGeneratedColumns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("streamed DUMP TABLES failed: %v", err)
 	}
-	if !streamedResult.Streamed {
+	if !streamedResult.alreadyDelivered() {
 		t.Fatal("expected streamed DUMP")
 	}
 	if diff := cmp.Diff(expectedOutput, streamedOutput); diff != "" {
@@ -651,7 +652,7 @@ func TestDumpFloat32NegativeZeroReplay(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if !result.Streamed {
+				if !result.alreadyDelivered() {
 					t.Fatal("expected streamed DUMP")
 				}
 				output = text
