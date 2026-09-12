@@ -128,6 +128,11 @@ type Session struct {
 	clientOpts      []option.ClientOption
 	txn             *TransactionManager // transaction lifecycle + query execution
 	systemVariables *systemVariables
+	// connection is the construction identity (project, instance, database,
+	// role). Client creation, Session.DatabasePath, and per-session
+	// administrative resource paths use this copy, not the live registry
+	// Connection on systemVariables.
+	connection ConnectionVars
 
 	batch BatchManager
 
@@ -222,18 +227,7 @@ func (h *SessionHandler) createSessionWithOpts(ctx context.Context, sysVars *sys
 		opts = current.clientOpts
 	}
 
-	// Create admin-only session if no database is specified
-	var session *Session
-	var err error
-	if sysVars.Connection.Database == "" {
-		session, err = NewAdminSession(ctx, sysVars, opts...)
-	} else {
-		session, err = NewSession(ctx, sysVars, opts...)
-	}
-	if err != nil {
-		return nil, err
-	}
-	return session, nil
+	return createSessionWithIdentity(ctx, sysVars, sysVars.Connection, opts...)
 }
 
 // validateSessionSwitch rejects USE/DETACH while a transaction or batch is
@@ -353,9 +347,25 @@ func logGrpcClientOptions() []option.ClientOption {
 }
 
 func NewSession(ctx context.Context, sysVars *systemVariables, opts ...option.ClientOption) (*Session, error) {
+	return newSessionWithIdentity(ctx, sysVars, sysVars.Connection, opts...)
+}
+
+// createSessionWithIdentity constructs a Session for identity while sharing
+// sysVars for registry, query/transaction settings, runtime logging,
+// StreamManager and feature variables. Public constructors capture the live
+// Connection values instead of taking identity explicitly.
+func createSessionWithIdentity(ctx context.Context, sysVars *systemVariables, identity ConnectionVars, opts ...option.ClientOption) (*Session, error) {
+	if identity.Database == "" {
+		return newAdminSessionWithIdentity(ctx, sysVars, identity, opts...)
+	}
+	return newSessionWithIdentity(ctx, sysVars, identity, opts...)
+}
+
+func newSessionWithIdentity(ctx context.Context, sysVars *systemVariables, identity ConnectionVars, opts ...option.ClientOption) (*Session, error) {
 	return newSessionWithFactories(
 		ctx,
 		sysVars,
+		identity,
 		spanner.NewClientWithConfig,
 		adminapi.NewDatabaseAdminClient,
 		func(client *spanner.Client) { client.Close() },
@@ -363,29 +373,58 @@ func NewSession(ctx context.Context, sysVars *systemVariables, opts ...option.Cl
 	)
 }
 
+func clientConfigForIdentity(sysVars *systemVariables, identity ConnectionVars) spanner.ClientConfig {
+	clientConfig := clientConfigForSystemVariables(sysVars)
+	clientConfig.DatabaseRole = identity.Role
+	clientConfig.DirectedReadOptions = sysVars.Query.DirectedRead
+	return clientConfig
+}
+
+func appendSessionClientOptions(sysVars *systemVariables, opts []option.ClientOption) []option.ClientOption {
+	if sysVars.Config.Insecure && len(sysVars.Config.EmbeddedClientOptions) == 0 {
+		opts = append(opts, option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())))
+	}
+	if sysVars.Config.LogGrpc {
+		opts = append(opts, logGrpcClientOptions()...)
+	}
+	return append(opts, defaultClientOpts...)
+}
+
+func bindConstructedSession(
+	mode SessionMode,
+	client *spanner.Client,
+	adminClient *adminapi.DatabaseAdminClient,
+	clientConfig spanner.ClientConfig,
+	opts []option.ClientOption,
+	sysVars *systemVariables,
+	identity ConnectionVars,
+) *Session {
+	session := &Session{
+		mode:            mode,
+		client:          client,
+		clientConfig:    clientConfig,
+		clientOpts:      opts,
+		adminClient:     adminClient,
+		txn:             NewTransactionManager(client, sysVars, clientConfig),
+		systemVariables: sysVars,
+		connection:      identity,
+	}
+	sysVars.inTransaction = session.txn.InTransaction
+	return session
+}
+
 func newSessionWithFactories(
 	ctx context.Context,
 	sysVars *systemVariables,
+	identity ConnectionVars,
 	clientFactory func(context.Context, string, spanner.ClientConfig, ...option.ClientOption) (*spanner.Client, error),
 	adminClientFactory func(context.Context, ...option.ClientOption) (*adminapi.DatabaseAdminClient, error),
 	closeClient func(*spanner.Client),
 	opts ...option.ClientOption,
 ) (*Session, error) {
-	dbPath := sysVars.DatabasePath()
-	clientConfig := clientConfigForSystemVariables(sysVars)
-	clientConfig.DatabaseRole = sysVars.Connection.Role
-	clientConfig.DirectedReadOptions = sysVars.Query.DirectedRead
-
-	if sysVars.Config.Insecure && len(sysVars.Config.EmbeddedClientOptions) == 0 {
-		opts = append(opts, option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())))
-	}
-
-	if sysVars.Config.LogGrpc {
-		opts = append(opts, logGrpcClientOptions()...)
-	}
-
-	opts = append(opts, defaultClientOpts...)
-	client, err := clientFactory(ctx, dbPath, clientConfig, opts...)
+	clientConfig := clientConfigForIdentity(sysVars, identity)
+	opts = appendSessionClientOptions(sysVars, opts)
+	client, err := clientFactory(ctx, identity.DatabasePath(), clientConfig, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -396,52 +435,19 @@ func newSessionWithFactories(
 		return nil, err
 	}
 
-	session := &Session{
-		mode:            DatabaseConnected,
-		client:          client,
-		clientConfig:    clientConfig,
-		clientOpts:      opts,
-		adminClient:     adminClient,
-		txn:             NewTransactionManager(client, sysVars, clientConfig),
-		systemVariables: sysVars,
-	}
-	sysVars.inTransaction = session.txn.InTransaction
-
-	return session, nil
+	return bindConstructedSession(DatabaseConnected, client, adminClient, clientConfig, opts, sysVars, identity), nil
 }
 
 func NewAdminSession(ctx context.Context, sysVars *systemVariables, opts ...option.ClientOption) (*Session, error) {
-	clientConfig := clientConfigForSystemVariables(sysVars)
-	clientConfig.DatabaseRole = sysVars.Connection.Role
-	clientConfig.DirectedReadOptions = sysVars.Query.DirectedRead
+	return newAdminSessionWithIdentity(ctx, sysVars, sysVars.Connection, opts...)
+}
 
-	if sysVars.Config.Insecure && len(sysVars.Config.EmbeddedClientOptions) == 0 {
-		opts = append(opts, option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())))
-	}
-
-	if sysVars.Config.LogGrpc {
-		opts = append(opts, logGrpcClientOptions()...)
-	}
-
-	opts = append(opts, defaultClientOpts...)
-
-	adminClient, err := adminapi.NewDatabaseAdminClient(ctx, opts...)
+func newAdminSessionWithIdentity(ctx context.Context, sysVars *systemVariables, identity ConnectionVars, opts ...option.ClientOption) (*Session, error) {
+	session, err := newAdminSessionWithFactories(ctx, sysVars, identity, adminapi.NewDatabaseAdminClient, opts...)
 	if err != nil {
 		return nil, err
 	}
 
-	session := &Session{
-		mode:            Detached,
-		client:          nil, // no database client in detached mode
-		clientConfig:    clientConfig,
-		clientOpts:      opts,
-		adminClient:     adminClient,
-		txn:             NewTransactionManager(nil, sysVars, clientConfig),
-		systemVariables: sysVars,
-	}
-	sysVars.inTransaction = session.txn.InTransaction
-
-	// Validate instance exists
 	exists, err := session.InstanceExists(ctx)
 	if err != nil {
 		session.Close()
@@ -449,10 +455,27 @@ func NewAdminSession(ctx context.Context, sysVars *systemVariables, opts ...opti
 	}
 	if !exists {
 		session.Close()
-		return nil, fmt.Errorf("unknown instance %q", sysVars.Connection.Instance)
+		return nil, fmt.Errorf("unknown instance %q", identity.Instance)
 	}
 
 	return session, nil
+}
+
+func newAdminSessionWithFactories(
+	ctx context.Context,
+	sysVars *systemVariables,
+	identity ConnectionVars,
+	adminClientFactory func(context.Context, ...option.ClientOption) (*adminapi.DatabaseAdminClient, error),
+	opts ...option.ClientOption,
+) (*Session, error) {
+	clientConfig := clientConfigForIdentity(sysVars, identity)
+	opts = appendSessionClientOptions(sysVars, opts)
+	adminClient, err := adminClientFactory(ctx, opts...)
+	if err != nil {
+		return nil, err
+	}
+
+	return bindConstructedSession(Detached, nil, adminClient, clientConfig, opts, sysVars, identity), nil
 }
 
 func (s *Session) Mode() SessionMode {
@@ -593,11 +616,11 @@ func (s *Session) Close() {
 }
 
 func (s *Session) DatabasePath() string {
-	return s.systemVariables.DatabasePath()
+	return s.connection.DatabasePath()
 }
 
 func (s *Session) InstancePath() string {
-	return s.systemVariables.InstancePath()
+	return s.connection.InstancePath()
 }
 
 // InstanceExists reports whether the configured Spanner instance is reachable.
@@ -922,16 +945,5 @@ func createSession(ctx context.Context, credential []byte, sysVars *systemVariab
 	if err != nil {
 		return nil, err
 	}
-
-	var session *Session
-	// Create admin-only session if no database is specified
-	if sysVars.Connection.Database == "" {
-		session, err = NewAdminSession(ctx, sysVars, opts...)
-	} else {
-		session, err = NewSession(ctx, sysVars, opts...)
-	}
-	if err != nil {
-		return nil, err
-	}
-	return session, nil
+	return createSessionWithIdentity(ctx, sysVars, sysVars.Connection, opts...)
 }
