@@ -502,29 +502,29 @@ func TestRollbackReadWriteIfAborted(t *testing.T) {
 	aborted := status.Error(codes.Aborted, "injected abort")
 	other := errors.New("not aborted")
 
-	if got := rollbackReadWriteIfAborted(t.Context(), nil, nil, OperationOutput{}); got != nil {
+	if got := rollbackReadWriteIfAborted(t.Context(), nil, nil); got != nil {
 		t.Errorf("nil err = %v, want nil", got)
 	}
-	if got := rollbackReadWriteIfAborted(t.Context(), nil, aborted, OperationOutput{}); !errors.Is(got, aborted) {
+	if got := rollbackReadWriteIfAborted(t.Context(), nil, aborted); !errors.Is(got, aborted) {
 		t.Errorf("nil session = %v, want original abort", got)
 	}
 
 	sv := newSystemVariablesWithDefaultsForTest()
 	session := &Session{systemVariables: sv}
-	if got := rollbackReadWriteIfAborted(t.Context(), session, aborted, OperationOutput{}); !errors.Is(got, aborted) {
+	if got := rollbackReadWriteIfAborted(t.Context(), session, aborted); !errors.Is(got, aborted) {
 		t.Errorf("nil txn = %v, want original abort", got)
 	}
 
 	session.txn = NewTransactionManager(nil, sv, spanner.ClientConfig{})
-	if got := rollbackReadWriteIfAborted(t.Context(), session, aborted, OperationOutput{}); !errors.Is(got, aborted) {
+	if got := rollbackReadWriteIfAborted(t.Context(), session, aborted); !errors.Is(got, aborted) {
 		t.Errorf("not in RW = %v, want original abort", got)
 	}
-	if got := rollbackReadWriteIfAborted(t.Context(), session, other, OperationOutput{}); !errors.Is(got, other) {
+	if got := rollbackReadWriteIfAborted(t.Context(), session, other); !errors.Is(got, other) {
 		t.Errorf("non-aborted = %v, want original error", got)
 	}
 
 	session.txn.tc = &transactionContext{attrs: transactionAttributes{mode: transactionModeReadWrite}}
-	got := rollbackReadWriteIfAborted(t.Context(), session, aborted, OperationOutput{})
+	got := rollbackReadWriteIfAborted(t.Context(), session, aborted)
 	if !errors.Is(got, aborted) {
 		t.Fatalf("rollback-join missing abort: %v", got)
 	}

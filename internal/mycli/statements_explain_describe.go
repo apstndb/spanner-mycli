@@ -452,7 +452,7 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string, fo
 	// regardless of CLI_QUERY_MODE.
 	iter, roTxn, err := session.txn.RunQueryWithStats(ctx, stmt, false, sppb.ExecuteSqlRequest_PROFILE)
 	if err != nil {
-		return nil, rollbackReadWriteIfAborted(ctx, session, err, OperationOutput{})
+		return nil, rollbackReadWriteIfAborted(ctx, session, err)
 	}
 
 	// Count the actual data rows while draining the iterator;
@@ -466,7 +466,7 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string, fo
 		err = session.txn.invokeQueryAfterCollectHook()
 	}
 	if err != nil {
-		return nil, rollbackReadWriteIfAborted(ctx, session, err, OperationOutput{})
+		return nil, rollbackReadWriteIfAborted(ctx, session, err)
 	}
 
 	// Cloud Spanner Emulator doesn't set query plan nodes to the result.

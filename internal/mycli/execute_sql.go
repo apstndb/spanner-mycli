@@ -287,14 +287,16 @@ func executeSQLImplWithVars(ctx context.Context, session *Session, sql string, s
 
 // rollbackReadWriteIfAborted rolls back a live RW owner when err is Aborted so
 // RecreateClient can replace the session. The initiating error is preserved.
-func rollbackReadWriteIfAborted(ctx context.Context, session *Session, err error, out OperationOutput) error {
+// Rollback emits no statement output, so this calls the transaction manager
+// directly instead of manufacturing a nested Statement.Execute destination.
+func rollbackReadWriteIfAborted(ctx context.Context, session *Session, err error) error {
 	if err == nil || session == nil || session.txn == nil {
 		return err
 	}
 	if !session.txn.InReadWriteTransaction() || spanner.ErrCode(err) != codes.Aborted {
 		return err
 	}
-	if _, rollbackErr := (&RollbackStatement{}).Execute(ctx, session, out); rollbackErr != nil {
+	if rollbackErr := session.txn.RollbackReadWriteTransaction(ctx); rollbackErr != nil {
 		return errors.Join(err, fmt.Errorf("error on rollback: %w", rollbackErr))
 	}
 	return err
@@ -354,7 +356,7 @@ func executeSQLImplWithQueryRunner(ctx context.Context, session *Session, sql st
 	}
 	if err != nil {
 		if rollbackActiveTransactionOnAbort {
-			return nil, rollbackReadWriteIfAborted(ctx, session, err, out)
+			return nil, rollbackReadWriteIfAborted(ctx, session, err)
 		}
 		return nil, err
 	}
