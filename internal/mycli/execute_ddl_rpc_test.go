@@ -183,8 +183,11 @@ func TestExecuteDdlStatementsRPC(t *testing.T) {
 		if err == nil || strings.Contains(err.Error(), "SHOW OPERATION") {
 			t.Fatalf("error = %v, want original DDL failure", err)
 		}
-		if status.Code(err) != codes.InvalidArgument && !strings.Contains(err.Error(), "syntax error") {
-			t.Fatalf("error = %v, want InvalidArgument", err)
+		if status.Code(err) != codes.InvalidArgument {
+			t.Fatalf("status.Code = %v, want InvalidArgument; err = %v", status.Code(err), err)
+		}
+		if !strings.Contains(err.Error(), "syntax error") {
+			t.Fatalf("error = %v, want injected message %q", err, "syntax error")
 		}
 		if session.SchemaGeneration() != before+1 {
 			t.Fatalf("schema generation = %d, want %d after accepted op", session.SchemaGeneration(), before+1)
@@ -195,11 +198,33 @@ func TestExecuteDdlStatementsRPC(t *testing.T) {
 		t.Parallel()
 		server := newCompletedDDLServer(ddl, commitTS)
 		server.stayPending = true
+		server.accepted = make(chan struct{})
+		server.polled = make(chan struct{})
 		session := newDDLAdminSession(t, server)
-		ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+		ctx, cancel := context.WithCancel(t.Context())
 		defer cancel()
+		// Generous outer timeout is a deadlock guard only; cancellation is
+		// synchronized with the fake observing an accepted op and first poll.
+		guard, guardCancel := context.WithTimeout(t.Context(), 30*time.Second)
+		defer guardCancel()
+
+		errc := make(chan error, 1)
 		before := session.SchemaGeneration()
-		_, err := executeDdlStatements(ctx, session, []string{ddl})
+		go func() {
+			_, err := executeDdlStatements(ctx, session, []string{ddl})
+			errc <- err
+		}()
+
+		waitForClosed(t, guard, server.accepted, "accepted UpdateDatabaseDdl")
+		waitForClosed(t, guard, server.polled, "first GetOperation poll")
+		cancel()
+
+		var err error
+		select {
+		case err = <-errc:
+		case <-guard.Done():
+			t.Fatal("timed out waiting for canceled DDL wait")
+		}
 		if err == nil || !strings.Contains(err.Error(), "SHOW OPERATION 'op-ddl'") {
 			t.Fatalf("error = %v, want canceled wait hint", err)
 		}
@@ -235,15 +260,42 @@ type ddlAdminTestServer struct {
 	databasepb.UnimplementedDatabaseAdminServer
 	longrunningpb.UnimplementedOperationsServer
 
-	mu          sync.Mutex
-	updateErr   error
-	getErr      error
-	stayPending bool
-	done        bool
-	opName      string
-	metadata    *anypb.Any
-	lastUpdate  *databasepb.UpdateDatabaseDdlRequest
-	getCalls    atomic.Int32
+	mu           sync.Mutex
+	updateErr    error
+	getErr       error
+	stayPending  bool
+	done         bool
+	opName       string
+	metadata     *anypb.Any
+	lastUpdate   *databasepb.UpdateDatabaseDdlRequest
+	getCalls     atomic.Int32
+	accepted     chan struct{}
+	acceptedOnce sync.Once
+	polled       chan struct{}
+	pollOnce     sync.Once
+}
+
+func (s *ddlAdminTestServer) notifyAccepted() {
+	if s.accepted == nil {
+		return
+	}
+	s.acceptedOnce.Do(func() { close(s.accepted) })
+}
+
+func (s *ddlAdminTestServer) notifyPolled() {
+	if s.polled == nil {
+		return
+	}
+	s.pollOnce.Do(func() { close(s.polled) })
+}
+
+func waitForClosed(t *testing.T, ctx context.Context, ch <-chan struct{}, what string) {
+	t.Helper()
+	select {
+	case <-ch:
+	case <-ctx.Done():
+		t.Fatalf("timed out waiting for %s", what)
+	}
 }
 
 func newCompletedDDLServer(ddl string, commitTS time.Time) *ddlAdminTestServer {
@@ -296,7 +348,9 @@ func (s *ddlAdminTestServer) UpdateDatabaseDdl(_ context.Context, req *databasep
 	if err != nil {
 		return nil, err
 	}
-	return s.operation(), nil
+	op := s.operation()
+	s.notifyAccepted()
+	return op, nil
 }
 
 func (s *ddlAdminTestServer) GetOperation(context.Context, *longrunningpb.GetOperationRequest) (*longrunningpb.Operation, error) {
@@ -307,7 +361,9 @@ func (s *ddlAdminTestServer) GetOperation(context.Context, *longrunningpb.GetOpe
 	if err != nil {
 		return nil, err
 	}
-	return s.operation(), nil
+	op := s.operation()
+	s.notifyPolled()
+	return op, nil
 }
 
 func newDDLAdminSession(t *testing.T, server *ddlAdminTestServer) *Session {
