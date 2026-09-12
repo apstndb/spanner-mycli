@@ -23,8 +23,9 @@ import (
 )
 
 func (tm *TransactionManager) discardAutomaticDMLLocked() {
-	tm.autoDML = nil
-	tm.autoDMLOwner = 0
+	if tm.tc != nil {
+		tm.tc.autoDML = nil
+	}
 }
 
 // DiscardAutomaticDML drops pending automatic DML without executing it.
@@ -37,21 +38,22 @@ func (tm *TransactionManager) DiscardAutomaticDML() {
 	})
 }
 
-// HasAutomaticDML reports whether automatic DML is waiting for this manager.
+// HasAutomaticDML reports whether automatic DML is waiting on the current
+// transaction context.
 func (tm *TransactionManager) HasAutomaticDML() bool {
 	tm.mu.RLock()
 	defer tm.mu.RUnlock()
-	return len(tm.autoDML) > 0
+	return tm.tc != nil && len(tm.tc.autoDML) > 0
 }
 
 // AutomaticBatchInfo returns pending-automatic BatchInfo, or nil if the queue is empty.
 func (tm *TransactionManager) AutomaticBatchInfo() *BatchInfo {
 	tm.mu.RLock()
 	defer tm.mu.RUnlock()
-	if len(tm.autoDML) == 0 {
+	if tm.tc == nil || len(tm.tc.autoDML) == 0 {
 		return nil
 	}
-	return &BatchInfo{Mode: batchModeDML, Size: len(tm.autoDML)}
+	return &BatchInfo{Mode: batchModeDML, Size: len(tm.tc.autoDML)}
 }
 
 // TryEnqueueAutomaticDML appends stmt to the current explicit RW transaction's
@@ -63,11 +65,7 @@ func (tm *TransactionManager) TryEnqueueAutomaticDML(stmt spanner.Statement) (bo
 		if tm.tc == nil || tm.tc.attrs.mode != transactionModeReadWrite {
 			return nil
 		}
-		if tm.autoDMLOwner != 0 && tm.autoDMLOwner != tm.autoDMLGeneration {
-			tm.discardAutomaticDMLLocked()
-		}
-		tm.autoDML = append(tm.autoDML, stmt)
-		tm.autoDMLOwner = tm.autoDMLGeneration
+		tm.tc.autoDML = append(tm.tc.autoDML, stmt)
 		// Queued automatic DML is uncommitted work on an already-started RW
 		// owner. Enable the existing keepalive now; waiting until flush is too
 		// late to cover the think/paste interval before COMMIT or a read.
@@ -99,22 +97,23 @@ func (tm *TransactionManager) FlushAutomaticDML(ctx context.Context) (*Result, e
 	return newBatchDMLResult(dmls, counts, &DMLResult{}), nil
 }
 
-// flushAutomaticDMLLocked takes the automatic queue then BatchUpdates it on the
-// current RW transaction. Caller must hold tm.mu. A generation mismatch or
-// missing RW owner discards without executing so stale work cannot open a new
-// implicit transaction.
+// flushAutomaticDMLLocked takes the current context's automatic queue then
+// BatchUpdates it on that same RW owner. Caller must hold tm.mu. The queue is
+// cleared before the RPC so a failure cannot replay work. A missing RW owner
+// or owner replacement discards without executing so stale work cannot open a
+// new implicit transaction.
 func (tm *TransactionManager) flushAutomaticDMLLocked(ctx context.Context) ([]spanner.Statement, []int64, error) {
-	if len(tm.autoDML) == 0 {
+	owner := tm.tc
+	if owner == nil || len(owner.autoDML) == 0 {
 		return nil, nil, nil
 	}
-	dmls := tm.autoDML
-	owner := tm.autoDMLOwner
-	tm.discardAutomaticDMLLocked()
+	dmls := owner.autoDML
+	owner.autoDML = nil
 
-	if owner != tm.autoDMLGeneration || tm.tc == nil || tm.tc.txn == nil || tm.tc.attrs.mode != transactionModeReadWrite {
+	if owner != tm.tc || owner.txn == nil || owner.attrs.mode != transactionModeReadWrite {
 		return nil, nil, nil
 	}
-	rwTxn, ok := tm.tc.txn.(*spanner.ReadWriteStmtBasedTransaction)
+	rwTxn, ok := owner.txn.(*spanner.ReadWriteStmtBasedTransaction)
 	if !ok {
 		return nil, nil, ErrNotInReadWriteTransaction
 	}

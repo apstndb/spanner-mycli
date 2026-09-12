@@ -74,7 +74,7 @@ func (b *BatchManager) Current() Statement {
 }
 
 // SetCurrent directly sets the current batch statement.
-// Automatic DML is stored on TransactionManager; this remains for tests and
+// Automatic DML is stored on transactionContext; this remains for tests and
 // any caller that must install a manual batch without Start.
 func (b *BatchManager) SetCurrent(stmt Statement) {
 	b.current = stmt
