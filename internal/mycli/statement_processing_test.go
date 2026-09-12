@@ -18,6 +18,7 @@ package mycli
 
 import (
 	_ "embed"
+	"errors"
 	"reflect"
 	"slices"
 	"strings"
@@ -149,6 +150,16 @@ func TestBuildStatement(t *testing.T) {
 			desc:  "CREATE DATABASE statement",
 			input: "CREATE DATABASE d1",
 			want:  &CreateDatabaseStatement{CreateStatement: "CREATE DATABASE d1"},
+		},
+		{
+			desc:  "CREATE DATABASE statement with extra spaces",
+			input: "CREATE  DATABASE  d1",
+			want:  &CreateDatabaseStatement{CreateStatement: "CREATE  DATABASE  d1"},
+		},
+		{
+			desc:  "CREATE DATABASE statement with leading comment",
+			input: "/* c */ CREATE DATABASE d1",
+			want:  &CreateDatabaseStatement{CreateStatement: "/* c */ CREATE DATABASE d1"},
 		},
 		{
 			desc:  "DROP DATABASE statement",
@@ -1236,6 +1247,202 @@ TABLE Singers (42)
 			input := strings.ToLower(test.input)
 			testStatementTypeOnly(t, input, test.want, test.skipParseModes)
 		})
+	}
+}
+
+func TestNativeStatementKindMapping(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		desc  string
+		input string
+		want  Statement
+	}{
+		{
+			desc:  "SELECT query",
+			input: "SELECT * FROM t1",
+			want:  &SelectStatement{Query: "SELECT * FROM t1"},
+		},
+		{
+			desc:  "SELECT with leading comment",
+			input: "/* c */ SELECT * FROM t1",
+			want:  &SelectStatement{Query: "/* c */ SELECT * FROM t1"},
+		},
+		{
+			desc:  "SELECT with statement hint",
+			input: "@{USE_ADDITIONAL_PARALLELISM=TRUE} SELECT * FROM t1",
+			want:  &SelectStatement{Query: "@{USE_ADDITIONAL_PARALLELISM=TRUE} SELECT * FROM t1"},
+		},
+		{
+			desc:  "INSERT DML",
+			input: "INSERT INTO t1 (id, name) VALUES (1, 'yuki')",
+			want:  &DmlStatement{Dml: "INSERT INTO t1 (id, name) VALUES (1, 'yuki')"},
+		},
+		{
+			desc:  "UPDATE DML",
+			input: "UPDATE t1 SET name = hello WHERE id = 1",
+			want:  &DmlStatement{Dml: "UPDATE t1 SET name = hello WHERE id = 1"},
+		},
+		{
+			desc:  "DELETE DML",
+			input: "DELETE FROM t1 WHERE id = 1",
+			want:  &DmlStatement{Dml: "DELETE FROM t1 WHERE id = 1"},
+		},
+		{
+			desc:  "ordinary DDL",
+			input: "CREATE TABLE t1 (id INT64 NOT NULL) PRIMARY KEY (id)",
+			want:  &DdlStatement{Ddl: "CREATE TABLE t1 (id INT64 NOT NULL) PRIMARY KEY (id)"},
+		},
+		{
+			desc:  "CREATE DATABASE",
+			input: "CREATE DATABASE d1",
+			want:  &CreateDatabaseStatement{CreateStatement: "CREATE DATABASE d1"},
+		},
+		{
+			desc:  "CREATE DATABASE extra spaces",
+			input: "CREATE  DATABASE  d1",
+			want:  &CreateDatabaseStatement{CreateStatement: "CREATE  DATABASE  d1"},
+		},
+		{
+			desc:  "CREATE DATABASE lowercase",
+			input: "create database d1",
+			want:  &CreateDatabaseStatement{CreateStatement: "create database d1"},
+		},
+		{
+			desc:  "CREATE DATABASE leading comment",
+			input: "/* c */ CREATE DATABASE d1",
+			want:  &CreateDatabaseStatement{CreateStatement: "/* c */ CREATE DATABASE d1"},
+		},
+		{
+			desc:  "CALL ExecuteSQL",
+			input: `CALL cancel_query("1234567890123456789")`,
+			want:  &SelectStatement{Query: `CALL cancel_query("1234567890123456789")`},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			stripped, err := gsqlutils.StripComments("", tt.input)
+			if err != nil {
+				t.Fatalf("StripComments(%q) error: %v", tt.input, err)
+			}
+
+			sem, err := BuildNativeStatementMemefish(stripped, tt.input)
+			if err != nil {
+				t.Fatalf("BuildNativeStatementMemefish(%q) error: %v", tt.input, err)
+			}
+			lex, err := BuildNativeStatementLexical(stripped, tt.input)
+			if err != nil {
+				t.Fatalf("BuildNativeStatementLexical(%q) error: %v", tt.input, err)
+			}
+
+			if diff := cmp.Diff(tt.want, sem); diff != "" {
+				t.Errorf("semantic mismatch (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(tt.want, lex); diff != "" {
+				t.Errorf("lexical mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestNativeStatementKindMapping_ExportDataLexical(t *testing.T) {
+	t.Parallel()
+	const input = `EXPORT DATA OPTIONS (format = 'CLOUD_SPANNER', table = 'Account') AS SELECT 1`
+	stripped, err := gsqlutils.StripComments("", input)
+	if err != nil {
+		t.Fatalf("StripComments(%q) error: %v", input, err)
+	}
+
+	lex, err := BuildNativeStatementLexical(stripped, input)
+	if err != nil {
+		t.Fatalf("BuildNativeStatementLexical(%q) error: %v", input, err)
+	}
+	want := &ExportDataStatement{SQL: input}
+	if diff := cmp.Diff(want, lex); diff != "" {
+		t.Errorf("lexical EXPORT DATA mismatch (-want +got):\n%s", diff)
+	}
+
+	_, err = BuildNativeStatementMemefish(stripped, input)
+	if err == nil {
+		t.Fatal("BuildNativeStatementMemefish(EXPORT DATA) expected parse error, got nil")
+	}
+	if errors.Is(err, errStatementNotMatched) {
+		t.Fatalf("BuildNativeStatementMemefish(EXPORT DATA) wrapped errStatementNotMatched: %v", err)
+	}
+}
+
+func TestNativeStatementKindMapping_UnsupportedSemantic(t *testing.T) {
+	t.Parallel()
+	const input = "GRAPH FinGraph MATCH (n) RETURN LABELS(n) AS label, n.id"
+	stripped, err := gsqlutils.StripComments("", input)
+	if err != nil {
+		t.Fatalf("StripComments(%q) error: %v", input, err)
+	}
+
+	_, err = BuildNativeStatementMemefish(stripped, input)
+	if err == nil {
+		t.Fatal("BuildNativeStatementMemefish(GRAPH) expected error, got nil")
+	}
+	if !errors.Is(err, errStatementNotMatched) {
+		t.Fatalf("BuildNativeStatementMemefish(GRAPH) error=%v, want errStatementNotMatched", err)
+	}
+	if !strings.Contains(err.Error(), "unknown memefish statement") {
+		t.Fatalf("BuildNativeStatementMemefish(GRAPH) error=%q, want unknown memefish statement", err)
+	}
+
+	lex, err := BuildNativeStatementLexical(stripped, input)
+	if err != nil {
+		t.Fatalf("BuildNativeStatementLexical(GRAPH) error: %v", err)
+	}
+	want := &SelectStatement{Query: input}
+	if diff := cmp.Diff(want, lex); diff != "" {
+		t.Errorf("lexical GRAPH mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestNativeStatementKindMapping_LexicalInvalid(t *testing.T) {
+	t.Parallel()
+	const input = "FOO BAR"
+	stripped, err := gsqlutils.StripComments("", input)
+	if err != nil {
+		t.Fatalf("StripComments(%q) error: %v", input, err)
+	}
+
+	_, err = BuildNativeStatementLexical(stripped, input)
+	if err == nil {
+		t.Fatal("BuildNativeStatementLexical(FOO BAR) expected error, got nil")
+	}
+	if errors.Is(err, errStatementNotMatched) {
+		t.Fatalf("BuildNativeStatementLexical(FOO BAR) wrapped errStatementNotMatched: %v", err)
+	}
+	if !strings.Contains(err.Error(), "unknown statement with first token") {
+		t.Fatalf("BuildNativeStatementLexical(FOO BAR) error=%q, want unknown-first-token error", err)
+	}
+}
+
+func TestNativeStatementKindMapping_CreateDatabaseHint(t *testing.T) {
+	t.Parallel()
+	const input = "@{foo=1} CREATE DATABASE d1"
+	stripped, err := gsqlutils.StripComments("", input)
+	if err != nil {
+		t.Fatalf("StripComments(%q) error: %v", input, err)
+	}
+
+	_, err = BuildNativeStatementMemefish(stripped, input)
+	if err == nil {
+		t.Fatal("BuildNativeStatementMemefish(hinted CREATE DATABASE) expected parse error, got nil")
+	}
+	if errors.Is(err, errStatementNotMatched) {
+		t.Fatalf("BuildNativeStatementMemefish(hinted CREATE DATABASE) wrapped errStatementNotMatched: %v", err)
+	}
+
+	lex, err := BuildNativeStatementLexical(stripped, input)
+	if err != nil {
+		t.Fatalf("BuildNativeStatementLexical(hinted CREATE DATABASE) error: %v", err)
+	}
+	want := &DdlStatement{Ddl: input}
+	if diff := cmp.Diff(want, lex); diff != "" {
+		t.Errorf("lexical hinted CREATE DATABASE mismatch (-want +got):\n%s", diff)
 	}
 }
 

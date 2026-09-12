@@ -84,17 +84,19 @@ func TestTypedRowsByteIdentity(t *testing.T) {
 			sv.Display.CLIFormat = mode
 			sv.Display.SQLTableName = "Items" // required by SQL export modes
 
-			fc, vfm, sv2, err := prepareFormatConfig("SELECT * FROM Items", &sv)
+			render, err := prepareFormatConfig("SELECT * FROM Items", &sv, queryRenderingFrom(&sv))
 			if err != nil {
 				t.Fatalf("prepareFormatConfig: %v", err)
 			}
+			fc := render.Spanvalue
+			vfm := render.ValueFmtMode
 			sqlExport := vfm == format.SQLLiteralValues
 
 			// Reference bytes for the format's canonical emitter.
 			var wantBuf bytes.Buffer
 			if usesSpanvalueWriter(mode) {
 				// Export formats stream through this writer for live queries.
-				w, handled, err := newSpanvalueRowIteratorWriterFor(&wantBuf, exportWriterOptionsFrom(sv2), fc)
+				w, handled, err := newSpanvalueRowIteratorWriterFor(&wantBuf, render.Export, fc)
 				if err != nil || !handled {
 					t.Fatalf("newSpanvalueRowIteratorWriterFor: handled=%v err=%v", handled, err)
 				}
@@ -103,7 +105,7 @@ func TestTypedRowsByteIdentity(t *testing.T) {
 				}
 			} else {
 				// Table-family formats: eager display cells rendered as a table.
-				transform := spannerRowToRow(fc, sv2.typeStyles, sv2.nullStyle)
+				transform := spannerRowToRow(fc, render.TypeStyles, render.NullStyle)
 				if vfm == format.JSONValues {
 					transform = withRawJSONMarker(transform)
 				}
@@ -129,7 +131,7 @@ func TestTypedRowsByteIdentity(t *testing.T) {
 				Typed:                 &TypedRows{Metadata: md, Rows: rawRows, SQLExportAllowed: sqlExport},
 				TableHeader:           header,
 				AffectedRows:          len(rawRows),
-				SQLTableNameForExport: sv2.Display.SQLTableName,
+				SQLTableNameForExport: render.Export.SQLTableName,
 			}
 
 			var newBuf bytes.Buffer

@@ -37,27 +37,59 @@ func effectiveQueryMode(userMode *sppb.ExecuteSqlRequest_QueryMode) sppb.Execute
 	}
 }
 
+// queryRendering is the per-query subset of display inputs. Query execution
+// and mutation keep the live *systemVariables; this value never carries
+// Registry, callbacks, Params, LastResult, or StreamManager.
+//
+// Query mode, metrics, cache destination, progress lifecycle, and summary
+// policy stay on the live settings (and outside format.FormatConfig).
+type queryRendering struct {
+	CLIFormat     enums.DisplayMode
+	StreamingMode enums.StreamingMode
+	Formatter     format.FormatConfig
+	Export        exportWriterOptions
+	ValueFmtMode  format.ValueFormatMode
+	Spanvalue     *spanvalue.FormatConfig
+	TypeStyles    map[sppb.TypeCode]string
+	NullStyle     string
+}
+
+func queryRenderingFrom(sysVars *systemVariables) queryRendering {
+	if sysVars == nil {
+		return queryRendering{}
+	}
+	return queryRendering{
+		CLIFormat:     sysVars.Display.CLIFormat,
+		StreamingMode: sysVars.Query.StreamingMode,
+		Formatter:     sysVars.toFormatConfig(),
+		Export:        exportWriterOptionsFrom(sysVars),
+		TypeStyles:    sysVars.typeStyles,
+		NullStyle:     sysVars.nullStyle,
+	}
+}
+
+// withExecuteOverrides applies DUMP's format/streaming/table/header overrides
+// to this rendering value. It does not mutate live settings and does not put
+// summary or progress policy onto the rendering value.
+func (r queryRendering) withExecuteOverrides(mode enums.DisplayMode, streaming enums.StreamingMode, sqlTableName string) queryRendering {
+	r.CLIFormat = mode
+	r.StreamingMode = streaming
+	r.Export.CLIFormat = mode
+	if sqlTableName != "" {
+		r.Export.SQLTableName = sqlTableName
+	}
+	r.Export.SkipColumnNames = true
+	r.Formatter.SkipColumnNames = true
+	return r
+}
+
 // executeSQLWithFormatAndTxn executes SQL with specific format settings and
 // within a given transaction. out, when non-nil, is the explicit destination
 // for streaming output instead of the session's statement-level destination.
 // dro is the caller's captured directed-read option for this read-only request.
 func executeSQLWithFormatAndTxn(ctx context.Context, session *Session, txn *spanner.ReadOnlyTransaction, sql string, format enums.DisplayMode, streamingMode enums.StreamingMode, sqlTableName string, dro *sppb.DirectedReadOptions, out io.Writer) (*Result, error) {
-	// Create a copy of the system variables for this specific execution
-	tempVars := *session.systemVariables
-
-	// Set temporary values on the copy
-	tempVars.Display.CLIFormat = format
-	tempVars.Query.StreamingMode = streamingMode
-	if sqlTableName != "" {
-		tempVars.Display.SQLTableName = sqlTableName
-	}
-	tempVars.Display.SkipColumnNames = true
-	tempVars.Display.SuppressResultLines = true
-	tempVars.Display.EnableProgressBar = false
-	tempVars.Query.DirectedRead = dro
-
-	// Execute with the transaction directly
-	return executeSQLImplWithTxn(ctx, session, txn, sql, &tempVars, out)
+	render := queryRenderingFrom(session.systemVariables).withExecuteOverrides(format, streamingMode, sqlTableName)
+	return executeSQLImplWithTxn(ctx, session, txn, sql, render, dro, out)
 }
 
 func executeSQL(ctx context.Context, session *Session, sql string) (*Result, error) {
@@ -69,47 +101,40 @@ func executeSQLImpl(ctx context.Context, session *Session, sql string) (*Result,
 	return executeSQLImplWithVars(ctx, session, sql, session.systemVariables)
 }
 
-// prepareFormatConfig determines the appropriate format configuration based on the display mode.
-// It returns the format config, the value format mode used, and the potentially modified sysVars.
-// This is extracted as a common function to avoid duplication between executeSQLImplWithTxn and executeSQLImplWithVars.
-func prepareFormatConfig(sql string, sysVars *systemVariables) (*spanvalue.FormatConfig, format.ValueFormatMode, *systemVariables, error) {
-	fmtMode := format.Mode(sysVars.Display.CLIFormat.String())
-	vfm := format.ValueFormatModeFor(fmtMode)
+// prepareFormatConfig fills the spanvalue formatter, value-format mode, and
+// SQL-export table name on render. sysVars is the live settings object used
+// only for proto decoder inputs; it is never copied or replaced.
+// Failed auto-detection leaves the table name empty and does not fail the
+// query. An explicit name on render wins over detection.
+func prepareFormatConfig(sql string, sysVars *systemVariables, render queryRendering) (queryRendering, error) {
+	vfm := format.ValueFormatModeFor(format.Mode(render.CLIFormat.String()))
+	render.ValueFmtMode = vfm
 
 	switch vfm {
 	case format.SQLLiteralValues:
-		// Use SQL literal formatting for modes that declared SQLLiteralValues
-		// LiteralFormatConfig formats values as valid Spanner SQL literals
-		fc := sqlLiteralFormatConfig()
-
-		// Auto-detect table name if not explicitly set
-		if sysVars.Display.SQLTableName == "" {
+		render.Spanvalue = sqlLiteralFormatConfig()
+		if render.Export.SQLTableName == "" {
 			detectedTableName, detectionErr := extractTableNameFromQuery(sql)
 			if detectedTableName != "" {
-				// Create a copy of sysVars to use the detected table name for this execution only.
-				// This is important for:
-				// 1. Scope isolation: auto-detection only affects this specific query execution
-				// 2. Thread safety: if sysVars is shared across goroutines, we don't modify the original
-				// 3. Preserving user settings: the original CLI_SQL_TABLE_NAME remains unchanged
-				tempVars := *sysVars
-				tempVars.Display.SQLTableName = detectedTableName
-				sysVars = &tempVars
+				render.Export.SQLTableName = detectedTableName
 				slog.Debug("Auto-detected table name for SQL export", "table", detectedTableName)
 			} else if detectionErr != nil {
-				// Log why auto-detection failed for debugging
 				slog.Debug("Table name auto-detection failed", "reason", detectionErr.Error())
 			}
 		}
-
-		return fc, vfm, sysVars, nil
+		return render, nil
 	case format.JSONValues:
-		// Use JSON formatting: each value becomes a valid JSON fragment
-		return decoder.JSONFormatConfig(), vfm, sysVars, nil
+		render.Spanvalue = decoder.JSONFormatConfig()
+		return render, nil
 	default:
-		// Use regular display formatting for other modes
-		// formatConfigWithProto handles custom proto descriptors if set
+		if sysVars == nil {
+			fc, err := decoder.FormatConfigWithProto(nil, false)
+			render.Spanvalue = fc
+			return render, err
+		}
 		fc, err := decoder.FormatConfigWithProto(sysVars.Internal.ProtoDescriptor, sysVars.Display.MultilineProtoText)
-		return fc, vfm, sysVars, err
+		render.Spanvalue = fc
+		return render, err
 	}
 }
 
@@ -159,21 +184,19 @@ func finalizeMetrics(m *metrics.ExecutionMetrics, sysVars *systemVariables) {
 // queryExecution bundles the parameters for the query execution pipeline,
 // avoiding 9+ individual parameters through executeAndCollect and its downstream functions.
 type queryExecution struct {
-	Session      *Session
-	Output       io.Writer
-	Iter         *spanner.RowIterator
-	ReadOnlyTxn  *spanner.ReadOnlyTransaction
-	FormatConfig *spanvalue.FormatConfig
-	SQL          string
-	SysVars      *systemVariables
-	Metrics      *metrics.ExecutionMetrics
-	ValueFmtMode format.ValueFormatMode
-	Processor    RowProcessor // set by executeAndCollect after decideExecutionMode
+	Session     *Session
+	Output      io.Writer
+	Iter        *spanner.RowIterator
+	ReadOnlyTxn *spanner.ReadOnlyTransaction
+	SQL         string
+	SysVars     *systemVariables // live settings; never a per-query copy
+	Render      queryRendering
+	Metrics     *metrics.ExecutionMetrics
+	Processor   RowProcessor // set by executeAndCollect after decideExecutionMode
 	// QueryCacheDest is the caller's LastResult.QueryCache slot. It is captured
-	// from the supplied settings before prepareFormatConfig can return a copy
-	// for SQL-export table-name auto-detection. Nil skips publication (DUMP's
-	// executeSQLWithFormatAndTxn path). Ownership is never inferred from
-	// pointer equality or display format.
+	// from the live settings before prepareFormatConfig fills per-query
+	// rendering. Nil skips publication (DUMP's executeSQLWithFormatAndTxn
+	// path). Ownership is never inferred from pointer equality or display format.
 	QueryCacheDest **LastQueryCache
 }
 
@@ -198,8 +221,8 @@ func executeAndCollect(ctx context.Context, qe *queryExecution) (*Result, error)
 
 	slog.Debug("executeSQL decision",
 		"useStreaming", useStreaming,
-		"format", qe.SysVars.Display.CLIFormat,
-		"sqlTableName", qe.SysVars.Display.SQLTableName)
+		"format", qe.Render.CLIFormat,
+		"sqlTableName", qe.Render.Export.SQLTableName)
 
 	var result *Result
 	if useStreaming {
@@ -216,12 +239,14 @@ func executeAndCollect(ctx context.Context, qe *queryExecution) (*Result, error)
 	return result, nil
 }
 
-// executeSQLImplWithTxn executes SQL with specific system variables and within a given transaction.
-// This is for use when we have a specific transaction to use.
-func executeSQLImplWithTxn(ctx context.Context, session *Session, txn *spanner.ReadOnlyTransaction, sql string, sysVars *systemVariables, out io.Writer) (*Result, error) {
+// executeSQLImplWithTxn executes SQL within a given transaction using live
+// session settings for parameters, Mode/Priority, and metrics. render carries
+// DUMP format/streaming/table/header overrides; dro is captured for the DUMP request.
+func executeSQLImplWithTxn(ctx context.Context, session *Session, txn *spanner.ReadOnlyTransaction, sql string, render queryRendering, dro *sppb.DirectedReadOptions, out io.Writer) (*Result, error) {
+	sysVars := session.systemVariables
 	m := newMetrics(sysVars)
 
-	fc, vfm, sysVars, err := prepareFormatConfig(sql, sysVars)
+	render, err := prepareFormatConfig(sql, sysVars, render)
 	if err != nil {
 		return nil, err
 	}
@@ -236,7 +261,7 @@ func executeSQLImplWithTxn(ctx context.Context, session *Session, txn *spanner.R
 	opts := spanner.QueryOptions{
 		Mode:                effectiveQueryMode(sysVars.Query.QueryMode).Enum(),
 		Priority:            sysVars.Query.RPCPriority,
-		DirectedReadOptions: sysVars.Query.DirectedRead,
+		DirectedReadOptions: dro,
 	}
 	iter := txn.QueryWithOptions(ctx, stmt, opts)
 
@@ -245,16 +270,17 @@ func executeSQLImplWithTxn(ctx context.Context, session *Session, txn *spanner.R
 		Output:         out,
 		Iter:           iter,
 		ReadOnlyTxn:    txn,
-		FormatConfig:   fc,
 		SQL:            sql,
 		SysVars:        sysVars,
+		Render:         render,
 		Metrics:        m,
-		ValueFmtMode:   vfm,
 		QueryCacheDest: nil, // DUMP / isolated format+txn execution must not replace the user's cache
 	})
 }
 
-// executeSQLImplWithVars is the actual implementation that accepts custom system variables
+// executeSQLImplWithVars runs SQL against the live settings object (Params,
+// QueryMode, cache destination, metrics). Per-query display overrides live on
+// queryRendering, not a copy of sysVars.
 func executeSQLImplWithVars(ctx context.Context, session *Session, sql string, sysVars *systemVariables) (*Result, error) {
 	if _, err := session.txn.FlushAutomaticDML(ctx); err != nil {
 		return nil, err
@@ -292,12 +318,11 @@ type queryWithStatsRunner func(context.Context, spanner.Statement, bool, sppb.Ex
 func executeSQLImplWithQueryRunner(ctx context.Context, session *Session, sql string, sysVars *systemVariables, run queryWithStatsRunner, rollbackActiveTransactionOnAbort bool) (*Result, error) {
 	m := newMetrics(sysVars)
 
-	// Capture the caller's cache slot before prepareFormatConfig can copy
-	// sysVars when SQL export auto-detects a table name. Publishing through
-	// that copy would leave the live plan/stats cache stale.
+	// Capture the caller's cache slot before prepareFormatConfig fills
+	// per-query rendering. DUMP's executeSQLWithFormatAndTxn path passes nil.
 	queryCacheDest := &sysVars.LastResult.QueryCache
 
-	fc, vfm, sysVars, err := prepareFormatConfig(sql, sysVars)
+	render, err := prepareFormatConfig(sql, sysVars, queryRenderingFrom(sysVars))
 	if err != nil {
 		return nil, err
 	}
@@ -316,11 +341,10 @@ func executeSQLImplWithQueryRunner(ctx context.Context, session *Session, sql st
 		Session:        session,
 		Iter:           iter,
 		ReadOnlyTxn:    roTxn,
-		FormatConfig:   fc,
 		SQL:            sql,
 		SysVars:        sysVars,
+		Render:         render,
 		Metrics:        m,
-		ValueFmtMode:   vfm,
 		QueryCacheDest: queryCacheDest,
 	})
 	if err == nil && session != nil && session.txn != nil {
@@ -333,9 +357,8 @@ func executeSQLImplWithQueryRunner(ctx context.Context, session *Session, sql st
 		return nil, err
 	}
 
-	// Store the SQL table name if we're using a format that requires SQL literals
-	if vfm == format.SQLLiteralValues && sysVars.Display.SQLTableName != "" {
-		result.SQLTableNameForExport = sysVars.Display.SQLTableName
+	if render.ValueFmtMode == format.SQLLiteralValues && render.Export.SQLTableName != "" {
+		result.SQLTableNameForExport = render.Export.SQLTableName
 	}
 
 	return result, nil
@@ -354,14 +377,14 @@ func decideExecutionMode(qe *queryExecution) (bool, RowProcessor, error) {
 		return false, nil, nil
 	}
 
-	if usesSpanvalueWriter(qe.SysVars.Display.CLIFormat) {
+	if usesSpanvalueWriter(qe.Render.CLIFormat) {
 		return true, nil, nil
 	}
 
-	screenWidth := qe.Session.displayWidthFor(qe.SysVars)
+	screenWidth := qe.Session.displayWidthFor()
 
 	// Try to create streaming processor based on settings
-	processor, err := createStreamingProcessor(qe.SysVars, outStream, screenWidth)
+	processor, err := streamingProcessorFor(qe.Render, outStream, screenWidth)
 	if err != nil {
 		return false, nil, err
 	}
@@ -401,11 +424,11 @@ func executeWithStreaming(ctx context.Context, qe *queryExecution) (*Result, err
 
 // finalizeQueryResult parses query stats, extracts the read timestamp, and
 // publishes the query cache. Publication uses QueryCacheDest, not SysVars:
-// SQL-export auto-detection may have replaced SysVars with a copy. Timing is
-// after query-stat parsing and read-timestamp collection and before appendix
-// rendering; a later appendix or after-collect hook failure does not clear an
-// already published cache. Iterator or parse failure never reaches here, so
-// the previous cache remains.
+// DUMP passes nil so per-table reads do not replace the user's last-query
+// cache. Timing is after query-stat parsing and read-timestamp collection
+// and before appendix rendering; a later appendix or after-collect hook
+// failure does not clear an already published cache. Iterator or parse
+// failure never reaches here, so the previous cache remains.
 func (qe *queryExecution) finalizeQueryResult(result *Result, stats map[string]any, plan *sppb.QueryPlan) error {
 	queryStats, err := parseQueryStats(stats)
 	if err != nil {
@@ -485,7 +508,7 @@ func executeWithBuffering(ctx context.Context, qe *queryExecution) (*Result, err
 		Typed: &TypedRows{
 			Metadata:         metadata,
 			Rows:             rows,
-			SQLExportAllowed: qe.ValueFmtMode == format.SQLLiteralValues,
+			SQLExportAllowed: qe.Render.ValueFmtMode == format.SQLLiteralValues,
 		},
 		TableHeader:  toTableHeader(metadata.GetRowType().GetFields()),
 		AffectedRows: len(rows),
@@ -499,7 +522,7 @@ func executeWithBuffering(ctx context.Context, qe *queryExecution) (*Result, err
 
 // executeStreamingSQL processes query results in streaming mode.
 func executeStreamingSQL(ctx context.Context, qe *queryExecution) (*Result, error) {
-	slog.Debug("executeStreamingSQL called", "format", qe.SysVars.Display.CLIFormat)
+	slog.Debug("executeStreamingSQL called", "format", qe.Render.CLIFormat)
 
 	if result, handled, err := executeStreamingSQLWithSpanvalueWriter(qe); handled || err != nil {
 		return result, err
@@ -507,17 +530,17 @@ func executeStreamingSQL(ctx context.Context, qe *queryExecution) (*Result, erro
 	return executeStreamingSQLWithSpanvalueProcessor(qe)
 }
 
-// createStreamingProcessor creates the appropriate streaming processor based on format and streaming mode.
+// streamingProcessorFor creates the appropriate streaming processor based on format and streaming mode.
 // Non-table formats are always streaming because they do not benefit from row buffering.
 // For table formats, CLI_TABLE_STREAMING controls whether to trade layout quality for immediate output.
 // Spanvalue-writer formats (CSV/JSONL/SQL_INSERT*) never reach this function:
 // decideExecutionMode routes them to the spanvalue writer path directly.
-func createStreamingProcessor(sysVars *systemVariables, out io.Writer, screenWidth int) (RowProcessor, error) {
-	fmtMode := format.Mode(sysVars.Display.CLIFormat.String())
+func streamingProcessorFor(render queryRendering, out io.Writer, screenWidth int) (RowProcessor, error) {
+	fmtMode := format.Mode(render.CLIFormat.String())
 	if fmtMode.IsTableMode() || fmtMode == format.ModeUnspecified {
-		switch sysVars.Query.StreamingMode {
+		switch render.StreamingMode {
 		case enums.StreamingModeTrue:
-			return createStreamingProcessorForMode(sysVars.Display.CLIFormat, out, sysVars, screenWidth)
+			return streamingProcessorForMode(render, out, screenWidth)
 		default:
 			// Table formats buffer by default for accurate column widths.
 			return nil, nil
@@ -526,9 +549,9 @@ func createStreamingProcessor(sysVars *systemVariables, out io.Writer, screenWid
 
 	// Non-table formats always stream regardless of CLI_TABLE_STREAMING; only
 	// guard against an unexpected enum value.
-	switch sysVars.Query.StreamingMode {
+	switch render.StreamingMode {
 	case enums.StreamingModeTrue, enums.StreamingModeFalse, enums.StreamingModeAuto:
-		return createStreamingProcessorForMode(sysVars.Display.CLIFormat, out, sysVars, screenWidth)
+		return streamingProcessorForMode(render, out, screenWidth)
 	default:
 		return nil, nil
 	}
