@@ -155,7 +155,9 @@ func TestBufferOrExecuteDdlStatements(t *testing.T) {
 	t.Run("rejects queued automatic DML", func(t *testing.T) {
 		t.Parallel()
 		session := newSessionForLocalVarTest(t)
-		session.txn.autoDML = []spanner.Statement{{SQL: "INSERT INTO t (id) VALUES (1)"}}
+		session.txn.tc = &transactionContext{
+			autoDML: []spanner.Statement{{SQL: "INSERT INTO t (id) VALUES (1)"}},
+		}
 		_, err := bufferOrExecuteDdlStatements(t.Context(), session, []string{"CREATE TABLE t (id INT64) PRIMARY KEY (id)"})
 		if err == nil || !strings.Contains(err.Error(), "active batch DML") {
 			t.Fatalf("error = %v, want active batch DML", err)
