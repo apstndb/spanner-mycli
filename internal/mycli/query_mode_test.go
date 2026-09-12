@@ -76,7 +76,7 @@ func TestExportDataStatementRejectsPlanMode(t *testing.T) {
 	session := newSessionForLocalVarTest(t)
 	session.systemVariables.Query.QueryMode = sppb.ExecuteSqlRequest_PLAN.Enum()
 
-	_, err := (&ExportDataStatement{SQL: "EXPORT DATA OPTIONS (...) AS SELECT 1"}).Execute(t.Context(), session)
+	_, err := (&ExportDataStatement{SQL: "EXPORT DATA OPTIONS (...) AS SELECT 1"}).Execute(t.Context(), session, OperationOutput{})
 	if err == nil || !strings.Contains(err.Error(), "CLI_QUERY_MODE=PLAN") {
 		t.Fatalf("ExportDataStatement.Execute() error = %v, want PLAN-mode rejection", err)
 	}
@@ -88,7 +88,7 @@ func TestExportDataStatementRejectsTryPartitionQuery(t *testing.T) {
 	session := newSessionForLocalVarTest(t)
 	session.systemVariables.Query.TryPartitionQuery = true
 
-	_, err := (&ExportDataStatement{SQL: "EXPORT DATA OPTIONS (...) AS SELECT 1"}).Execute(t.Context(), session)
+	_, err := (&ExportDataStatement{SQL: "EXPORT DATA OPTIONS (...) AS SELECT 1"}).Execute(t.Context(), session, OperationOutput{})
 	if err == nil || !strings.Contains(err.Error(), "CLI_TRY_PARTITION_QUERY=TRUE") {
 		t.Fatalf("ExportDataStatement.Execute() error = %v, want partition-probe rejection", err)
 	}

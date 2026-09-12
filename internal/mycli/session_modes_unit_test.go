@@ -51,7 +51,7 @@ func TestDetachedSessionSystemVariables(t *testing.T) {
 	// Just test that SHOW VARIABLES works without error
 	t.Run("SHOW VARIABLES works in AdminOnly session", func(t *testing.T) {
 		stmt := &ShowVariablesStatement{}
-		result, err := stmt.Execute(ctx, session)
+		result, err := stmt.Execute(ctx, session, OperationOutput{})
 
 		if err != nil {
 			t.Errorf("SHOW VARIABLES failed: %v", err)
@@ -68,14 +68,14 @@ func TestDetachedSessionSystemVariables(t *testing.T) {
 	t.Run("SET/SHOW PARAMS work in AdminOnly session", func(t *testing.T) {
 		// Set param type
 		typeStmt := &SetParamTypeStatement{Name: "p1", Type: "STRING"}
-		_, err := typeStmt.Execute(ctx, session)
+		_, err := typeStmt.Execute(ctx, session, OperationOutput{})
 		if err != nil {
 			t.Errorf("SET PARAM TYPE failed: %v", err)
 		}
 
 		// Verify with SHOW PARAMS
 		showStmt := &ShowParamsStatement{}
-		result, err := showStmt.Execute(ctx, session)
+		result, err := showStmt.Execute(ctx, session, OperationOutput{})
 		if err != nil {
 			t.Errorf("SHOW PARAMS failed: %v", err)
 		} else if result == nil {

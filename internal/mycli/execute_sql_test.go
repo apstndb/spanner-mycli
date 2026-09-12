@@ -415,7 +415,7 @@ func TestStreamingProcessorForAndDecideExecutionMode(t *testing.T) {
 
 	t.Run("CSV streams without a RowProcessor", func(t *testing.T) {
 		useStreaming, proc, err := decideExecutionMode(&queryExecution{
-			Output: &out,
+			Out:    OperationOutput{w: &out},
 			Render: queryRendering{CLIFormat: enums.DisplayModeCSV},
 		})
 		if err != nil {
@@ -430,7 +430,7 @@ func TestStreamingProcessorForAndDecideExecutionMode(t *testing.T) {
 		session := &Session{systemVariables: sv}
 		useStreaming, proc, err := decideExecutionMode(&queryExecution{
 			Session: session,
-			Output:  &out,
+			Out:     OperationOutput{w: &out},
 			Render:  queryRenderingFrom(sv).withExecuteOverrides(enums.DisplayModeTab, enums.StreamingModeTrue, ""),
 		})
 		if err != nil {
@@ -444,7 +444,7 @@ func TestStreamingProcessorForAndDecideExecutionMode(t *testing.T) {
 	t.Run("unsupported format fails decideExecutionMode", func(t *testing.T) {
 		useStreaming, proc, err := decideExecutionMode(&queryExecution{
 			Session: &Session{systemVariables: sv},
-			Output:  &out,
+			Out:     OperationOutput{w: &out},
 			Render:  queryRendering{CLIFormat: enums.DisplayMode(999)},
 		})
 		if err == nil || !strings.Contains(err.Error(), "unsupported streaming mode") {
@@ -460,17 +460,14 @@ func TestQueryExecutionOutputWriter(t *testing.T) {
 	t.Parallel()
 
 	explicit := &bytes.Buffer{}
-	qe := &queryExecution{Output: explicit}
+	qe := &queryExecution{Out: OperationOutput{w: explicit}}
 	if qe.outputWriter() != explicit {
 		t.Fatal("outputWriter did not return the explicit destination")
 	}
 
-	sv := newSystemVariablesWithDefaultsForTest()
-	sessionOut := &bytes.Buffer{}
-	sv.StreamManager = streamio.NewStreamManager(io.NopCloser(bytes.NewReader(nil)), sessionOut, io.Discard)
-	qe = &queryExecution{Session: &Session{systemVariables: sv}}
-	if qe.outputWriter() != sessionOut {
-		t.Fatal("outputWriter did not fall back to the session destination")
+	qe = &queryExecution{}
+	if qe.outputWriter() != nil {
+		t.Fatal("zero OperationOutput should not invent a writer")
 	}
 }
 
@@ -505,29 +502,29 @@ func TestRollbackReadWriteIfAborted(t *testing.T) {
 	aborted := status.Error(codes.Aborted, "injected abort")
 	other := errors.New("not aborted")
 
-	if got := rollbackReadWriteIfAborted(t.Context(), nil, nil); got != nil {
+	if got := rollbackReadWriteIfAborted(t.Context(), nil, nil, OperationOutput{}); got != nil {
 		t.Errorf("nil err = %v, want nil", got)
 	}
-	if got := rollbackReadWriteIfAborted(t.Context(), nil, aborted); !errors.Is(got, aborted) {
+	if got := rollbackReadWriteIfAborted(t.Context(), nil, aborted, OperationOutput{}); !errors.Is(got, aborted) {
 		t.Errorf("nil session = %v, want original abort", got)
 	}
 
 	sv := newSystemVariablesWithDefaultsForTest()
 	session := &Session{systemVariables: sv}
-	if got := rollbackReadWriteIfAborted(t.Context(), session, aborted); !errors.Is(got, aborted) {
+	if got := rollbackReadWriteIfAborted(t.Context(), session, aborted, OperationOutput{}); !errors.Is(got, aborted) {
 		t.Errorf("nil txn = %v, want original abort", got)
 	}
 
 	session.txn = NewTransactionManager(nil, sv, spanner.ClientConfig{})
-	if got := rollbackReadWriteIfAborted(t.Context(), session, aborted); !errors.Is(got, aborted) {
+	if got := rollbackReadWriteIfAborted(t.Context(), session, aborted, OperationOutput{}); !errors.Is(got, aborted) {
 		t.Errorf("not in RW = %v, want original abort", got)
 	}
-	if got := rollbackReadWriteIfAborted(t.Context(), session, other); !errors.Is(got, other) {
+	if got := rollbackReadWriteIfAborted(t.Context(), session, other, OperationOutput{}); !errors.Is(got, other) {
 		t.Errorf("non-aborted = %v, want original error", got)
 	}
 
 	session.txn.tc = &transactionContext{attrs: transactionAttributes{mode: transactionModeReadWrite}}
-	got := rollbackReadWriteIfAborted(t.Context(), session, aborted)
+	got := rollbackReadWriteIfAborted(t.Context(), session, aborted, OperationOutput{})
 	if !errors.Is(got, aborted) {
 		t.Fatalf("rollback-join missing abort: %v", got)
 	}
@@ -560,7 +557,7 @@ func TestExecuteSQLImplWithQueryRunnerErrorContracts(t *testing.T) {
 		if want == nil {
 			t.Fatal("setup: prepareFormatConfig error = nil, want proto descriptor failure")
 		}
-		_, err := executeSQLImplWithQueryRunner(t.Context(), session, "SELECT 1", session.systemVariables, mustNotInvokeQueryRunner(t), true)
+		_, err := executeSQLImplWithQueryRunner(t.Context(), session, "SELECT 1", session.systemVariables, mustNotInvokeQueryRunner(t), true, OperationOutput{})
 		if err == nil || err.Error() != want.Error() {
 			t.Fatalf("error = %v, want %v", err, want)
 		}
@@ -574,7 +571,7 @@ func TestExecuteSQLImplWithQueryRunnerErrorContracts(t *testing.T) {
 		if want == nil {
 			t.Fatal("setup: newStatement error = nil, want statement parse failure")
 		}
-		_, err := executeSQLImplWithQueryRunner(t.Context(), session, sql, session.systemVariables, mustNotInvokeQueryRunner(t), true)
+		_, err := executeSQLImplWithQueryRunner(t.Context(), session, sql, session.systemVariables, mustNotInvokeQueryRunner(t), true, OperationOutput{})
 		if err == nil || err.Error() != want.Error() {
 			t.Fatalf("error = %v, want %v", err, want)
 		}
@@ -583,7 +580,7 @@ func TestExecuteSQLImplWithQueryRunnerErrorContracts(t *testing.T) {
 	t.Run("runner error", func(t *testing.T) {
 		t.Parallel()
 		session := newSessionForLocalVarTest(t)
-		_, err := executeSQLImplWithQueryRunner(t.Context(), session, "SELECT 1", session.systemVariables, runFail, true)
+		_, err := executeSQLImplWithQueryRunner(t.Context(), session, "SELECT 1", session.systemVariables, runFail, true, OperationOutput{})
 		if err == nil || !strings.Contains(err.Error(), "injected runner failure") {
 			t.Fatalf("error = %v, want injected runner failure", err)
 		}
@@ -601,7 +598,7 @@ func TestExecuteSQLImplWithQueryRunnerErrorContracts(t *testing.T) {
 			iter = it
 			return it, roTxn, err
 		}
-		_, err := executeSQLImplWithQueryRunner(t.Context(), session, sqlExportSelectUsers, live, run, true)
+		_, err := executeSQLImplWithQueryRunner(t.Context(), session, sqlExportSelectUsers, live, run, true, OperationOutput{w: &buf})
 		if err == nil || !strings.Contains(err.Error(), "unsupported streaming mode") {
 			t.Fatalf("error = %v, want unsupported streaming mode", err)
 		}
@@ -620,7 +617,7 @@ func TestExecuteSQLImplWithQueryRunnerErrorContracts(t *testing.T) {
 		injected := errors.New("after collect failed")
 		session.txn.queryAfterCollectHook = func() error { return injected }
 		t.Cleanup(func() { session.txn.queryAfterCollectHook = nil })
-		_, err := executeSQLImplWithQueryRunner(t.Context(), session, sqlExportSelectUsers, live, session.txn.RunQueryWithStats, false)
+		_, err := executeSQLImplWithQueryRunner(t.Context(), session, sqlExportSelectUsers, live, session.txn.RunQueryWithStats, false, OperationOutput{})
 		if !errors.Is(err, injected) {
 			t.Fatalf("error = %v, want after collect failed", err)
 		}
@@ -640,7 +637,7 @@ func TestExecuteSQLBufferedAndStreamingEmptyResults(t *testing.T) {
 		t.Parallel()
 		session, live := newEmptySQLRPCSession(t, plan, stats)
 		live.Display.CLIFormat = enums.DisplayModeTable
-		result, err := executeSQL(t.Context(), session, sqlExportSelectUsers)
+		result, err := executeSQL(t.Context(), session, sqlExportSelectUsers, OperationOutput{})
 		if err != nil {
 			t.Fatalf("executeSQL: %v", err)
 		}
@@ -667,7 +664,7 @@ func TestExecuteSQLBufferedAndStreamingEmptyResults(t *testing.T) {
 		var buf bytes.Buffer
 		live.Display.CLIFormat = enums.DisplayModeTab
 		live.StreamManager = streamio.NewStreamManager(io.NopCloser(strings.NewReader("")), &buf, io.Discard)
-		result, err := executeSQL(t.Context(), session, sqlExportSelectUsers)
+		result, err := executeSQL(t.Context(), session, sqlExportSelectUsers, OperationOutput{w: &buf})
 		if err != nil {
 			t.Fatalf("executeSQL: %v", err)
 		}
@@ -686,7 +683,7 @@ func TestExecuteSQLBufferedAndStreamingEmptyResults(t *testing.T) {
 		t.Parallel()
 		session, live := newEmptySQLRPCSession(t, plan, stats)
 		live.Display.CLIFormat = enums.DisplayModeSQLInsert
-		result, err := executeSQLImplWithVars(t.Context(), session, sqlExportSelectUsers, live)
+		result, err := executeSQLImplWithVars(t.Context(), session, sqlExportSelectUsers, live, OperationOutput{})
 		if err != nil {
 			t.Fatalf("executeSQLImplWithVars: %v", err)
 		}
@@ -698,7 +695,7 @@ func TestExecuteSQLBufferedAndStreamingEmptyResults(t *testing.T) {
 	t.Run("single-use empty SELECT", func(t *testing.T) {
 		t.Parallel()
 		session, live := newEmptySQLRPCSession(t, plan, stats)
-		result, err := executeSQLImplSingleUse(t.Context(), session, sqlExportSelectUsers, live)
+		result, err := executeSQLImplSingleUse(t.Context(), session, sqlExportSelectUsers, live, OperationOutput{})
 		if err != nil {
 			t.Fatalf("executeSQLImplSingleUse: %v", err)
 		}
@@ -715,7 +712,7 @@ func TestExecuteSQLBufferedAndStreamingEmptyResults(t *testing.T) {
 		session, live := newQueryCacheRPCSession(t, plan, stats, status.Error(codes.Internal, "iterator failed"))
 		seed := seedQueryCacheA()
 		live.LastResult.QueryCache = seed
-		_, err := executeSQLImplSingleUse(t.Context(), session, sqlExportSelectUsers, live)
+		_, err := executeSQLImplSingleUse(t.Context(), session, sqlExportSelectUsers, live, OperationOutput{})
 		if err == nil {
 			t.Fatal("executeSQLImplSingleUse error = nil, want iterator failure")
 		}

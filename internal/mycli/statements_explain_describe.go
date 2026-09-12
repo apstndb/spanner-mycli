@@ -60,7 +60,7 @@ func (s *ExplainStatement) String() string {
 }
 
 // Execute processes `EXPLAIN` statement for queries and DMLs.
-func (s *ExplainStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *ExplainStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	return executeExplain(ctx, session, s.Explain, s.IsDML, s.Format, s.Width, s.PrintSections)
 }
 
@@ -71,7 +71,7 @@ type ExplainAnalyzeStatement struct {
 	PrintSections *planref.PrintSections
 }
 
-func (s *ExplainAnalyzeStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *ExplainAnalyzeStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	sql := s.Query
 
 	return executeExplainAnalyze(ctx, session, sql, s.Format, s.Width, s.PrintSections)
@@ -86,7 +86,7 @@ type ExplainAnalyzeDmlStatement struct {
 
 func (ExplainAnalyzeDmlStatement) isMutationStatement() {}
 
-func (s *ExplainAnalyzeDmlStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *ExplainAnalyzeDmlStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	return executeExplainAnalyzeDML(ctx, session, s.Dml, s.Format, s.Width, s.PrintSections)
 }
 
@@ -97,7 +97,7 @@ type ExplainLastQueryStatement struct {
 	PrintSections *planref.PrintSections
 }
 
-func (s *ExplainLastQueryStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *ExplainLastQueryStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	if session.systemVariables.LastResult.QueryCache == nil {
 		return nil, fmt.Errorf("last query cache missing because query not executed")
 	}
@@ -132,7 +132,7 @@ type ShowPlanNodeStatement struct {
 	NodeID int
 }
 
-func (s *ShowPlanNodeStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *ShowPlanNodeStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	if session.systemVariables.LastResult.QueryCache == nil || session.systemVariables.LastResult.QueryCache.QueryPlan == nil {
 		return nil, errors.New("no query plan cached. Run query or EXPLAIN ANALYZE first")
 	}
@@ -178,7 +178,7 @@ type ShowLastQueryPlanStatement struct {
 	IntoPath  string
 }
 
-func (s *ShowLastQueryPlanStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *ShowLastQueryPlanStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	cache := session.systemVariables.LastResult.QueryCache
 	if cache == nil {
 		return nil, errors.New("no query plan cached. Run a query or EXPLAIN ANALYZE first")
@@ -366,7 +366,7 @@ func (s *DescribeStatement) String() string {
 }
 
 // Execute processes `DESCRIBE` statement for queries and DMLs.
-func (s *DescribeStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *DescribeStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	stmt, err := newStatement(s.Statement, session.systemVariables.Params, true)
 	if err != nil {
 		return nil, err
@@ -452,7 +452,7 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string, fo
 	// regardless of CLI_QUERY_MODE.
 	iter, roTxn, err := session.txn.RunQueryWithStats(ctx, stmt, false, sppb.ExecuteSqlRequest_PROFILE)
 	if err != nil {
-		return nil, rollbackReadWriteIfAborted(ctx, session, err)
+		return nil, rollbackReadWriteIfAborted(ctx, session, err, OperationOutput{})
 	}
 
 	// Count the actual data rows while draining the iterator;
@@ -466,7 +466,7 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string, fo
 		err = session.txn.invokeQueryAfterCollectHook()
 	}
 	if err != nil {
-		return nil, rollbackReadWriteIfAborted(ctx, session, err)
+		return nil, rollbackReadWriteIfAborted(ctx, session, err, OperationOutput{})
 	}
 
 	// Cloud Spanner Emulator doesn't set query plan nodes to the result.

@@ -34,7 +34,7 @@ func TestSetParamStatementMalformedInput(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			session := &Session{systemVariables: &systemVariables{Params: make(map[string]ast.Node)}}
-			if _, err := tt.stmt.Execute(context.Background(), session); err == nil {
+			if _, err := tt.stmt.Execute(context.Background(), session, OperationOutput{}); err == nil {
 				t.Fatal("Execute() error = nil, want malformed-input error")
 			}
 		})

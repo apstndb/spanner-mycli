@@ -35,7 +35,7 @@ func TestExplainDescribeStatementsRPC(t *testing.T) {
 	t.Run("EXPLAIN SELECT", func(t *testing.T) {
 		t.Parallel()
 		session, _ := newQueryCacheRPCSession(t, testQueryPlan(t), stats, nil)
-		got, err := (&ExplainStatement{Explain: "SELECT 1"}).Execute(t.Context(), session)
+		got, err := (&ExplainStatement{Explain: "SELECT 1"}).Execute(t.Context(), session, OperationOutput{})
 		if err != nil {
 			t.Fatalf("EXPLAIN: %v", err)
 		}
@@ -51,7 +51,7 @@ func TestExplainDescribeStatementsRPC(t *testing.T) {
 	t.Run("EXPLAIN emulator without plan", func(t *testing.T) {
 		t.Parallel()
 		session, _ := newQueryCacheRPCSession(t, nil, stats, nil)
-		_, err := (&ExplainStatement{Explain: "SELECT 1"}).Execute(t.Context(), session)
+		_, err := (&ExplainStatement{Explain: "SELECT 1"}).Execute(t.Context(), session, OperationOutput{})
 		if err == nil || !strings.Contains(err.Error(), "EXPLAIN statement is not supported for Cloud Spanner Emulator") {
 			t.Fatalf("error = %v, want emulator EXPLAIN rejection", err)
 		}
@@ -60,7 +60,7 @@ func TestExplainDescribeStatementsRPC(t *testing.T) {
 	t.Run("EXPLAIN ANALYZE SELECT", func(t *testing.T) {
 		t.Parallel()
 		session, live := newQueryCacheRPCSession(t, testQueryPlan(t), stats, nil)
-		got, err := (&ExplainAnalyzeStatement{Query: "SELECT 1"}).Execute(t.Context(), session)
+		got, err := (&ExplainAnalyzeStatement{Query: "SELECT 1"}).Execute(t.Context(), session, OperationOutput{})
 		if err != nil {
 			t.Fatalf("EXPLAIN ANALYZE: %v", err)
 		}
@@ -78,7 +78,7 @@ func TestExplainDescribeStatementsRPC(t *testing.T) {
 	t.Run("EXPLAIN ANALYZE emulator without plan", func(t *testing.T) {
 		t.Parallel()
 		session, _ := newQueryCacheRPCSession(t, nil, stats, nil)
-		_, err := (&ExplainAnalyzeStatement{Query: "SELECT 1"}).Execute(t.Context(), session)
+		_, err := (&ExplainAnalyzeStatement{Query: "SELECT 1"}).Execute(t.Context(), session, OperationOutput{})
 		if !errors.Is(err, errExplainAnalyzeUnsupportedOnEmulator) {
 			t.Fatalf("error = %v, want %v", err, errExplainAnalyzeUnsupportedOnEmulator)
 		}
@@ -87,7 +87,7 @@ func TestExplainDescribeStatementsRPC(t *testing.T) {
 	t.Run("DESCRIBE SELECT", func(t *testing.T) {
 		t.Parallel()
 		session, _ := newQueryCacheRPCSession(t, testQueryPlan(t), stats, nil)
-		got, err := (&DescribeStatement{Statement: "SELECT 1"}).Execute(t.Context(), session)
+		got, err := (&DescribeStatement{Statement: "SELECT 1"}).Execute(t.Context(), session, OperationOutput{})
 		if err != nil {
 			t.Fatalf("DESCRIBE: %v", err)
 		}

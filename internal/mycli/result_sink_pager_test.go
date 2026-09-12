@@ -412,14 +412,14 @@ func TestResultSinkRepeatedFinishAbort(t *testing.T) {
 }
 
 // largeStreamStatement writes a payload larger than a typical OS pipe
-// buffer through the session output writer, which executeStatement binds
-// to the resultSink. It exists only to exercise the streamed pager path.
+// buffer through OperationOutput, which executeStatement binds to the
+// resultSink. It exists only to exercise the streamed pager path.
 type largeStreamStatement struct{}
 
 func (largeStreamStatement) isDetachedCompatible() {}
 
-func (largeStreamStatement) Execute(_ context.Context, session *Session) (*Result, error) {
-	w := session.outputWriter()
+func (largeStreamStatement) Execute(_ context.Context, _ *Session, out OperationOutput) (*Result, error) {
+	w := out.Writer()
 	if w == nil {
 		return nil, errors.New("no output writer")
 	}

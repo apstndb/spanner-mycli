@@ -354,7 +354,7 @@ func TestShellMetaCommand_Execute(t *testing.T) {
 		}
 
 		cmd := &ShellMetaCommand{Command: "echo hello"}
-		_, err := cmd.Execute(ctx, session)
+		_, err := cmd.Execute(ctx, session, OperationOutput{})
 		if err == nil {
 			t.Error("Execute() should fail when system commands are disabled")
 		}
@@ -374,7 +374,7 @@ func TestShellMetaCommand_Execute(t *testing.T) {
 		}
 
 		cmd := &ShellMetaCommand{Command: "echo hello"}
-		result, err := cmd.Execute(ctx, session)
+		result, err := cmd.Execute(ctx, session, OperationOutput{w: &output})
 		if err != nil {
 			t.Errorf("Execute() error = %v, want nil", err)
 		}
@@ -399,14 +399,14 @@ func TestShellMetaCommand_Execute(t *testing.T) {
 
 		// Test case: Command that exits with non-zero status (should not return error)
 		cmd := &ShellMetaCommand{Command: "exit 1"}
-		_, err := cmd.Execute(ctx, session)
+		_, err := cmd.Execute(ctx, session, OperationOutput{w: &output})
 		if err != nil {
 			t.Errorf("Execute() should not return error for exit status: %v", err)
 		}
 
 		// Test case: Command that fails (should also not return error since it's ExitError)
 		cmd2 := &ShellMetaCommand{Command: "ls /nonexistent/directory"}
-		_, err2 := cmd2.Execute(ctx, session)
+		_, err2 := cmd2.Execute(ctx, session, OperationOutput{w: &output})
 		if err2 != nil {
 			t.Errorf("Execute() should not return error for command that exits with error status: %v", err2)
 		}
@@ -506,7 +506,7 @@ func TestPromptMetaCommand_Execute(t *testing.T) {
 			}
 
 			cmd := &PromptMetaCommand{PromptString: tt.promptString}
-			result, err := cmd.Execute(ctx, session)
+			result, err := cmd.Execute(ctx, session, OperationOutput{})
 
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Execute() error = %v, wantErr %v", err, tt.wantErr)
@@ -659,7 +659,7 @@ func TestTeeOutputMetaCommand_Execute(t *testing.T) {
 			originalWriter := sysVars.StreamManager.GetWriter()
 
 			cmd := &TeeOutputMetaCommand{FilePath: path}
-			result, err := cmd.Execute(ctx, session)
+			result, err := cmd.Execute(ctx, session, OperationOutput{})
 
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Execute() error = %v, wantErr %v", err, tt.wantErr)
@@ -724,7 +724,7 @@ func TestDisableTeeMetaCommand_Execute(t *testing.T) {
 			}
 
 			cmd := &DisableTeeMetaCommand{}
-			result, err := cmd.Execute(ctx, session)
+			result, err := cmd.Execute(ctx, session, OperationOutput{})
 			if err != nil {
 				t.Errorf("Execute() error = %v, want nil", err)
 			}
@@ -790,7 +790,7 @@ func TestShellMetaCommand_Execute_noOutputAndCancel(t *testing.T) {
 
 	t.Run("no output destination", func(t *testing.T) {
 		session := &Session{systemVariables: &systemVariables{}}
-		_, err := (&ShellMetaCommand{Command: "echo hello"}).Execute(ctx, session)
+		_, err := (&ShellMetaCommand{Command: "echo hello"}).Execute(ctx, session, OperationOutput{})
 		if err == nil || err.Error() != "internal error: no output destination configured" {
 			t.Fatalf("error = %v, want no output destination", err)
 		}
@@ -803,7 +803,7 @@ func TestShellMetaCommand_Execute_noOutputAndCancel(t *testing.T) {
 		session := &Session{systemVariables: &sysVars}
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
-		_, err := (&ShellMetaCommand{Command: "sleep 5"}).Execute(ctx, session)
+		_, err := (&ShellMetaCommand{Command: "sleep 5"}).Execute(ctx, session, OperationOutput{w: &output})
 		if err == nil || !strings.Contains(err.Error(), "command failed") {
 			t.Fatalf("error = %v, want command failed wrapping context cancellation", err)
 		}
@@ -815,12 +815,12 @@ func TestSourceAndUseMetaCommand_ExecuteMustNotRun(t *testing.T) {
 	ctx := context.Background()
 	session := &Session{}
 
-	_, err := (&SourceMetaCommand{FilePath: "x.sql"}).Execute(ctx, session)
+	_, err := (&SourceMetaCommand{FilePath: "x.sql"}).Execute(ctx, session, OperationOutput{})
 	if err == nil || !strings.Contains(err.Error(), "must be handled by the CLI") {
 		t.Fatalf("SourceMetaCommand.Execute error = %v", err)
 	}
 
-	_, err = (&UseDatabaseMetaCommand{Database: "db"}).Execute(ctx, session)
+	_, err = (&UseDatabaseMetaCommand{Database: "db"}).Execute(ctx, session, OperationOutput{})
 	if err == nil || !strings.Contains(err.Error(), "must be handled by the SessionHandler") {
 		t.Fatalf("UseDatabaseMetaCommand.Execute error = %v", err)
 	}
@@ -837,7 +837,7 @@ func TestOutputRedirectAndDisable_Execute(t *testing.T) {
 			t.Fatal("test session should capture base output in a *bytes.Buffer")
 		}
 		path := filepath.Join(t.TempDir(), "out.log")
-		result, err := (&OutputRedirectMetaCommand{FilePath: path}).Execute(ctx, session)
+		result, err := (&OutputRedirectMetaCommand{FilePath: path}).Execute(ctx, session, OperationOutput{})
 		if err != nil || result == nil {
 			t.Fatalf("Execute error = %v result = %v", err, result)
 		}
@@ -853,7 +853,7 @@ func TestOutputRedirectAndDisable_Execute(t *testing.T) {
 			t.Fatalf("silent redirect leaked to base output: %q", base.String())
 		}
 
-		if _, err := (&DisableOutputRedirectMetaCommand{}).Execute(ctx, session); err != nil {
+		if _, err := (&DisableOutputRedirectMetaCommand{}).Execute(ctx, session, OperationOutput{}); err != nil {
 			t.Fatalf("disable: %v", err)
 		}
 		if sysVars.StreamManager.IsInSilentTeeMode() {
@@ -882,7 +882,7 @@ func TestOutputRedirectAndDisable_Execute(t *testing.T) {
 
 	t.Run("redirect to directory", func(t *testing.T) {
 		session, _ := createTestSession(t)
-		_, err := (&OutputRedirectMetaCommand{FilePath: t.TempDir()}).Execute(ctx, session)
+		_, err := (&OutputRedirectMetaCommand{FilePath: t.TempDir()}).Execute(ctx, session, OperationOutput{})
 		if err == nil || !strings.Contains(err.Error(), "must be a regular file") {
 			t.Fatalf("error = %v, want regular file", err)
 		}
@@ -909,12 +909,12 @@ func TestTeeAndDisableOutput_missingInternals(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			exec, ok := tt.cmd.(interface {
-				Execute(context.Context, *Session) (*Result, error)
+				Execute(context.Context, *Session, OperationOutput) (*Result, error)
 			})
 			if !ok {
 				t.Fatal("statement is not executable")
 			}
-			_, err := exec.Execute(ctx, tt.sess)
+			_, err := exec.Execute(ctx, tt.sess, OperationOutput{})
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("error = %v, want %q", err, tt.want)
 			}

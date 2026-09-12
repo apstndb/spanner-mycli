@@ -85,7 +85,7 @@ func TestBigQueryExecuteRequiresProject(t *testing.T) {
 
 	session := &mycli.Session{}
 	stmt := newBigQueryStatement("SELECT 1", &config{})
-	_, err := stmt.Execute(t.Context(), session)
+	_, err := stmt.Execute(t.Context(), session, mycli.OperationOutput{})
 	if err == nil || !strings.Contains(err.Error(), "CLI_BIGQUERY_PROJECT") {
 		t.Fatalf("Execute() error = %v, want project configuration error", err)
 	}
@@ -142,7 +142,7 @@ func TestBigQueryExecuteFakeClient(t *testing.T) {
 	}
 
 	stmt := newBigQueryStatement("SELECT col FROM t", cfg)
-	got, err := stmt.Execute(t.Context(), session)
+	got, err := stmt.Execute(t.Context(), session, mycli.OperationOutput{})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
@@ -212,7 +212,7 @@ func TestBigQueryExecuteFakeClientReadError(t *testing.T) {
 		t.Fatalf("FeatureState: %v", err)
 	}
 
-	_, err = newBigQueryStatement("SELECT 1", cfg).Execute(t.Context(), session)
+	_, err = newBigQueryStatement("SELECT 1", cfg).Execute(t.Context(), session, mycli.OperationOutput{})
 	if err == nil {
 		t.Fatal("Execute() error = nil, want query read failure")
 	}

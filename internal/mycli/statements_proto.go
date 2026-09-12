@@ -41,7 +41,7 @@ type SyncProtoStatement struct {
 
 func (SyncProtoStatement) isMutationStatement() {}
 
-func (s *SyncProtoStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *SyncProtoStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	if name, ok := firstSharedFullName(s.UpsertPaths, s.DeletePaths); ok {
 		return nil, fmt.Errorf("SYNC PROTO BUNDLE conflict: %q appears in both UPSERT and DELETE", name)
 	}
@@ -115,10 +115,10 @@ func composeProtoBundleDDLs(fds *descriptorpb.FileDescriptorSet, upsertPaths, de
 
 type ShowLocalProtoStatement struct{}
 
-func (s *ShowLocalProtoStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *ShowLocalProtoStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	fds := session.systemVariables.Internal.ProtoDescriptor
 
-	result, err := executeStructRows(localProtoRowEncoder, slices.Collect(fdsToInfoSeq(fds)), session)
+	result, err := executeStructRows(localProtoRowEncoder, slices.Collect(fdsToInfoSeq(fds)), session, out)
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +128,7 @@ func (s *ShowLocalProtoStatement) Execute(ctx context.Context, session *Session)
 
 type ShowRemoteProtoStatement struct{}
 
-func (s *ShowRemoteProtoStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *ShowRemoteProtoStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	resp, err := session.GetDatabaseDdlCached(ctx)
 	if err != nil {
 		return nil, err
@@ -139,7 +139,7 @@ func (s *ShowRemoteProtoStatement) Execute(ctx context.Context, session *Session
 		return nil, err
 	}
 
-	result, err := executeStructRows(remoteProtoRowEncoder, slices.Collect(fdsToInfoSeq(&fds)), session)
+	result, err := executeStructRows(remoteProtoRowEncoder, slices.Collect(fdsToInfoSeq(&fds)), session, out)
 	if err != nil {
 		return nil, err
 	}

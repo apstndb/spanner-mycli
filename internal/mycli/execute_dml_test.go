@@ -135,7 +135,7 @@ func TestThenReturnRenderFailureAbortsImplicitCommit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("invalid statement: %v", err)
 	}
-	if _, execErr := stmt.Execute(ctx, session); execErr == nil {
+	if _, execErr := stmt.Execute(ctx, session, OperationOutput{}); execErr == nil {
 		t.Fatalf("expected THEN RETURN render failure, got nil error")
 	}
 
@@ -146,7 +146,7 @@ func TestThenReturnRenderFailureAbortsImplicitCommit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("invalid select: %v", err)
 	}
-	res, err := sel.Execute(ctx, session)
+	res, err := sel.Execute(ctx, session, OperationOutput{})
 	if err != nil {
 		t.Fatalf("verification select failed: %v", err)
 	}

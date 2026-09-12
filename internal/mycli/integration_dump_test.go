@@ -63,7 +63,7 @@ func TestDumpStatements(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to build DDL statement: %v", err)
 		}
-		if _, err := stmt.Execute(ctx, session); err != nil {
+		if _, err := stmt.Execute(ctx, session, OperationOutput{}); err != nil {
 			t.Fatalf("Failed to create test table: %v", err)
 		}
 	}
@@ -84,7 +84,7 @@ func TestDumpStatements(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to build DML statement: %v", err)
 		}
-		if _, err := stmt.Execute(ctx, session); err != nil {
+		if _, err := stmt.Execute(ctx, session, OperationOutput{}); err != nil {
 			t.Fatalf("Failed to insert test data: %v", err)
 		}
 	}
@@ -125,7 +125,7 @@ func TestDumpStatements(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := tt.stmt.Execute(ctx, session)
+			result, err := tt.stmt.Execute(ctx, session, OperationOutput{})
 			if err != nil {
 				t.Fatalf("Execute failed: %v", err)
 			}
@@ -187,7 +187,7 @@ func TestDumpTablesWithInvalidTable(t *testing.T) {
 	_, session := initializeWithRandomDB(t, nil, nil)
 
 	stmt := &DumpTablesStatement{Tables: []tableID{tid("NonExistentTable")}}
-	_, err := stmt.Execute(ctx, session)
+	_, err := stmt.Execute(ctx, session, OperationOutput{})
 	if err == nil {
 		t.Fatalf("Expected error for non-existent table")
 	}
@@ -206,7 +206,7 @@ func TestDumpEmptyDatabase(t *testing.T) {
 	_, session := initializeWithRandomDB(t, nil, nil)
 
 	stmt := &DumpDatabaseStatement{}
-	result, err := stmt.Execute(ctx, session)
+	result, err := stmt.Execute(ctx, session, OperationOutput{})
 	if err != nil {
 		t.Fatalf("Execute failed: %v", err)
 	}
@@ -239,7 +239,7 @@ func TestDumpWithStreaming(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to build DDL statement: %v", err)
 	}
-	if _, err := stmt.Execute(ctx, session); err != nil {
+	if _, err := stmt.Execute(ctx, session, OperationOutput{}); err != nil {
 		t.Fatalf("Failed to create test table: %v", err)
 	}
 
@@ -249,7 +249,7 @@ func TestDumpWithStreaming(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to build DML statement: %v", err)
 		}
-		if _, err := stmt.Execute(ctx, session); err != nil {
+		if _, err := stmt.Execute(ctx, session, OperationOutput{}); err != nil {
 			t.Fatalf("Failed to insert test data: %v", err)
 		}
 	}
@@ -267,7 +267,7 @@ func TestDumpWithStreaming(t *testing.T) {
 	)
 
 	dumpStmt := &DumpTablesStatement{Tables: []tableID{tid("StreamTest")}}
-	result, err := dumpStmt.Execute(ctx, session)
+	result, err := dumpStmt.Execute(ctx, session, OperationOutput{})
 	if err != nil {
 		t.Fatalf("Execute failed: %v", err)
 	}
@@ -322,7 +322,7 @@ func TestDumpWithForeignKeys(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to build DDL statement: %v", err)
 		}
-		if _, err := stmt.Execute(ctx, session); err != nil {
+		if _, err := stmt.Execute(ctx, session, OperationOutput{}); err != nil {
 			t.Fatalf("Failed to create test table: %v", err)
 		}
 	}
@@ -342,14 +342,14 @@ func TestDumpWithForeignKeys(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to build DML statement: %v", err)
 		}
-		if _, err := stmt.Execute(ctx, session); err != nil {
+		if _, err := stmt.Execute(ctx, session, OperationOutput{}); err != nil {
 			t.Fatalf("Failed to insert test data: %v", err)
 		}
 	}
 
 	// Test DUMP TABLES with FK dependencies
 	dumpStmt := &DumpTablesStatement{Tables: []tableID{tid("Concerts"), tid("Venues"), tid("Artists")}}
-	result, err := dumpStmt.Execute(ctx, session)
+	result, err := dumpStmt.Execute(ctx, session, OperationOutput{})
 	if err != nil {
 		t.Fatalf("Execute failed: %v", err)
 	}
@@ -432,7 +432,7 @@ func TestDumpWithMixedDependencies(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to build DDL statement: %v", err)
 		}
-		if _, err := stmt.Execute(ctx, session); err != nil {
+		if _, err := stmt.Execute(ctx, session, OperationOutput{}); err != nil {
 			t.Fatalf("Failed to create test table: %v", err)
 		}
 	}
@@ -451,14 +451,14 @@ func TestDumpWithMixedDependencies(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to build DML statement: %v", err)
 		}
-		if _, err := stmt.Execute(ctx, session); err != nil {
+		if _, err := stmt.Execute(ctx, session, OperationOutput{}); err != nil {
 			t.Fatalf("Failed to insert test data: %v", err)
 		}
 	}
 
 	// Test DUMP DATABASE with mixed dependencies
 	dumpStmt := &DumpDatabaseStatement{}
-	result, err := dumpStmt.Execute(ctx, session)
+	result, err := dumpStmt.Execute(ctx, session, OperationOutput{})
 	if err != nil {
 		t.Fatalf("Execute failed: %v", err)
 	}
@@ -516,7 +516,7 @@ func TestDumpWithGeneratedColumns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to build DDL statement: %v", err)
 	}
-	if _, err := stmt.Execute(ctx, session); err != nil {
+	if _, err := stmt.Execute(ctx, session, OperationOutput{}); err != nil {
 		t.Fatalf("Failed to create test table: %v", err)
 	}
 
@@ -526,13 +526,13 @@ func TestDumpWithGeneratedColumns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to build INSERT statement: %v", err)
 	}
-	if _, err := insertStmt.Execute(ctx, session); err != nil {
+	if _, err := insertStmt.Execute(ctx, session, OperationOutput{}); err != nil {
 		t.Fatalf("Failed to insert test data: %v", err)
 	}
 
 	// Execute DUMP TABLES
 	dumpStmt := &DumpTablesStatement{Tables: []tableID{tid("Users")}}
-	result, err := dumpStmt.Execute(ctx, session)
+	result, err := dumpStmt.Execute(ctx, session, OperationOutput{})
 	if err != nil {
 		t.Fatalf("DUMP TABLES failed: %v", err)
 	}
@@ -577,7 +577,7 @@ func TestDumpFloat32NegativeZeroReplay(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		result, err := stmt.Execute(t.Context(), session)
+		result, err := stmt.Execute(t.Context(), session, OperationOutput{})
 		if err != nil {
 			t.Fatalf("execute %s: %v", sql, err)
 		}

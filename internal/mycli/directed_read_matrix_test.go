@@ -553,7 +553,7 @@ func TestDirectedReadDumpSnapshotWire(t *testing.T) {
 					}
 					srv.takeRequests()
 					srv.takeBegins()
-					result, err := executeDump(ctx, session, dumpModeTables, []tableID{{Name: "T"}})
+					result, err := executeDump(ctx, session, dumpModeTables, []tableID{{Name: "T"}}, OperationOutput{w: writer})
 					if mode == "cyclic reject" {
 						if err == nil || !strings.Contains(err.Error(), dumpCyclicInsertUnsupported) || result != nil || out.Len() != 0 {
 							t.Fatalf("cyclic safety result=%v output=%q error=%v", result, out.String(), err)

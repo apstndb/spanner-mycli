@@ -163,12 +163,6 @@ type Session struct {
 	// through the Feature seam (issue #778). Values implementing io.Closer are
 	// closed at the end of Close in reverse creation order.
 	featureState featureStore
-
-	// output is the per-statement output destination for streamed results,
-	// set for the duration of one statement execution via withOutput /
-	// ExecuteStatementWithOutput. See outputContext in output_context.go.
-	// Zero value means "fall back to the StreamManager writer".
-	output outputContext
 }
 
 // SchemaGeneration returns the current schema generation counter.
@@ -844,9 +838,16 @@ func (s *Session) failStatementIfReadOnly() error {
 	return nil
 }
 
-// ExecuteStatement executes stmt.
+// ExecuteStatement executes stmt with the session's default output destination
+// (StreamManager writer, or nil so streaming paths buffer). Nested execution
+// that must keep a caller-provided destination should use
+// ExecuteStatementWithOutput instead.
 // If stmt is a MutationStatement, pending transaction is determined and fails if there is an active read-only transaction.
-func (s *Session) ExecuteStatement(ctx context.Context, stmt Statement) (result *Result, err error) {
+func (s *Session) ExecuteStatement(ctx context.Context, stmt Statement) (*Result, error) {
+	return s.ExecuteStatementWithOutput(ctx, stmt, OperationOutput{})
+}
+
+func (s *Session) executeStatement(ctx context.Context, stmt Statement, out OperationOutput) (result *Result, err error) {
 	// Validate statement compatibility with current session mode
 	if err := s.ValidateStatementExecution(stmt); err != nil {
 		return nil, err
@@ -878,7 +879,7 @@ func (s *Session) ExecuteStatement(ctx context.Context, stmt Statement) (result 
 		if _, err := s.txn.DetermineTransaction(ctx); err != nil {
 			return result, err
 		}
-		return stmt.Execute(ctx, s)
+		return stmt.Execute(ctx, s, out)
 	}
 
 	if _, ok := stmt.(nonTransactionalMutationStatement); ok {
@@ -896,7 +897,7 @@ func (s *Session) ExecuteStatement(ctx context.Context, stmt Statement) (result 
 		}
 	}
 
-	return stmt.Execute(ctx, s)
+	return stmt.Execute(ctx, s, out)
 }
 
 // createAuthClientOptions builds credential-related client options.

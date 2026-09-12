@@ -31,7 +31,7 @@ type MutateStatement struct {
 
 func (MutateStatement) isMutationStatement() {}
 
-func (s *MutateStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *MutateStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	mutations, err := parseMutation(s.Table, s.Operation, s.Body)
 	if err != nil {
 		return nil, err

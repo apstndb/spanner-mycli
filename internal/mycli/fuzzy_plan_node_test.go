@@ -114,7 +114,7 @@ func TestPlanNodeCompletionCandidates(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		result, err := stmt.Execute(t.Context(), session)
+		result, err := stmt.Execute(t.Context(), session, OperationOutput{})
 		if err != nil || result == nil {
 			t.Fatalf("SHOW %s: result=%v err=%v", id, result, err)
 		}

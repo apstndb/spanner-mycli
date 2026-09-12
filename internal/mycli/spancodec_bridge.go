@@ -67,15 +67,17 @@ func clientSideFormatContext(sysVars *systemVariables) (*spanvalue.FormatConfig,
 // results when the current format has one, or as a buffered Result otherwise.
 // session may be nil (e.g., HELP without a connection); defaults apply and
 // the result is buffered.
-func executeStructRows[T any](enc *spancodec.RowEncoder[T], items []T, session *Session) (*Result, error) {
+func executeStructRows[T any](enc *spancodec.RowEncoder[T], items []T, session *Session, out OperationOutput) (*Result, error) {
 	var sysVars *systemVariables
-	var out io.Writer
 	if session != nil {
 		sysVars = session.systemVariables
-		out = session.outputWriter()
+		// Direct Execute tests often pass a zero OperationOutput after swapping
+		// StreamManager. Resolve here so a nil writer still uses StreamManager,
+		// without mutating Session. Caller-provided writers still win.
+		out = session.resolveOperationOutput(out)
 	}
 
-	result, handled, err := streamStructRows(enc, items, sysVars, out)
+	result, handled, err := streamStructRows(enc, items, sysVars, out.Writer())
 	if err != nil {
 		return nil, err
 	}

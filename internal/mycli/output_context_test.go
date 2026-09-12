@@ -68,7 +68,7 @@ func TestExecuteStatementWithOutput_routesStreamedOutput(t *testing.T) {
 	var global, perCall bytes.Buffer
 	session := newDetachedTestSession(&global)
 
-	result, err := session.ExecuteStatementWithOutput(context.Background(), &ShowVariablesStatement{}, outputContext{w: &perCall})
+	result, err := session.ExecuteStatementWithOutput(context.Background(), &ShowVariablesStatement{}, OperationOutput{w: &perCall})
 	if err != nil {
 		t.Fatalf("ExecuteStatementWithOutput: %v", err)
 	}
@@ -82,13 +82,10 @@ func TestExecuteStatementWithOutput_routesStreamedOutput(t *testing.T) {
 	if global.Len() != 0 {
 		t.Errorf("StreamManager writer got %q, want empty (rows must not leak to the global stream)", global.String())
 	}
-	if session.output.w != nil || session.output.screenWidth != nil {
-		t.Errorf("session.output not restored after execution: %+v", session.output)
-	}
 }
 
 // TestExecuteStatement_fallsBackToStreamManager pins the fallback behavior:
-// without a per-statement outputContext (direct Session.ExecuteStatement
+// without a per-statement OperationOutput writer (direct Session.ExecuteStatement
 // callers), streamed output still goes to the StreamManager writer.
 func TestExecuteStatement_fallsBackToStreamManager(t *testing.T) {
 	t.Parallel()
@@ -109,31 +106,23 @@ func TestExecuteStatement_fallsBackToStreamManager(t *testing.T) {
 	}
 }
 
-// TestWithOutput_nestedRestore verifies that nested withOutput calls (e.g.
-// buffered DUMP capturing SQL export while a per-statement destination is
-// active) restore the previous destination on unwind.
-func TestWithOutput_nestedRestore(t *testing.T) {
+// TestOperationOutput_nestedWriterOverride verifies that nested execution
+// forwards an explicit OperationOutput and that a local writer override
+// (DUMP internal buffering) does not mutate the caller's value.
+func TestOperationOutput_nestedWriterOverride(t *testing.T) {
 	t.Parallel()
 
 	var outer, inner bytes.Buffer
-	session := newDetachedTestSession(io.Discard)
-
-	err := session.withOutput(outputContext{w: &outer}, func() error {
-		if got := session.outputWriter(); got != &outer {
-			t.Errorf("outputWriter() = %v, want outer buffer", got)
-		}
-		return session.withOutput(outputContext{w: &inner}, func() error {
-			if got := session.outputWriter(); got != &inner {
-				t.Errorf("outputWriter() = %v, want inner buffer", got)
-			}
-			return nil
-		})
-	})
-	if err != nil {
-		t.Fatalf("withOutput: %v", err)
+	outerOut := OperationOutput{w: &outer}
+	if got := outerOut.Writer(); got != &outer {
+		t.Errorf("Writer() = %v, want outer buffer", got)
 	}
-	if session.output.w != nil || session.output.screenWidth != nil {
-		t.Errorf("session.output not restored after nested withOutput: %+v", session.output)
+	innerOut := outerOut.withWriter(&inner)
+	if got := innerOut.Writer(); got != &inner {
+		t.Errorf("withWriter().Writer() = %v, want inner buffer", got)
+	}
+	if got := outerOut.Writer(); got != &outer {
+		t.Errorf("original Writer() = %v after withWriter, want outer buffer", got)
 	}
 }
 

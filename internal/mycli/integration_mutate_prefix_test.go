@@ -33,7 +33,7 @@ func TestMutateQuotedNamedSchemaAndLowercaseDelete(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := stmt.Execute(t.Context(), session); err != nil {
+		if _, err := stmt.Execute(t.Context(), session, OperationOutput{}); err != nil {
 			t.Fatalf("%s: %v", sql, err)
 		}
 	}
@@ -49,7 +49,7 @@ func TestMutateQuotedNamedSchemaAndLowercaseDelete(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		res, err := stmt.Execute(t.Context(), session)
+		res, err := stmt.Execute(t.Context(), session, OperationOutput{})
 		if err != nil {
 			t.Fatal(err)
 		}

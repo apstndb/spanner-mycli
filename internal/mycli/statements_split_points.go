@@ -27,7 +27,7 @@ type AddSplitPointsStatement struct {
 // statement_processing.go.
 func (AddSplitPointsStatement) isMutationStatement() {}
 
-func (s *AddSplitPointsStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *AddSplitPointsStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	_, err := session.adminClient.AddSplitPoints(ctx, &databasepb.AddSplitPointsRequest{
 		Database:    session.DatabasePath(),
 		SplitPoints: s.SplitPoints,
@@ -42,7 +42,7 @@ func (s *AddSplitPointsStatement) Execute(ctx context.Context, session *Session)
 
 type ShowSplitPointsStatement struct{}
 
-func (s *ShowSplitPointsStatement) Execute(ctx context.Context, session *Session) (*Result, error) {
+func (s *ShowSplitPointsStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	stmt := spanner.NewStatement("SELECT TABLE_NAME, INDEX_NAME, INITIATOR, SPLIT_KEY, EXPIRE_TIME FROM SPANNER_SYS.USER_SPLIT_POINTS")
 
 	return executeInformationSchemaBasedStatementImpl(ctx, session,

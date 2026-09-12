@@ -49,7 +49,7 @@ type featureStatement struct {
 	mycli.MarksDetachedCompatible
 }
 
-func (*featureStatement) Execute(ctx context.Context, s *mycli.Session) (*mycli.Result, error) {
+func (*featureStatement) Execute(ctx context.Context, s *mycli.Session, out mycli.OperationOutput) (*mycli.Result, error) {
 	return nil, nil
 }
 
