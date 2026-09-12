@@ -26,6 +26,8 @@ import (
 	"github.com/apstndb/spanner-mycli/enums"
 )
 
+// Test-only wrappers around the exported ResultBody accessors. Production
+// code uses the constructors and ResultBody methods directly.
 func (r *Result) presentationRows() []Row {
 	if r == nil {
 		return nil
