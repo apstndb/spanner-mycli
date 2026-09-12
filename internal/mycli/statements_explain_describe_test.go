@@ -1259,4 +1259,212 @@ func TestShowLastQueryPlanStatement_Execute(t *testing.T) {
 			t.Fatal("Execute() error = nil, want empty-path rejection")
 		}
 	})
+
+	t.Run("into NUL rejected", func(t *testing.T) {
+		t.Parallel()
+		_, err := (&ShowLastQueryPlanStatement{IntoPath: "plan\x00.json"}).Execute(context.Background(), &Session{
+			systemVariables: &systemVariables{LastResult: LastResult{QueryCache: &LastQueryCache{QueryPlan: plan}}},
+		})
+		if err == nil || !strings.Contains(err.Error(), "NUL") {
+			t.Fatalf("Execute() error = %v, want NUL rejection", err)
+		}
+	})
+
+	t.Run("into non-regular file rejected", func(t *testing.T) {
+		t.Parallel()
+		_, err := (&ShowLastQueryPlanStatement{IntoPath: os.DevNull}).Execute(context.Background(), &Session{
+			systemVariables: &systemVariables{LastResult: LastResult{QueryCache: &LastQueryCache{QueryPlan: plan}}},
+		})
+		if err == nil || !strings.Contains(err.Error(), "not a regular file") {
+			t.Fatalf("Execute() error = %v, want non-regular rejection", err)
+		}
+	})
+
+	t.Run("into missing parent rejected", func(t *testing.T) {
+		t.Parallel()
+		path := filepath.Join(t.TempDir(), "missing", "plan.json")
+		_, err := (&ShowLastQueryPlanStatement{IntoPath: path}).Execute(context.Background(), &Session{
+			systemVariables: &systemVariables{LastResult: LastResult{QueryCache: &LastQueryCache{QueryPlan: plan}}},
+		})
+		if err == nil || !strings.Contains(err.Error(), "invalid INTO path parent") {
+			t.Fatalf("Execute() error = %v, want missing-parent rejection", err)
+		}
+	})
+}
+
+func TestShowPlanNodeStatementMissingCache(t *testing.T) {
+	t.Parallel()
+
+	t.Run("no cache", func(t *testing.T) {
+		t.Parallel()
+		_, err := (&ShowPlanNodeStatement{NodeID: 0}).Execute(context.Background(), &Session{
+			systemVariables: &systemVariables{},
+		})
+		if err == nil || !strings.Contains(err.Error(), "no query plan cached") {
+			t.Fatalf("error = %v, want missing-cache", err)
+		}
+	})
+
+	t.Run("node out of range", func(t *testing.T) {
+		t.Parallel()
+		_, err := (&ShowPlanNodeStatement{NodeID: 99}).Execute(context.Background(), &Session{
+			systemVariables: &systemVariables{LastResult: LastResult{QueryCache: &LastQueryCache{
+				QueryPlan: selectProfileResultSet.GetStats().GetQueryPlan(),
+			}}},
+		})
+		if err == nil || !strings.Contains(err.Error(), "node with ID 99 not found") {
+			t.Fatalf("error = %v, want out-of-range", err)
+		}
+	})
+}
+
+func TestParseAlignment(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		in      string
+		want    tw.Align
+		wantErr bool
+	}{
+		{in: "RIGHT", want: tw.AlignRight},
+		{in: "ALIGN_RIGHT", want: tw.AlignRight},
+		{in: "LEFT", want: tw.AlignLeft},
+		{in: "CENTER", want: tw.AlignCenter},
+		{in: "NONE", want: tw.AlignNone},
+		{in: "DEFAULT", want: tw.AlignDefault},
+		{in: "SIDEWAYS", wantErr: true},
+	} {
+		t.Run(tt.in, func(t *testing.T) {
+			t.Parallel()
+			got, err := parseAlignment(tt.in)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("parseAlignment(%q) error = nil, want error", tt.in)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseAlignment(%q) error = %v", tt.in, err)
+			}
+			if got != tt.want {
+				t.Fatalf("parseAlignment(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCustomListToTableRenderDefsAndInlineStats(t *testing.T) {
+	t.Parallel()
+
+	t.Run("explicit left alignment", func(t *testing.T) {
+		t.Parallel()
+		got, err := customListToTableRenderDefs("Rows:{{.Rows.Total}}:LEFT")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got) != 1 || got[0].Name != "Rows" || got[0].Alignment != tw.AlignLeft {
+			t.Fatalf("got %+v", got)
+		}
+		row := plantree.RowWithPredicates{ExecutionStats: stats.ExecutionStats{Rows: stats.ExecutionStatsValue{Total: "9"}}}
+		cell, err := got[0].MapFunc(row)
+		if err != nil || cell != "9" {
+			t.Fatalf("MapFunc = %q, %v", cell, err)
+		}
+	})
+
+	t.Run("invalid alignment", func(t *testing.T) {
+		t.Parallel()
+		_, err := customListToTableRenderDefs("Rows:{{.Rows.Total}}:SIDEWAYS")
+		if err == nil || !strings.Contains(err.Error(), "failed to parseAlignment") {
+			t.Fatalf("error = %v, want parseAlignment failure", err)
+		}
+	})
+
+	t.Run("invalid field count", func(t *testing.T) {
+		t.Parallel()
+		_, err := customListToTableRenderDefs("Rows")
+		if err == nil || !strings.Contains(err.Error(), "invalid format") {
+			t.Fatalf("error = %v, want invalid format", err)
+		}
+	})
+
+	t.Run("inline stats missing colon", func(t *testing.T) {
+		t.Parallel()
+		_, err := parseInlineStatsDefs("rows")
+		if err == nil || !strings.Contains(err.Error(), "invalid inline stats format") {
+			t.Fatalf("error = %v, want format error", err)
+		}
+	})
+}
+
+func TestExtractIndexAdvice(t *testing.T) {
+	t.Parallel()
+	plan := &sppb.QueryPlan{
+		QueryAdvice: &sppb.QueryAdvisorResult{
+			IndexAdvice: []*sppb.QueryAdvisorResult_IndexAdvice{
+				{Ddl: nil, ImprovementFactor: 2},
+				{Ddl: []string{"CREATE INDEX idx ON t (id)"}, ImprovementFactor: 4},
+			},
+		},
+	}
+	got := extractIndexAdvice(plan)
+	want := []QueryIndexAdvice{{
+		DDL:               []string{"CREATE INDEX idx ON t (id)"},
+		ImprovementFactor: 4,
+	}}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Fatalf("extractIndexAdvice mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestProcessPlanNodesCompactAndTraditional(t *testing.T) {
+	t.Parallel()
+	nodes := hangingIndentPlanNodes()
+
+	compact, err := processPlanNodes(nodes, nil, enums.ExplainFormatCompact, 0, false)
+	if err != nil {
+		t.Fatalf("compact: %v", err)
+	}
+	if len(compact) == 0 {
+		t.Fatal("compact plan produced no rows")
+	}
+
+	traditional, err := processPlanNodes(nodes, nil, enums.ExplainFormatTraditional, 0, false)
+	if err != nil {
+		t.Fatalf("traditional: %v", err)
+	}
+	if len(traditional) == 0 {
+		t.Fatal("traditional plan produced no rows")
+	}
+}
+
+func TestGenerateExplainResultLintsPlan(t *testing.T) {
+	t.Parallel()
+	sysVars := newSystemVariablesWithDefaultsForTest()
+	sysVars.Query.LintPlan = true
+	got, err := generateExplainResult(sysVars, selectProfileResultSet.GetStats().GetQueryPlan(), enums.ExplainFormatUnspecified, 0, nil)
+	if err != nil {
+		t.Fatalf("generateExplainResult: %v", err)
+	}
+	want := lintPlan(selectProfileResultSet.GetStats().GetQueryPlan())
+	if diff := cmp.Diff(want, got.LintResults, cmpopts.EquateEmpty()); diff != "" {
+		t.Fatalf("LintResults mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestBuildExplainAnalyzeResultIndexAdvice(t *testing.T) {
+	t.Parallel()
+	sysVars := newSystemVariablesWithDefaultsForTest()
+	plan := proto.Clone(selectProfileResultSet.GetStats().GetQueryPlan()).(*sppb.QueryPlan)
+	plan.QueryAdvice = &sppb.QueryAdvisorResult{
+		IndexAdvice: []*sppb.QueryAdvisorResult_IndexAdvice{
+			{Ddl: []string{"CREATE INDEX idx ON t (id)"}, ImprovementFactor: 3},
+		},
+	}
+	got, err := buildExplainAnalyzeResult(sysVars, plan, QueryStats{}, enums.ExplainFormatUnspecified, 0, nil)
+	if err != nil {
+		t.Fatalf("buildExplainAnalyzeResult: %v", err)
+	}
+	if len(got.IndexAdvice) != 1 || got.IndexAdvice[0].ImprovementFactor != 3 {
+		t.Fatalf("IndexAdvice = %+v", got.IndexAdvice)
+	}
 }
