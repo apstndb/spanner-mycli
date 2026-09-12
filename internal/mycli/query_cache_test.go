@@ -174,7 +174,7 @@ func TestQueryCachePublicationNilDestinationLeavesLiveCache(t *testing.T) {
 	txn := session.client.ReadOnlyTransaction()
 	t.Cleanup(txn.Close)
 	if _, err := executeSQLWithFormatAndTxn(t.Context(), session, txn, sqlExportSelectUsers,
-		enums.DisplayModeSQLInsert, enums.StreamingModeTrue, "Users", &buf); err != nil {
+		enums.DisplayModeSQLInsert, enums.StreamingModeTrue, "Users", nil, &buf); err != nil {
 		t.Fatalf("executeSQLWithFormatAndTxn: %v", err)
 	}
 	if live.LastResult.QueryCache != seed {

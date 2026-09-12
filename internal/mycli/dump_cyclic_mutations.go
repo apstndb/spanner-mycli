@@ -146,7 +146,7 @@ func encodeDumpMutationRow(id tableID, row *spanner.Row, fc *spanvalue.FormatCon
 		" INSERT STRUCT<" + strings.Join(fields, ", ") + ">(" + strings.Join(values, ", ") + ");\n", nil
 }
 
-func prepareDumpCyclicData(ctx context.Context, session *Session, txn *spanner.ReadOnlyTransaction, tables []dumpTablePlan, budget *dumpCyclicBudget) (*dumpCyclicData, error) {
+func prepareDumpCyclicData(ctx context.Context, session *Session, txn *spanner.ReadOnlyTransaction, tables []dumpTablePlan, budget *dumpCyclicBudget, dro *sppb.DirectedReadOptions) (*dumpCyclicData, error) {
 	data := &dumpCyclicData{}
 	fc := dumpMutationFormatConfig()
 	for _, table := range tables {
@@ -162,7 +162,7 @@ func prepareDumpCyclicData(ctx context.Context, session *Session, txn *spanner.R
 			}
 		}
 		if len(table.Columns) == 0 {
-			hasRows, err := tableHasRowsWithTxn(ctx, txn, session.systemVariables.Feature.DatabaseDialect, table.ID)
+			hasRows, err := tableHasRowsWithTxn(ctx, txn, session.systemVariables.Feature.DatabaseDialect, table.ID, dro)
 			if err != nil {
 				return nil, err
 			}
@@ -172,7 +172,7 @@ func prepareDumpCyclicData(ctx context.Context, session *Session, txn *spanner.R
 			continue
 		}
 		start := len(data.Statements)
-		iter := txn.Query(ctx, spanner.Statement{SQL: buildSelectQueryWithColumns(session.systemVariables.Feature.DatabaseDialect, table.Columns, table.ID)})
+		iter := queryWithDirectedRead(ctx, txn, spanner.Statement{SQL: buildSelectQueryWithColumns(session.systemVariables.Feature.DatabaseDialect, table.Columns, table.ID)}, dro)
 		err := iter.Do(func(row *spanner.Row) error {
 			if err := ctx.Err(); err != nil {
 				return err
@@ -201,7 +201,7 @@ func prepareDumpCyclicData(ctx context.Context, session *Session, txn *spanner.R
 	return data, ctx.Err()
 }
 
-func prepareDumpMutationUnits(ctx context.Context, session *Session, txn *spanner.ReadOnlyTransaction, resolver *DependencyResolver, selected []tableID) ([]dumpDataPlan, error) {
+func prepareDumpMutationUnits(ctx context.Context, session *Session, txn *spanner.ReadOnlyTransaction, resolver *DependencyResolver, selected []tableID, dro *sppb.DirectedReadOptions) ([]dumpDataPlan, error) {
 	components, err := resolver.orderedSafetyComponents(selected)
 	if err != nil {
 		return nil, err
@@ -212,14 +212,14 @@ func prepareDumpMutationUnits(ctx context.Context, session *Session, txn *spanne
 	for _, component := range components {
 		var tables []dumpTablePlan
 		for _, id := range component.Tables {
-			columns, err := getWritableColumnsWithTxn(ctx, txn, id)
+			columns, err := getWritableColumnsWithTxn(ctx, txn, id, dro)
 			if err != nil {
 				return nil, err
 			}
 			tables = append(tables, dumpTablePlan{ID: id, Columns: columns})
 		}
 		if component.Cyclic {
-			data, err := prepareDumpCyclicData(ctx, session, txn, tables, budget)
+			data, err := prepareDumpCyclicData(ctx, session, txn, tables, budget, dro)
 			if err != nil {
 				return nil, err
 			}

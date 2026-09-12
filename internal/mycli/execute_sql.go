@@ -86,9 +86,10 @@ func (r queryRendering) withExecuteOverrides(mode enums.DisplayMode, streaming e
 // executeSQLWithFormatAndTxn executes SQL with specific format settings and
 // within a given transaction. out, when non-nil, is the explicit destination
 // for streaming output instead of the session's statement-level destination.
-func executeSQLWithFormatAndTxn(ctx context.Context, session *Session, txn *spanner.ReadOnlyTransaction, sql string, format enums.DisplayMode, streamingMode enums.StreamingMode, sqlTableName string, out io.Writer) (*Result, error) {
+// dro is the caller's captured directed-read option for this read-only request.
+func executeSQLWithFormatAndTxn(ctx context.Context, session *Session, txn *spanner.ReadOnlyTransaction, sql string, format enums.DisplayMode, streamingMode enums.StreamingMode, sqlTableName string, dro *sppb.DirectedReadOptions, out io.Writer) (*Result, error) {
 	render := queryRenderingFrom(session.systemVariables).withExecuteOverrides(format, streamingMode, sqlTableName)
-	return executeSQLImplWithTxn(ctx, session, txn, sql, render, out)
+	return executeSQLImplWithTxn(ctx, session, txn, sql, render, dro, out)
 }
 
 func executeSQL(ctx context.Context, session *Session, sql string) (*Result, error) {
@@ -240,8 +241,8 @@ func executeAndCollect(ctx context.Context, qe *queryExecution) (*Result, error)
 
 // executeSQLImplWithTxn executes SQL within a given transaction using live
 // session settings for parameters, Mode/Priority, and metrics. render carries
-// DUMP format/streaming/table/header overrides.
-func executeSQLImplWithTxn(ctx context.Context, session *Session, txn *spanner.ReadOnlyTransaction, sql string, render queryRendering, out io.Writer) (*Result, error) {
+// DUMP format/streaming/table/header overrides; dro is captured for the DUMP request.
+func executeSQLImplWithTxn(ctx context.Context, session *Session, txn *spanner.ReadOnlyTransaction, sql string, render queryRendering, dro *sppb.DirectedReadOptions, out io.Writer) (*Result, error) {
 	sysVars := session.systemVariables
 	m := newMetrics(sysVars)
 
@@ -258,8 +259,9 @@ func executeSQLImplWithTxn(ctx context.Context, session *Session, txn *spanner.R
 	// Resolve the request-level query mode from CLI_QUERY_MODE; the default is
 	// PROFILE so execution statistics are always available from Spanner.
 	opts := spanner.QueryOptions{
-		Mode:     effectiveQueryMode(sysVars.Query.QueryMode).Enum(),
-		Priority: sysVars.Query.RPCPriority,
+		Mode:                effectiveQueryMode(sysVars.Query.QueryMode).Enum(),
+		Priority:            sysVars.Query.RPCPriority,
+		DirectedReadOptions: dro,
 	}
 	iter := txn.QueryWithOptions(ctx, stmt, opts)
 

@@ -388,8 +388,11 @@ func TestNewSessionWithFactoriesUsesEmbeddedClientConfig(t *testing.T) {
 	if gotConfig.DatabaseRole != "test-role" {
 		t.Errorf("DatabaseRole = %q, want %q", gotConfig.DatabaseRole, "test-role")
 	}
-	if diff := cmp.Diff(directedRead, gotConfig.DirectedReadOptions, protocmp.Transform()); diff != "" {
-		t.Errorf("DirectedReadOptions mismatch (-want +got):\n%s", diff)
+	if gotConfig.DirectedReadOptions != nil {
+		t.Errorf("DirectedReadOptions = %v, want nil on the copied CLI client config", gotConfig.DirectedReadOptions)
+	}
+	if sysVars.Config.EmbeddedClientConfig.DirectedReadOptions != nil {
+		t.Error("EmbeddedClientConfig.DirectedReadOptions mutated; original struct must stay intact")
 	}
 }
 
@@ -485,8 +488,8 @@ func TestSessionConstructionIdentityIndependentOfLiveConnection(t *testing.T) {
 	if configA.DatabaseRole != identityA.Role {
 		t.Fatalf("DatabaseRole = %q, want %q", configA.DatabaseRole, identityA.Role)
 	}
-	if diff := cmp.Diff(directedRead, configA.DirectedReadOptions, protocmp.Transform()); diff != "" {
-		t.Errorf("DirectedReadOptions mismatch (-want +got):\n%s", diff)
+	if configA.DirectedReadOptions != nil {
+		t.Errorf("DirectedReadOptions = %v, want nil on the copied CLI client config", configA.DirectedReadOptions)
 	}
 	if len(clientOptsA) != len(adminOptsA) {
 		t.Fatalf("client opts %d, admin opts %d", len(clientOptsA), len(adminOptsA))

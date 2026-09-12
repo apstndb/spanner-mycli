@@ -168,7 +168,7 @@ type QueryVars struct {
 	MaxPartitionedParallelism  int64                             // MAX_PARTITIONED_PARALLELISM
 	QueryMode                  *sppb.ExecuteSqlRequest_QueryMode // CLI_QUERY_MODE
 	TryPartitionQuery          bool                              // CLI_TRY_PARTITION_QUERY
-	DirectedRead               *sppb.DirectedReadOptions         // CLI_DIRECT_READ
+	DirectedRead               *sppb.DirectedReadOptions         // DIRECTED_READ
 	StreamingMode              enums.StreamingMode               // CLI_TABLE_STREAMING
 	TablePreviewRows           int64                             // CLI_TABLE_PREVIEW_ROWS
 	BuildStatementMode         enums.ParseMode                   // CLI_PARSE_MODE
