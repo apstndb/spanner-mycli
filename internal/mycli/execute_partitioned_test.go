@@ -442,7 +442,7 @@ func TestStreamPartitionedQueryWriterPath(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	err = runWithTimeout(t, 3*time.Second, func(ctx context.Context) error {
-		result, handled, err := streamPartitionedQuery(ctx, &buf, tx, parts, 1, &sysVars, fc, format.DisplayValues)
+		result, handled, err := streamPartitionedQuery(ctx, &buf, tx, parts, 1, exportWriterOptionsFrom(&sysVars), fc, format.DisplayValues)
 		if err != nil {
 			return err
 		}
@@ -471,13 +471,13 @@ func TestStreamPartitionedQueryJSONLAndSQLInsert(t *testing.T) {
 			sysVars := newSystemVariablesWithDefaults()
 			sysVars.Display.CLIFormat = mode
 			sysVars.Display.SQLTableName = "Audit"
-			fc, vfm, sysVarsPtr, err := prepareFormatConfig("SELECT value FROM Audit", &sysVars)
+			render, err := prepareFormatConfig("SELECT value FROM Audit", &sysVars, queryRenderingFrom(&sysVars))
 			if err != nil {
 				t.Fatal(err)
 			}
 			var buf bytes.Buffer
 			err = runWithTimeout(t, 3*time.Second, func(ctx context.Context) error {
-				result, handled, err := streamPartitionedQuery(ctx, &buf, tx, parts, 1, sysVarsPtr, fc, vfm)
+				result, handled, err := streamPartitionedQuery(ctx, &buf, tx, parts, 1, render.Export, render.Spanvalue, render.ValueFmtMode)
 				if err != nil {
 					return err
 				}
@@ -510,7 +510,7 @@ func TestStreamPartitionedQueryWriteFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	run := startFanIn(t, func(ctx context.Context) error {
-		_, _, err := streamPartitionedQuery(ctx, &failAfterWrites{after: 1}, tx, parts, 1, &sysVars, fc, format.DisplayValues)
+		_, _, err := streamPartitionedQuery(ctx, &failAfterWrites{after: 1}, tx, parts, 1, exportWriterOptionsFrom(&sysVars), fc, format.DisplayValues)
 		return err
 	})
 	err = run.waitLive(t)

@@ -13,7 +13,7 @@ import (
 type RowProcessor interface {
 	// Init is called once after metadata becomes available (after first row fetch).
 	// This is where headers are written for formats like CSV, or table initialization occurs.
-	Init(metadata *sppb.ResultSetMetadata, sysVars *systemVariables) error
+	Init(metadata *sppb.ResultSetMetadata, config format.FormatConfig) error
 
 	// ProcessRow is called for each row in the result set.
 	// In buffered mode, rows are collected. In streaming mode, rows are output immediately.
@@ -28,7 +28,6 @@ type RowProcessor interface {
 // This reduces memory usage and improves Time To First Byte for large result sets.
 type StreamingProcessor struct {
 	metadata    *sppb.ResultSetMetadata
-	sysVars     *systemVariables
 	formatter   format.StreamingFormatter
 	out         io.Writer
 	screenWidth int
@@ -43,7 +42,7 @@ type TablePreviewProcessor struct {
 	previewRows []Row // Collected preview rows
 	formatter   format.StreamingFormatter
 	metadata    *sppb.ResultSetMetadata
-	sysVars     *systemVariables
+	config      format.FormatConfig
 	initialized bool
 	rowCount    int64
 }
@@ -59,9 +58,9 @@ func NewTablePreviewProcessor(formatter format.StreamingFormatter, previewSize i
 }
 
 // Init stores metadata for later use.
-func (p *TablePreviewProcessor) Init(metadata *sppb.ResultSetMetadata, sysVars *systemVariables) error {
+func (p *TablePreviewProcessor) Init(metadata *sppb.ResultSetMetadata, config format.FormatConfig) error {
 	p.metadata = metadata
-	p.sysVars = sysVars
+	p.config = config
 	return nil
 }
 
@@ -118,10 +117,9 @@ func (p *TablePreviewProcessor) initializeFormatter() error {
 
 	header := toTableHeader(p.metadata.GetRowType().GetFields())
 	columnNames := extractTableColumnNames(header)
-	config := p.sysVars.toFormatConfig()
 
 	// Initialize formatter with preview rows for width calculation
-	if err := p.formatter.InitFormat(columnNames, config, p.previewRows); err != nil {
+	if err := p.formatter.InitFormat(columnNames, p.config, p.previewRows); err != nil {
 		return err
 	}
 
@@ -147,14 +145,12 @@ func NewStreamingProcessor(formatter format.StreamingFormatter, out io.Writer, s
 }
 
 // Init initializes the streaming processor and writes headers if needed.
-func (p *StreamingProcessor) Init(metadata *sppb.ResultSetMetadata, sysVars *systemVariables) error {
+func (p *StreamingProcessor) Init(metadata *sppb.ResultSetMetadata, config format.FormatConfig) error {
 	p.metadata = metadata
-	p.sysVars = sysVars
 
 	// Get header from metadata
 	header := toTableHeader(metadata.GetRowType().GetFields())
 	columnNames := extractTableColumnNames(header)
-	config := sysVars.toFormatConfig()
 
 	// Initialize the format (e.g., write CSV headers)
 	if err := p.formatter.InitFormat(columnNames, config, nil); err != nil {
