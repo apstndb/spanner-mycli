@@ -513,89 +513,36 @@ func (tm *TransactionManager) GetTransactionFlagsWithLock() (inTransaction bool,
 	return inTransaction, inReadWriteTransaction
 }
 
-// TransactionOptionsBuilder helps build transaction options with proper defaults.
-type TransactionOptionsBuilder struct {
-	tm             *TransactionManager
-	priority       sppb.RequestOptions_Priority
-	isolationLevel sppb.TransactionOptions_IsolationLevel
-	tag            string
-}
-
-// NewTransactionOptionsBuilder creates a new builder with session defaults.
-func (tm *TransactionManager) NewTransactionOptionsBuilder() *TransactionOptionsBuilder {
-	return &TransactionOptionsBuilder{
-		tm:             tm,
-		priority:       sppb.RequestOptions_PRIORITY_UNSPECIFIED,
-		isolationLevel: sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED,
-	}
-}
-
-// WithPriority sets the transaction priority.
-func (b *TransactionOptionsBuilder) WithPriority(priority sppb.RequestOptions_Priority) *TransactionOptionsBuilder {
-	b.priority = priority
-	return b
-}
-
-// WithIsolationLevel sets the transaction isolation level.
-func (b *TransactionOptionsBuilder) WithIsolationLevel(level sppb.TransactionOptions_IsolationLevel) *TransactionOptionsBuilder {
-	b.isolationLevel = level
-	return b
-}
-
-// WithTag sets the transaction tag.
-func (b *TransactionOptionsBuilder) WithTag(tag string) *TransactionOptionsBuilder {
-	b.tag = tag
-	return b
-}
-
-// Build creates the final TransactionOptions with resolved defaults.
-func (b *TransactionOptionsBuilder) Build() spanner.TransactionOptions {
-	// Resolve priority
-	priority := b.priority
+func (tm *TransactionManager) resolveTransactionPriority(priority sppb.RequestOptions_Priority) sppb.RequestOptions_Priority {
 	if priority == sppb.RequestOptions_PRIORITY_UNSPECIFIED {
-		priority = b.tm.sysVars.Query.RPCPriority
+		return tm.sysVars.Query.RPCPriority
 	}
+	return priority
+}
 
-	// Resolve isolation level
-	isolationLevel := b.isolationLevel
-	if isolationLevel == sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED {
-		isolationLevel = b.tm.sysVars.Transaction.DefaultIsolationLevel
+func (tm *TransactionManager) resolveTransactionIsolationLevel(level sppb.TransactionOptions_IsolationLevel) sppb.TransactionOptions_IsolationLevel {
+	if level == sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED {
+		return tm.sysVars.Transaction.DefaultIsolationLevel
 	}
+	return level
+}
 
+func transactionOptions(vars *systemVariables, priority sppb.RequestOptions_Priority, isolationLevel sppb.TransactionOptions_IsolationLevel, tag string) spanner.TransactionOptions {
 	return spanner.TransactionOptions{
-		CommitOptions:               spanner.CommitOptions{ReturnCommitStats: b.tm.sysVars.Transaction.ReturnCommitStats, MaxCommitDelay: b.tm.sysVars.Transaction.MaxCommitDelay},
+		CommitOptions:               spanner.CommitOptions{ReturnCommitStats: vars.Transaction.ReturnCommitStats, MaxCommitDelay: vars.Transaction.MaxCommitDelay},
 		CommitPriority:              priority,
-		TransactionTag:              b.tag,
-		ExcludeTxnFromChangeStreams: b.tm.sysVars.Transaction.ExcludeTxnFromChangeStreams,
+		TransactionTag:              tag,
+		ExcludeTxnFromChangeStreams: vars.Transaction.ExcludeTxnFromChangeStreams,
 		IsolationLevel:              isolationLevel,
-		ReadLockMode:                b.tm.sysVars.Transaction.ReadLockMode,
+		ReadLockMode:                vars.Transaction.ReadLockMode,
 	}
-}
-
-// BuildPriority returns just the resolved priority.
-func (b *TransactionOptionsBuilder) BuildPriority() sppb.RequestOptions_Priority {
-	if b.priority == sppb.RequestOptions_PRIORITY_UNSPECIFIED {
-		return b.tm.sysVars.Query.RPCPriority
-	}
-	return b.priority
-}
-
-// BuildIsolationLevel returns just the resolved isolation level.
-func (b *TransactionOptionsBuilder) BuildIsolationLevel() sppb.TransactionOptions_IsolationLevel {
-	if b.isolationLevel == sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED {
-		return b.tm.sysVars.Transaction.DefaultIsolationLevel
-	}
-	return b.isolationLevel
 }
 
 // BeginPendingTransaction starts pending transaction.
 // The actual start of the transaction is delayed until the first operation in the transaction is executed.
 func (tm *TransactionManager) BeginPendingTransaction(ctx context.Context, isolationLevel sppb.TransactionOptions_IsolationLevel, priority sppb.RequestOptions_Priority) error {
-	opts := tm.NewTransactionOptionsBuilder().
-		WithIsolationLevel(isolationLevel).
-		WithPriority(priority)
-	resolvedIsolationLevel := opts.BuildIsolationLevel()
-	resolvedPriority := opts.BuildPriority()
+	resolvedIsolationLevel := tm.resolveTransactionIsolationLevel(isolationLevel)
+	resolvedPriority := tm.resolveTransactionPriority(priority)
 
 	return tm.TransitTransaction(ctx, func(tc *transactionContext) (*transactionContext, error) {
 		// Check for any type of existing transaction (including pending)
@@ -690,15 +637,9 @@ func (tm *TransactionManager) BeginReadWriteTransactionLocked(ctx context.Contex
 		tag = tm.sysVars.Transaction.TransactionTag
 	}
 
-	// Build transaction options using the builder
-	builder := tm.NewTransactionOptionsBuilder().
-		WithPriority(priority).
-		WithIsolationLevel(isolationLevel).
-		WithTag(tag)
-
-	opts := builder.Build()
-	resolvedPriority := builder.BuildPriority()
-	resolvedIsolationLevel := builder.BuildIsolationLevel()
+	resolvedPriority := tm.resolveTransactionPriority(priority)
+	resolvedIsolationLevel := tm.resolveTransactionIsolationLevel(isolationLevel)
+	opts := transactionOptions(tm.sysVars, resolvedPriority, resolvedIsolationLevel, tag)
 
 	// Check for existing transaction
 	if tm.tc != nil && tm.tc.attrs.mode != transactionModePending {
@@ -853,7 +794,7 @@ func (tm *TransactionManager) BeginReadOnlyTransactionLocked(ctx context.Context
 	}
 
 	tb := tm.resolveTimestampBound(typ, staleness, timestamp)
-	resolvedPriority := tm.NewTransactionOptionsBuilder().WithPriority(priority).BuildPriority()
+	resolvedPriority := tm.resolveTransactionPriority(priority)
 
 	// Check for existing transaction
 	if tm.tc != nil && tm.tc.attrs.mode != transactionModePending {
