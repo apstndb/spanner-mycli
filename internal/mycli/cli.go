@@ -308,22 +308,22 @@ func (c *Cli) executeSourceFile(ctx context.Context, filePath string) error {
 // trailing line comment. Failures abort startup. EXIT is rejected so an init
 // script cannot close the session before the main input or interactive loop.
 func (c *Cli) executeStartupSQL(ctx context.Context, parts []string) error {
-	var stmts []Statement
+	var cmds []command
 	for _, sql := range parts {
 		parsed, err := buildCommands(sql, c.SystemVariables.Query.BuildStatementMode)
 		if err != nil {
 			c.PrintBatchError(err)
 			return NewExitCodeError(exitCodeError)
 		}
-		stmts = append(stmts, parsed...)
+		cmds = append(cmds, parsed...)
 	}
 
-	for _, stmt := range stmts {
-		if _, ok := stmt.(*ExitStatement); ok {
+	for _, cmd := range cmds {
+		if _, ok := cmd.stmt.(*ExitStatement); ok {
 			c.PrintBatchError(errors.New("EXIT is not allowed in --init-command"))
 			return NewExitCodeError(exitCodeError)
 		}
-		if _, err := c.executeStatement(ctx, stmt, false, "", c.GetWriter()); err != nil {
+		if _, err := c.executeStatement(ctx, cmd.stmt, false, "", c.GetWriter()); err != nil {
 			c.PrintBatchError(err)
 			return NewExitCodeError(exitCodeError)
 		}
