@@ -129,17 +129,16 @@ type TransactionManager struct {
 	sysVars      *systemVariables     // same pointer as Session.systemVariables
 	clientConfig spanner.ClientConfig // for directed read in tryQueryInTransaction
 
-	// localVarUndo records (name, previous value) pairs for system variables
-	// changed by SET LOCAL in the current transaction. Guarded by mu.
-	// It lives on the TransactionManager rather than on transactionContext so it
-	// survives the pending -> active context replacement in Begin*TransactionLocked.
-	localVarUndo []savedLocalVar
+	// pendingLocalVarRestore holds SET LOCAL undo detached from a retired
+	// transactionContext under tm.mu. Registry.Set replay happens only after
+	// unlocking, at Session.ExecuteStatement / Session.Close. Direct manager
+	// calls do not acquire a new automatic restoration contract.
+	pendingLocalVarRestore []savedLocalVar
 
 	// autoDML is the transaction-owned automatic DML queue. Manual START/RUN/ABORT
-	// batches stay on Session.batch. Do not store this list on transactionContext:
-	// that struct is replaced pending->active, owns the heartbeat, and sits behind
-	// non-reentrant mu. autoDMLGeneration identifies the RW transaction that
-	// accepted the work so leftover statements cannot execute in a later owner.
+	// batches stay on Session.batch. The queue remains on TransactionManager
+	// with generation/owner guards so leftover statements cannot execute in a
+	// later RW owner.
 	autoDML           []spanner.Statement
 	autoDMLOwner      uint64
 	autoDMLGeneration uint64
@@ -318,7 +317,7 @@ func (tm *TransactionManager) pushLocalVarUndo(name, oldValue string) error {
 		if *tcPtr == nil {
 			return ErrNoTransaction
 		}
-		tm.localVarUndo = append(tm.localVarUndo, savedLocalVar{name: name, oldValue: oldValue})
+		(*tcPtr).localVarUndo = append((*tcPtr).localVarUndo, savedLocalVar{name: name, oldValue: oldValue})
 		return nil
 	})
 }
@@ -329,30 +328,31 @@ func (tm *TransactionManager) pushLocalVarUndo(name, oldValue string) error {
 // inspect transaction state and tm.mu is not reentrant.
 func (tm *TransactionManager) retireLocalVarUndo(canonical string) {
 	_ = tm.withTransactionContextWithLock(func(tcPtr **transactionContext) error {
-		if *tcPtr == nil || len(tm.localVarUndo) == 0 {
+		if *tcPtr == nil || len((*tcPtr).localVarUndo) == 0 {
 			return nil
 		}
-		tm.localVarUndo = slices.DeleteFunc(tm.localVarUndo, func(e savedLocalVar) bool {
+		(*tcPtr).localVarUndo = slices.DeleteFunc((*tcPtr).localVarUndo, func(e savedLocalVar) bool {
 			return e.name == canonical
 		})
 		return nil
 	})
 }
 
-// restoreLocalVarsIfIdle replays the SET LOCAL undo log once the transaction has
-// ended. SET LOCAL values revert on commit, rollback, and close alike, so instead
-// of hooking every transaction-ending site (including automatic rollback on
-// statement error), this runs after each statement execution and acts only when
-// no transaction context remains. Replay happens outside the lock because
-// variable setters may themselves inspect transaction state.
+// restoreLocalVarsIfIdle replays detached SET LOCAL undo once no transaction
+// context remains. SET LOCAL values revert on commit, rollback, and close
+// alike, so instead of hooking every transaction-ending site (including automatic
+// rollback on statement error), this runs after each statement execution and
+// acts only when idle. Replay happens outside the lock because variable
+// setters may themselves inspect transaction state. Nested ExecuteStatement
+// does not restore while a transaction is still active.
 func (tm *TransactionManager) restoreLocalVarsIfIdle() {
 	var entries []savedLocalVar
 	_ = tm.withTransactionContextWithLock(func(tcPtr **transactionContext) error {
-		if *tcPtr != nil || len(tm.localVarUndo) == 0 {
+		if *tcPtr != nil || len(tm.pendingLocalVarRestore) == 0 {
 			return nil
 		}
-		entries = tm.localVarUndo
-		tm.localVarUndo = nil
+		entries = tm.pendingLocalVarRestore
+		tm.pendingLocalVarRestore = nil
 		return nil
 	})
 
@@ -369,16 +369,41 @@ func (tm *TransactionManager) restoreLocalVarsIfIdle() {
 	}
 }
 
+// retireTransactionContextLocked stops heartbeat, detaches SET LOCAL undo into
+// pendingLocalVarRestore, clears tc, and discards leftover automatic DML.
+// Caller must hold tm.mu. Safe when tc is already nil. Does not call
+// registry setters.
+func (tm *TransactionManager) retireTransactionContextLocked() {
+	if tm.tc != nil {
+		tm.tc.Close()
+		if n := len(tm.tc.localVarUndo); n > 0 {
+			tm.pendingLocalVarRestore = append(tm.pendingLocalVarRestore, tm.tc.localVarUndo...)
+			tm.tc.localVarUndo = nil
+		}
+		tm.tc = nil
+	}
+	tm.discardAutomaticDMLLocked()
+}
+
+// activateTransactionLocked installs an SDK handle and resolved attributes on
+// the existing pending context, or allocates a new context when idle. Pending
+// SET LOCAL undo is left on the object. Caller must hold tm.mu.
+func (tm *TransactionManager) activateTransactionLocked(attrs transactionAttributes, txn transaction) *transactionContext {
+	owner := tm.tc
+	if owner == nil {
+		owner = &transactionContext{}
+		tm.tc = owner
+	}
+	owner.attrs = attrs
+	owner.txn = txn
+	return owner
+}
+
 // clearTransactionContext atomically clears the transaction context.
 // This is equivalent to setTransactionContext(nil) but more expressive.
 func (tm *TransactionManager) clearTransactionContext() {
 	_ = tm.withTransactionContextWithLock(func(tcPtr **transactionContext) error {
-		// Close the transaction context to stop any running heartbeat
-		if *tcPtr != nil {
-			(*tcPtr).Close()
-		}
-		*tcPtr = nil
-		tm.discardAutomaticDMLLocked()
+		tm.retireTransactionContextLocked()
 		return nil
 	})
 }
@@ -641,9 +666,8 @@ func (tm *TransactionManager) BeginReadWriteTransactionLocked(ctx context.Contex
 		return fmt.Errorf("%s transaction is already running", tm.tc.attrs.mode)
 	}
 
-	oldTc := tm.tc
-
-	// Create the new transaction
+	// Construct/validate the SDK handle before mutating the pending object.
+	// Failure retains identity, SET LOCAL undo, and the next-owner tag slot.
 	txn, err := spanner.NewReadWriteStmtBasedTransactionWithOptions(ctx, tm.client, opts)
 	if err != nil {
 		return err
@@ -652,32 +676,23 @@ func (tm *TransactionManager) BeginReadWriteTransactionLocked(ctx context.Contex
 		tm.sysVars.Transaction.TransactionTag = ""
 	}
 
-	// Cleanup old transaction context if it's being replaced
-	if oldTc != nil {
-		oldTc.Close()
-	}
-
-	// A new RW owner must not inherit leftover automatic work. Pending->active
-	// replacement is not a terminal discard of a live owner; any residual here
-	// is cross-owner and is dropped rather than replayed.
+	// A new RW owner must not inherit leftover automatic work. Pending
+	// activation is not a terminal discard of a live owner; any residual
+	// here is cross-owner and is dropped rather than replayed.
 	tm.autoDMLGeneration++
 	tm.discardAutomaticDMLLocked()
 
-	// Set new transaction context. The heartbeat loop closes over this owner so
-	// a delayed tick cannot borrow a later replacement in tm.tc (#922).
-	tc := &transactionContext{
-		attrs: transactionAttributes{
-			mode:           transactionModeReadWrite,
-			tag:            tag,
-			priority:       resolvedPriority,
-			isolationLevel: resolvedIsolationLevel,
-		},
-		txn: txn,
+	// Keep the pending pointer through activation. The heartbeat loop closes
+	// over this owner so a delayed tick cannot borrow a later replacement (#922).
+	owner := tm.activateTransactionLocked(transactionAttributes{
+		mode:           transactionModeReadWrite,
+		tag:            tag,
+		priority:       resolvedPriority,
+		isolationLevel: resolvedIsolationLevel,
+	}, txn)
+	owner.heartbeatFunc = func(ctx context.Context) {
+		tm.startHeartbeat(ctx, owner)
 	}
-	tc.heartbeatFunc = func(ctx context.Context) {
-		tm.startHeartbeat(ctx, tc)
-	}
-	tm.tc = tc
 
 	// Heartbeat will be started by EnableHeartbeat() after the first operation.
 	// For implicit transactions, they commit immediately so heartbeat isn't needed.
@@ -716,12 +731,10 @@ func (tm *TransactionManager) CommitReadWriteTransactionLocked(ctx context.Conte
 		resp, err = rwTxn.CommitWithReturnResp(ctx)
 	}
 
-	// Always clear transaction context after commit attempt.
+	// Always retire the transaction context after commit attempt.
 	// A failed commit invalidates the transaction on the server,
-	// so we must clear the context regardless of the outcome.
-	tm.tc.Close()
-	tm.tc = nil
-	tm.discardAutomaticDMLLocked()
+	// so we must retire regardless of the outcome.
+	tm.retireTransactionContextLocked()
 
 	// Return the response and error as-is, preserving any partial commit info
 	return resp, err
@@ -752,10 +765,7 @@ func (tm *TransactionManager) RollbackReadWriteTransactionLocked(ctx context.Con
 
 	rwTxn.Rollback(ctx)
 
-	// Clear transaction context after rollback
-	tm.tc.Close()
-	tm.tc = nil
-	tm.discardAutomaticDMLLocked()
+	tm.retireTransactionContextLocked()
 
 	return nil
 }
@@ -800,7 +810,6 @@ func (tm *TransactionManager) BeginReadOnlyTransactionLocked(ctx context.Context
 		return time.Time{}, fmt.Errorf("%s transaction is already running", tm.tc.attrs.mode)
 	}
 
-	oldTc := tm.tc
 	txn := tm.client.ReadOnlyTransaction().WithTimestampBound(tb)
 
 	// Because google-cloud-go/spanner defers calling BeginTransaction RPC until an actual query is run,
@@ -821,19 +830,10 @@ func (tm *TransactionManager) BeginReadOnlyTransactionLocked(ctx context.Context
 		return time.Time{}, err
 	}
 
-	// Cleanup old transaction context if it's being replaced
-	if oldTc != nil {
-		oldTc.Close()
-	}
-
-	// Set new transaction context
-	tm.tc = &transactionContext{
-		attrs: transactionAttributes{
-			mode:     transactionModeReadOnly,
-			priority: resolvedPriority,
-		},
-		txn: txn,
-	}
+	tm.activateTransactionLocked(transactionAttributes{
+		mode:     transactionModeReadOnly,
+		priority: resolvedPriority,
+	}, txn)
 
 	return resultTimestamp, nil
 }
@@ -875,10 +875,7 @@ func (tm *TransactionManager) closeTransactionWithMode(mode transactionMode, clo
 			}
 		}
 
-		// Close and clear the transaction context
-		(*tcPtr).Close()
-		*tcPtr = nil
-		tm.discardAutomaticDMLLocked()
+		tm.retireTransactionContextLocked()
 		return nil
 	})
 }
