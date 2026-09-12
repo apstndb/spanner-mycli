@@ -770,6 +770,45 @@ func TestFormatDocCatalog(t *testing.T) {
 	}
 }
 
+func TestDocEmbedBaseWithoutSlash(t *testing.T) {
+	t.Parallel()
+	if got := docEmbedBase("graph-patterns"); got != "graph-patterns" {
+		t.Errorf("docEmbedBase(no slash) = %q", got)
+	}
+}
+
+func TestDocCache_APISearch(t *testing.T) {
+	t.Parallel()
+
+	t.Run("success", func(t *testing.T) {
+		t.Parallel()
+		c := newTestCache(t, withDocAPISearcher(func(_ context.Context, query string) ([]DocSearchResult, error) {
+			if query != "gql" {
+				t.Errorf("query = %q", query)
+			}
+			return []DocSearchResult{{Name: "documents/graph", Snippet: "snippet"}}, nil
+		}))
+		got, ok := c.APISearch(t.Context(), "gql")
+		if !ok {
+			t.Fatal("APISearch() ok = false")
+		}
+		if len(got) != 1 || got[0].Name != "documents/graph" {
+			t.Errorf("results = %#v", got)
+		}
+	})
+
+	t.Run("searcher error", func(t *testing.T) {
+		t.Parallel()
+		c := newTestCache(t, withDocAPISearcher(func(context.Context, string) ([]DocSearchResult, error) {
+			return nil, fmt.Errorf("api down")
+		}))
+		got, ok := c.APISearch(t.Context(), "gql")
+		if ok || got != nil {
+			t.Fatalf("APISearch() = %#v, %v, want miss", got, ok)
+		}
+	})
+}
+
 func TestLoadEmbeddedDocs(t *testing.T) {
 	t.Parallel()
 	c := newTestCache(t)
