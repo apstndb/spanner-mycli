@@ -658,3 +658,105 @@ func prefixLabel(prefix string) string {
 	}
 	return string([]rune(prefix)[0])
 }
+
+func TestExecuteToolCall_GetDeveloperDocument(t *testing.T) {
+	t.Parallel()
+	c := newTestCache(t)
+	c.Put("documents/docs.cloud.google.com/spanner/docs/ref1", "from-api")
+
+	resp := executeToolCall(t.Context(), &genai.FunctionCall{
+		Name: "get_developer_document",
+		Args: map[string]any{"names": []any{"documents/docs.cloud.google.com/spanner/docs/ref1", "documents/missing"}},
+	}, c)
+
+	docs, ok := resp["documents"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected documents map, got %T", resp["documents"])
+	}
+	if docs["documents/docs.cloud.google.com/spanner/docs/ref1"] != "from-api" {
+		t.Errorf("fetched doc = %v", docs["documents/docs.cloud.google.com/spanner/docs/ref1"])
+	}
+	errMap, ok := docs["documents/missing"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected error map for missing doc, got %T", docs["documents/missing"])
+	}
+	if errMap["error"] != "failed to fetch document" {
+		t.Errorf("missing doc error = %v", errMap["error"])
+	}
+}
+
+func TestExecuteToolCall_SearchDeveloperDocs_API(t *testing.T) {
+	t.Parallel()
+	c := newTestCache(t, withDocAPISearcher(func(_ context.Context, query string) ([]DocSearchResult, error) {
+		if query != "graph patterns" {
+			t.Errorf("query = %q", query)
+		}
+		return []DocSearchResult{{Name: "documents/graph", Snippet: "GQL patterns"}}, nil
+	}))
+
+	resp := executeToolCall(t.Context(), &genai.FunctionCall{
+		Name: "search_developer_docs",
+		Args: map[string]any{"queries": []any{"graph patterns"}},
+	}, c)
+	qr, _ := resp["query_results"].(map[string]any)["graph patterns"].(map[string]any)
+	if qr == nil {
+		t.Fatalf("missing query result: %v", resp)
+	}
+	if qr["source"] == "local_cache" {
+		t.Fatal("API search should not fall back to local cache")
+	}
+	if qr["count"] != 1 {
+		t.Errorf("count = %v, want 1", qr["count"])
+	}
+}
+
+func TestDevKnowledgeDocSearcher_SearchInvalidJSON(t *testing.T) {
+	t.Parallel()
+	searcher := newTestDocSearcher(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("not-json"))
+	})
+	_, err := searcher.Search(t.Context(), "query")
+	if err == nil {
+		t.Fatal("expected JSON unmarshal error")
+	}
+}
+
+func TestDevKnowledgeDocSearcher_GetDocumentInvalidJSON(t *testing.T) {
+	t.Parallel()
+	searcher := newTestDocSearcher(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("not-json"))
+	})
+	_, err := searcher.GetDocument(t.Context(), "documents/docs.cloud.google.com/spanner/docs/ref")
+	if err == nil {
+		t.Fatal("expected JSON unmarshal error")
+	}
+}
+
+func TestDevKnowledgeDocSearcher_BatchGetDocuments_NonClientError(t *testing.T) {
+	t.Parallel()
+	searcher := newTestDocSearcher(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":{"code":500,"message":"boom"}}`))
+	})
+	_, err := searcher.BatchGetDocuments(t.Context(), []string{"documents/docs.cloud.google.com/spanner/docs/ref1"})
+	if err == nil || !strings.Contains(err.Error(), "batch_get_documents failed") {
+		t.Fatalf("error = %v, want batch_get_documents failed", err)
+	}
+}
+
+func TestDevKnowledgeDocSearcher_BatchGetDocuments_FallbackAllFail(t *testing.T) {
+	t.Parallel()
+	searcher := newTestDocSearcher(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/documents:batchGet" {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":{"code":400,"status":"INVALID_ARGUMENT","message":"invalid name"}}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"error":{"code":404,"message":"missing"}}`))
+	})
+	_, err := searcher.BatchGetDocuments(t.Context(), []string{"documents/docs.cloud.google.com/spanner/docs/ref1"})
+	if err == nil || !strings.Contains(err.Error(), "all individual document fetches failed") {
+		t.Fatalf("error = %v, want all individual document fetches failed", err)
+	}
+}
