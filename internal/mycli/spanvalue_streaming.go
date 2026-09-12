@@ -52,7 +52,7 @@ func executeStreamingSQLWithSpanvalueWriter(qe *queryExecution) (*Result, bool, 
 		TableHeader:      toTableHeader(fields),
 		AffectedRows:     int(rowCount),
 		Streamed:         true,
-		SQLExportAllowed: qe.ValueFmtMode == format.SQLLiteralValues,
+		SQLExportAllowed: qe.Render.ValueFmtMode == format.SQLLiteralValues,
 	}
 
 	if err := qe.finalizeQueryResult(result, queryStats, queryPlan); err != nil {
@@ -69,11 +69,11 @@ func executeStreamingSQLWithSpanvalueProcessor(qe *queryExecution) (*Result, err
 		// Spanvalue-writer formats stream without a processor and must have
 		// been handled by executeStreamingSQLWithSpanvalueWriter.
 		qe.Iter.Stop()
-		return nil, fmt.Errorf("no streaming processor for format %v", qe.SysVars.Display.CLIFormat)
+		return nil, fmt.Errorf("no streaming processor for format %v", qe.Render.CLIFormat)
 	}
 
-	rowTransform := spannerRowToRow(qe.FormatConfig, qe.SysVars.typeStyles, qe.SysVars.nullStyle)
-	if qe.ValueFmtMode == format.JSONValues {
+	rowTransform := spannerRowToRow(qe.Render.Spanvalue, qe.Render.TypeStyles, qe.Render.NullStyle)
+	if qe.Render.ValueFmtMode == format.JSONValues {
 		rowTransform = withRawJSONMarker(rowTransform)
 	}
 
@@ -88,7 +88,7 @@ func executeStreamingSQLWithSpanvalueProcessor(qe *queryExecution) (*Result, err
 		TableHeader:      toTableHeader(fields),
 		AffectedRows:     int(rowCount),
 		Streamed:         true,
-		SQLExportAllowed: qe.ValueFmtMode == format.SQLLiteralValues,
+		SQLExportAllowed: qe.Render.ValueFmtMode == format.SQLLiteralValues,
 	}
 
 	if err := qe.finalizeQueryResult(result, queryStats, queryPlan); err != nil {
@@ -98,7 +98,7 @@ func executeStreamingSQLWithSpanvalueProcessor(qe *queryExecution) (*Result, err
 }
 
 func newSpanvalueRowIteratorWriter(qe *queryExecution) (writer.RowIteratorWriter, bool, error) {
-	return newSpanvalueRowIteratorWriterFor(qe.outputWriter(), exportWriterOptionsFrom(qe.SysVars), qe.FormatConfig)
+	return newSpanvalueRowIteratorWriterFor(qe.outputWriter(), qe.Render.Export, qe.Render.Spanvalue)
 }
 
 // exportWriterOptions is the subset of live settings consumed by the shared
@@ -261,7 +261,7 @@ func runSpanvalueRowIteratorWithProcessor(
 		if initialized || md == nil {
 			return nil
 		}
-		if err := qe.Processor.Init(md, qe.SysVars); err != nil {
+		if err := qe.Processor.Init(md, qe.Render.Formatter); err != nil {
 			return fmt.Errorf("failed to initialize processor: %w", err)
 		}
 		initialized = true

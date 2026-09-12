@@ -31,7 +31,7 @@ func TestStreamingTab(t *testing.T) {
 	}
 
 	// Initialize processor
-	err := processor.Init(metadata, sysVars)
+	err := processor.Init(metadata, sysVars.toFormatConfig())
 	assert.NoError(t, err)
 
 	// Process rows
@@ -74,7 +74,7 @@ func TestStreamingVertical(t *testing.T) {
 	}
 
 	// Initialize processor
-	err := processor.Init(metadata, sysVars)
+	err := processor.Init(metadata, sysVars.toFormatConfig())
 	assert.NoError(t, err)
 
 	// Process one row
@@ -114,7 +114,7 @@ func TestStreamingHTML(t *testing.T) {
 	}
 
 	// Initialize processor
-	err := processor.Init(metadata, sysVars)
+	err := processor.Init(metadata, sysVars.toFormatConfig())
 	assert.NoError(t, err)
 
 	// Process row with special characters
@@ -157,7 +157,7 @@ func TestStreamingXML(t *testing.T) {
 	}
 
 	// Initialize processor
-	err := processor.Init(metadata, sysVars)
+	err := processor.Init(metadata, sysVars.toFormatConfig())
 	assert.NoError(t, err)
 
 	// Process row

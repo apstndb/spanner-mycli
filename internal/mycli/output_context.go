@@ -39,7 +39,7 @@ type outputContext struct {
 	// screenWidth resolves the display width for streamed table rendering.
 	// It is a function rather than a value so the terminal size is read when
 	// rendering starts, not when the statement was submitted. When nil, the
-	// session falls back to displayScreenWidth.
+	// session falls back to displayScreenWidth on the live settings.
 	screenWidth func() int
 }
 
@@ -57,14 +57,14 @@ func (s *Session) outputWriter() io.Writer {
 	return nil
 }
 
-// displayWidthFor returns the screen width for streamed rendering. sysVars is
-// passed explicitly because query execution may run with a per-statement copy
-// carrying format overrides (see executeSQLWithFormatAndTxn).
-func (s *Session) displayWidthFor(sysVars *systemVariables) int {
+// displayWidthFor returns the screen width for streamed rendering. Width
+// comes from the live session settings (AutoWrap/FixedWidth/StreamManager)
+// or the per-statement outputContext override.
+func (s *Session) displayWidthFor() int {
 	if s.output.screenWidth != nil {
 		return s.output.screenWidth()
 	}
-	return displayScreenWidth(sysVars)
+	return displayScreenWidth(s.systemVariables)
 }
 
 // withOutput runs fn with the session's per-statement output redirected to

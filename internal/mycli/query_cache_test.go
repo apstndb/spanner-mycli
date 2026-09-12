@@ -122,8 +122,8 @@ func TestQueryCachePublicationBufferedAndStreamingEmitters(t *testing.T) {
 			wantStreamed: true,
 		},
 		{
-			// TAB streams through the RowProcessor stack. SQL auto-detect
-			// does not copy settings here; the dest still comes from the runner.
+			// TAB streams through the RowProcessor stack. Auto-detect does
+			// not write CLI_SQL_TABLE_NAME; the dest still comes from the runner.
 			name:         "spanvalue processor",
 			format:       enums.DisplayModeTab,
 			streaming:    true,
@@ -159,6 +159,14 @@ func TestQueryCachePublicationNilDestinationLeavesLiveCache(t *testing.T) {
 
 	planB := testQueryPlan(t)
 	session, live := newQueryCacheRPCSession(t, planB, map[string]any{"query": "DUMP"}, nil)
+	live.Display.CLIFormat = enums.DisplayModeTable
+	live.Query.StreamingMode = enums.StreamingModeAuto
+	live.Display.SQLTableName = "KeepMe"
+	live.Display.SkipColumnNames = false
+	live.Display.SuppressResultLines = false
+	live.Display.EnableProgressBar = true
+	origRegistry := live.Registry
+	origLogLevel := live.runtimeLogLevel
 	seed := seedQueryCacheA()
 	live.LastResult.QueryCache = seed
 
@@ -171,6 +179,33 @@ func TestQueryCachePublicationNilDestinationLeavesLiveCache(t *testing.T) {
 	}
 	if live.LastResult.QueryCache != seed {
 		t.Fatal("DUMP replaced the user's last-query cache")
+	}
+	if live.Display.CLIFormat != enums.DisplayModeTable {
+		t.Errorf("CLIFormat = %v, want TABLE", live.Display.CLIFormat)
+	}
+	if live.Query.StreamingMode != enums.StreamingModeAuto {
+		t.Errorf("StreamingMode = %v, want AUTO", live.Query.StreamingMode)
+	}
+	if live.Display.SQLTableName != "KeepMe" {
+		t.Errorf("SQLTableName = %q, want KeepMe", live.Display.SQLTableName)
+	}
+	if live.Display.SkipColumnNames {
+		t.Error("SkipColumnNames mutated")
+	}
+	if live.Display.SuppressResultLines {
+		t.Error("SuppressResultLines mutated")
+	}
+	if !live.Display.EnableProgressBar {
+		t.Error("EnableProgressBar mutated")
+	}
+	if live.Registry != origRegistry {
+		t.Error("Registry pointer changed")
+	}
+	if live.runtimeLogLevel != origLogLevel {
+		t.Error("runtimeLogLevel owner changed")
+	}
+	if live.inTransaction == nil {
+		t.Error("inTransaction callback unbound")
 	}
 }
 
