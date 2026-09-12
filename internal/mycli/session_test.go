@@ -148,6 +148,11 @@ func TestNewSessionClosesClientWhenAdminClientCreationFails(t *testing.T) {
 				Database: "test-database",
 			},
 		},
+		ConnectionVars{
+			Project:  "test-project",
+			Instance: "test-instance",
+			Database: "test-database",
+		},
 		func(context.Context, string, spanner.ClientConfig, ...option.ClientOption) (*spanner.Client, error) {
 			return fakeClient, nil
 		},
@@ -352,6 +357,7 @@ func TestNewSessionWithFactoriesUsesEmbeddedClientConfig(t *testing.T) {
 	session, err := newSessionWithFactories(
 		context.Background(),
 		sysVars,
+		sysVars.Connection,
 		func(_ context.Context, _ string, cfg spanner.ClientConfig, _ ...option.ClientOption) (*spanner.Client, error) {
 			gotConfig = cfg
 			return &spanner.Client{}, nil
@@ -408,6 +414,7 @@ func TestNewSessionWithFactoriesDoesNotAppendInsecureForEmbeddedOptions(t *testi
 	session, err := newSessionWithFactories(
 		context.Background(),
 		sysVars,
+		sysVars.Connection,
 		func(_ context.Context, _ string, _ spanner.ClientConfig, opts ...option.ClientOption) (*spanner.Client, error) {
 			gotOpts = append([]option.ClientOption(nil), opts...)
 			return &spanner.Client{}, nil
@@ -427,4 +434,756 @@ func TestNewSessionWithFactoriesDoesNotAppendInsecureForEmbeddedOptions(t *testi
 	if len(gotOpts) != len(sysVars.Config.EmbeddedClientOptions)+len(defaultClientOpts) {
 		t.Fatalf("len(opts) = %d, want %d", len(gotOpts), len(sysVars.Config.EmbeddedClientOptions)+len(defaultClientOpts))
 	}
+}
+
+func TestSessionConstructionIdentityIndependentOfLiveConnection(t *testing.T) {
+	t.Parallel()
+
+	identityA := ConnectionVars{
+		Project:  "project-a",
+		Instance: "instance-a",
+		Database: "database-a",
+		Role:     "role-a",
+	}
+	identityB := ConnectionVars{
+		Project:  "project-b",
+		Instance: "instance-b",
+		Database: "database-b",
+		Role:     "role-b",
+	}
+	directedRead := &sppb.DirectedReadOptions{}
+	sysVars := &systemVariables{
+		Connection: identityA,
+		Query:      QueryVars{DirectedRead: directedRead},
+	}
+
+	var pathA string
+	var configA spanner.ClientConfig
+	var clientOptsA, adminOptsA []option.ClientOption
+	sessionA, err := newSessionWithFactories(
+		t.Context(),
+		sysVars,
+		sysVars.Connection,
+		func(_ context.Context, dbPath string, cfg spanner.ClientConfig, opts ...option.ClientOption) (*spanner.Client, error) {
+			pathA = dbPath
+			configA = cfg
+			clientOptsA = append([]option.ClientOption(nil), opts...)
+			return &spanner.Client{}, nil
+		},
+		func(_ context.Context, opts ...option.ClientOption) (*adminapi.DatabaseAdminClient, error) {
+			adminOptsA = append([]option.ClientOption(nil), opts...)
+			return &adminapi.DatabaseAdminClient{}, nil
+		},
+		func(*spanner.Client) {},
+	)
+	if err != nil {
+		t.Fatalf("construct session A: %v", err)
+	}
+	if pathA != identityA.DatabasePath() {
+		t.Fatalf("client path = %q, want %q", pathA, identityA.DatabasePath())
+	}
+	if configA.DatabaseRole != identityA.Role {
+		t.Fatalf("DatabaseRole = %q, want %q", configA.DatabaseRole, identityA.Role)
+	}
+	if diff := cmp.Diff(directedRead, configA.DirectedReadOptions, protocmp.Transform()); diff != "" {
+		t.Errorf("DirectedReadOptions mismatch (-want +got):\n%s", diff)
+	}
+	if len(clientOptsA) != len(adminOptsA) {
+		t.Fatalf("client opts %d, admin opts %d", len(clientOptsA), len(adminOptsA))
+	}
+	if sessionA.DatabasePath() != identityA.DatabasePath() {
+		t.Fatalf("session A DatabasePath = %q, want %q", sessionA.DatabasePath(), identityA.DatabasePath())
+	}
+	if sessionA.InstancePath() != identityA.InstancePath() {
+		t.Fatalf("session A InstancePath = %q, want %q", sessionA.InstancePath(), identityA.InstancePath())
+	}
+	if sessionA.ProjectID() != identityA.Project {
+		t.Fatalf("session A ProjectID = %q, want %q", sessionA.ProjectID(), identityA.Project)
+	}
+	assertCallbacksUnbound(t, sysVars)
+
+	sysVars.Connection = identityB
+	if sysVars.DatabasePath() != identityB.DatabasePath() {
+		t.Fatalf("live DatabasePath = %q, want %q", sysVars.DatabasePath(), identityB.DatabasePath())
+	}
+	if sessionA.DatabasePath() != identityA.DatabasePath() {
+		t.Fatalf("session A DatabasePath after live mutation = %q, want %q", sessionA.DatabasePath(), identityA.DatabasePath())
+	}
+	if sessionA.InstancePath() != identityA.InstancePath() {
+		t.Fatalf("session A InstancePath after live mutation = %q, want %q", sessionA.InstancePath(), identityA.InstancePath())
+	}
+	if sessionA.clientConfig.DatabaseRole != identityA.Role {
+		t.Fatalf("session A DatabaseRole after live mutation = %q, want %q", sessionA.clientConfig.DatabaseRole, identityA.Role)
+	}
+	if sessionA.ProjectID() != identityA.Project {
+		t.Fatalf("session A ProjectID after live mutation = %q, want %q", sessionA.ProjectID(), identityA.Project)
+	}
+
+	var pathB string
+	var configB spanner.ClientConfig
+	sessionB, err := newSessionWithFactories(
+		t.Context(),
+		sysVars,
+		sysVars.Connection,
+		func(_ context.Context, dbPath string, cfg spanner.ClientConfig, _ ...option.ClientOption) (*spanner.Client, error) {
+			pathB = dbPath
+			configB = cfg
+			return &spanner.Client{}, nil
+		},
+		func(context.Context, ...option.ClientOption) (*adminapi.DatabaseAdminClient, error) {
+			return &adminapi.DatabaseAdminClient{}, nil
+		},
+		func(*spanner.Client) {},
+	)
+	if err != nil {
+		t.Fatalf("construct session B: %v", err)
+	}
+	if pathB != identityB.DatabasePath() {
+		t.Fatalf("client path B = %q, want %q", pathB, identityB.DatabasePath())
+	}
+	if configB.DatabaseRole != identityB.Role {
+		t.Fatalf("session B DatabaseRole = %q, want %q", configB.DatabaseRole, identityB.Role)
+	}
+	if sessionB.DatabasePath() != identityB.DatabasePath() {
+		t.Fatalf("session B DatabasePath = %q, want %q", sessionB.DatabasePath(), identityB.DatabasePath())
+	}
+	if sessionA.DatabasePath() != identityA.DatabasePath() {
+		t.Fatalf("session A DatabasePath after constructing B = %q, want %q", sessionA.DatabasePath(), identityA.DatabasePath())
+	}
+
+	var explicitPath string
+	var explicitConfig spanner.ClientConfig
+	explicit, err := newSessionWithFactories(
+		t.Context(),
+		sysVars,
+		identityA,
+		func(_ context.Context, dbPath string, cfg spanner.ClientConfig, _ ...option.ClientOption) (*spanner.Client, error) {
+			explicitPath = dbPath
+			explicitConfig = cfg
+			return &spanner.Client{}, nil
+		},
+		func(context.Context, ...option.ClientOption) (*adminapi.DatabaseAdminClient, error) {
+			return &adminapi.DatabaseAdminClient{}, nil
+		},
+		func(*spanner.Client) {},
+	)
+	if err != nil {
+		t.Fatalf("construct explicit identity A while live is B: %v", err)
+	}
+	if sysVars.DatabasePath() != identityB.DatabasePath() {
+		t.Fatalf("explicit construction mutated live DatabasePath = %q, want %q", sysVars.DatabasePath(), identityB.DatabasePath())
+	}
+	if explicitPath != identityA.DatabasePath() {
+		t.Fatalf("explicit client path = %q, want %q", explicitPath, identityA.DatabasePath())
+	}
+	if explicitConfig.DatabaseRole != identityA.Role {
+		t.Fatalf("explicit DatabaseRole = %q, want %q", explicitConfig.DatabaseRole, identityA.Role)
+	}
+	if explicit.DatabasePath() != identityA.DatabasePath() {
+		t.Fatalf("explicit session DatabasePath = %q, want %q", explicit.DatabasePath(), identityA.DatabasePath())
+	}
+}
+
+func TestAdminSessionConstructionIdentityIndependentOfLiveConnection(t *testing.T) {
+	t.Parallel()
+
+	identityA := ConnectionVars{
+		Project:  "project-a",
+		Instance: "instance-a",
+		Role:     "role-a",
+	}
+	identityB := ConnectionVars{
+		Project:  "project-b",
+		Instance: "instance-b",
+		Role:     "role-b",
+	}
+	sysVars := &systemVariables{Connection: identityA}
+
+	sessionA, err := newAdminSessionWithFactories(
+		t.Context(),
+		sysVars,
+		sysVars.Connection,
+		func(context.Context, ...option.ClientOption) (*adminapi.DatabaseAdminClient, error) {
+			return &adminapi.DatabaseAdminClient{}, nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("construct detached session A: %v", err)
+	}
+	if !sessionA.IsDetached() {
+		t.Fatal("session A mode: want detached")
+	}
+	if sessionA.InstancePath() != identityA.InstancePath() {
+		t.Fatalf("session A InstancePath = %q, want %q", sessionA.InstancePath(), identityA.InstancePath())
+	}
+	if sessionA.DatabasePath() != identityA.DatabasePath() {
+		t.Fatalf("session A DatabasePath = %q, want %q", sessionA.DatabasePath(), identityA.DatabasePath())
+	}
+	if sessionA.clientConfig.DatabaseRole != identityA.Role {
+		t.Fatalf("session A DatabaseRole = %q, want %q", sessionA.clientConfig.DatabaseRole, identityA.Role)
+	}
+	assertCallbacksUnbound(t, sysVars)
+
+	sysVars.Connection = identityB
+	if sysVars.InstancePath() != identityB.InstancePath() {
+		t.Fatalf("live InstancePath = %q, want %q", sysVars.InstancePath(), identityB.InstancePath())
+	}
+	if sessionA.InstancePath() != identityA.InstancePath() {
+		t.Fatalf("session A InstancePath after live mutation = %q, want %q", sessionA.InstancePath(), identityA.InstancePath())
+	}
+	if sessionA.clientConfig.DatabaseRole != identityA.Role {
+		t.Fatalf("session A DatabaseRole after live mutation = %q, want %q", sessionA.clientConfig.DatabaseRole, identityA.Role)
+	}
+
+	sessionB, err := newAdminSessionWithFactories(
+		t.Context(),
+		sysVars,
+		identityB,
+		func(context.Context, ...option.ClientOption) (*adminapi.DatabaseAdminClient, error) {
+			return &adminapi.DatabaseAdminClient{}, nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("construct detached session B: %v", err)
+	}
+	if !sessionB.IsDetached() {
+		t.Fatal("session B mode: want detached")
+	}
+	if sessionB.InstancePath() != identityB.InstancePath() {
+		t.Fatalf("session B InstancePath = %q, want %q", sessionB.InstancePath(), identityB.InstancePath())
+	}
+	if sessionA.InstancePath() != identityA.InstancePath() {
+		t.Fatalf("session A InstancePath after constructing B = %q, want %q", sessionA.InstancePath(), identityA.InstancePath())
+	}
+}
+
+func TestNewAdminSessionWithFactoriesClosesNothingWhenAdminCreationFails(t *testing.T) {
+	t.Parallel()
+
+	expectedErr := errors.New("admin client creation failed")
+	session, err := newAdminSessionWithFactories(
+		t.Context(),
+		&systemVariables{
+			Connection: ConnectionVars{
+				Project:  "test-project",
+				Instance: "test-instance",
+			},
+		},
+		ConnectionVars{
+			Project:  "test-project",
+			Instance: "test-instance",
+		},
+		func(context.Context, ...option.ClientOption) (*adminapi.DatabaseAdminClient, error) {
+			return nil, expectedErr
+		},
+	)
+	if !errors.Is(err, expectedErr) {
+		t.Fatalf("newAdminSessionWithFactories() error = %v, want %v", err, expectedErr)
+	}
+	if session != nil {
+		t.Fatalf("newAdminSessionWithFactories() session = %#v, want nil", session)
+	}
+}
+
+func assertCallbacksUnbound(t *testing.T, sv *systemVariables) {
+	t.Helper()
+	if sv.inTransaction != nil || sv.transactionTagView != nil || sv.setTransactionTagSlot != nil {
+		t.Fatal("constructor bound live callbacks")
+	}
+}
+
+func TestNewTransactionManagerPublishesCallbacks(t *testing.T) {
+	t.Parallel()
+
+	sv := &systemVariables{}
+	tm := NewTransactionManager(nil, sv, spanner.ClientConfig{})
+	if tm == nil {
+		t.Fatal("NewTransactionManager returned nil")
+	}
+	if sv.inTransaction == nil || sv.transactionTagView == nil || sv.setTransactionTagSlot == nil {
+		t.Fatal("NewTransactionManager did not bind callbacks")
+	}
+	if sv.inTransaction() {
+		t.Fatal("idle manager reported an active transaction")
+	}
+
+	unboundVars := &systemVariables{}
+	unbound := newTransactionManager(nil, unboundVars, spanner.ClientConfig{})
+	if unbound == nil {
+		t.Fatal("newTransactionManager returned nil")
+	}
+	assertCallbacksUnbound(t, unboundVars)
+}
+
+func TestSessionConstructionLeavesExistingCallbacksUntouched(t *testing.T) {
+	t.Parallel()
+
+	live := ConnectionVars{
+		Project:  "project-live",
+		Instance: "instance-live",
+		Database: "database-live",
+		Role:     "role-live",
+	}
+	candidate := ConnectionVars{
+		Project:  "project-live",
+		Instance: "instance-live",
+		Database: "database-candidate",
+		Role:     "role-candidate",
+	}
+	sv := &systemVariables{Connection: live}
+	sentinelErr := errors.New("live setTransactionTagSlot")
+	sv.inTransaction = func() bool { return true }
+	sv.transactionTagView = func() string { return "live-tag" }
+	sv.setTransactionTagSlot = func(string) error { return sentinelErr }
+
+	var sawLiveDuringClient, sawLiveDuringAdmin bool
+	session, err := newSessionWithFactories(
+		t.Context(),
+		sv,
+		candidate,
+		func(_ context.Context, dbPath string, cfg spanner.ClientConfig, _ ...option.ClientOption) (*spanner.Client, error) {
+			sawLiveDuringClient = sv.Connection == live && sv.inTransaction() && sv.transactionTagView() == "live-tag"
+			if dbPath != candidate.DatabasePath() {
+				t.Errorf("client path = %q, want %q", dbPath, candidate.DatabasePath())
+			}
+			if cfg.DatabaseRole != candidate.Role {
+				t.Errorf("DatabaseRole = %q, want %q", cfg.DatabaseRole, candidate.Role)
+			}
+			return &spanner.Client{}, nil
+		},
+		func(context.Context, ...option.ClientOption) (*adminapi.DatabaseAdminClient, error) {
+			sawLiveDuringAdmin = sv.Connection == live && sv.inTransaction()
+			return &adminapi.DatabaseAdminClient{}, nil
+		},
+		func(*spanner.Client) {},
+	)
+	if err != nil {
+		t.Fatalf("construct candidate: %v", err)
+	}
+	if !sawLiveDuringClient || !sawLiveDuringAdmin {
+		t.Fatal("factories did not observe live connection/callbacks")
+	}
+	if sv.Connection != live {
+		t.Fatalf("live Connection = %+v, want %+v", sv.Connection, live)
+	}
+	if !sv.inTransaction() || sv.transactionTagView() != "live-tag" {
+		t.Fatal("construction rebound live callbacks")
+	}
+	if err := sv.setTransactionTagSlot("x"); !errors.Is(err, sentinelErr) {
+		t.Fatalf("setTransactionTagSlot error = %v, want %v", err, sentinelErr)
+	}
+	if session.DatabasePath() != candidate.DatabasePath() {
+		t.Fatalf("candidate DatabasePath = %q, want %q", session.DatabasePath(), candidate.DatabasePath())
+	}
+}
+
+type countingCloser struct {
+	n int
+}
+
+func (c *countingCloser) Close() error {
+	c.n++
+	return nil
+}
+
+type orderedCloser struct {
+	name string
+	seq  *[]string
+}
+
+func (c *orderedCloser) Close() error {
+	*c.seq = append(*c.seq, c.name)
+	return nil
+}
+
+func attachFeatureCloser[T interface{ Close() error }](t *testing.T, s *Session, key string, closer T) {
+	t.Helper()
+	if _, err := FeatureState(t.Context(), s, key, func(context.Context, *Session) (T, error) {
+		return closer, nil
+	}); err != nil {
+		t.Fatalf("FeatureState(%q): %v", key, err)
+	}
+}
+
+func newBoundSwitchSession(t *testing.T, identity ConnectionVars) (*systemVariables, *Session) {
+	t.Helper()
+	sv := newSystemVariablesWithDefaultsForTest()
+	sv.Connection = identity
+	sv.ensureRegistry()
+	session := &Session{
+		mode:            DatabaseConnected,
+		systemVariables: sv,
+		connection:      identity,
+		txn:             newTransactionManager(nil, sv, spanner.ClientConfig{}),
+	}
+	bindTransactionManagerCallbacks(sv, session.txn)
+	return sv, session
+}
+
+func TestSwitchSessionValidatesBeforePublishing(t *testing.T) {
+	t.Parallel()
+
+	live := ConnectionVars{
+		Project:  "project-live",
+		Instance: "instance-live",
+		Database: "database-live",
+		Role:     "role-live",
+	}
+
+	assertLiveUnchanged := func(t *testing.T, sv *systemVariables, session *Session, handler *SessionHandler) {
+		t.Helper()
+		if sv.Connection != live {
+			t.Fatalf("live Connection = %+v, want %+v", sv.Connection, live)
+		}
+		if handler.Session != session {
+			t.Fatal("live session pointer changed")
+		}
+		if sv.inTransaction == nil || sv.transactionTagView == nil || sv.setTransactionTagSlot == nil {
+			t.Fatal("live callbacks were cleared")
+		}
+	}
+
+	t.Run("client creation failure", func(t *testing.T) {
+		t.Parallel()
+		sv, session := newBoundSwitchSession(t, live)
+		oldCloser := &countingCloser{}
+		attachFeatureCloser(t, session, "old", oldCloser)
+		handler := NewSessionHandler(session)
+		createErr := errors.New("client creation failed")
+		var factoryObservedLive bool
+		handler.constructCandidate = func(_ context.Context, identity ConnectionVars) (*Session, error) {
+			if sv.Connection != live {
+				t.Errorf("live Connection during client failure = %+v, want %+v", sv.Connection, live)
+			}
+			if identity.Database != "database-next" || identity.Role != "role-next" {
+				t.Errorf("candidate identity = %+v", identity)
+			}
+			factoryObservedLive = sv.inTransaction != nil && !sv.inTransaction()
+			return nil, createErr
+		}
+
+		_, err := handler.ExecuteStatement(t.Context(), &UseStatement{Database: "database-next", Role: "role-next"})
+		if !errors.Is(err, createErr) {
+			t.Fatalf("error = %v, want %v", err, createErr)
+		}
+		if !factoryObservedLive {
+			t.Fatal("factory did not observe idle live callbacks")
+		}
+		assertLiveUnchanged(t, sv, session, handler)
+		if oldCloser.n != 0 {
+			t.Fatalf("old feature closer called %d times, want 0", oldCloser.n)
+		}
+	})
+
+	t.Run("admin creation failure closes only candidate client", func(t *testing.T) {
+		t.Parallel()
+		sv, session := newBoundSwitchSession(t, live)
+		oldCloser := &countingCloser{}
+		attachFeatureCloser(t, session, "old", oldCloser)
+		handler := NewSessionHandler(session)
+		adminErr := errors.New("admin client creation failed")
+		fakeClient := &spanner.Client{}
+		var closedClient *spanner.Client
+		var closeCount int
+		handler.constructCandidate = func(ctx context.Context, identity ConnectionVars) (*Session, error) {
+			if sv.Connection != live {
+				t.Errorf("live Connection during admin failure = %+v, want %+v", sv.Connection, live)
+			}
+			return newSessionWithFactories(
+				ctx,
+				sv,
+				identity,
+				func(context.Context, string, spanner.ClientConfig, ...option.ClientOption) (*spanner.Client, error) {
+					return fakeClient, nil
+				},
+				func(context.Context, ...option.ClientOption) (*adminapi.DatabaseAdminClient, error) {
+					return nil, adminErr
+				},
+				func(client *spanner.Client) {
+					closeCount++
+					closedClient = client
+				},
+			)
+		}
+
+		_, err := handler.ExecuteStatement(t.Context(), &UseStatement{Database: "database-next"})
+		if !errors.Is(err, adminErr) {
+			t.Fatalf("error = %v, want %v", err, adminErr)
+		}
+		if closedClient != fakeClient {
+			t.Fatalf("closed client = %p, want %p", closedClient, fakeClient)
+		}
+		if closeCount != 1 {
+			t.Fatalf("candidate client closed %d times, want 1", closeCount)
+		}
+		assertLiveUnchanged(t, sv, session, handler)
+		if oldCloser.n != 0 {
+			t.Fatalf("old feature closer called %d times, want 0", oldCloser.n)
+		}
+	})
+
+	t.Run("instance validation failure", func(t *testing.T) {
+		t.Parallel()
+		sv, session := newBoundSwitchSession(t, live)
+		oldCloser := &countingCloser{}
+		attachFeatureCloser(t, session, "old", oldCloser)
+		handler := NewSessionHandler(session)
+		candidateCloser := &countingCloser{}
+		instanceErr := errors.New("unknown instance")
+		handler.constructCandidate = func(_ context.Context, identity ConnectionVars) (*Session, error) {
+			if identity.Database != "" || identity.Role != "" {
+				t.Errorf("DETACH identity = %+v, want empty database/role", identity)
+			}
+			if sv.Connection != live {
+				t.Errorf("live Connection during instance failure = %+v, want %+v", sv.Connection, live)
+			}
+			candidate := &Session{
+				mode:            Detached,
+				systemVariables: sv,
+				connection:      identity,
+				txn:             newTransactionManager(nil, sv, spanner.ClientConfig{}),
+			}
+			attachFeatureCloser(t, candidate, "candidate", candidateCloser)
+			candidate.Close()
+			return nil, instanceErr
+		}
+
+		_, err := handler.ExecuteStatement(t.Context(), &DetachStatement{})
+		if !errors.Is(err, instanceErr) {
+			t.Fatalf("error = %v, want %v", err, instanceErr)
+		}
+		if candidateCloser.n != 1 {
+			t.Fatalf("candidate closed %d times, want 1", candidateCloser.n)
+		}
+		assertLiveUnchanged(t, sv, session, handler)
+		if oldCloser.n != 0 {
+			t.Fatalf("old feature closer called %d times, want 0", oldCloser.n)
+		}
+		if err := sv.Registry.Set("CLI_ENABLE_ADC_PLUS", "FALSE", false); err == nil {
+			t.Fatal("init-only variable became settable after failed DETACH")
+		}
+	})
+
+	t.Run("database existence error", func(t *testing.T) {
+		t.Parallel()
+		sv, session := newBoundSwitchSession(t, live)
+		oldCloser := &countingCloser{}
+		attachFeatureCloser(t, session, "old", oldCloser)
+		handler := NewSessionHandler(session)
+		existsErr := errors.New("checking database existence failed")
+		candidateCloser := &countingCloser{}
+		handler.constructCandidate = func(_ context.Context, identity ConnectionVars) (*Session, error) {
+			if sv.Connection != live {
+				t.Errorf("live Connection during existence error = %+v, want %+v", sv.Connection, live)
+			}
+			candidate := &Session{
+				mode:            DatabaseConnected,
+				systemVariables: sv,
+				connection:      identity,
+				txn:             newTransactionManager(nil, sv, spanner.ClientConfig{}),
+				databaseExistsOverride: func(context.Context) (bool, error) {
+					if sv.Connection != live {
+						t.Errorf("live Connection during DatabaseExists = %+v, want %+v", sv.Connection, live)
+					}
+					return false, existsErr
+				},
+			}
+			attachFeatureCloser(t, candidate, "candidate", candidateCloser)
+			return candidate, nil
+		}
+
+		_, err := handler.ExecuteStatement(t.Context(), &UseStatement{Database: "database-next"})
+		if !errors.Is(err, existsErr) {
+			t.Fatalf("error = %v, want %v", err, existsErr)
+		}
+		if candidateCloser.n != 1 {
+			t.Fatalf("candidate closed %d times, want 1", candidateCloser.n)
+		}
+		assertLiveUnchanged(t, sv, session, handler)
+		if oldCloser.n != 0 {
+			t.Fatalf("old feature closer called %d times, want 0", oldCloser.n)
+		}
+	})
+
+	t.Run("unknown database", func(t *testing.T) {
+		t.Parallel()
+		sv, session := newBoundSwitchSession(t, live)
+		oldCloser := &countingCloser{}
+		attachFeatureCloser(t, session, "old", oldCloser)
+		handler := NewSessionHandler(session)
+		candidateCloser := &countingCloser{}
+		handler.constructCandidate = func(_ context.Context, identity ConnectionVars) (*Session, error) {
+			candidate := &Session{
+				mode:            DatabaseConnected,
+				systemVariables: sv,
+				connection:      identity,
+				txn:             newTransactionManager(nil, sv, spanner.ClientConfig{}),
+				databaseExistsOverride: func(context.Context) (bool, error) {
+					return false, nil
+				},
+			}
+			attachFeatureCloser(t, candidate, "candidate", candidateCloser)
+			return candidate, nil
+		}
+
+		_, err := handler.ExecuteStatement(t.Context(), &UseStatement{Database: "missing-db"})
+		if err == nil || !strings.Contains(err.Error(), `unknown database "missing-db"`) {
+			t.Fatalf("error = %v, want unknown database", err)
+		}
+		if candidateCloser.n != 1 {
+			t.Fatalf("candidate closed %d times, want 1", candidateCloser.n)
+		}
+		assertLiveUnchanged(t, sv, session, handler)
+		if oldCloser.n != 0 {
+			t.Fatalf("old feature closer called %d times, want 0", oldCloser.n)
+		}
+	})
+
+	t.Run("successful USE publishes together", func(t *testing.T) {
+		t.Parallel()
+		sv, session := newBoundSwitchSession(t, live)
+		sv.Feature.EchoInput = true
+		registry := sv.Registry
+		var closeOrder []string
+		attachFeatureCloser(t, session, "first", &orderedCloser{name: "first", seq: &closeOrder})
+		attachFeatureCloser(t, session, "second", &orderedCloser{name: "second", seq: &closeOrder})
+		handler := NewSessionHandler(session)
+		oldTM := session.txn
+		var observedLiveDuringFactory bool
+		handler.constructCandidate = func(_ context.Context, identity ConnectionVars) (*Session, error) {
+			observedLiveDuringFactory = sv.Connection == live && sv.inTransaction != nil && !sv.inTransaction()
+			candidate := &Session{
+				mode:            DatabaseConnected,
+				systemVariables: sv,
+				connection:      identity,
+				txn:             newTransactionManager(nil, sv, spanner.ClientConfig{}),
+				databaseExistsOverride: func(context.Context) (bool, error) {
+					if sv.Connection != live {
+						t.Errorf("live Connection during DatabaseExists = %+v, want %+v", sv.Connection, live)
+					}
+					return true, nil
+				},
+			}
+			return candidate, nil
+		}
+
+		if _, err := handler.ExecuteStatement(t.Context(), &UseStatement{Database: "database-next", Role: "role-next"}); err != nil {
+			t.Fatalf("USE: %v", err)
+		}
+		if !observedLiveDuringFactory {
+			t.Fatal("factory did not observe old live connection")
+		}
+		if handler.Session == session {
+			t.Fatal("successful USE left the old session")
+		}
+		if handler.txn == oldTM {
+			t.Fatal("successful USE left the old TransactionManager")
+		}
+		want := ConnectionVars{
+			Project:  live.Project,
+			Instance: live.Instance,
+			Database: "database-next",
+			Role:     "role-next",
+		}
+		if sv.Connection != want {
+			t.Fatalf("live Connection = %+v, want %+v", sv.Connection, want)
+		}
+		if handler.connection != want {
+			t.Fatalf("adopted identity = %+v, want %+v", handler.connection, want)
+		}
+		if sv.Registry != registry {
+			t.Fatal("USE forked Registry")
+		}
+		if !sv.Feature.EchoInput {
+			t.Fatal("USE dropped feature configuration")
+		}
+		if sv.inTransaction == nil || sv.transactionTagView == nil || sv.setTransactionTagSlot == nil {
+			t.Fatal("successful USE left callbacks unbound")
+		}
+		if sv.inTransaction() {
+			t.Fatal("adopted session reported an active transaction")
+		}
+		if diff := cmp.Diff([]string{"second", "first"}, closeOrder); diff != "" {
+			t.Fatalf("old feature close order mismatch (-want +got):\n%s", diff)
+		}
+		if err := sv.Registry.Set("CLI_ENABLE_ADC_PLUS", "FALSE", false); err == nil {
+			t.Fatal("init-only variable became settable after USE")
+		}
+		if err := sv.setTransactionTagSlot("after-use"); err != nil {
+			t.Fatalf("TRANSACTION_TAG after USE: %v", err)
+		}
+		if sv.transactionTagView() != "after-use" {
+			t.Fatalf("TRANSACTION_TAG view = %q, want after-use", sv.transactionTagView())
+		}
+	})
+
+	t.Run("successful metadata USE", func(t *testing.T) {
+		t.Parallel()
+		sv, session := newBoundSwitchSession(t, live)
+		handler := NewSessionHandler(session)
+		handler.constructCandidate = func(_ context.Context, identity ConnectionVars) (*Session, error) {
+			if identity.Role != "" {
+				t.Errorf("metadata USE identity role = %q, want empty", identity.Role)
+			}
+			return &Session{
+				mode:            DatabaseConnected,
+				systemVariables: sv,
+				connection:      identity,
+				txn:             newTransactionManager(nil, sv, spanner.ClientConfig{}),
+				databaseExistsOverride: func(context.Context) (bool, error) {
+					return true, nil
+				},
+			}, nil
+		}
+
+		if _, err := handler.ExecuteStatement(t.Context(), &UseDatabaseMetaCommand{Database: "meta-db"}); err != nil {
+			t.Fatalf("\\u: %v", err)
+		}
+		if sv.Connection.Database != "meta-db" || sv.Connection.Role != "" {
+			t.Fatalf("live Connection after metadata USE = %+v", sv.Connection)
+		}
+	})
+
+	t.Run("successful DETACH keeps callbacks", func(t *testing.T) {
+		t.Parallel()
+		sv, session := newBoundSwitchSession(t, live)
+		registry := sv.Registry
+		handler := NewSessionHandler(session)
+		handler.constructCandidate = func(_ context.Context, identity ConnectionVars) (*Session, error) {
+			if sv.Connection != live {
+				t.Errorf("live Connection during DETACH construction = %+v, want %+v", sv.Connection, live)
+			}
+			return &Session{
+				mode:            Detached,
+				systemVariables: sv,
+				connection:      identity,
+				txn:             newTransactionManager(nil, sv, spanner.ClientConfig{}),
+			}, nil
+		}
+
+		if _, err := handler.ExecuteStatement(t.Context(), &DetachStatement{}); err != nil {
+			t.Fatalf("DETACH: %v", err)
+		}
+		if !handler.IsDetached() {
+			t.Fatal("DETACH did not adopt a detached session")
+		}
+		if sv.Connection.Database != "" || sv.Connection.Role != "" {
+			t.Fatalf("live Connection after DETACH = %+v", sv.Connection)
+		}
+		if sv.Connection.Project != live.Project || sv.Connection.Instance != live.Instance {
+			t.Fatalf("DETACH changed project/instance: %+v", sv.Connection)
+		}
+		if sv.inTransaction == nil || sv.transactionTagView == nil || sv.setTransactionTagSlot == nil {
+			t.Fatal("DETACH reset callbacks to nil")
+		}
+		if sv.Registry != registry {
+			t.Fatal("DETACH forked Registry")
+		}
+		if err := sv.Registry.Set("CLI_ENABLE_ADC_PLUS", "FALSE", false); err == nil {
+			t.Fatal("init-only variable became settable after DETACH")
+		}
+		if _, err := handler.ExecuteStatement(t.Context(), &BeginStatement{}); err == nil {
+			t.Fatal("BEGIN succeeded in detached mode")
+		}
+	})
 }

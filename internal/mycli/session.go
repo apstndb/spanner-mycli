@@ -128,6 +128,11 @@ type Session struct {
 	clientOpts      []option.ClientOption
 	txn             *TransactionManager // transaction lifecycle + query execution
 	systemVariables *systemVariables
+	// connection is the construction identity (project, instance, database,
+	// role). Client creation, Session.DatabasePath, and per-session
+	// administrative resource paths use this copy, not the live registry
+	// Connection on systemVariables.
+	connection ConnectionVars
 
 	batch BatchManager
 
@@ -150,6 +155,9 @@ type Session struct {
 	// dumpCyclePreflightProbe, if set, is invoked for each table in a cyclic
 	// safety SCC before the row-presence query. Tests only.
 	dumpCyclePreflightProbe func(id tableID, txn *spanner.ReadOnlyTransaction) error
+
+	// databaseExistsOverride replaces DatabaseExists in tests.
+	databaseExistsOverride func(context.Context) (bool, error)
 
 	// featureState is the keyed per-session store for feature state contributed
 	// through the Feature seam (issue #778). Values implementing io.Closer are
@@ -177,6 +185,11 @@ func (s *Session) IncrementSchemaGeneration() {
 // SessionHandler manages a session pointer and can handle session-changing statements
 type SessionHandler struct {
 	*Session
+
+	// constructCandidate, if set, replaces createSessionWithIdentity for
+	// USE/DETACH candidates. Tests inject it to observe live connection values
+	// and callbacks without opening real clients.
+	constructCandidate func(context.Context, ConnectionVars) (*Session, error)
 }
 
 func NewSessionHandler(session *Session) *SessionHandler {
@@ -214,26 +227,19 @@ func (h *SessionHandler) ExecuteStatement(ctx context.Context, stmt Statement) (
 	}
 }
 
-// createSessionWithOpts creates a new session using current session's client options
-func (h *SessionHandler) createSessionWithOpts(ctx context.Context, sysVars *systemVariables) (*Session, error) {
-	var opts []option.ClientOption
-	current := h.Session
-	if current != nil {
-		opts = current.clientOpts
+// createCandidateSession builds a replacement Session for identity while
+// sharing the live systemVariables. Constructor internals do not bind
+// inTransaction / TRANSACTION_TAG callbacks; adoptSession publishes them.
+func (h *SessionHandler) createCandidateSession(ctx context.Context, identity ConnectionVars) (*Session, error) {
+	if h.constructCandidate != nil {
+		return h.constructCandidate(ctx, identity)
 	}
 
-	// Create admin-only session if no database is specified
-	var session *Session
-	var err error
-	if sysVars.Connection.Database == "" {
-		session, err = NewAdminSession(ctx, sysVars, opts...)
-	} else {
-		session, err = NewSession(ctx, sysVars, opts...)
+	var opts []option.ClientOption
+	if current := h.Session; current != nil {
+		opts = current.clientOpts
 	}
-	if err != nil {
-		return nil, err
-	}
-	return session, nil
+	return createSessionWithIdentity(ctx, h.systemVariables, identity, opts...)
 }
 
 // validateSessionSwitch rejects USE/DETACH while a transaction or batch is
@@ -252,51 +258,48 @@ func (h *SessionHandler) validateSessionSwitch() error {
 	return nil
 }
 
-// switchSession mutates the single live systemVariables instance in place and
-// builds a replacement session around it. The registry holds pointers into this
-// struct and other components (Cli, StreamManager consumers) hold the same
-// pointer, so copying the struct would fork the state they read (split-brain).
-// On any failure the connection fields and the inTransaction hook (which
-// newSessionWithFactories points at the new session) are restored.
+// adoptSession retires the current session and publishes candidate as the live
+// session. Live Database/Role and the three TransactionManager callbacks are
+// assigned together after the old session is closed. No validation or client
+// creation happens here. Callback presence is preserved (including DETACH):
+// init-only policy treats a non-nil inTransaction as "session initialized".
+func (h *SessionHandler) adoptSession(candidate *Session) {
+	old := h.Session
+	if old != nil {
+		old.Close()
+	}
+	sv := candidate.systemVariables
+	h.Session = candidate
+	sv.Connection.Database = candidate.connection.Database
+	sv.Connection.Role = candidate.connection.Role
+	bindTransactionManagerCallbacks(sv, candidate.txn)
+}
+
+// switchSession constructs and validates a replacement session for database/role
+// without mutating live connection values or callbacks. On failure only the
+// candidate is closed. On success adoptSession publishes the candidate.
 func (h *SessionHandler) switchSession(ctx context.Context, database, role string, validate func(*Session) error) (*Result, error) {
 	if err := h.validateSessionSwitch(); err != nil {
 		return nil, err
 	}
 
-	sysVars := h.systemVariables
-	oldDatabase, oldRole := sysVars.Connection.Database, sysVars.Connection.Role
-	oldInTransaction := sysVars.inTransaction
-	oldTagView := sysVars.transactionTagView
-	oldSetTag := sysVars.setTransactionTagSlot
-	sysVars.Connection.Database = database
-	sysVars.Connection.Role = role
+	identity := h.systemVariables.Connection
+	identity.Database = database
+	identity.Role = role
 
-	restore := func() {
-		sysVars.Connection.Database = oldDatabase
-		sysVars.Connection.Role = oldRole
-		sysVars.inTransaction = oldInTransaction
-		sysVars.transactionTagView = oldTagView
-		sysVars.setTransactionTagSlot = oldSetTag
-	}
-
-	newSession, err := h.createSessionWithOpts(ctx, sysVars)
+	candidate, err := h.createCandidateSession(ctx, identity)
 	if err != nil {
-		restore()
 		return nil, err
 	}
 
 	if validate != nil {
-		if err := validate(newSession); err != nil {
-			newSession.Close()
-			restore()
+		if err := validate(candidate); err != nil {
+			candidate.Close()
 			return nil, err
 		}
 	}
 
-	// Replace the old session with the new one
-	h.Session.Close()
-	h.Session = newSession
-
+	h.adoptSession(candidate)
 	return &Result{}, nil
 }
 
@@ -353,9 +356,32 @@ func logGrpcClientOptions() []option.ClientOption {
 }
 
 func NewSession(ctx context.Context, sysVars *systemVariables, opts ...option.ClientOption) (*Session, error) {
+	session, err := newSessionWithIdentity(ctx, sysVars, sysVars.Connection, opts...)
+	if err != nil {
+		return nil, err
+	}
+	bindTransactionManagerCallbacks(sysVars, session.txn)
+	return session, nil
+}
+
+// createSessionWithIdentity constructs a Session for identity while sharing
+// sysVars for registry, query/transaction settings, runtime logging,
+// StreamManager and feature variables. It does not bind inTransaction,
+// transactionTagView or setTransactionTagSlot; public constructors and
+// SessionHandler.adoptSession publish those callbacks after the session is
+// fully constructed and validated.
+func createSessionWithIdentity(ctx context.Context, sysVars *systemVariables, identity ConnectionVars, opts ...option.ClientOption) (*Session, error) {
+	if identity.Database == "" {
+		return newAdminSessionWithIdentity(ctx, sysVars, identity, opts...)
+	}
+	return newSessionWithIdentity(ctx, sysVars, identity, opts...)
+}
+
+func newSessionWithIdentity(ctx context.Context, sysVars *systemVariables, identity ConnectionVars, opts ...option.ClientOption) (*Session, error) {
 	return newSessionWithFactories(
 		ctx,
 		sysVars,
+		identity,
 		spanner.NewClientWithConfig,
 		adminapi.NewDatabaseAdminClient,
 		func(client *spanner.Client) { client.Close() },
@@ -363,29 +389,56 @@ func NewSession(ctx context.Context, sysVars *systemVariables, opts ...option.Cl
 	)
 }
 
+func clientConfigForIdentity(sysVars *systemVariables, identity ConnectionVars) spanner.ClientConfig {
+	clientConfig := clientConfigForSystemVariables(sysVars)
+	clientConfig.DatabaseRole = identity.Role
+	clientConfig.DirectedReadOptions = sysVars.Query.DirectedRead
+	return clientConfig
+}
+
+func appendSessionClientOptions(sysVars *systemVariables, opts []option.ClientOption) []option.ClientOption {
+	if sysVars.Config.Insecure && len(sysVars.Config.EmbeddedClientOptions) == 0 {
+		opts = append(opts, option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())))
+	}
+	if sysVars.Config.LogGrpc {
+		opts = append(opts, logGrpcClientOptions()...)
+	}
+	return append(opts, defaultClientOpts...)
+}
+
+func newConstructedSession(
+	mode SessionMode,
+	client *spanner.Client,
+	adminClient *adminapi.DatabaseAdminClient,
+	clientConfig spanner.ClientConfig,
+	opts []option.ClientOption,
+	sysVars *systemVariables,
+	identity ConnectionVars,
+) *Session {
+	return &Session{
+		mode:            mode,
+		client:          client,
+		clientConfig:    clientConfig,
+		clientOpts:      opts,
+		adminClient:     adminClient,
+		txn:             newTransactionManager(client, sysVars, clientConfig),
+		systemVariables: sysVars,
+		connection:      identity,
+	}
+}
+
 func newSessionWithFactories(
 	ctx context.Context,
 	sysVars *systemVariables,
+	identity ConnectionVars,
 	clientFactory func(context.Context, string, spanner.ClientConfig, ...option.ClientOption) (*spanner.Client, error),
 	adminClientFactory func(context.Context, ...option.ClientOption) (*adminapi.DatabaseAdminClient, error),
 	closeClient func(*spanner.Client),
 	opts ...option.ClientOption,
 ) (*Session, error) {
-	dbPath := sysVars.DatabasePath()
-	clientConfig := clientConfigForSystemVariables(sysVars)
-	clientConfig.DatabaseRole = sysVars.Connection.Role
-	clientConfig.DirectedReadOptions = sysVars.Query.DirectedRead
-
-	if sysVars.Config.Insecure && len(sysVars.Config.EmbeddedClientOptions) == 0 {
-		opts = append(opts, option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())))
-	}
-
-	if sysVars.Config.LogGrpc {
-		opts = append(opts, logGrpcClientOptions()...)
-	}
-
-	opts = append(opts, defaultClientOpts...)
-	client, err := clientFactory(ctx, dbPath, clientConfig, opts...)
+	clientConfig := clientConfigForIdentity(sysVars, identity)
+	opts = appendSessionClientOptions(sysVars, opts)
+	client, err := clientFactory(ctx, identity.DatabasePath(), clientConfig, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -396,52 +449,24 @@ func newSessionWithFactories(
 		return nil, err
 	}
 
-	session := &Session{
-		mode:            DatabaseConnected,
-		client:          client,
-		clientConfig:    clientConfig,
-		clientOpts:      opts,
-		adminClient:     adminClient,
-		txn:             NewTransactionManager(client, sysVars, clientConfig),
-		systemVariables: sysVars,
-	}
-	sysVars.inTransaction = session.txn.InTransaction
-
-	return session, nil
+	return newConstructedSession(DatabaseConnected, client, adminClient, clientConfig, opts, sysVars, identity), nil
 }
 
 func NewAdminSession(ctx context.Context, sysVars *systemVariables, opts ...option.ClientOption) (*Session, error) {
-	clientConfig := clientConfigForSystemVariables(sysVars)
-	clientConfig.DatabaseRole = sysVars.Connection.Role
-	clientConfig.DirectedReadOptions = sysVars.Query.DirectedRead
-
-	if sysVars.Config.Insecure && len(sysVars.Config.EmbeddedClientOptions) == 0 {
-		opts = append(opts, option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())))
+	session, err := newAdminSessionWithIdentity(ctx, sysVars, sysVars.Connection, opts...)
+	if err != nil {
+		return nil, err
 	}
+	bindTransactionManagerCallbacks(sysVars, session.txn)
+	return session, nil
+}
 
-	if sysVars.Config.LogGrpc {
-		opts = append(opts, logGrpcClientOptions()...)
-	}
-
-	opts = append(opts, defaultClientOpts...)
-
-	adminClient, err := adminapi.NewDatabaseAdminClient(ctx, opts...)
+func newAdminSessionWithIdentity(ctx context.Context, sysVars *systemVariables, identity ConnectionVars, opts ...option.ClientOption) (*Session, error) {
+	session, err := newAdminSessionWithFactories(ctx, sysVars, identity, adminapi.NewDatabaseAdminClient, opts...)
 	if err != nil {
 		return nil, err
 	}
 
-	session := &Session{
-		mode:            Detached,
-		client:          nil, // no database client in detached mode
-		clientConfig:    clientConfig,
-		clientOpts:      opts,
-		adminClient:     adminClient,
-		txn:             NewTransactionManager(nil, sysVars, clientConfig),
-		systemVariables: sysVars,
-	}
-	sysVars.inTransaction = session.txn.InTransaction
-
-	// Validate instance exists
 	exists, err := session.InstanceExists(ctx)
 	if err != nil {
 		session.Close()
@@ -449,10 +474,27 @@ func NewAdminSession(ctx context.Context, sysVars *systemVariables, opts ...opti
 	}
 	if !exists {
 		session.Close()
-		return nil, fmt.Errorf("unknown instance %q", sysVars.Connection.Instance)
+		return nil, fmt.Errorf("unknown instance %q", identity.Instance)
 	}
 
 	return session, nil
+}
+
+func newAdminSessionWithFactories(
+	ctx context.Context,
+	sysVars *systemVariables,
+	identity ConnectionVars,
+	adminClientFactory func(context.Context, ...option.ClientOption) (*adminapi.DatabaseAdminClient, error),
+	opts ...option.ClientOption,
+) (*Session, error) {
+	clientConfig := clientConfigForIdentity(sysVars, identity)
+	opts = appendSessionClientOptions(sysVars, opts)
+	adminClient, err := adminClientFactory(ctx, opts...)
+	if err != nil {
+		return nil, err
+	}
+
+	return newConstructedSession(Detached, nil, adminClient, clientConfig, opts, sysVars, identity), nil
 }
 
 func (s *Session) Mode() SessionMode {
@@ -593,11 +635,11 @@ func (s *Session) Close() {
 }
 
 func (s *Session) DatabasePath() string {
-	return s.systemVariables.DatabasePath()
+	return s.connection.DatabasePath()
 }
 
 func (s *Session) InstancePath() string {
-	return s.systemVariables.InstancePath()
+	return s.connection.InstancePath()
 }
 
 // InstanceExists reports whether the configured Spanner instance is reachable.
@@ -687,6 +729,10 @@ func (s *Session) InstanceExists(ctx context.Context) (bool, error) {
 }
 
 func (s *Session) DatabaseExists(ctx context.Context) (bool, error) {
+	if s.databaseExistsOverride != nil {
+		return s.databaseExistsOverride(ctx)
+	}
+
 	if err := s.ValidateDatabaseOperation(); err != nil {
 		return false, err
 	}
@@ -922,16 +968,10 @@ func createSession(ctx context.Context, credential []byte, sysVars *systemVariab
 	if err != nil {
 		return nil, err
 	}
-
-	var session *Session
-	// Create admin-only session if no database is specified
-	if sysVars.Connection.Database == "" {
-		session, err = NewAdminSession(ctx, sysVars, opts...)
-	} else {
-		session, err = NewSession(ctx, sysVars, opts...)
-	}
+	session, err := createSessionWithIdentity(ctx, sysVars, sysVars.Connection, opts...)
 	if err != nil {
 		return nil, err
 	}
+	bindTransactionManagerCallbacks(sysVars, session.txn)
 	return session, nil
 }

@@ -148,6 +148,21 @@ func TestBuildCommands(t *testing.T) {
 			Input:       `SELECT 1; \! echo test`,
 			ExpectError: true, // Meta commands not supported in batch mode
 		},
+		{
+			Desc:  "CREATE DATABASE is not grouped with following DDL",
+			Input: `CREATE DATABASE d1; CREATE TABLE t1(pk INT64) PRIMARY KEY(pk);`,
+			Expected: []Statement{
+				&CreateDatabaseStatement{CreateStatement: "CREATE DATABASE d1"},
+				&BulkDdlStatement{[]string{"CREATE TABLE t1(pk INT64) PRIMARY KEY(pk)"}},
+			},
+		},
+		{
+			Desc:  "EXPORT DATA",
+			Input: `EXPORT DATA OPTIONS (format = 'CLOUD_SPANNER', table = 'Account') AS SELECT 1;`,
+			Expected: []Statement{
+				&ExportDataStatement{SQL: `EXPORT DATA OPTIONS (format = 'CLOUD_SPANNER', table = 'Account') AS SELECT 1`},
+			},
+		},
 	}
 
 	for _, test := range tests {
@@ -1898,6 +1913,101 @@ func TestCli_PrintResult_invalidPagerCommand(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "invalid pager command") {
 		t.Fatalf("error = %v, want invalid pager command error", err)
 	}
+}
+
+func TestCli_executeStartupSQL(t *testing.T) {
+	t.Parallel()
+
+	newCli := func(t *testing.T) *Cli {
+		t.Helper()
+		session := newDetachedTestSession(io.Discard)
+		t.Cleanup(session.Close)
+		session.systemVariables.Query.BuildStatementMode = enums.ParseModeFallback
+		return &Cli{
+			SessionHandler:  NewSessionHandler(session),
+			SystemVariables: session.systemVariables,
+		}
+	}
+
+	t.Run("runs init-command then init-command-add", func(t *testing.T) {
+		cli := newCli(t)
+		parts := collectStartupSQL(&spannerOptions{
+			InitCommand:    "SET CLI_PROMPT = 'before'",
+			InitCommandAdd: []string{"SET CLI_PROMPT = 'after'"},
+		})
+		if err := cli.executeStartupSQL(context.Background(), parts); err != nil {
+			t.Fatalf("executeStartupSQL: %v", err)
+		}
+		if cli.SystemVariables.Display.Prompt != "after" {
+			t.Errorf("CLI_PROMPT = %q, want after", cli.SystemVariables.Display.Prompt)
+		}
+	})
+
+	t.Run("quoted semicolon stays one statement", func(t *testing.T) {
+		cli := newCli(t)
+		if err := cli.executeStartupSQL(context.Background(), []string{"SET CLI_PROMPT = 'a;b'"}); err != nil {
+			t.Fatalf("executeStartupSQL: %v", err)
+		}
+		if cli.SystemVariables.Display.Prompt != "a;b" {
+			t.Errorf("CLI_PROMPT = %q, want a;b", cli.SystemVariables.Display.Prompt)
+		}
+	})
+
+	t.Run("trailing line comment does not swallow the next flag", func(t *testing.T) {
+		cli := newCli(t)
+		parts := collectStartupSQL(&spannerOptions{
+			InitCommand:    "SET CLI_PROMPT2 = 'from-first' -- trailing comment",
+			InitCommandAdd: []string{"SET CLI_PROMPT = 'second'"},
+		})
+		if err := cli.executeStartupSQL(context.Background(), parts); err != nil {
+			t.Fatalf("executeStartupSQL: %v", err)
+		}
+		if cli.SystemVariables.Display.Prompt2 != "from-first" {
+			t.Errorf("CLI_PROMPT2 = %q, want from-first", cli.SystemVariables.Display.Prompt2)
+		}
+		if cli.SystemVariables.Display.Prompt != "second" {
+			t.Errorf("CLI_PROMPT = %q, want second", cli.SystemVariables.Display.Prompt)
+		}
+	})
+
+	t.Run("quoted comma survives the flag parser", func(t *testing.T) {
+		cli := newCli(t)
+		gopts, err := parseAndValidate(withRequiredFlags(
+			"--init-command-add", "SET CLI_PROMPT = 'a,b'",
+			"--execute", "SELECT 1",
+		))
+		if err != nil {
+			t.Fatalf("parseAndValidate: %v", err)
+		}
+		if err := cli.executeStartupSQL(context.Background(), collectStartupSQL(&gopts.Spanner)); err != nil {
+			t.Fatalf("executeStartupSQL: %v", err)
+		}
+		if cli.SystemVariables.Display.Prompt != "a,b" {
+			t.Errorf("CLI_PROMPT = %q, want a,b", cli.SystemVariables.Display.Prompt)
+		}
+	})
+
+	t.Run("parse failure aborts before execution", func(t *testing.T) {
+		cli := newCli(t)
+		err := cli.executeStartupSQL(context.Background(), []string{"SET CLI_PROMPT = 'changed';\nINVALID SYNTAX;"})
+		if GetExitCode(err) != exitCodeError {
+			t.Fatalf("error = %v, want parse failure exit", err)
+		}
+		if cli.SystemVariables.Display.Prompt != defaultPrompt {
+			t.Errorf("CLI_PROMPT = %q, want unchanged default", cli.SystemVariables.Display.Prompt)
+		}
+	})
+
+	t.Run("EXIT is rejected without closing the session", func(t *testing.T) {
+		cli := newCli(t)
+		err := cli.executeStartupSQL(context.Background(), []string{"SET CLI_PROMPT = 'before'; EXIT; SET CLI_PROMPT = 'after';"})
+		if GetExitCode(err) != exitCodeError {
+			t.Fatalf("error = %v, want EXIT rejection", err)
+		}
+		if cli.SystemVariables.Display.Prompt != "before" {
+			t.Errorf("CLI_PROMPT = %q, want before (EXIT must not skip remaining after a reject)", cli.SystemVariables.Display.Prompt)
+		}
+	})
 }
 
 func writeTempSQL(t *testing.T, content string) string {

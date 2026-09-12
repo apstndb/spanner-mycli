@@ -346,7 +346,12 @@ func TestFinalizeQueryResultQueryModeRendering(t *testing.T) {
 			sysVars.Query.QueryMode = tt.userMode
 
 			result := &Result{}
-			if err := finalizeQueryResult(result, stats, nil, plan, sysVars, &metrics.ExecutionMetrics{}); err != nil {
+			qe := &queryExecution{
+				SysVars:        sysVars,
+				Metrics:        &metrics.ExecutionMetrics{},
+				QueryCacheDest: &sysVars.LastResult.QueryCache,
+			}
+			if err := qe.finalizeQueryResult(result, stats, plan); err != nil {
 				t.Fatalf("finalizeQueryResult() error = %v, want nil", err)
 			}
 
