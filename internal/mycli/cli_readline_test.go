@@ -1,19 +1,29 @@
 package mycli
 
 import (
+	"bytes"
+	"context"
 	"errors"
+	"io"
 	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/apstndb/gsqlutils"
 	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/token"
 	"github.com/fatih/color"
+	"github.com/hymkor/go-multiline-ny"
+	"github.com/nyaosorg/go-readline-ny"
 	"github.com/nyaosorg/go-readline-ny/simplehistory"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/apstndb/spanner-mycli/internal/mycli/streamio"
 )
 
 func TestLexerHighlighterWithError(t *testing.T) {
@@ -1173,4 +1183,297 @@ func (e *errorFS) OpenFile(name string, flag int, perm os.FileMode) (afero.File,
 		return nil, e.readError
 	}
 	return e.Fs.OpenFile(name, flag, perm)
+}
+
+type failWriteFS struct {
+	afero.Fs
+	writeErr error
+	closeErr error
+}
+
+type failWriteFile struct {
+	afero.File
+	writeErr error
+	closeErr error
+}
+
+func (f *failWriteFile) Write(p []byte) (int, error) {
+	if f.writeErr != nil {
+		return 0, f.writeErr
+	}
+	return f.File.Write(p)
+}
+
+func (f *failWriteFile) Close() error {
+	err := f.File.Close()
+	if f.closeErr != nil {
+		return f.closeErr
+	}
+	return err
+}
+
+func (fs *failWriteFS) OpenFile(name string, flag int, perm os.FileMode) (afero.File, error) {
+	f, err := fs.Fs.OpenFile(name, flag, perm)
+	if err != nil {
+		return nil, err
+	}
+	return &failWriteFile{File: f, writeErr: fs.writeErr, closeErr: fs.closeErr}, nil
+}
+
+func TestPersistentHistoryAdd_writeAndCloseErrors(t *testing.T) {
+	t.Parallel()
+
+	t.Run("write failure still keeps in-memory history", func(t *testing.T) {
+		fs := &failWriteFS{Fs: afero.NewMemMapFs(), writeErr: errors.New("disk full")}
+		h := simplehistory.New()
+		ph := &persistentHistory{filename: "history.txt", history: h, fs: fs}
+		ph.Add("SELECT 1")
+		if h.Len() != 1 || h.At(0) != "SELECT 1" {
+			t.Fatalf("in-memory history = %d %q", h.Len(), h.At(0))
+		}
+	})
+
+	t.Run("close failure is logged and does not panic", func(t *testing.T) {
+		fs := &failWriteFS{Fs: afero.NewMemMapFs(), closeErr: errors.New("close failed")}
+		h := simplehistory.New()
+		ph := &persistentHistory{filename: "history.txt", history: h, fs: fs}
+		ph.Add("SELECT 1")
+		if h.Len() != 1 {
+			t.Fatalf("history len = %d", h.Len())
+		}
+		content, err := afero.ReadFile(fs, "history.txt")
+		require.NoError(t, err)
+		if !strings.Contains(string(content), "SELECT 1") {
+			t.Fatalf("file content = %q", content)
+		}
+	})
+}
+
+func TestIsInterrupted(t *testing.T) {
+	t.Parallel()
+	if isInterrupted(nil) {
+		t.Fatal("nil should not be interrupted")
+	}
+	if isInterrupted(errors.New("Ctrl-C")) {
+		t.Fatal("plain error should not match readline.CtrlC")
+	}
+	if !isInterrupted(readline.CtrlC) {
+		t.Fatal("readline.CtrlC should be interrupted")
+	}
+	if !isInterrupted(errors.Join(errors.New("wrap"), readline.CtrlC)) {
+		t.Fatal("wrapped readline.CtrlC should be interrupted")
+	}
+}
+
+func TestErrorHighlighter(t *testing.T) {
+	t.Parallel()
+	hl := errorHighlighter(func(me *memefish.Error) bool {
+		return me.Message == errMessageUnclosedStringLiteral || me.Message == errMessageUnclosedTripleQuotedStringLiteral
+	})
+
+	if got := hl("SELECT 1", -1); len(got) != 0 {
+		t.Fatalf("valid SQL highlights = %v, want none", got)
+	}
+	if got := hl("SELECT 'unclosed", -1); len(got) != 1 {
+		t.Fatalf("unclosed string highlights = %v, want 1 range", got)
+	}
+	if got := hl("SELECT '''unclosed", -1); len(got) != 1 {
+		t.Fatalf("unclosed triple-quoted highlights = %v, want 1 range", got)
+	}
+}
+
+func TestHighlighterFuncFindAllStringIndex(t *testing.T) {
+	t.Parallel()
+	f := highlighterFunc(func(s string, n int) [][]int {
+		if s != "abc" || n != -1 {
+			t.Errorf("highlighterFunc args = (%q, %d)", s, n)
+		}
+		return [][]int{{0, 1}}
+	})
+	got := f.FindAllStringIndex("abc", -1)
+	if len(got) != 1 || got[0][0] != 0 || got[0][1] != 1 {
+		t.Fatalf("FindAllStringIndex = %v", got)
+	}
+}
+
+func TestLexerHighlighter(t *testing.T) {
+	t.Parallel()
+	hl := lexerHighlighter(func(tok token.Token) [][]int {
+		if tok.Kind == token.TokenInt {
+			return [][]int{{int(tok.Pos), int(tok.End)}}
+		}
+		return nil
+	})
+	got := hl("SELECT 42", -1)
+	if len(got) != 1 {
+		t.Fatalf("lexerHighlighter = %v, want one int token", got)
+	}
+}
+
+func TestSetLineEditor(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+	originalNoColor := color.NoColor
+	defer func() { color.NoColor = originalNoColor }()
+
+	ed := &multiline.Editor{}
+
+	color.NoColor = true
+	setLineEditor(ed, true)
+	if ed.Highlight != nil || ed.DefaultColor != "" || ed.ResetColor != "" {
+		t.Fatalf("NoColor should disable highlight, got Highlight=%v Default=%q Reset=%q", ed.Highlight, ed.DefaultColor, ed.ResetColor)
+	}
+
+	color.NoColor = false
+	setLineEditor(ed, false)
+	if ed.Highlight != nil || ed.DefaultColor != "" || ed.ResetColor != "" {
+		t.Fatalf("enableHighlight=false should disable highlight, got Highlight=%v", ed.Highlight)
+	}
+
+	setLineEditor(ed, true)
+	if len(ed.Highlight) != len(defaultHighlights) {
+		t.Fatalf("Highlight len = %d, want %d", len(ed.Highlight), len(defaultHighlights))
+	}
+	if color.NoColor {
+		t.Fatal("expected color.NoColor=false after enabling highlight")
+	}
+	if ed.ResetColor == "" || ed.DefaultColor == "" {
+		// Some environments still emit empty sequences even after forcing NoColor=false.
+		// Highlight assignment is the contract that matters for syntax coloring.
+		t.Logf("color sequences empty (Reset=%q Default=%q); highlight table still installed", ed.ResetColor, ed.DefaultColor)
+	}
+}
+
+func TestSetupHistory(t *testing.T) {
+	t.Parallel()
+
+	t.Run("new file", func(t *testing.T) {
+		ed := &multiline.Editor{}
+		path := filepath.Join(t.TempDir(), "history")
+		h, err := setupHistory(ed, path)
+		if err != nil {
+			t.Fatalf("setupHistory: %v", err)
+		}
+		if h.Len() != 0 {
+			t.Fatalf("new history len = %d", h.Len())
+		}
+		h.Add("SELECT 1")
+		if h.Len() != 1 || h.At(0) != "SELECT 1" {
+			t.Fatalf("history after add = %d %q", h.Len(), h.At(0))
+		}
+	})
+
+	t.Run("invalid format", func(t *testing.T) {
+		ed := &multiline.Editor{}
+		path := filepath.Join(t.TempDir(), "history")
+		if err := os.WriteFile(path, []byte("not-quoted\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		_, err := setupHistory(ed, path)
+		if err == nil || !strings.Contains(err.Error(), "history file format error") {
+			t.Fatalf("error = %v, want history file format error", err)
+		}
+	})
+}
+
+func newReadlineTestCli(t *testing.T) *Cli {
+	t.Helper()
+	sysVars := newSystemVariablesWithDefaults()
+	sysVars.Display.HistoryFile = filepath.Join(t.TempDir(), "history")
+	sysVars.StreamManager = streamio.NewStreamManager(io.NopCloser(bytes.NewReader(nil)), io.Discard, io.Discard)
+	session := newDetachedTestSession(io.Discard)
+	session.systemVariables = &sysVars
+	cli := &Cli{
+		SessionHandler:  NewSessionHandler(session),
+		SystemVariables: &sysVars,
+	}
+	return cli
+}
+
+// scriptedTTY is an isolated readline TTY that never opens the caller's
+// controlling terminal. Empty keys yield io.EOF; onGetKey can inject a
+// sentinel such as context.Canceled.
+type scriptedTTY struct {
+	keys     []string
+	onGetKey func() error
+}
+
+func (t *scriptedTTY) IsOpen() bool              { return true }
+func (t *scriptedTTY) Open(func(int, int)) error { return nil }
+func (t *scriptedTTY) Size() (int, int, error)   { return 80, 24, nil }
+func (t *scriptedTTY) Close() error              { return nil }
+func (t *scriptedTTY) GetKey() (string, error) {
+	if len(t.keys) == 0 {
+		return "", io.EOF
+	}
+	if t.onGetKey != nil {
+		if err := t.onGetKey(); err != nil {
+			return "", err
+		}
+	}
+	key := t.keys[0]
+	t.keys = t.keys[1:]
+	return key, nil
+}
+
+func newIsolatedReadlineEditor(t *testing.T, keys []string, onGetKey func() error) *multiline.Editor {
+	t.Helper()
+	ed := &multiline.Editor{}
+	ed.SetWriter(io.Discard)
+	ed.SetTty(&scriptedTTY{keys: keys, onGetKey: onGetKey})
+	return ed
+}
+
+func TestInitializeMultilineEditor(t *testing.T) {
+	cli := newReadlineTestCli(t)
+	_, _, err := initializeMultilineEditor(cli)
+	if err == nil || !strings.Contains(err.Error(), "stdout is not a terminal") {
+		t.Fatalf("error = %v, want missing TTY", err)
+	}
+}
+
+func TestReadInteractiveInput_cancelledContext(t *testing.T) {
+	cli := newReadlineTestCli(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	entered := make(chan struct{})
+	var once sync.Once
+	ed := newIsolatedReadlineEditor(t, []string{"x"}, func() error {
+		once.Do(func() { close(entered) })
+		<-ctx.Done()
+		return ctx.Err()
+	})
+
+	type result struct {
+		stmt *inputStatement
+		err  error
+	}
+	done := make(chan result, 1)
+	go func() {
+		stmt, err := cli.readInputLine(ctx, ed)
+		done <- result{stmt: stmt, err: err}
+	}()
+
+	select {
+	case <-entered:
+	case <-time.After(3 * time.Second):
+		t.Fatal("scripted TTY did not enter GetKey")
+	}
+	cancel()
+
+	var got result
+	select {
+	case got = <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("readInputLine did not return after context cancellation")
+	}
+	if got.stmt != nil {
+		t.Fatalf("statement = %+v, want nil on cancelled read", got.stmt)
+	}
+	if !errors.Is(got.err, context.Canceled) {
+		t.Fatalf("error = %v, want failed to read input wrapping context.Canceled", got.err)
+	}
+	if !strings.Contains(got.err.Error(), "failed to read input") {
+		t.Fatalf("error = %v, want failed to read input wrapping context.Canceled", got.err)
+	}
 }

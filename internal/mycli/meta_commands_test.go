@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -735,6 +736,187 @@ func TestDisableTeeMetaCommand_Execute(t *testing.T) {
 			finalWriter := sysVars.StreamManager.GetWriter()
 			if finalWriter != originalWriter {
 				t.Error("StreamManager writer should revert to original after disable")
+			}
+		})
+	}
+}
+
+func TestParseMetaCommand_quotingAndRedirectErrors(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name         string
+		input        string
+		wantErr      string
+		wantDisable  bool
+		wantRedirect string
+	}{
+		{name: "source unmatched quote", input: `\. "unclosed.sql`, wantErr: "invalid filename quoting"},
+		{name: "tee unmatched quote", input: `\T "unclosed.log`, wantErr: "invalid filename quoting"},
+		{name: "redirect unmatched quote", input: `\o "unclosed.log`, wantErr: "invalid filename quoting"},
+		{name: "redirect multiple files", input: `\o file1.log file2.log`, wantErr: "\\o requires exactly one filename"},
+		{name: "redirect disable", input: `\o`, wantDisable: true},
+		{name: "redirect path", input: `\o out.log`, wantRedirect: "out.log"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ParseMetaCommand(tt.input)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("ParseMetaCommand(%q) error = %v, want %q", tt.input, err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ParseMetaCommand(%q) unexpected error: %v", tt.input, err)
+			}
+			if tt.wantDisable {
+				if _, ok := got.(*DisableOutputRedirectMetaCommand); !ok {
+					t.Fatalf("got %T, want DisableOutputRedirectMetaCommand", got)
+				}
+			}
+			if tt.wantRedirect != "" {
+				redirect, ok := got.(*OutputRedirectMetaCommand)
+				if !ok || redirect.FilePath != tt.wantRedirect {
+					t.Fatalf("got %#v, want OutputRedirect %q", got, tt.wantRedirect)
+				}
+			}
+		})
+	}
+}
+
+func TestShellMetaCommand_Execute_noOutputAndCancel(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	t.Run("no output destination", func(t *testing.T) {
+		session := &Session{systemVariables: &systemVariables{}}
+		_, err := (&ShellMetaCommand{Command: "echo hello"}).Execute(ctx, session)
+		if err == nil || err.Error() != "internal error: no output destination configured" {
+			t.Fatalf("error = %v, want no output destination", err)
+		}
+	})
+
+	t.Run("cancelled context is a genuine execution error", func(t *testing.T) {
+		var output bytes.Buffer
+		sysVars := newSystemVariablesWithDefaults()
+		sysVars.StreamManager = streamio.NewStreamManager(os.Stdin, &output, io.Discard)
+		session := &Session{systemVariables: &sysVars}
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		_, err := (&ShellMetaCommand{Command: "sleep 5"}).Execute(ctx, session)
+		if err == nil || !strings.Contains(err.Error(), "command failed") {
+			t.Fatalf("error = %v, want command failed wrapping context cancellation", err)
+		}
+	})
+}
+
+func TestSourceAndUseMetaCommand_ExecuteMustNotRun(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	session := &Session{}
+
+	_, err := (&SourceMetaCommand{FilePath: "x.sql"}).Execute(ctx, session)
+	if err == nil || !strings.Contains(err.Error(), "must be handled by the CLI") {
+		t.Fatalf("SourceMetaCommand.Execute error = %v", err)
+	}
+
+	_, err = (&UseDatabaseMetaCommand{Database: "db"}).Execute(ctx, session)
+	if err == nil || !strings.Contains(err.Error(), "must be handled by the SessionHandler") {
+		t.Fatalf("UseDatabaseMetaCommand.Execute error = %v", err)
+	}
+}
+
+func TestOutputRedirectAndDisable_Execute(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	t.Run("redirect enables silent tee", func(t *testing.T) {
+		session, sysVars := createTestSession(t)
+		base, ok := sysVars.StreamManager.GetWriter().(*bytes.Buffer)
+		if !ok {
+			t.Fatal("test session should capture base output in a *bytes.Buffer")
+		}
+		path := filepath.Join(t.TempDir(), "out.log")
+		result, err := (&OutputRedirectMetaCommand{FilePath: path}).Execute(ctx, session)
+		if err != nil || result == nil {
+			t.Fatalf("Execute error = %v result = %v", err, result)
+		}
+		if !sysVars.StreamManager.IsInSilentTeeMode() {
+			t.Fatal("\\o should enable silent tee mode")
+		}
+
+		const redirected = "redirected-only\n"
+		if _, err := sysVars.StreamManager.GetWriter().Write([]byte(redirected)); err != nil {
+			t.Fatalf("write while redirected: %v", err)
+		}
+		if base.Len() != 0 {
+			t.Fatalf("silent redirect leaked to base output: %q", base.String())
+		}
+
+		if _, err := (&DisableOutputRedirectMetaCommand{}).Execute(ctx, session); err != nil {
+			t.Fatalf("disable: %v", err)
+		}
+		if sysVars.StreamManager.IsInSilentTeeMode() {
+			t.Fatal("\\O / disable should turn silent tee off")
+		}
+
+		const afterDisable = "after-disable\n"
+		w := sysVars.StreamManager.GetWriter()
+		if w != base {
+			t.Fatal("disable should restore the original base writer")
+		}
+		if _, err := w.Write([]byte(afterDisable)); err != nil {
+			t.Fatalf("write after disable: %v", err)
+		}
+		if base.String() != afterDisable {
+			t.Fatalf("base output after disable = %q, want %q", base.String(), afterDisable)
+		}
+		got, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read redirect file: %v", err)
+		}
+		if string(got) != redirected {
+			t.Fatalf("redirect file = %q, want %q", got, redirected)
+		}
+	})
+
+	t.Run("redirect to directory", func(t *testing.T) {
+		session, _ := createTestSession(t)
+		_, err := (&OutputRedirectMetaCommand{FilePath: t.TempDir()}).Execute(ctx, session)
+		if err == nil || !strings.Contains(err.Error(), "must be a regular file") {
+			t.Fatalf("error = %v, want regular file", err)
+		}
+	})
+}
+
+func TestTeeAndDisableOutput_missingInternals(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	path := "out.log"
+
+	for _, tt := range []struct {
+		name string
+		cmd  Statement
+		sess *Session
+		want string
+	}{
+		{name: "tee nil sysvars", cmd: &TeeOutputMetaCommand{FilePath: path}, sess: &Session{}, want: "system variables not initialized"},
+		{name: "tee nil stream manager", cmd: &TeeOutputMetaCommand{FilePath: path}, sess: &Session{systemVariables: &systemVariables{}}, want: "stream manager not initialized"},
+		{name: "redirect nil sysvars", cmd: &OutputRedirectMetaCommand{FilePath: path}, sess: &Session{}, want: "system variables not initialized"},
+		{name: "redirect nil stream manager", cmd: &OutputRedirectMetaCommand{FilePath: path}, sess: &Session{systemVariables: &systemVariables{}}, want: "stream manager not initialized"},
+		{name: "disable tee nil sysvars", cmd: &DisableTeeMetaCommand{}, sess: &Session{}, want: "system variables not initialized"},
+		{name: "disable redirect nil stream manager", cmd: &DisableOutputRedirectMetaCommand{}, sess: &Session{systemVariables: &systemVariables{}}, want: "stream manager not initialized"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			exec, ok := tt.cmd.(interface {
+				Execute(context.Context, *Session) (*Result, error)
+			})
+			if !ok {
+				t.Fatal("statement is not executable")
+			}
+			_, err := exec.Execute(ctx, tt.sess)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("error = %v, want %q", err, tt.want)
 			}
 		})
 	}
