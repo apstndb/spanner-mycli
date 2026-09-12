@@ -36,27 +36,27 @@ import (
 // whether the statement streams.
 //
 // Whether a statement will stream is not knowable with certainty before
-// execution (shouldUseStreaming is a heuristic probe; Result.Streamed is the
-// truth only afterwards). Instead of predicting, the sink binds lazily: the
-// pager is started and the pre-result decorations are emitted on the first
-// byte written through it, wherever that byte comes from. For streamed
-// statements the first byte is the first row, so the fence/echo precede the
-// rows and the rows flow through the pager; for buffered statements the first
-// byte arrives at display time, reproducing the historical post-execution
-// behavior byte for byte (including SET statements whose own result reflects
-// the just-changed decoration flags, because the flags are read at emission
-// time, not at statement submission).
+// execution (Result.Streamed is the truth only afterwards). Instead of
+// predicting, the sink binds lazily: the pager is started and the pre-result
+// decorations are emitted on the first byte written through it, wherever that
+// byte comes from. For streamed statements the first byte is the first row,
+// so the fence/echo precede the rows and the rows flow through the pager; for
+// buffered statements the first byte arrives at display time, reproducing the
+// historical post-execution behavior byte for byte (including SET statements
+// whose own result reflects the just-changed decoration flags, because the
+// flags are read at emission time, not at statement submission).
 type resultSink struct {
 	c     *Cli
 	ctx   context.Context // statement context; PrintResult uses Background
 	dst   io.Writer       // caller-provided destination
 	input string          // already prepared CLI_ECHO_INPUT text; no extra semicolon is appended
 
-	out       io.Writer    // active destination once started (pager pipe or dst)
-	startErr  error        // sticky pager start failure
-	fenceOpen bool         // opening ```sql fence was written
-	stopPager func() error // closes pager stdin and waits once; nil without pager
-	done      bool
+	beforeStart func()       // optional; invoked once before pager or any bytes
+	out         io.Writer    // active destination once started (pager pipe or dst)
+	startErr    error        // sticky pager start failure
+	fenceOpen   bool         // opening ```sql fence was written
+	stopPager   func() error // closes pager stdin and waits once; nil without pager
+	done        bool
 }
 
 // newResultSink returns a sink writing to dst. input is already prepared echo
@@ -80,6 +80,14 @@ func (c *Cli) newResultSink(ctx context.Context, dst io.Writer, input string) *r
 func (s *resultSink) start() error {
 	if s.out != nil || s.startErr != nil {
 		return s.startErr
+	}
+	// Join progress (or any other pre-output work) before pager startup or
+	// any fence, echo, or result bytes. finish() also comes through here so
+	// empty successful results stop the spinner before emitting decorations.
+	if s.beforeStart != nil {
+		stop := s.beforeStart
+		s.beforeStart = nil
+		stop()
 	}
 	if err := s.ctx.Err(); err != nil {
 		s.startErr = err

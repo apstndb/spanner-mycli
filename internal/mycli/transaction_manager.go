@@ -36,6 +36,7 @@ var (
 	ErrNotInReadWriteTransaction = errors.New("not in read-write transaction")
 	ErrNotInReadOnlyTransaction  = errors.New("not in read-only transaction")
 	ErrNotInPendingTransaction   = errors.New("not in pending transaction")
+	errHeartbeatOwnerReplaced    = errors.New("heartbeat owner replaced")
 )
 
 // newStoppedIterator creates a stopped RowIterator.
@@ -150,6 +151,15 @@ type TransactionManager struct {
 	// attempt is unchanged.
 	queryAfterCollectHook func() error
 	commitOverride        func(context.Context, *spanner.ReadWriteStmtBasedTransaction) (spanner.CommitResponse, error)
+
+	// heartbeatTicks, if non-nil, replaces the production 5s ticker. Tests
+	// send on this channel to release one loop iteration. heartbeatBeforeAcquire
+	// runs after the eligibility snapshot and before withReadWriteTransaction;
+	// heartbeatAfterAttempt runs after that acquire attempt, including owner
+	// mismatch and missing-transaction exits. Neither hook runs under tm.mu.
+	heartbeatTicks         <-chan time.Time
+	heartbeatBeforeAcquire func()
+	heartbeatAfterAttempt  func()
 }
 
 // savedLocalVar is one SET LOCAL undo-log entry.
@@ -158,13 +168,23 @@ type savedLocalVar struct {
 	oldValue string // display-string value before SET LOCAL, restored via Registry.Set
 }
 
-// NewTransactionManager creates a new TransactionManager.
-func NewTransactionManager(client *spanner.Client, sysVars *systemVariables, clientConfig spanner.ClientConfig) *TransactionManager {
-	tm := &TransactionManager{
+// newTransactionManager allocates a TransactionManager without publishing
+// registry callbacks. Public NewTransactionManager and SessionHandler
+// adoption bind those callbacks; USE/DETACH candidates stay unbound until
+// the live session is replaced.
+func newTransactionManager(client *spanner.Client, sysVars *systemVariables, clientConfig spanner.ClientConfig) *TransactionManager {
+	return &TransactionManager{
 		client:       client,
 		sysVars:      sysVars,
 		clientConfig: clientConfig,
 	}
+}
+
+// NewTransactionManager creates a TransactionManager and binds it as the
+// live inTransaction / TRANSACTION_TAG callbacks. SessionHandler candidate
+// construction uses newTransactionManager instead.
+func NewTransactionManager(client *spanner.Client, sysVars *systemVariables, clientConfig spanner.ClientConfig) *TransactionManager {
+	tm := newTransactionManager(client, sysVars, clientConfig)
 	bindTransactionManagerCallbacks(sysVars, tm)
 	return tm
 }
@@ -643,17 +663,21 @@ func (tm *TransactionManager) BeginReadWriteTransactionLocked(ctx context.Contex
 	tm.autoDMLGeneration++
 	tm.discardAutomaticDMLLocked()
 
-	// Set new transaction context
-	tm.tc = &transactionContext{
+	// Set new transaction context. The heartbeat loop closes over this owner so
+	// a delayed tick cannot borrow a later replacement in tm.tc (#922).
+	tc := &transactionContext{
 		attrs: transactionAttributes{
 			mode:           transactionModeReadWrite,
 			tag:            tag,
 			priority:       resolvedPriority,
 			isolationLevel: resolvedIsolationLevel,
 		},
-		txn:           txn,
-		heartbeatFunc: tm.startHeartbeat,
+		txn: txn,
 	}
+	tc.heartbeatFunc = func(ctx context.Context) {
+		tm.startHeartbeat(ctx, tc)
+	}
+	tm.tc = tc
 
 	// Heartbeat will be started by EnableHeartbeat() after the first operation.
 	// For implicit transactions, they commit immediately so heartbeat isn't needed.
@@ -1171,15 +1195,15 @@ func (tm *TransactionManager) buildQueryOptions(mode *sppb.ExecuteSqlRequest_Que
 // We send an actual heartbeat only if the read-write transaction is active and
 // at least one user-initialized SQL query has been executed on the transaction.
 // Background: https://github.com/cloudspannerecosystem/spanner-cli/issues/100
-func (tm *TransactionManager) startHeartbeat(ctx context.Context) {
-	interval := time.NewTicker(5 * time.Second)
-	defer interval.Stop()
+func (tm *TransactionManager) startHeartbeat(ctx context.Context, owner *transactionContext) {
+	ticks, stop := tm.heartbeatTickSource()
+	defer stop()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-interval.C:
+		case <-ticks:
 			// Get transaction attributes safely without holding mutex to avoid contention.
 			// This is critical for performance: the heartbeat runs every 5 seconds, and
 			// acquiring the mutex each time was causing test timeouts in parallel tests.
@@ -1193,8 +1217,16 @@ func (tm *TransactionManager) startHeartbeat(ctx context.Context) {
 
 			// Only send heartbeat if we have an active read-write transaction with heartbeat enabled
 			if attrs.mode == transactionModeReadWrite && attrs.sendHeartbeat {
-				// Use withReadWriteTransaction to safely access the transaction
-				err := tm.withReadWriteTransaction(func(txn *spanner.ReadWriteStmtBasedTransaction) error {
+				if hook := tm.heartbeatBeforeAcquire; hook != nil {
+					hook()
+				}
+				// Compare the originating owner with tm.tc under the same lock
+				// used to access the transaction. A delayed tick after A ends
+				// must exit rather than issue SELECT 1 on replacement owner B.
+				err := tm.withReadWriteTransactionContext(func(txn *spanner.ReadWriteStmtBasedTransaction, tc *transactionContext) error {
+					if tc != owner {
+						return errHeartbeatOwnerReplaced
+					}
 					// Always use LOW priority for heartbeat to avoid interfering with real work
 					err := heartbeat(txn, sppb.RequestOptions_PRIORITY_LOW)
 					if err != nil {
@@ -1202,15 +1234,26 @@ func (tm *TransactionManager) startHeartbeat(ctx context.Context) {
 					}
 					return nil
 				})
+				if hook := tm.heartbeatAfterAttempt; hook != nil {
+					hook()
+				}
 
-				// If we couldn't access the transaction, it might have been cleared
-				if err == ErrNotInReadWriteTransaction {
+				// If we couldn't access the original owner, it was cleared or replaced.
+				if errors.Is(err, ErrNotInReadWriteTransaction) || errors.Is(err, errHeartbeatOwnerReplaced) {
 					slog.Debug("heartbeat: transaction no longer active, exiting goroutine")
 					return
 				}
 			}
 		}
 	}
+}
+
+func (tm *TransactionManager) heartbeatTickSource() (<-chan time.Time, func()) {
+	if tm.heartbeatTicks != nil {
+		return tm.heartbeatTicks, func() {}
+	}
+	interval := time.NewTicker(5 * time.Second)
+	return interval.C, interval.Stop
 }
 
 // heartbeat sends a keepalive query on a read-write transaction.

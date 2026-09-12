@@ -424,6 +424,24 @@ func BuildStatementWithCommentsWithMode(stripped, raw string, mode enums.ParseMo
 	return parser(stripped, raw)
 }
 
+// statementFromNativeKind maps a normalized native kind to a Statement.
+// The bool means that kind was handled; it is not a parsing-policy option.
+func statementFromNativeKind(kind stmtkind.StatementKind, raw string) (Statement, bool) {
+	switch {
+	// DML is ExecuteSQL-compatible but must use DmlStatement, not SelectStatement.
+	case kind.IsDML():
+		return &DmlStatement{Dml: raw}, true
+	case kind.IsExportData():
+		return &ExportDataStatement{SQL: raw}, true
+	case kind.IsExecuteSQLCompatible():
+		return &SelectStatement{Query: raw}, true
+	case kind.IsDDL():
+		return &DdlStatement{Ddl: raw}, true
+	default:
+		return nil, false
+	}
+}
+
 func BuildNativeStatementMemefish(stripped, raw string) (Statement, error) {
 	stmt, err := memefish.ParseStatement("", raw)
 	if err != nil {
@@ -431,25 +449,15 @@ func BuildNativeStatementMemefish(stripped, raw string) (Statement, error) {
 	}
 
 	kind := stmtkind.DetectSemantic(stmt)
-	switch {
-	// DML statements are compatible with ExecuteSQL, but they should be executed with DmlStatement, not SelectStatement.
-	case kind.IsDML():
-		return &DmlStatement{Dml: raw}, nil
-	case kind.IsExportData():
-		return &ExportDataStatement{SQL: raw}, nil
-	// All ExecuteSQL compatible statements can be executed with SelectStatement.
-	case kind.IsExecuteSQLCompatible():
-		return &SelectStatement{Query: raw}, nil
-	case kind.IsDDL():
-		// Only CREATE DATABASE needs special treatment in DDL.
+	if kind.IsDDL() {
 		if _, ok := stmt.(*ast.CreateDatabase); ok {
 			return &CreateDatabaseStatement{CreateStatement: raw}, nil
 		}
-
-		return &DdlStatement{Ddl: raw}, nil
-	default:
-		return nil, fmt.Errorf("unknown memefish statement, stmt %T, err: %w", stmt, errStatementNotMatched)
 	}
+	if mapped, ok := statementFromNativeKind(kind, raw); ok {
+		return mapped, nil
+	}
+	return nil, fmt.Errorf("unknown memefish statement, stmt %T, err: %w", stmt, errStatementNotMatched)
 }
 
 func BuildNativeStatementLexical(stripped string, raw string) (Statement, error) {
@@ -458,25 +466,15 @@ func BuildNativeStatementLexical(stripped string, raw string) (Statement, error)
 		return nil, err
 	}
 
-	switch {
-	// DML statements are compatible with ExecuteSQL, but they should be executed with DmlStatement, not SelectStatement.
-	case kind.IsDML():
-		return &DmlStatement{Dml: raw}, nil
-	case kind.IsExportData():
-		return &ExportDataStatement{SQL: raw}, nil
-	// All ExecuteSQL compatible statements can be executed with SelectStatement.
-	case kind.IsExecuteSQLCompatible():
-		return &SelectStatement{Query: raw}, nil
-	case kind.IsDDL():
-		// Only CREATE DATABASE needs special treatment in DDL.
+	if kind.IsDDL() {
 		if createDatabaseRe.MatchString(stripped) {
 			return &CreateDatabaseStatement{CreateStatement: raw}, nil
 		}
-
-		return &DdlStatement{Ddl: raw}, nil
-	default:
-		return nil, errors.New("invalid statement")
 	}
+	if mapped, ok := statementFromNativeKind(kind, raw); ok {
+		return mapped, nil
+	}
+	return nil, errors.New("invalid statement")
 }
 
 // unquoteIdentifier strips surrounding backquotes from an argument.

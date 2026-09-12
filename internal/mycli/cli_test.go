@@ -148,6 +148,21 @@ func TestBuildCommands(t *testing.T) {
 			Input:       `SELECT 1; \! echo test`,
 			ExpectError: true, // Meta commands not supported in batch mode
 		},
+		{
+			Desc:  "CREATE DATABASE is not grouped with following DDL",
+			Input: `CREATE DATABASE d1; CREATE TABLE t1(pk INT64) PRIMARY KEY(pk);`,
+			Expected: []Statement{
+				&CreateDatabaseStatement{CreateStatement: "CREATE DATABASE d1"},
+				&BulkDdlStatement{[]string{"CREATE TABLE t1(pk INT64) PRIMARY KEY(pk)"}},
+			},
+		},
+		{
+			Desc:  "EXPORT DATA",
+			Input: `EXPORT DATA OPTIONS (format = 'CLOUD_SPANNER', table = 'Account') AS SELECT 1;`,
+			Expected: []Statement{
+				&ExportDataStatement{SQL: `EXPORT DATA OPTIONS (format = 'CLOUD_SPANNER', table = 'Account') AS SELECT 1`},
+			},
+		},
 	}
 
 	for _, test := range tests {
