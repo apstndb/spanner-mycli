@@ -536,6 +536,15 @@ func TestRollbackReadWriteIfAborted(t *testing.T) {
 	}
 }
 
+func mustNotInvokeQueryRunner(t *testing.T) queryWithStatsRunner {
+	t.Helper()
+	return func(context.Context, spanner.Statement, bool, sppb.ExecuteSqlRequest_QueryMode) (*spanner.RowIterator, *spanner.ReadOnlyTransaction, error) {
+		t.Helper()
+		t.Fatal("query runner invoked; validation should have failed first")
+		return nil, nil, errors.New("unreachable")
+	}
+}
+
 func TestExecuteSQLImplWithQueryRunnerErrorContracts(t *testing.T) {
 	t.Parallel()
 
@@ -547,18 +556,27 @@ func TestExecuteSQLImplWithQueryRunnerErrorContracts(t *testing.T) {
 		t.Parallel()
 		session := newSessionForLocalVarTest(t)
 		session.systemVariables.Internal.ProtoDescriptor = badProtoDescriptor()
-		_, err := executeSQLImplWithQueryRunner(t.Context(), session, "SELECT 1", session.systemVariables, runFail, true)
-		if err == nil {
-			t.Fatal("error = nil, want proto descriptor failure")
+		_, want := prepareFormatConfig("SELECT 1", session.systemVariables, queryRenderingFrom(session.systemVariables))
+		if want == nil {
+			t.Fatal("setup: prepareFormatConfig error = nil, want proto descriptor failure")
+		}
+		_, err := executeSQLImplWithQueryRunner(t.Context(), session, "SELECT 1", session.systemVariables, mustNotInvokeQueryRunner(t), true)
+		if err == nil || err.Error() != want.Error() {
+			t.Fatalf("error = %v, want %v", err, want)
 		}
 	})
 
 	t.Run("newStatement error", func(t *testing.T) {
 		t.Parallel()
 		session := newSessionForLocalVarTest(t)
-		_, err := executeSQLImplWithQueryRunner(t.Context(), session, "SELECT '", session.systemVariables, runFail, true)
-		if err == nil {
-			t.Fatal("error = nil, want statement parse failure")
+		const sql = "SELECT '"
+		_, want := newStatement(sql, session.systemVariables.Params, false)
+		if want == nil {
+			t.Fatal("setup: newStatement error = nil, want statement parse failure")
+		}
+		_, err := executeSQLImplWithQueryRunner(t.Context(), session, sql, session.systemVariables, mustNotInvokeQueryRunner(t), true)
+		if err == nil || err.Error() != want.Error() {
+			t.Fatalf("error = %v, want %v", err, want)
 		}
 	})
 
@@ -571,15 +589,28 @@ func TestExecuteSQLImplWithQueryRunnerErrorContracts(t *testing.T) {
 		}
 	})
 
-	t.Run("decideExecutionMode error stops iterator", func(t *testing.T) {
+	t.Run("unsupported format fails decideExecutionMode and stops the iterator", func(t *testing.T) {
 		t.Parallel()
 		session, live := newQueryCacheRPCSession(t, testQueryPlan(t), map[string]any{"query": "B"}, nil)
 		live.Display.CLIFormat = enums.DisplayMode(999)
 		var buf bytes.Buffer
 		live.StreamManager = streamio.NewStreamManager(io.NopCloser(strings.NewReader("")), &buf, io.Discard)
-		_, err := executeSQLImplWithQueryRunner(t.Context(), session, sqlExportSelectUsers, live, session.txn.RunQueryWithStats, true)
+		var iter *spanner.RowIterator
+		run := func(ctx context.Context, stmt spanner.Statement, implicit bool, mode sppb.ExecuteSqlRequest_QueryMode) (*spanner.RowIterator, *spanner.ReadOnlyTransaction, error) {
+			it, roTxn, err := session.txn.RunQueryWithStats(ctx, stmt, implicit, mode)
+			iter = it
+			return it, roTxn, err
+		}
+		_, err := executeSQLImplWithQueryRunner(t.Context(), session, sqlExportSelectUsers, live, run, true)
 		if err == nil || !strings.Contains(err.Error(), "unsupported streaming mode") {
 			t.Fatalf("error = %v, want unsupported streaming mode", err)
+		}
+		if iter == nil {
+			t.Fatal("runner did not return an iterator")
+		}
+		_, nextErr := iter.Next()
+		if nextErr == nil || spanner.ErrCode(nextErr) != codes.FailedPrecondition || !strings.Contains(nextErr.Error(), "Next called after Stop") {
+			t.Fatalf("iterator Next() = %v, want Stop (FailedPrecondition Next called after Stop)", nextErr)
 		}
 	})
 
