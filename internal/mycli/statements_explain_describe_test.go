@@ -891,7 +891,7 @@ func TestExplainLastQueryStatement_Execute(t *testing.T) {
 				t.Errorf("Execute() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if diff := cmp.Diff(got, tt.want); diff != "" {
+			if diff := cmp.Diff(got, tt.want, cmp.AllowUnexported(ResultBody{})); diff != "" {
 				t.Errorf("Execute() diff = %v", diff)
 				return
 			}
@@ -1075,7 +1075,7 @@ func TestShowPlanNodeStatement_Execute(t *testing.T) {
 				AffectedRows: 2,
 				TableHeader:  toTableHeader(fmt.Sprintf("Content of Node %v", tt.statement.NodeID)), Body: PresentationBody(sliceOf(toRow(tt.wantContent), toRow(wantIncoming))),
 			}
-			if diff := cmp.Diff(got, want); diff != "" {
+			if diff := cmp.Diff(got, want, cmp.AllowUnexported(ResultBody{})); diff != "" {
 				t.Errorf("Execute() diff = %v", diff)
 				return
 			}
