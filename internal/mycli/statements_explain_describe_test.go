@@ -27,6 +27,34 @@ import (
 
 // Test helpers for explain/describe statements
 
+func TestTemplateMapFuncConcurrent(t *testing.T) {
+	t.Parallel()
+	render, err := templateMapFunc("concurrent", `{{if eq .Rows.Total "bad"}}{{index .Rows.Histogram 0}}{{else}}{{.Rows.Total}}{{end}}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range 32 {
+		t.Run(fmt.Sprint(i), func(t *testing.T) {
+			t.Parallel()
+			want := fmt.Sprint(i)
+			if i%2 == 0 {
+				want = "bad"
+			}
+			row := plantree.RowWithPredicates{ExecutionStats: stats.ExecutionStats{Rows: stats.ExecutionStatsValue{Total: want}}}
+			for range 20 {
+				got, err := render(row)
+				if want == "bad" {
+					if err == nil || got != "" {
+						t.Fatalf("failed template: got %q, error %v", got, err)
+					}
+				} else if err != nil || got != want {
+					t.Fatalf("got %q, error %v; want %q", got, err, want)
+				}
+			}
+		})
+	}
+}
+
 func mustNewStruct(m map[string]interface{}) *structpb.Struct {
 	if s, err := structpb.NewStruct(m); err != nil {
 		panic(err)
