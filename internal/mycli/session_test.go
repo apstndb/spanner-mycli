@@ -148,6 +148,11 @@ func TestNewSessionClosesClientWhenAdminClientCreationFails(t *testing.T) {
 				Database: "test-database",
 			},
 		},
+		ConnectionVars{
+			Project:  "test-project",
+			Instance: "test-instance",
+			Database: "test-database",
+		},
 		func(context.Context, string, spanner.ClientConfig, ...option.ClientOption) (*spanner.Client, error) {
 			return fakeClient, nil
 		},
@@ -352,6 +357,7 @@ func TestNewSessionWithFactoriesUsesEmbeddedClientConfig(t *testing.T) {
 	session, err := newSessionWithFactories(
 		context.Background(),
 		sysVars,
+		sysVars.Connection,
 		func(_ context.Context, _ string, cfg spanner.ClientConfig, _ ...option.ClientOption) (*spanner.Client, error) {
 			gotConfig = cfg
 			return &spanner.Client{}, nil
@@ -408,6 +414,7 @@ func TestNewSessionWithFactoriesDoesNotAppendInsecureForEmbeddedOptions(t *testi
 	session, err := newSessionWithFactories(
 		context.Background(),
 		sysVars,
+		sysVars.Connection,
 		func(_ context.Context, _ string, _ spanner.ClientConfig, opts ...option.ClientOption) (*spanner.Client, error) {
 			gotOpts = append([]option.ClientOption(nil), opts...)
 			return &spanner.Client{}, nil
@@ -426,5 +433,252 @@ func TestNewSessionWithFactoriesDoesNotAppendInsecureForEmbeddedOptions(t *testi
 	}
 	if len(gotOpts) != len(sysVars.Config.EmbeddedClientOptions)+len(defaultClientOpts) {
 		t.Fatalf("len(opts) = %d, want %d", len(gotOpts), len(sysVars.Config.EmbeddedClientOptions)+len(defaultClientOpts))
+	}
+}
+
+func TestSessionConstructionIdentityIndependentOfLiveConnection(t *testing.T) {
+	t.Parallel()
+
+	identityA := ConnectionVars{
+		Project:  "project-a",
+		Instance: "instance-a",
+		Database: "database-a",
+		Role:     "role-a",
+	}
+	identityB := ConnectionVars{
+		Project:  "project-b",
+		Instance: "instance-b",
+		Database: "database-b",
+		Role:     "role-b",
+	}
+	directedRead := &sppb.DirectedReadOptions{}
+	sysVars := &systemVariables{
+		Connection: identityA,
+		Query:      QueryVars{DirectedRead: directedRead},
+	}
+
+	var pathA string
+	var configA spanner.ClientConfig
+	var clientOptsA, adminOptsA []option.ClientOption
+	sessionA, err := newSessionWithFactories(
+		t.Context(),
+		sysVars,
+		sysVars.Connection,
+		func(_ context.Context, dbPath string, cfg spanner.ClientConfig, opts ...option.ClientOption) (*spanner.Client, error) {
+			pathA = dbPath
+			configA = cfg
+			clientOptsA = append([]option.ClientOption(nil), opts...)
+			return &spanner.Client{}, nil
+		},
+		func(_ context.Context, opts ...option.ClientOption) (*adminapi.DatabaseAdminClient, error) {
+			adminOptsA = append([]option.ClientOption(nil), opts...)
+			return &adminapi.DatabaseAdminClient{}, nil
+		},
+		func(*spanner.Client) {},
+	)
+	if err != nil {
+		t.Fatalf("construct session A: %v", err)
+	}
+	if pathA != identityA.DatabasePath() {
+		t.Fatalf("client path = %q, want %q", pathA, identityA.DatabasePath())
+	}
+	if configA.DatabaseRole != identityA.Role {
+		t.Fatalf("DatabaseRole = %q, want %q", configA.DatabaseRole, identityA.Role)
+	}
+	if diff := cmp.Diff(directedRead, configA.DirectedReadOptions, protocmp.Transform()); diff != "" {
+		t.Errorf("DirectedReadOptions mismatch (-want +got):\n%s", diff)
+	}
+	if len(clientOptsA) != len(adminOptsA) {
+		t.Fatalf("client opts %d, admin opts %d", len(clientOptsA), len(adminOptsA))
+	}
+	if sessionA.DatabasePath() != identityA.DatabasePath() {
+		t.Fatalf("session A DatabasePath = %q, want %q", sessionA.DatabasePath(), identityA.DatabasePath())
+	}
+	if sessionA.InstancePath() != identityA.InstancePath() {
+		t.Fatalf("session A InstancePath = %q, want %q", sessionA.InstancePath(), identityA.InstancePath())
+	}
+	if sessionA.ProjectID() != identityA.Project {
+		t.Fatalf("session A ProjectID = %q, want %q", sessionA.ProjectID(), identityA.Project)
+	}
+
+	sysVars.Connection = identityB
+	if sysVars.DatabasePath() != identityB.DatabasePath() {
+		t.Fatalf("live DatabasePath = %q, want %q", sysVars.DatabasePath(), identityB.DatabasePath())
+	}
+	if sessionA.DatabasePath() != identityA.DatabasePath() {
+		t.Fatalf("session A DatabasePath after live mutation = %q, want %q", sessionA.DatabasePath(), identityA.DatabasePath())
+	}
+	if sessionA.InstancePath() != identityA.InstancePath() {
+		t.Fatalf("session A InstancePath after live mutation = %q, want %q", sessionA.InstancePath(), identityA.InstancePath())
+	}
+	if sessionA.clientConfig.DatabaseRole != identityA.Role {
+		t.Fatalf("session A DatabaseRole after live mutation = %q, want %q", sessionA.clientConfig.DatabaseRole, identityA.Role)
+	}
+	if sessionA.ProjectID() != identityA.Project {
+		t.Fatalf("session A ProjectID after live mutation = %q, want %q", sessionA.ProjectID(), identityA.Project)
+	}
+
+	var pathB string
+	var configB spanner.ClientConfig
+	sessionB, err := newSessionWithFactories(
+		t.Context(),
+		sysVars,
+		sysVars.Connection,
+		func(_ context.Context, dbPath string, cfg spanner.ClientConfig, _ ...option.ClientOption) (*spanner.Client, error) {
+			pathB = dbPath
+			configB = cfg
+			return &spanner.Client{}, nil
+		},
+		func(context.Context, ...option.ClientOption) (*adminapi.DatabaseAdminClient, error) {
+			return &adminapi.DatabaseAdminClient{}, nil
+		},
+		func(*spanner.Client) {},
+	)
+	if err != nil {
+		t.Fatalf("construct session B: %v", err)
+	}
+	if pathB != identityB.DatabasePath() {
+		t.Fatalf("client path B = %q, want %q", pathB, identityB.DatabasePath())
+	}
+	if configB.DatabaseRole != identityB.Role {
+		t.Fatalf("session B DatabaseRole = %q, want %q", configB.DatabaseRole, identityB.Role)
+	}
+	if sessionB.DatabasePath() != identityB.DatabasePath() {
+		t.Fatalf("session B DatabasePath = %q, want %q", sessionB.DatabasePath(), identityB.DatabasePath())
+	}
+	if sessionA.DatabasePath() != identityA.DatabasePath() {
+		t.Fatalf("session A DatabasePath after constructing B = %q, want %q", sessionA.DatabasePath(), identityA.DatabasePath())
+	}
+
+	var explicitPath string
+	var explicitConfig spanner.ClientConfig
+	explicit, err := newSessionWithFactories(
+		t.Context(),
+		sysVars,
+		identityA,
+		func(_ context.Context, dbPath string, cfg spanner.ClientConfig, _ ...option.ClientOption) (*spanner.Client, error) {
+			explicitPath = dbPath
+			explicitConfig = cfg
+			return &spanner.Client{}, nil
+		},
+		func(context.Context, ...option.ClientOption) (*adminapi.DatabaseAdminClient, error) {
+			return &adminapi.DatabaseAdminClient{}, nil
+		},
+		func(*spanner.Client) {},
+	)
+	if err != nil {
+		t.Fatalf("construct explicit identity A while live is B: %v", err)
+	}
+	if sysVars.DatabasePath() != identityB.DatabasePath() {
+		t.Fatalf("explicit construction mutated live DatabasePath = %q, want %q", sysVars.DatabasePath(), identityB.DatabasePath())
+	}
+	if explicitPath != identityA.DatabasePath() {
+		t.Fatalf("explicit client path = %q, want %q", explicitPath, identityA.DatabasePath())
+	}
+	if explicitConfig.DatabaseRole != identityA.Role {
+		t.Fatalf("explicit DatabaseRole = %q, want %q", explicitConfig.DatabaseRole, identityA.Role)
+	}
+	if explicit.DatabasePath() != identityA.DatabasePath() {
+		t.Fatalf("explicit session DatabasePath = %q, want %q", explicit.DatabasePath(), identityA.DatabasePath())
+	}
+}
+
+func TestAdminSessionConstructionIdentityIndependentOfLiveConnection(t *testing.T) {
+	t.Parallel()
+
+	identityA := ConnectionVars{
+		Project:  "project-a",
+		Instance: "instance-a",
+		Role:     "role-a",
+	}
+	identityB := ConnectionVars{
+		Project:  "project-b",
+		Instance: "instance-b",
+		Role:     "role-b",
+	}
+	sysVars := &systemVariables{Connection: identityA}
+
+	sessionA, err := newAdminSessionWithFactories(
+		t.Context(),
+		sysVars,
+		sysVars.Connection,
+		func(context.Context, ...option.ClientOption) (*adminapi.DatabaseAdminClient, error) {
+			return &adminapi.DatabaseAdminClient{}, nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("construct detached session A: %v", err)
+	}
+	if !sessionA.IsDetached() {
+		t.Fatal("session A mode: want detached")
+	}
+	if sessionA.InstancePath() != identityA.InstancePath() {
+		t.Fatalf("session A InstancePath = %q, want %q", sessionA.InstancePath(), identityA.InstancePath())
+	}
+	if sessionA.DatabasePath() != identityA.DatabasePath() {
+		t.Fatalf("session A DatabasePath = %q, want %q", sessionA.DatabasePath(), identityA.DatabasePath())
+	}
+	if sessionA.clientConfig.DatabaseRole != identityA.Role {
+		t.Fatalf("session A DatabaseRole = %q, want %q", sessionA.clientConfig.DatabaseRole, identityA.Role)
+	}
+
+	sysVars.Connection = identityB
+	if sysVars.InstancePath() != identityB.InstancePath() {
+		t.Fatalf("live InstancePath = %q, want %q", sysVars.InstancePath(), identityB.InstancePath())
+	}
+	if sessionA.InstancePath() != identityA.InstancePath() {
+		t.Fatalf("session A InstancePath after live mutation = %q, want %q", sessionA.InstancePath(), identityA.InstancePath())
+	}
+	if sessionA.clientConfig.DatabaseRole != identityA.Role {
+		t.Fatalf("session A DatabaseRole after live mutation = %q, want %q", sessionA.clientConfig.DatabaseRole, identityA.Role)
+	}
+
+	sessionB, err := newAdminSessionWithFactories(
+		t.Context(),
+		sysVars,
+		identityB,
+		func(context.Context, ...option.ClientOption) (*adminapi.DatabaseAdminClient, error) {
+			return &adminapi.DatabaseAdminClient{}, nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("construct detached session B: %v", err)
+	}
+	if !sessionB.IsDetached() {
+		t.Fatal("session B mode: want detached")
+	}
+	if sessionB.InstancePath() != identityB.InstancePath() {
+		t.Fatalf("session B InstancePath = %q, want %q", sessionB.InstancePath(), identityB.InstancePath())
+	}
+	if sessionA.InstancePath() != identityA.InstancePath() {
+		t.Fatalf("session A InstancePath after constructing B = %q, want %q", sessionA.InstancePath(), identityA.InstancePath())
+	}
+}
+
+func TestNewAdminSessionWithFactoriesClosesNothingWhenAdminCreationFails(t *testing.T) {
+	t.Parallel()
+
+	expectedErr := errors.New("admin client creation failed")
+	session, err := newAdminSessionWithFactories(
+		t.Context(),
+		&systemVariables{
+			Connection: ConnectionVars{
+				Project:  "test-project",
+				Instance: "test-instance",
+			},
+		},
+		ConnectionVars{
+			Project:  "test-project",
+			Instance: "test-instance",
+		},
+		func(context.Context, ...option.ClientOption) (*adminapi.DatabaseAdminClient, error) {
+			return nil, expectedErr
+		},
+	)
+	if !errors.Is(err, expectedErr) {
+		t.Fatalf("newAdminSessionWithFactories() error = %v, want %v", err, expectedErr)
+	}
+	if session != nil {
+		t.Fatalf("newAdminSessionWithFactories() session = %#v, want nil", session)
 	}
 }

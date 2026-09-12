@@ -418,11 +418,11 @@ func TestInstanceExists(t *testing.T) {
 	})
 
 	t.Run("nonexistent instance", func(t *testing.T) {
-		// Temporarily point the session at an instance that does not exist so
-		// the databases.list call resolves to NotFound.
-		orig := session.systemVariables.Connection.Instance
-		session.systemVariables.Connection.Instance = "nonexistent-instance"
-		defer func() { session.systemVariables.Connection.Instance = orig }()
+		// Temporarily point the session identity at an instance that does not
+		// exist so the databases.list call resolves to NotFound.
+		orig := session.connection.Instance
+		session.connection.Instance = "nonexistent-instance"
+		defer func() { session.connection.Instance = orig }()
 
 		exists, err := session.InstanceExists(ctx)
 		if err != nil {

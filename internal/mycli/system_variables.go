@@ -84,12 +84,26 @@ type StartupConfig struct {
 
 // ConnectionVars holds the connection identity. Project and Instance are fixed
 // at startup; Database and Role are mutated in place only by USE/DETACH
-// (SessionHandler.switchSession).
+// (SessionHandler.switchSession). These live fields are the values shown by
+// the registry. Each Session stores a copy captured at construction and uses that
+// copy for client and administrative resource paths.
 type ConnectionVars struct {
 	Project  string // CLI_PROJECT
 	Instance string // CLI_INSTANCE
 	Database string // CLI_DATABASE
 	Role     string // CLI_ROLE
+}
+
+func (c ConnectionVars) ProjectPath() string {
+	return projectPath(c.Project)
+}
+
+func (c ConnectionVars) InstancePath() string {
+	return instancePath(c.Project, c.Instance)
+}
+
+func (c ConnectionVars) DatabasePath() string {
+	return databasePath(c.Project, c.Instance, c.Database)
 }
 
 // LastResult holds outputs of the most recently executed statement or
@@ -334,15 +348,15 @@ func databasePath(projectID, instanceID, databaseID string) string {
 }
 
 func (sv *systemVariables) InstancePath() string {
-	return instancePath(sv.Connection.Project, sv.Connection.Instance)
+	return sv.Connection.InstancePath()
 }
 
 func (sv *systemVariables) DatabasePath() string {
-	return databasePath(sv.Connection.Project, sv.Connection.Instance, sv.Connection.Database)
+	return sv.Connection.DatabasePath()
 }
 
 func (sv *systemVariables) ProjectPath() string {
-	return projectPath(sv.Connection.Project)
+	return sv.Connection.ProjectPath()
 }
 
 // newSystemVariablesWithDefaults creates a new systemVariables instance with default values.
