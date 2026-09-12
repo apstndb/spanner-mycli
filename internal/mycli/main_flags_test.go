@@ -2706,9 +2706,9 @@ func TestInitCommandFlags(t *testing.T) {
 	}
 
 	got := collectStartupSQL(&gopts.Spanner)
-	want := "SET CLI_PROMPT = 'one';\nSET CLI_PROMPT2 = 'two';\nSET CLI_VERBOSE = TRUE;"
-	if got != want {
-		t.Errorf("collectStartupSQL() = %q, want %q", got, want)
+	want := []string{"SET CLI_PROMPT = 'one'", "SET CLI_PROMPT2 = 'two'", "SET CLI_VERBOSE = TRUE"}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("collectStartupSQL() mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -2718,20 +2718,34 @@ func TestCollectStartupSQL_skipsEmpty(t *testing.T) {
 		InitCommand:    "   ",
 		InitCommandAdd: []string{"", "SET CLI_PROMPT = 'x'", " \t "},
 	})
-	if got != "SET CLI_PROMPT = 'x';" {
-		t.Errorf("collectStartupSQL() = %q", got)
+	if diff := cmp.Diff([]string{"SET CLI_PROMPT = 'x'"}, got); diff != "" {
+		t.Errorf("collectStartupSQL() mismatch (-want +got):\n%s", diff)
 	}
 
 	quoted := collectStartupSQL(&spannerOptions{InitCommand: "SET CLI_PROMPT = 'a;b'"})
-	if quoted != "SET CLI_PROMPT = 'a;b';" {
-		t.Errorf("quoted semicolon collectStartupSQL() = %q", quoted)
+	if diff := cmp.Diff([]string{"SET CLI_PROMPT = 'a;b'"}, quoted); diff != "" {
+		t.Errorf("quoted semicolon collectStartupSQL() mismatch (-want +got):\n%s", diff)
 	}
+}
 
-	alreadyTerminated := collectStartupSQL(&spannerOptions{
-		InitCommand:    "SET CLI_PROMPT = 'one';",
-		InitCommandAdd: []string{"SET CLI_PROMPT2 = 'two';"},
-	})
-	if alreadyTerminated != "SET CLI_PROMPT = 'one';\nSET CLI_PROMPT2 = 'two';" {
-		t.Errorf("already-terminated collectStartupSQL() = %q", alreadyTerminated)
+func TestInitCommandAdd_preservesCommas(t *testing.T) {
+	t.Parallel()
+
+	gopts, err := parseAndValidate(withRequiredFlags(
+		"--init-command-add", "SET CLI_PROMPT = 'a,b'",
+		"--init-command-add", "SELECT a, b FROM t",
+		"--init-command-add", "CREATE TABLE t (id INT64, name STRING(MAX))",
+		"--execute", "SELECT 1",
+	))
+	if err != nil {
+		t.Fatalf("parseAndValidate: %v", err)
+	}
+	wantAdd := []string{
+		"SET CLI_PROMPT = 'a,b'",
+		"SELECT a, b FROM t",
+		"CREATE TABLE t (id INT64, name STRING(MAX))",
+	}
+	if diff := cmp.Diff(wantAdd, gopts.Spanner.InitCommandAdd); diff != "" {
+		t.Errorf("InitCommandAdd mismatch (-want +got):\n%s", diff)
 	}
 }

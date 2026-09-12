@@ -313,17 +313,18 @@ func (c *Cli) executeSourceFile(ctx context.Context, filePath string) error {
 }
 
 // executeStartupSQL runs --init-command / --init-command-add after connect.
-// Failures abort startup. EXIT is rejected so an init script cannot close the
-// session before the main input or interactive loop.
-func (c *Cli) executeStartupSQL(ctx context.Context, sql string) error {
-	if strings.TrimSpace(sql) == "" {
-		return nil
-	}
-
-	stmts, err := buildCommands(sql, c.SystemVariables.Query.BuildStatementMode)
-	if err != nil {
-		c.PrintBatchError(err)
-		return NewExitCodeError(exitCodeError)
+// Each flag value is parsed on its own so adjacent flags cannot glue across a
+// trailing line comment. Failures abort startup. EXIT is rejected so an init
+// script cannot close the session before the main input or interactive loop.
+func (c *Cli) executeStartupSQL(ctx context.Context, parts []string) error {
+	var stmts []Statement
+	for _, sql := range parts {
+		parsed, err := buildCommands(sql, c.SystemVariables.Query.BuildStatementMode)
+		if err != nil {
+			c.PrintBatchError(err)
+			return NewExitCodeError(exitCodeError)
+		}
+		stmts = append(stmts, parsed...)
 	}
 
 	for _, stmt := range stmts {

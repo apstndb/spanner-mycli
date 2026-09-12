@@ -116,7 +116,7 @@ type spannerOptions struct {
 	// after connect and before --file/--execute or the interactive loop.
 	// --init-command-add is repeatable and is not a teardown hook.
 	InitCommand         string            `name:"init-command" help:"SQL to execute after connecting, before other input. Failure aborts startup."`
-	InitCommandAdd      []string          `name:"init-command-add" help:"Additional startup SQL (repeatable). Appended after --init-command. Failure aborts startup."`
+	InitCommandAdd      []string          `name:"init-command-add" sep:"none" help:"Additional startup SQL (repeatable). Appended after --init-command. Failure aborts startup."`
 	Table               bool              `name:"table" short:"t" help:"Display output in table format for batch mode."`
 	HTML                bool              `name:"html" help:"Display output in HTML format."`
 	XML                 bool              `name:"xml" help:"Display output in XML format."`
@@ -787,30 +787,24 @@ func readStdinCapped(stdin io.Reader, maxSize int64) (string, error) {
 	return string(data), nil
 }
 
-// collectStartupSQL concatenates --init-command then each --init-command-add
-// in flag order. Each flag value is one SQL argument: a terminator is added
-// between values so adjacent flags do not glue together. Splitting inside a
-// value is left to separateInput/buildCommands, including quoted semicolons.
-func collectStartupSQL(opts *spannerOptions) string {
-	var b strings.Builder
+// collectStartupSQL returns --init-command then each --init-command-add in
+// flag order. Each value is parsed independently later; they are not
+// concatenated, so a trailing line comment cannot swallow the next flag and
+// a semicolon inside a comment is not treated as a terminator.
+func collectStartupSQL(opts *spannerOptions) []string {
+	var parts []string
 	appendStartupPart := func(part string) {
-		s := strings.TrimRight(part, " \t\r\n")
-		if strings.TrimSpace(s) == "" {
+		s := strings.TrimSpace(part)
+		if s == "" {
 			return
 		}
-		if b.Len() > 0 {
-			b.WriteByte('\n')
-		}
-		b.WriteString(s)
-		if !strings.HasSuffix(s, ";") {
-			b.WriteByte(';')
-		}
+		parts = append(parts, s)
 	}
 	appendStartupPart(opts.InitCommand)
 	for _, s := range opts.InitCommandAdd {
 		appendStartupPart(s)
 	}
-	return b.String()
+	return parts
 }
 
 // determineInputAndMode decides whether to run in interactive or batch mode

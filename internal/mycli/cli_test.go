@@ -1809,11 +1809,11 @@ func TestCli_executeStartupSQL(t *testing.T) {
 
 	t.Run("runs init-command then init-command-add", func(t *testing.T) {
 		cli := newCli(t)
-		sql := collectStartupSQL(&spannerOptions{
+		parts := collectStartupSQL(&spannerOptions{
 			InitCommand:    "SET CLI_PROMPT = 'before'",
 			InitCommandAdd: []string{"SET CLI_PROMPT = 'after'"},
 		})
-		if err := cli.executeStartupSQL(context.Background(), sql); err != nil {
+		if err := cli.executeStartupSQL(context.Background(), parts); err != nil {
 			t.Fatalf("executeStartupSQL: %v", err)
 		}
 		if cli.SystemVariables.Display.Prompt != "after" {
@@ -1823,7 +1823,7 @@ func TestCli_executeStartupSQL(t *testing.T) {
 
 	t.Run("quoted semicolon stays one statement", func(t *testing.T) {
 		cli := newCli(t)
-		if err := cli.executeStartupSQL(context.Background(), "SET CLI_PROMPT = 'a;b'"); err != nil {
+		if err := cli.executeStartupSQL(context.Background(), []string{"SET CLI_PROMPT = 'a;b'"}); err != nil {
 			t.Fatalf("executeStartupSQL: %v", err)
 		}
 		if cli.SystemVariables.Display.Prompt != "a;b" {
@@ -1831,9 +1831,43 @@ func TestCli_executeStartupSQL(t *testing.T) {
 		}
 	})
 
+	t.Run("trailing line comment does not swallow the next flag", func(t *testing.T) {
+		cli := newCli(t)
+		parts := collectStartupSQL(&spannerOptions{
+			InitCommand:    "SET CLI_PROMPT2 = 'from-first' -- trailing comment",
+			InitCommandAdd: []string{"SET CLI_PROMPT = 'second'"},
+		})
+		if err := cli.executeStartupSQL(context.Background(), parts); err != nil {
+			t.Fatalf("executeStartupSQL: %v", err)
+		}
+		if cli.SystemVariables.Display.Prompt2 != "from-first" {
+			t.Errorf("CLI_PROMPT2 = %q, want from-first", cli.SystemVariables.Display.Prompt2)
+		}
+		if cli.SystemVariables.Display.Prompt != "second" {
+			t.Errorf("CLI_PROMPT = %q, want second", cli.SystemVariables.Display.Prompt)
+		}
+	})
+
+	t.Run("quoted comma survives the flag parser", func(t *testing.T) {
+		cli := newCli(t)
+		gopts, err := parseAndValidate(withRequiredFlags(
+			"--init-command-add", "SET CLI_PROMPT = 'a,b'",
+			"--execute", "SELECT 1",
+		))
+		if err != nil {
+			t.Fatalf("parseAndValidate: %v", err)
+		}
+		if err := cli.executeStartupSQL(context.Background(), collectStartupSQL(&gopts.Spanner)); err != nil {
+			t.Fatalf("executeStartupSQL: %v", err)
+		}
+		if cli.SystemVariables.Display.Prompt != "a,b" {
+			t.Errorf("CLI_PROMPT = %q, want a,b", cli.SystemVariables.Display.Prompt)
+		}
+	})
+
 	t.Run("parse failure aborts before execution", func(t *testing.T) {
 		cli := newCli(t)
-		err := cli.executeStartupSQL(context.Background(), "SET CLI_PROMPT = 'changed';\nINVALID SYNTAX;")
+		err := cli.executeStartupSQL(context.Background(), []string{"SET CLI_PROMPT = 'changed';\nINVALID SYNTAX;"})
 		if GetExitCode(err) != exitCodeError {
 			t.Fatalf("error = %v, want parse failure exit", err)
 		}
@@ -1844,7 +1878,7 @@ func TestCli_executeStartupSQL(t *testing.T) {
 
 	t.Run("EXIT is rejected without closing the session", func(t *testing.T) {
 		cli := newCli(t)
-		err := cli.executeStartupSQL(context.Background(), "SET CLI_PROMPT = 'before'; EXIT; SET CLI_PROMPT = 'after';")
+		err := cli.executeStartupSQL(context.Background(), []string{"SET CLI_PROMPT = 'before'; EXIT; SET CLI_PROMPT = 'after';"})
 		if GetExitCode(err) != exitCodeError {
 			t.Fatalf("error = %v, want EXIT rejection", err)
 		}
