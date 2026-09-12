@@ -26,6 +26,43 @@ import (
 	"github.com/apstndb/spanner-mycli/enums"
 )
 
+func (r *Result) presentationRows() []Row {
+	if r == nil {
+		return nil
+	}
+	rows, ok := r.Body.PresentationRows()
+	if !ok {
+		return nil
+	}
+	return rows
+}
+
+func (r *Result) typedPayload() *TypedRows {
+	if r == nil {
+		return nil
+	}
+	typed, ok := r.Body.Typed()
+	if !ok {
+		return nil
+	}
+	return typed
+}
+
+func (r *Result) preparedOutput() []byte {
+	if r == nil {
+		return nil
+	}
+	output, ok := r.Body.PreparedBytes()
+	if !ok {
+		return nil
+	}
+	return output
+}
+
+func (r *Result) alreadyDelivered() bool {
+	return r != nil && r.Body.AlreadyDelivered()
+}
+
 func deliveredBodyIf(delivered bool) ResultBody {
 	if delivered {
 		return DeliveredBody()
