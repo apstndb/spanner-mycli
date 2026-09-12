@@ -56,16 +56,14 @@ func writeTypedRows(out io.Writer, sysVars *systemVariables, result *Result) err
 		return err
 	}
 
+	opts := exportWriterOptionsFrom(sysVars)
 	// Apply the per-query auto-detected table name (Result.SQLTableNameForExport)
-	// for SQL export without mutating the caller's systemVariables.
-	sv := sysVars
-	if n := result.SQLTableNameForExport; n != "" && sv.Display.SQLTableName != n {
-		tmp := *sv
-		tmp.Display.SQLTableName = n
-		sv = &tmp
+	// for SQL export without copying or mutating the caller's systemVariables.
+	if n := result.SQLTableNameForExport; n != "" {
+		opts.SQLTableName = n
 	}
 
-	w, handled, err := newSpanvalueRowIteratorWriterFor(out, sv, fc)
+	w, handled, err := newSpanvalueRowIteratorWriterFor(out, opts, fc)
 	if err != nil {
 		return err
 	}
@@ -74,7 +72,7 @@ func writeTypedRows(out io.Writer, sysVars *systemVariables, result *Result) err
 		// formats with a non-nil out, so newSpanvalueRowIteratorWriterFor must
 		// handle them. Fail loudly rather than silently drop rows if the two
 		// format sets ever diverge.
-		return fmt.Errorf("no spanvalue writer for typed replay in format %v", sv.Display.CLIFormat)
+		return fmt.Errorf("no spanvalue writer for typed replay in format %v", opts.CLIFormat)
 	}
 	if _, err := writer.WriteRowSeq(result.Typed.Metadata, writer.RowSeq(result.Typed.Rows...), w); err != nil {
 		return normalizeSpanvalueWriterError(err)

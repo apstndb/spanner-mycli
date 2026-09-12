@@ -26,6 +26,7 @@ func newSessionForLocalVarTest(t *testing.T) *Session {
 	session := &Session{
 		mode:            DatabaseConnected,
 		systemVariables: sysVars,
+		connection:      sysVars.Connection,
 		txn:             NewTransactionManager(nil, sysVars, spanner.ClientConfig{}),
 	}
 	sysVars.inTransaction = session.txn.InTransaction
