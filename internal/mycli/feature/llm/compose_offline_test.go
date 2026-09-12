@@ -16,6 +16,7 @@ package llm
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -85,20 +86,34 @@ func TestBuildDocCache(t *testing.T) {
 	})
 }
 
+func TestGeminiComposeQueryWithToolsMissingAPIKey(t *testing.T) {
+	// Not parallel: t.Setenv cannot run under a parallel parent, and the SDK
+	// falls back to GOOGLE_API_KEY / GEMINI_API_KEY when ClientConfig.APIKey is empty.
+	t.Setenv("GOOGLE_API_KEY", "")
+	t.Setenv("GEMINI_API_KEY", "")
+
+	ddl := &adminpb.GetDatabaseDdlResponse{
+		Statements: []string{"CREATE TABLE Singers (SingerId INT64) PRIMARY KEY (SingerId)"},
+	}
+	cfg := &genai.ClientConfig{
+		Backend: genai.BackendGeminiAPI,
+		HTTPClient: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			return nil, errOfflineHTTP
+		})},
+		HTTPOptions: genai.HTTPOptions{BaseURL: "http://127.0.0.1:1"},
+	}
+	_, err := geminiComposeQueryWithTools(t.Context(), ddl, cfg, defaultVertexAIModel, thinkingLevelUnspecified, "list singers", nil, false)
+	if err == nil || !strings.Contains(err.Error(), "api key is required") {
+		t.Fatalf("error = %v, want api key required", err)
+	}
+}
+
 func TestGeminiComposeQueryWithToolsOffline(t *testing.T) {
 	t.Parallel()
 
 	ddl := &adminpb.GetDatabaseDdlResponse{
 		Statements: []string{"CREATE TABLE Singers (SingerId INT64) PRIMARY KEY (SingerId)"},
 	}
-
-	t.Run("missing API key", func(t *testing.T) {
-		t.Parallel()
-		_, err := geminiComposeQueryWithTools(t.Context(), ddl, &genai.ClientConfig{Backend: genai.BackendGeminiAPI}, defaultVertexAIModel, thinkingLevelUnspecified, "list singers", nil, false)
-		if err == nil || !strings.Contains(err.Error(), "api key is required") {
-			t.Fatalf("error = %v, want api key required", err)
-		}
-	})
 
 	t.Run("invalid proto descriptors", func(t *testing.T) {
 		t.Parallel()
@@ -200,6 +215,12 @@ func TestGeminiComposeQueryWithToolsOffline(t *testing.T) {
 		}
 	})
 }
+
+var errOfflineHTTP = errors.New("offline test: unexpected HTTP request")
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
 func fakeGeminiClientConfig(server *httptest.Server) *genai.ClientConfig {
 	return &genai.ClientConfig{
