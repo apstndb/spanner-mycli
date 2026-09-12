@@ -323,7 +323,7 @@ func (c *Cli) executeStartupSQL(ctx context.Context, parts []string) error {
 			c.PrintBatchError(errors.New("EXIT is not allowed in --init-command"))
 			return NewExitCodeError(exitCodeError)
 		}
-		if _, err := c.executeStatement(ctx, cmd.stmt, false, cmd.echoText(), c.GetWriter()); err != nil {
+		if _, err := c.executeStatement(ctx, cmd.stmt, false, "", c.GetWriter()); err != nil {
 			c.PrintBatchError(err)
 			return NewExitCodeError(exitCodeError)
 		}
