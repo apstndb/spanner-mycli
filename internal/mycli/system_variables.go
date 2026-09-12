@@ -83,8 +83,8 @@ type StartupConfig struct {
 }
 
 // ConnectionVars holds the connection identity. Project and Instance are fixed
-// at startup; Database and Role are mutated in place only by USE/DETACH
-// (SessionHandler.switchSession). These live fields are the values shown by
+// at startup; Database and Role are published on successful USE/DETACH
+// (SessionHandler.adoptSession). These live fields are the values shown by
 // the registry. Each Session stores a copy captured at construction and uses that
 // copy for client and administrative resource paths.
 type ConnectionVars struct {
@@ -225,8 +225,8 @@ type InternalVars struct {
 //     mutated through the Registry (and transaction-scoped via SET LOCAL)
 //
 // There is exactly one live instance per process: the Registry captures
-// pointers into this struct, so it must never be copied (USE/DETACH mutate it
-// in place; see SessionHandler.switchSession).
+// pointers into this struct, so it must never be copied (successful USE/DETACH
+// mutate Database/Role in place; see SessionHandler.adoptSession).
 type systemVariables struct {
 	Config      StartupConfig
 	Connection  ConnectionVars
