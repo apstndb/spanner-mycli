@@ -143,16 +143,19 @@ func (rs *replayState) truncateAfter(position int) {
 	for _, e := range rs.entries[position:] {
 		rs.retainedBytes -= e.payloadBytes
 	}
+	clear(rs.entries[position:])
 	rs.entries = rs.entries[:position]
-	kept := rs.savepoints[:0]
+	kept := 0
 	for _, sp := range rs.savepoints {
 		if sp.position > position {
 			rs.retainedBytes -= sp.bytes
 			continue
 		}
-		kept = append(kept, sp)
+		rs.savepoints[kept] = sp
+		kept++
 	}
-	rs.savepoints = kept
+	clear(rs.savepoints[kept:])
+	rs.savepoints = rs.savepoints[:kept]
 	if rs.retainedBytes < 0 {
 		rs.retainedBytes = 0
 	}

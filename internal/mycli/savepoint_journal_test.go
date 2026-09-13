@@ -244,8 +244,20 @@ func TestFreezeStatementParamsAndOptionsAreImmutable(t *testing.T) {
 	t.Parallel()
 	mode := sppb.ExecuteSqlRequest_PROFILE
 	orig := spanner.GenericColumnValue{
-		Type:  &sppb.Type{Code: sppb.TypeCode_STRING},
-		Value: structpb.NewStringValue("keep"),
+		Type: &sppb.Type{
+			Code: sppb.TypeCode_ARRAY,
+			ArrayElementType: &sppb.Type{
+				Code: sppb.TypeCode_STRUCT,
+				StructType: &sppb.StructType{Fields: []*sppb.StructType_Field{
+					{Name: "n", Type: &sppb.Type{Code: sppb.TypeCode_STRING}},
+				}},
+			},
+		},
+		Value: structpb.NewListValue(&structpb.ListValue{Values: []*structpb.Value{
+			structpb.NewListValue(&structpb.ListValue{Values: []*structpb.Value{
+				structpb.NewStringValue("keep"),
+			}}),
+		}}),
 	}
 	opts := spanner.QueryOptions{
 		Mode:       &mode,
@@ -260,14 +272,23 @@ func TestFreezeStatementParamsAndOptionsAreImmutable(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	orig.Value = structpb.NewStringValue("mutated")
+	orig.Type.ArrayElementType.Code = sppb.TypeCode_JSON
+	orig.Type.ArrayElementType.StructType.Fields[0].Name = "mutated"
+	orig.Value.GetListValue().Values[0].GetListValue().Values[0].Kind.(*structpb.Value_StringValue).StringValue = "mutated"
 	mode = sppb.ExecuteSqlRequest_NORMAL
 	opts.RequestTag = "other"
 	opts.Options.OptimizerVersion = "9"
 	opts.LastStatement = false
 
-	if got := frozen.Params["p"].Value.GetStringValue(); got != "keep" {
-		t.Fatalf("frozen param = %q, want keep", got)
+	got := frozen.Params["p"]
+	if got.Type.GetArrayElementType().GetCode() != sppb.TypeCode_STRUCT {
+		t.Fatalf("frozen array element type = %v, want STRUCT", got.Type.GetArrayElementType().GetCode())
+	}
+	if got.Type.GetArrayElementType().GetStructType().GetFields()[0].GetName() != "n" {
+		t.Fatalf("frozen struct field = %q", got.Type.GetArrayElementType().GetStructType().GetFields()[0].GetName())
+	}
+	if got.Value.GetListValue().GetValues()[0].GetListValue().GetValues()[0].GetStringValue() != "keep" {
+		t.Fatalf("frozen nested value = %q, want keep", got.Value.GetListValue().GetValues()[0].GetListValue().GetValues()[0].GetStringValue())
 	}
 	if frozen.Opts.RequestTag != "user-tag" {
 		t.Fatalf("frozen request tag = %q", frozen.Opts.RequestTag)
@@ -294,22 +315,42 @@ func TestFreezeStatementParamsAndOptionsAreImmutable(t *testing.T) {
 
 func TestFreezeMutationValuesAreImmutable(t *testing.T) {
 	t.Parallel()
-	src := gcvctor.StringValue("keep")
+	src := spanner.GenericColumnValue{
+		Type: &sppb.Type{
+			Code:             sppb.TypeCode_ARRAY,
+			ArrayElementType: &sppb.Type{Code: sppb.TypeCode_STRING},
+		},
+		Value: structpb.NewListValue(&structpb.ListValue{Values: []*structpb.Value{
+			structpb.NewStringValue("keep"),
+		}}),
+	}
 	cols := []string{"id"}
 	frozen := freezeMutationWrite("T", "INSERT", cols, []spanner.GenericColumnValue{src})
-	src.Value = structpb.NewStringValue("mutated")
+	src.Type.ArrayElementType.Code = sppb.TypeCode_BYTES
+	src.Value.GetListValue().Values[0].Kind.(*structpb.Value_StringValue).StringValue = "mutated"
 	cols[0] = "other"
 	if frozen.Columns[0] != "id" {
 		t.Fatal("frozen mutation columns aliased caller slice")
 	}
-	if frozen.Values[0].Value.GetStringValue() != "keep" {
-		t.Fatal("frozen mutation values aliased caller GCV")
+	if frozen.Values[0].Type.GetArrayElementType().GetCode() != sppb.TypeCode_STRING {
+		t.Fatal("frozen mutation type aliased caller Type graph")
+	}
+	if frozen.Values[0].Value.GetListValue().GetValues()[0].GetStringValue() != "keep" {
+		t.Fatal("frozen mutation values aliased caller Value graph")
 	}
 	mut, err := frozen.Mutation()
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := spanner.Insert("T", []string{"id"}, []any{cloneGenericColumnValue(gcvctor.StringValue("keep"))})
+	want := spanner.Insert("T", []string{"id"}, []any{cloneGenericColumnValue(spanner.GenericColumnValue{
+		Type: &sppb.Type{
+			Code:             sppb.TypeCode_ARRAY,
+			ArrayElementType: &sppb.Type{Code: sppb.TypeCode_STRING},
+		},
+		Value: structpb.NewListValue(&structpb.ListValue{Values: []*structpb.Value{
+			structpb.NewStringValue("keep"),
+		}}),
+	})})
 	if diff := cmp.Diff(want, mut, cmp.AllowUnexported(spanner.Mutation{}), protocmp.Transform()); diff != "" {
 		t.Fatalf("reconstructed mutation mismatch (-want +got):\n%s", diff)
 	}
@@ -360,6 +401,34 @@ func TestReplayStateByteAccountingAndTruncate(t *testing.T) {
 	}
 	if rs.retainedBytes >= kept {
 		t.Fatal("truncateAfter did not release later payload")
+	}
+
+	param := spanner.GenericColumnValue{Type: &sppb.Type{Code: sppb.TypeCode_STRING}, Value: structpb.NewStringValue("secret")}
+	parameterized, err := freezeStatement("SELECT @p", map[string]any{"p": param}, spanner.QueryOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := rs.appendEntry(replayEntry{kind: replayKindSQL, stmt: parameterized, fingerprint: slices.Clone(sum)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := rs.addSavepoint("discard-me"); err != nil {
+		t.Fatal(err)
+	}
+	entryBacking := rs.entries
+	markerBacking := rs.savepoints
+	rs.truncateAfter(0)
+	if rs.retainedBytes != 0 {
+		t.Fatalf("truncate to zero retainedBytes=%d", rs.retainedBytes)
+	}
+	for _, e := range entryBacking[:cap(entryBacking)] {
+		if e.stmt.SQL != "" || e.stmt.Params != nil || e.fingerprint != nil {
+			t.Fatal("truncated journal entry still reachable in backing array")
+		}
+	}
+	for _, sp := range markerBacking[:cap(markerBacking)] {
+		if sp.name != "" {
+			t.Fatal("truncated savepoint name still reachable in backing array")
+		}
 	}
 
 	full := &replayState{retainedBytes: savepointJournalLimit}
