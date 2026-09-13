@@ -283,7 +283,7 @@ func executeSQLImplWithVars(ctx context.Context, session *Session, sql string, s
 	if _, err := session.txn.FlushAutomaticDML(ctx); err != nil {
 		return nil, err
 	}
-	return executeSQLImplWithQueryRunner(ctx, session, sql, sysVars, session.txn.RunQueryWithStats, true, out)
+	return executeSQLImplWithQueryRunner(ctx, session, sql, sysVars, session.txn.runQueryWithStatsAndCapture, true, out)
 }
 
 // rollbackReadWriteIfAborted rolls back a live RW owner when err is Aborted so
@@ -307,13 +307,14 @@ func rollbackReadWriteIfAborted(ctx context.Context, session *Session, err error
 // transaction while preserving normal query options and one-shot request-tag
 // consumption.
 func executeSQLImplSingleUse(ctx context.Context, session *Session, sql string, sysVars *systemVariables, out OperationOutput) (*Result, error) {
-	run := func(ctx context.Context, stmt spanner.Statement, _ bool, mode sppb.ExecuteSqlRequest_QueryMode) (*spanner.RowIterator, *spanner.ReadOnlyTransaction, error) {
-		return session.txn.RunSingleUseQueryWithStats(ctx, stmt, mode)
+	run := func(ctx context.Context, stmt spanner.Statement, _ bool, mode sppb.ExecuteSqlRequest_QueryMode) (*spanner.RowIterator, *spanner.ReadOnlyTransaction, *captureToken, error) {
+		iter, roTxn, err := session.txn.RunSingleUseQueryWithStats(ctx, stmt, mode)
+		return iter, roTxn, nil, err
 	}
 	return executeSQLImplWithQueryRunner(ctx, session, sql, sysVars, run, false, out)
 }
 
-type queryWithStatsRunner func(context.Context, spanner.Statement, bool, sppb.ExecuteSqlRequest_QueryMode) (*spanner.RowIterator, *spanner.ReadOnlyTransaction, error)
+type queryWithStatsRunner func(context.Context, spanner.Statement, bool, sppb.ExecuteSqlRequest_QueryMode) (*spanner.RowIterator, *spanner.ReadOnlyTransaction, *captureToken, error)
 
 func executeSQLImplWithQueryRunner(ctx context.Context, session *Session, sql string, sysVars *systemVariables, run queryWithStatsRunner, rollbackActiveTransactionOnAbort bool, out OperationOutput) (*Result, error) {
 	// Direct Execute tests often pass a zero OperationOutput after swapping
@@ -336,8 +337,11 @@ func executeSQLImplWithQueryRunner(ctx context.Context, session *Session, sql st
 		return nil, err
 	}
 
-	iter, roTxn, err := run(ctx, stmt, false, effectiveQueryMode(sysVars.Query.QueryMode))
+	iter, roTxn, tok, err := run(ctx, stmt, false, effectiveQueryMode(sysVars.Query.QueryMode))
 	if err != nil {
+		if session != nil && session.txn != nil {
+			_ = session.txn.finishQueryCapture(tok, err)
+		}
 		return nil, err
 	}
 
@@ -351,9 +355,15 @@ func executeSQLImplWithQueryRunner(ctx context.Context, session *Session, sql st
 		Render:         render,
 		Metrics:        m,
 		QueryCacheDest: queryCacheDest,
+		Receipt:        tok.receipt(),
 	})
-	if err == nil && session != nil && session.txn != nil {
-		err = session.txn.invokeQueryAfterCollectHook()
+	if session != nil && session.txn != nil {
+		if capErr := session.txn.finishQueryCapture(tok, err); err == nil {
+			err = capErr
+		}
+		if err == nil {
+			err = session.txn.invokeQueryAfterCollectHook()
+		}
 	}
 	if err != nil {
 		if rollbackActiveTransactionOnAbort {

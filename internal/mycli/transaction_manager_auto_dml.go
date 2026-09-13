@@ -25,6 +25,9 @@ import (
 func (tm *TransactionManager) discardAutomaticDMLLocked() {
 	if tm.tc != nil {
 		tm.tc.autoDML = nil
+		if tm.tc.replay != nil {
+			tm.tc.replay.dropQueued()
+		}
 	}
 }
 
@@ -64,6 +67,9 @@ func (tm *TransactionManager) TryEnqueueAutomaticDML(stmt spanner.Statement) (bo
 	err := tm.withTransactionContextWithLock(func(**transactionContext) error {
 		if tm.tc == nil || tm.tc.attrs.mode != transactionModeReadWrite {
 			return nil
+		}
+		if err := tm.enqueueFrozenAutomaticDMLLocked(stmt); err != nil {
+			return err
 		}
 		tm.tc.autoDML = append(tm.tc.autoDML, stmt)
 		// Queued automatic DML is uncommitted work on an already-started RW
@@ -119,6 +125,9 @@ func (tm *TransactionManager) flushAutomaticDMLLocked(ctx context.Context) ([]sp
 	}
 
 	counts, err := rwTxn.BatchUpdateWithOptions(ctx, dmls, spanner.QueryOptions{LastStatement: false})
+	if recErr := tm.completeBatchDMLLocked(counts, err); err == nil {
+		err = recErr
+	}
 	if tm.tc != nil {
 		tm.tc.EnableHeartbeat()
 	}

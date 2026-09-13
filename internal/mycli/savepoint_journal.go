@@ -66,11 +66,20 @@ type frozenStatement struct {
 	Opts   frozenQueryOptions
 }
 
+type frozenKeyRange struct {
+	Start []spanner.GenericColumnValue
+	End   []spanner.GenericColumnValue
+	Kind  spanner.KeyRangeKind
+}
+
 type frozenMutation struct {
-	Table   string
-	Op      string
-	Columns []string
-	Values  []spanner.GenericColumnValue
+	Table     string
+	Op        string
+	Columns   []string
+	Values    []spanner.GenericColumnValue
+	DeleteAll bool
+	Keys      [][]spanner.GenericColumnValue
+	KeyRange  *frozenKeyRange
 }
 
 type replayEntry struct {
@@ -82,6 +91,7 @@ type replayEntry struct {
 	affected     int64
 	counts       []int64
 	payloadBytes int64
+	dml          bool
 }
 
 type replayState struct {
@@ -89,6 +99,14 @@ type replayState struct {
 	savepoints       []savepoint
 	retainedBytes    int64
 	recoveryRequired error
+	// queued holds frozen automatic DML reserved at enqueue. It is not a
+	// replay entry until BatchUpdate succeeds.
+	queued []frozenStatement
+	// admittedBatch/admittedMut hold payload reserved before BatchUpdate or
+	// BufferWrite. Local admission failure must not send those RPCs.
+	admittedBatch []frozenStatement
+	admittedMut   []frozenMutation
+	admittedBytes int64
 }
 
 func (rs *replayState) reserve(n int64) error {
@@ -103,6 +121,31 @@ func (rs *replayState) reserve(n int64) error {
 	}
 	rs.retainedBytes += n
 	return nil
+}
+
+func (rs *replayState) release(n int64) {
+	if rs == nil || n <= 0 {
+		return
+	}
+	rs.retainedBytes -= n
+	if rs.retainedBytes < 0 {
+		rs.retainedBytes = 0
+	}
+}
+
+func (rs *replayState) commitPrepared(e replayEntry) {
+	if e.payloadBytes == 0 {
+		e.payloadBytes = e.accountedBytes()
+	}
+	rs.entries = append(rs.entries, e)
+}
+
+func (rs *replayState) dropQueued() {
+	if rs == nil {
+		return
+	}
+	rs.release(queuedAccounted(rs.queued))
+	rs.queued = nil
 }
 
 func (rs *replayState) needsRecovery() bool {
@@ -281,6 +324,29 @@ func (m frozenMutation) Mutation() (*spanner.Mutation, error) {
 		return spanner.InsertOrUpdate(m.Table, m.Columns, vals), nil
 	case "REPLACE":
 		return spanner.Replace(m.Table, m.Columns, vals), nil
+	case "DELETE":
+		if m.DeleteAll {
+			return spanner.Delete(m.Table, spanner.AllKeys()), nil
+		}
+		if m.KeyRange != nil {
+			kr, err := m.KeyRange.toKeyRange()
+			if err != nil {
+				return nil, err
+			}
+			return spanner.Delete(m.Table, kr), nil
+		}
+		keys := make([]spanner.Key, 0, len(m.Keys))
+		for _, row := range m.Keys {
+			key, err := toKeys(row)
+			if err != nil {
+				return nil, err
+			}
+			keys = append(keys, key)
+		}
+		if len(keys) == 1 {
+			return spanner.Delete(m.Table, keys[0]), nil
+		}
+		return spanner.Delete(m.Table, spanner.KeySetFromKeys(keys...)), nil
 	default:
 		return nil, fmt.Errorf("savepoint freeze: unsupported mutation op %q", m.Op)
 	}
@@ -322,7 +388,40 @@ func (m frozenMutation) payloadBytes() int64 {
 	for _, v := range m.Values {
 		n += gcvPayloadBytes(v)
 	}
+	for _, key := range m.Keys {
+		for _, v := range key {
+			n += gcvPayloadBytes(v)
+		}
+	}
+	if m.KeyRange != nil {
+		for _, v := range m.KeyRange.Start {
+			n += gcvPayloadBytes(v)
+		}
+		for _, v := range m.KeyRange.End {
+			n += gcvPayloadBytes(v)
+		}
+	}
 	return n
+}
+
+func cloneGCVRow(row []spanner.GenericColumnValue) []spanner.GenericColumnValue {
+	out := make([]spanner.GenericColumnValue, len(row))
+	for i, v := range row {
+		out[i] = cloneGenericColumnValue(v)
+	}
+	return out
+}
+
+func (kr frozenKeyRange) toKeyRange() (spanner.KeyRange, error) {
+	start, err := toKeys(kr.Start)
+	if err != nil {
+		return spanner.KeyRange{}, err
+	}
+	end, err := toKeys(kr.End)
+	if err != nil {
+		return spanner.KeyRange{}, err
+	}
+	return spanner.KeyRange{Start: start, End: end, Kind: kr.Kind}, nil
 }
 
 func gcvPayloadBytes(v spanner.GenericColumnValue) int64 {

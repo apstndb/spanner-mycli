@@ -535,18 +535,18 @@ func TestRollbackReadWriteIfAborted(t *testing.T) {
 
 func mustNotInvokeQueryRunner(t *testing.T) queryWithStatsRunner {
 	t.Helper()
-	return func(context.Context, spanner.Statement, bool, sppb.ExecuteSqlRequest_QueryMode) (*spanner.RowIterator, *spanner.ReadOnlyTransaction, error) {
+	return func(context.Context, spanner.Statement, bool, sppb.ExecuteSqlRequest_QueryMode) (*spanner.RowIterator, *spanner.ReadOnlyTransaction, *captureToken, error) {
 		t.Helper()
 		t.Fatal("query runner invoked; validation should have failed first")
-		return nil, nil, errors.New("unreachable")
+		return nil, nil, nil, errors.New("unreachable")
 	}
 }
 
 func TestExecuteSQLImplWithQueryRunnerErrorContracts(t *testing.T) {
 	t.Parallel()
 
-	runFail := func(context.Context, spanner.Statement, bool, sppb.ExecuteSqlRequest_QueryMode) (*spanner.RowIterator, *spanner.ReadOnlyTransaction, error) {
-		return nil, nil, errors.New("injected runner failure")
+	runFail := func(context.Context, spanner.Statement, bool, sppb.ExecuteSqlRequest_QueryMode) (*spanner.RowIterator, *spanner.ReadOnlyTransaction, *captureToken, error) {
+		return nil, nil, nil, errors.New("injected runner failure")
 	}
 
 	t.Run("prepareFormatConfig error", func(t *testing.T) {
@@ -593,10 +593,10 @@ func TestExecuteSQLImplWithQueryRunnerErrorContracts(t *testing.T) {
 		var buf bytes.Buffer
 		live.StreamManager = streamio.NewStreamManager(io.NopCloser(strings.NewReader("")), &buf, io.Discard)
 		var iter *spanner.RowIterator
-		run := func(ctx context.Context, stmt spanner.Statement, implicit bool, mode sppb.ExecuteSqlRequest_QueryMode) (*spanner.RowIterator, *spanner.ReadOnlyTransaction, error) {
-			it, roTxn, err := session.txn.RunQueryWithStats(ctx, stmt, implicit, mode)
+		run := func(ctx context.Context, stmt spanner.Statement, implicit bool, mode sppb.ExecuteSqlRequest_QueryMode) (*spanner.RowIterator, *spanner.ReadOnlyTransaction, *captureToken, error) {
+			it, roTxn, tok, err := session.txn.runQueryWithStatsAndCapture(ctx, stmt, implicit, mode)
 			iter = it
-			return it, roTxn, err
+			return it, roTxn, tok, err
 		}
 		_, err := executeSQLImplWithQueryRunner(t.Context(), session, sqlExportSelectUsers, live, run, true, OperationOutput{w: &buf})
 		if err == nil || !strings.Contains(err.Error(), "unsupported streaming mode") {
@@ -617,7 +617,7 @@ func TestExecuteSQLImplWithQueryRunnerErrorContracts(t *testing.T) {
 		injected := errors.New("after collect failed")
 		session.txn.queryAfterCollectHook = func() error { return injected }
 		t.Cleanup(func() { session.txn.queryAfterCollectHook = nil })
-		_, err := executeSQLImplWithQueryRunner(t.Context(), session, sqlExportSelectUsers, live, session.txn.RunQueryWithStats, false, OperationOutput{})
+		_, err := executeSQLImplWithQueryRunner(t.Context(), session, sqlExportSelectUsers, live, session.txn.runQueryWithStatsAndCapture, false, OperationOutput{})
 		if !errors.Is(err, injected) {
 			t.Fatalf("error = %v, want after collect failed", err)
 		}

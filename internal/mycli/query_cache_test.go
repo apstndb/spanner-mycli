@@ -68,7 +68,7 @@ func TestQueryCachePublicationSQLExportNames(t *testing.T) {
 			seed := seedQueryCacheA()
 			live.LastResult.QueryCache = seed
 
-			if _, err := executeSQLImplWithQueryRunner(t.Context(), session, sqlExportSelectUsers, live, session.txn.RunQueryWithStats, true, OperationOutput{}); err != nil {
+			if _, err := executeSQLImplWithQueryRunner(t.Context(), session, sqlExportSelectUsers, live, session.txn.runQueryWithStatsAndCapture, true, OperationOutput{}); err != nil {
 				t.Fatalf("executeSQLImplWithQueryRunner: %v", err)
 			}
 			if live.Display.SQLTableName != tt.sqlTableName {
@@ -86,7 +86,7 @@ func TestQueryCachePublicationSQLExportNames(t *testing.T) {
 			live.Display.CLIFormat = enums.DisplayModeSQLInsert
 			live.Display.SQLTableName = sqlTableName
 			live.LastResult.QueryCache = seedQueryCacheA()
-			if _, err := executeSQLImplWithQueryRunner(t.Context(), session, sqlExportSelectUsers, live, session.txn.RunQueryWithStats, true, OperationOutput{}); err != nil {
+			if _, err := executeSQLImplWithQueryRunner(t.Context(), session, sqlExportSelectUsers, live, session.txn.runQueryWithStatsAndCapture, true, OperationOutput{}); err != nil {
 				t.Fatalf("sqlTableName=%q: %v", sqlTableName, err)
 			}
 			published[i] = live.LastResult.QueryCache
@@ -144,7 +144,7 @@ func TestQueryCachePublicationBufferedAndStreamingEmitters(t *testing.T) {
 				live.StreamManager = streamio.NewStreamManager(io.NopCloser(strings.NewReader("")), &buf, io.Discard)
 				out = OperationOutput{w: &buf}
 			}
-			result, err := executeSQLImplWithQueryRunner(t.Context(), session, sqlExportSelectUsers, live, session.txn.RunQueryWithStats, true, out)
+			result, err := executeSQLImplWithQueryRunner(t.Context(), session, sqlExportSelectUsers, live, session.txn.runQueryWithStatsAndCapture, true, out)
 			if err != nil {
 				t.Fatalf("executeSQLImplWithQueryRunner: %v", err)
 			}
@@ -219,7 +219,7 @@ func TestQueryCachePublicationParseFailureLeavesOldCache(t *testing.T) {
 	seed := seedQueryCacheA()
 	live.LastResult.QueryCache = seed
 
-	_, err := executeSQLImplWithQueryRunner(t.Context(), session, sqlExportSelectUsers, live, session.txn.RunQueryWithStats, true, OperationOutput{})
+	_, err := executeSQLImplWithQueryRunner(t.Context(), session, sqlExportSelectUsers, live, session.txn.runQueryWithStatsAndCapture, true, OperationOutput{})
 	if err == nil {
 		t.Fatal("executeSQLImplWithQueryRunner error = nil, want iterator failure")
 	}
@@ -241,7 +241,7 @@ func TestQueryCachePublicationAppendixFailureKeepsPublishedCache(t *testing.T) {
 	seed := seedQueryCacheA()
 	live.LastResult.QueryCache = seed
 
-	_, err := executeSQLImplWithQueryRunner(t.Context(), session, sqlExportSelectUsers, live, session.txn.RunQueryWithStats, true, OperationOutput{})
+	_, err := executeSQLImplWithQueryRunner(t.Context(), session, sqlExportSelectUsers, live, session.txn.runQueryWithStatsAndCapture, true, OperationOutput{})
 	if err == nil {
 		t.Fatal("executeSQLImplWithQueryRunner error = nil, want appendix rendering failure")
 	}
@@ -263,7 +263,7 @@ func TestQueryCachePublicationExplainLastQueryAndPlanNodes(t *testing.T) {
 	}
 	live.LastResult.QueryCache = seed
 
-	if _, err := executeSQLImplWithQueryRunner(t.Context(), session, sqlExportSelectUsers, live, session.txn.RunQueryWithStats, true, OperationOutput{}); err != nil {
+	if _, err := executeSQLImplWithQueryRunner(t.Context(), session, sqlExportSelectUsers, live, session.txn.runQueryWithStatsAndCapture, true, OperationOutput{}); err != nil {
 		t.Fatalf("executeSQLImplWithQueryRunner: %v", err)
 	}
 
