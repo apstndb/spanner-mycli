@@ -15,7 +15,9 @@
 package mycli
 
 import (
+	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"cloud.google.com/go/spanner"
@@ -24,11 +26,50 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-type sqlCapture struct {
+// captureToken identifies one admitted owner operation. Completion must
+// present this exact token: a rejected or uncaptured path cannot finish
+// another operation, owner, or physical attempt.
+type captureToken struct {
+	owner    *transactionContext
+	attempt  uint64
 	frozen   frozenStatement
 	rec      *operationReceipt
 	reserved int64
 	dml      bool
+}
+
+type savepointAdmissionError struct {
+	err error
+}
+
+func (e *savepointAdmissionError) Error() string {
+	if e == nil || e.err == nil {
+		return "savepoint admission rejected"
+	}
+	return e.err.Error()
+}
+
+func (e *savepointAdmissionError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.err
+}
+
+func admitError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var ae *savepointAdmissionError
+	if errors.As(err, &ae) {
+		return err
+	}
+	return &savepointAdmissionError{err: err}
+}
+
+func isAdmissionError(err error) bool {
+	var ae *savepointAdmissionError
+	return errors.As(err, &ae)
 }
 
 func freezeTxnCtor(opts spanner.TransactionOptions) spanner.TransactionOptions {
@@ -66,66 +107,69 @@ func (tm *TransactionManager) capturingLocked() bool {
 	return tm != nil && tm.tc != nil && tm.tc.replay != nil
 }
 
-func (tm *TransactionManager) startOwnerSQLCaptureLocked(stmt spanner.Statement, opts spanner.QueryOptions, dml bool) error {
+func (tok *captureToken) receipt() *operationReceipt {
+	if tok == nil {
+		return nil
+	}
+	return tok.rec
+}
+
+func (tok *captureToken) matchesLocked(tm *TransactionManager) bool {
+	return tok != nil && tm != nil && tm.tc != nil && tok.owner == tm.tc && tok.attempt == tm.tc.attempt && tm.tc.pending == tok
+}
+
+func (tm *TransactionManager) startOwnerSQLCaptureLocked(stmt spanner.Statement, opts spanner.QueryOptions, dml bool) (*captureToken, error) {
 	if err := tm.rejectIfRecoveringLocked(); err != nil {
-		return err
+		return nil, err
 	}
 	if !tm.capturingLocked() || queryModeIsPlan(opts) {
-		return nil
+		return nil, nil
 	}
 	if tm.tc.attrs.mode != transactionModeReadWrite {
-		return nil
+		return nil, nil
 	}
 	if tm.tc.replacing {
-		return fmt.Errorf("savepoint journal: physical replacement is in progress")
+		return nil, fmt.Errorf("savepoint journal: physical replacement is in progress")
 	}
 	if tm.tc.pending != nil || tm.tc.inFlight > 0 {
-		return fmt.Errorf("savepoint journal: a query is already in flight")
+		return nil, fmt.Errorf("savepoint journal: a query is already in flight")
 	}
 	frozen, err := freezeStatement(stmt.SQL, stmt.Params, opts)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	e := replayEntry{kind: replayKindSQL, stmt: frozen, fingerprint: make([]byte, 32)}
 	n := e.accountedBytes()
 	if err := tm.tc.replay.reserve(n); err != nil {
-		return err
+		return nil, err
 	}
-	tm.tc.pending = &sqlCapture{frozen: frozen, rec: &operationReceipt{}, reserved: n, dml: dml}
+	tok := &captureToken{
+		owner:    tm.tc,
+		attempt:  tm.tc.attempt,
+		frozen:   frozen,
+		rec:      &operationReceipt{},
+		reserved: n,
+		dml:      dml,
+	}
+	tm.tc.pending = tok
 	tm.tc.inFlight++
-	return nil
+	return tok, nil
 }
 
-func (tm *TransactionManager) queryReceipt() *operationReceipt {
-	if tm == nil {
-		return nil
-	}
-	tm.mu.RLock()
-	defer tm.mu.RUnlock()
-	return tm.queryReceiptLocked()
-}
-
-func (tm *TransactionManager) queryReceiptLocked() *operationReceipt {
-	if tm.tc == nil || tm.tc.pending == nil {
-		return nil
-	}
-	return tm.tc.pending.rec
-}
-
-func (tm *TransactionManager) finishQueryCapture(consumeErr error) error {
+func (tm *TransactionManager) finishQueryCapture(tok *captureToken, consumeErr error) error {
 	if tm == nil {
 		return consumeErr
 	}
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
-	return tm.finishQueryCaptureLocked(consumeErr)
+	return tm.finishQueryCaptureLocked(tok, consumeErr)
 }
 
-func (tm *TransactionManager) finishQueryCaptureLocked(consumeErr error) error {
-	if tm.tc == nil || tm.tc.pending == nil {
+func (tm *TransactionManager) finishQueryCaptureLocked(tok *captureToken, consumeErr error) error {
+	if !tok.matchesLocked(tm) {
 		return consumeErr
 	}
-	pending := tm.tc.pending
+	pending := tok
 	tm.tc.pending = nil
 	if tm.tc.inFlight > 0 {
 		tm.tc.inFlight--
@@ -152,11 +196,11 @@ func (tm *TransactionManager) finishQueryCaptureLocked(consumeErr error) error {
 	return nil
 }
 
-func (tm *TransactionManager) finishDMLCaptureLocked(count int64, consumeErr error) error {
-	if tm.tc == nil || tm.tc.pending == nil {
+func (tm *TransactionManager) finishDMLCaptureLocked(tok *captureToken, count int64, consumeErr error) error {
+	if !tok.matchesLocked(tm) {
 		return consumeErr
 	}
-	pending := tm.tc.pending
+	pending := tok
 	tm.tc.pending = nil
 	if tm.tc.inFlight > 0 {
 		tm.tc.inFlight--
@@ -190,75 +234,120 @@ func (tm *TransactionManager) finishDMLCaptureLocked(count int64, consumeErr err
 	return nil
 }
 
-func (tm *TransactionManager) recordBatchDMLLocked(dmls []spanner.Statement, opts spanner.QueryOptions, counts []int64, rpcErr error) error {
+func batchReplayAccounted(batch []frozenStatement) int64 {
+	return replayEntry{
+		kind:        replayKindBatchDML,
+		batch:       batch,
+		fingerprint: make([]byte, 32),
+		counts:      make([]int64, len(batch)),
+	}.accountedBytes()
+}
+
+func mutateReplayAccounted(mutations []frozenMutation) int64 {
+	return replayEntry{
+		kind:        replayKindMutate,
+		mutations:   mutations,
+		fingerprint: make([]byte, 32),
+	}.accountedBytes()
+}
+
+func (tm *TransactionManager) admitBatchDMLLocked(dmls []spanner.Statement, opts spanner.QueryOptions) error {
+	if !tm.capturingLocked() {
+		return nil
+	}
+	if len(tm.tc.replay.queued) > 0 {
+		return nil
+	}
+	frozen, err := freezeStatements(dmls, opts)
+	if err != nil {
+		return err
+	}
+	n := batchReplayAccounted(frozen)
+	if err := tm.tc.replay.reserve(n); err != nil {
+		return err
+	}
+	tm.tc.replay.admittedBatch = frozen
+	tm.tc.replay.admittedBytes = n
+	return nil
+}
+
+func (tm *TransactionManager) completeBatchDMLLocked(counts []int64, rpcErr error) error {
 	if !tm.capturingLocked() {
 		return rpcErr
 	}
-	if rpcErr != nil {
-		tm.tc.replay.dropQueued()
-		return rpcErr
-	}
-	batch := tm.tc.replay.queued
-	reservedQueued := int64(0)
-	if len(batch) == 0 {
-		var err error
-		batch, err = freezeStatements(dmls, opts)
-		if err != nil {
-			return err
-		}
+	rs := tm.tc.replay
+	batch := rs.queued
+	reserved := int64(0)
+	if len(batch) > 0 {
+		reserved = batchReplayAccounted(batch)
+		rs.queued = nil
 	} else {
-		for _, stmt := range batch {
-			reservedQueued += stmt.payloadBytes()
-		}
-		tm.tc.replay.queued = nil
+		batch = rs.admittedBatch
+		reserved = rs.admittedBytes
+		rs.admittedBatch = nil
+		rs.admittedBytes = 0
+	}
+	if rpcErr != nil {
+		rs.release(reserved)
+		return rpcErr
 	}
 	rec := &operationReceipt{}
 	fp, err := rec.FinishBatch(counts, nil)
 	if err != nil {
-		if reservedQueued > 0 {
-			tm.tc.replay.release(reservedQueued)
-		}
+		rs.release(reserved)
 		return err
 	}
 	e := replayEntry{
-		kind:        replayKindBatchDML,
-		batch:       batch,
-		fingerprint: fp,
-		counts:      append([]int64(nil), counts...),
+		kind:         replayKindBatchDML,
+		batch:        batch,
+		fingerprint:  fp,
+		counts:       append([]int64(nil), counts...),
+		payloadBytes: reserved,
 	}
-	n := e.accountedBytes()
-	if reservedQueued > 0 {
-		if n > reservedQueued {
-			if err := tm.tc.replay.reserve(n - reservedQueued); err != nil {
-				tm.tc.replay.release(reservedQueued)
-				return err
-			}
-		}
-		e.payloadBytes = n
-		tm.tc.replay.commitPrepared(e)
-		return nil
-	}
-	return tm.tc.replay.appendEntry(e)
+	rs.commitPrepared(e)
+	return nil
 }
 
-func (tm *TransactionManager) recordMutationsLocked(frozen []frozenMutation, rpcErr error) error {
+func (tm *TransactionManager) admitMutationsLocked(frozen []frozenMutation) error {
+	if !tm.capturingLocked() {
+		return nil
+	}
+	n := mutateReplayAccounted(frozen)
+	if err := tm.tc.replay.reserve(n); err != nil {
+		return err
+	}
+	tm.tc.replay.admittedMut = frozen
+	tm.tc.replay.admittedBytes = n
+	return nil
+}
+
+func (tm *TransactionManager) completeMutationsLocked(rpcErr error) error {
 	if !tm.capturingLocked() {
 		return rpcErr
 	}
+	rs := tm.tc.replay
+	frozen := rs.admittedMut
+	reserved := rs.admittedBytes
+	rs.admittedMut = nil
+	rs.admittedBytes = 0
 	if rpcErr != nil {
+		rs.release(reserved)
 		return rpcErr
 	}
 	rec := &operationReceipt{}
 	fp, err := rec.Finish(nil)
 	if err != nil {
+		rs.release(reserved)
 		return err
 	}
 	e := replayEntry{
-		kind:        replayKindMutate,
-		mutations:   frozen,
-		fingerprint: fp,
+		kind:         replayKindMutate,
+		mutations:    frozen,
+		fingerprint:  fp,
+		payloadBytes: reserved,
 	}
-	return tm.tc.replay.appendEntry(e)
+	rs.commitPrepared(e)
+	return nil
 }
 
 func freezeStatements(dmls []spanner.Statement, opts spanner.QueryOptions) ([]frozenStatement, error) {
@@ -281,7 +370,10 @@ func (tm *TransactionManager) enqueueFrozenAutomaticDMLLocked(stmt spanner.State
 	if err != nil {
 		return err
 	}
-	if err := tm.tc.replay.reserve(frozen.payloadBytes()); err != nil {
+	old := batchReplayAccounted(tm.tc.replay.queued)
+	next := append(append([]frozenStatement(nil), tm.tc.replay.queued...), frozen)
+	delta := batchReplayAccounted(next) - old
+	if err := tm.tc.replay.reserve(delta); err != nil {
 		return err
 	}
 	tm.tc.replay.queued = append(tm.tc.replay.queued, frozen)
@@ -315,7 +407,7 @@ func freezeMutate(table, op, body string) ([]frozenMutation, []*spanner.Mutation
 }
 
 func freezeDeleteMutate(table, body string) ([]frozenMutation, []*spanner.Mutation, error) {
-	if strings.ToUpper(strings.TrimSpace(body)) == "ALL" {
+	if strings.EqualFold(strings.TrimSpace(body), "ALL") {
 		fm := frozenMutation{Table: table, Op: "DELETE", DeleteAll: true}
 		m, err := fm.Mutation()
 		if err != nil {
@@ -327,19 +419,28 @@ func freezeDeleteMutate(table, body string) ([]frozenMutation, []*spanner.Mutati
 	if err != nil {
 		return nil, nil, err
 	}
-	if _, ok := expr.(*ast.CallExpr); ok {
-		return nil, nil, fmt.Errorf("savepoint freeze: MUTATE DELETE key range is not journaled")
+	if call, ok := expr.(*ast.CallExpr); ok {
+		kr, err := freezeKeyRangeCall(call)
+		if err != nil {
+			return nil, nil, err
+		}
+		fm := frozenMutation{Table: table, Op: "DELETE", KeyRange: kr}
+		m, err := fm.Mutation()
+		if err != nil {
+			return nil, nil, err
+		}
+		return []frozenMutation{fm}, []*spanner.Mutation{m}, nil
 	}
-	_, valuesList, err := parseLiteralExpr(expr)
+	columns, valuesList, err := parseLiteralExpr(expr)
 	if err != nil {
 		return nil, nil, err
 	}
+	if len(columns) > 0 {
+		slog.Warn("delete mutation ignores column names", "columns", columns)
+	}
 	keys := make([][]spanner.GenericColumnValue, len(valuesList))
 	for i, row := range valuesList {
-		keys[i] = make([]spanner.GenericColumnValue, len(row))
-		for j, v := range row {
-			keys[i][j] = cloneGenericColumnValue(v)
-		}
+		keys[i] = cloneGCVRow(row)
 	}
 	fm := frozenMutation{Table: table, Op: "DELETE", Keys: keys}
 	m, err := fm.Mutation()

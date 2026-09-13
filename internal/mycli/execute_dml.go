@@ -129,8 +129,12 @@ func tokenKeywordLike(tok token.Token, keyword string) bool {
 func executeBatchDML(ctx context.Context, session *Session, dmls []spanner.Statement) (*Result, error) {
 	var affectedRowSlice []int64
 	result, err := session.txn.RunInNewOrExistRwTx(ctx, func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
-		affectedRowSlice, err = tx.BatchUpdateWithOptions(ctx, dmls, spanner.QueryOptions{LastStatement: implicit})
-		if recErr := session.txn.recordBatchDMLLocked(dmls, spanner.QueryOptions{LastStatement: implicit}, affectedRowSlice, err); err == nil {
+		opts := spanner.QueryOptions{LastStatement: implicit}
+		if admitErr := session.txn.admitBatchDMLLocked(dmls, opts); admitErr != nil {
+			return 0, nil, nil, admitError(admitErr)
+		}
+		affectedRowSlice, err = tx.BatchUpdateWithOptions(ctx, dmls, opts)
+		if recErr := session.txn.completeBatchDMLLocked(affectedRowSlice, err); err == nil {
 			err = recErr
 		}
 		return lo.Sum(affectedRowSlice), nil, nil, err
