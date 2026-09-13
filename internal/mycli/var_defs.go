@@ -35,12 +35,13 @@ type varDef struct {
 	name string
 	desc string
 
-	scope    varScope
-	readOnly bool // for scopeSession exceptions only; other scopes are implicitly read-only
-	initOnly bool // settable only before session creation
-	txnGuard bool // SET rejected while a transaction is active
-	noLocal  bool // opt-out of SET LOCAL for otherwise-eligible vars
-	noReset  bool // opt-out of RESET ALL for otherwise-eligible vars
+	scope      varScope
+	readOnly   bool // for scopeSession exceptions only; other scopes are implicitly read-only
+	initOnly   bool // settable only before session creation
+	txnGuard   bool // SET rejected while a transaction is active
+	batchGuard bool // SET rejected while a manual START BATCH is open
+	noLocal    bool // opt-out of SET LOCAL for otherwise-eligible vars
+	noReset    bool // opt-out of RESET ALL for otherwise-eligible vars
 
 	// aliases are additional (typically deprecated) names accepted by
 	// SET/SHOW/ADD. They resolve to the same handler as name but are excluded
@@ -556,12 +557,13 @@ var varDefs = []varDef{
 	},
 
 	{
-		name:     "CLI_SAVEPOINT_SUPPORT",
-		desc:     "Enable client-emulated SAVEPOINT for explicit transactions. DISABLED (default) preserves current behavior. ENABLED records a journal from BEGIN and reconstructs RW prefixes on ROLLBACK TO. This is replay with result validation, not a native Spanner savepoint. SET is rejected while a transaction is pending or active; SET LOCAL is not supported.",
-		scope:    scopeSession,
-		txnGuard: true,
-		noLocal:  true,
-		bind:     func(sv *systemVariables) Variable { return SavepointSupportVar(&sv.Transaction.SavepointSupport) },
+		name:       "CLI_SAVEPOINT_SUPPORT",
+		desc:       "Enable client-emulated SAVEPOINT for explicit transactions. DISABLED (default) preserves current behavior. ENABLED records a journal from BEGIN and reconstructs RW prefixes on ROLLBACK TO. This is replay with result validation, not a native Spanner savepoint. SET is rejected while a transaction is pending or active and while a manual batch is open; SET LOCAL is not supported.",
+		scope:      scopeSession,
+		txnGuard:   true,
+		batchGuard: true,
+		noLocal:    true,
+		bind:       func(sv *systemVariables) Variable { return SavepointSupportVar(&sv.Transaction.SavepointSupport) },
 	},
 	{
 		name:  "AUTOCOMMIT_DML_MODE",

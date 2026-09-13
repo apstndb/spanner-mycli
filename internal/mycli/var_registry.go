@@ -150,6 +150,8 @@ func (r *VarRegistry) checkSetPolicy(def *varDef) error {
 		return &errSetterInitOnly{Name: def.name}
 	case def.txnGuard && r.sv.inTransaction != nil && r.sv.inTransaction():
 		return errSetterInTransaction
+	case def.batchGuard && r.sv.inManualBatch != nil && r.sv.inManualBatch():
+		return errSetterInManualBatch
 	}
 	return nil
 }

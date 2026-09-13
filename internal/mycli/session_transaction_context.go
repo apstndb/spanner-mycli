@@ -58,6 +58,10 @@ type transactionContext struct {
 	attempt  uint64
 	inFlight int
 	pending  *captureToken
+	// lastCommitted is the most recent successfully journaled capture on this
+	// owner/attempt. CLI buffered-output failure uses it to retract that
+	// entry before recovery. Cleared at the start of each statement.
+	lastCommitted *captureToken
 	// replacing is true while ROLLBACK TO is replacing the physical RW handle.
 	replacing bool
 }

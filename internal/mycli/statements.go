@@ -764,6 +764,8 @@ type HelpStatement struct{}
 
 func (s *HelpStatement) isDetachedCompatible() {}
 
+func (s *HelpStatement) allowedDuringSavepointRecovery() {}
+
 // helpRow is the row shape for HELP.
 type helpRow struct {
 	Usage  string `spanner:"Usage"`

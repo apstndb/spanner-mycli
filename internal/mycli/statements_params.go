@@ -15,6 +15,8 @@ type ShowParamsStatement struct{}
 
 func (s *ShowParamsStatement) isDetachedCompatible() {}
 
+func (s *ShowParamsStatement) allowedDuringSavepointRecovery() {}
+
 // paramRow is the row shape for SHOW PARAMS. Param_Value is the memefish
 // SQL rendering of the parameter, so it stays a string by design.
 type paramRow struct {

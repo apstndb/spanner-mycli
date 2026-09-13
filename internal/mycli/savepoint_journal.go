@@ -140,6 +140,22 @@ func (rs *replayState) commitPrepared(e replayEntry) {
 	rs.entries = append(rs.entries, e)
 }
 
+// retractLastSQL drops the last journaled SQL/DML entry when it is the
+// just-committed capture identified by tok. Used when buffered CLI output
+// fails after collection already committed the operation.
+func (rs *replayState) retractLastSQL(tok *captureToken) bool {
+	if rs == nil || tok == nil || tok.planOnly || len(rs.entries) == 0 {
+		return false
+	}
+	last := rs.entries[len(rs.entries)-1]
+	if last.kind != replayKindSQL || last.stmt.SQL != tok.frozen.SQL || last.payloadBytes != tok.reserved {
+		return false
+	}
+	rs.entries = rs.entries[:len(rs.entries)-1]
+	rs.release(last.payloadBytes)
+	return true
+}
+
 func (rs *replayState) dropQueued() {
 	if rs == nil {
 		return

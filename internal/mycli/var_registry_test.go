@@ -60,11 +60,13 @@ func TestRegistryAddEnforcesSetPolicy(t *testing.T) {
 	t.Parallel()
 
 	activeTxn := func() bool { return true }
+	activeBatch := func() bool { return true }
 
 	tests := []struct {
 		name    string
 		def     varDef
 		txn     func() bool // systemVariables.inTransaction; nil means no session yet
+		batch   func() bool
 		wantErr error
 	}{
 		{
@@ -85,6 +87,12 @@ func TestRegistryAddEnforcesSetPolicy(t *testing.T) {
 			txn:     activeTxn,
 			wantErr: errSetterInTransaction,
 		},
+		{
+			name:    "batchGuard blocks add while a manual batch is open",
+			def:     varDef{name: "FAKE_BATCH", scope: scopeSession, batchGuard: true},
+			batch:   activeBatch,
+			wantErr: errSetterInManualBatch,
+		},
 	}
 
 	for _, tt := range tests {
@@ -94,7 +102,7 @@ func TestRegistryAddEnforcesSetPolicy(t *testing.T) {
 			addCalled := false
 			def := tt.def
 			r := &VarRegistry{
-				sv: &systemVariables{inTransaction: tt.txn},
+				sv: &systemVariables{inTransaction: tt.txn, inManualBatch: tt.batch},
 				vars: map[string]*registeredVar{
 					strings.ToUpper(def.name): {
 						def: &def,

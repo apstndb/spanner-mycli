@@ -224,6 +224,7 @@ func (tm *TransactionManager) finishQueryCaptureLocked(tok *captureToken, consum
 		payloadBytes: pending.reserved,
 	}
 	tm.tc.replay.commitPrepared(e)
+	tm.tc.lastCommitted = pending
 	return nil
 }
 
@@ -262,6 +263,7 @@ func (tm *TransactionManager) finishDMLCaptureLocked(tok *captureToken, count in
 		dml:          true,
 	}
 	tm.tc.replay.commitPrepared(e)
+	tm.tc.lastCommitted = pending
 	return nil
 }
 

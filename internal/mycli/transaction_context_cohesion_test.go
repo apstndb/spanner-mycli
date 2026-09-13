@@ -231,12 +231,14 @@ func sessionForTM(t *testing.T, tm *TransactionManager) *Session {
 	t.Helper()
 	tm.sysVars.ensureRegistry()
 	tm.sysVars.inTransaction = tm.InTransaction
-	return &Session{
+	session := &Session{
 		mode:            DatabaseConnected,
 		systemVariables: tm.sysVars,
 		connection:      tm.sysVars.Connection,
 		txn:             tm,
 	}
+	tm.sysVars.inManualBatch = session.batch.IsActive
+	return session
 }
 
 func TestTransactionContextFailedROActivationPreservesPending(t *testing.T) {

@@ -493,9 +493,10 @@ func (s *heartbeatRPCServer) resultSet(txnID []byte, readTs *timestamppb.Timesta
 }
 
 type heartbeatHarness struct {
-	tm     *TransactionManager
-	server *heartbeatRPCServer
-	ticks  chan time.Time
+	tm         *TransactionManager
+	server     *heartbeatRPCServer
+	clientOpts []option.ClientOption
+	ticks      chan time.Time
 
 	arrived chan struct{}
 	release chan struct{}
@@ -528,8 +529,9 @@ func newHeartbeatHarness(t *testing.T) *heartbeatHarness {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = conn.Close() })
+	clientOpts := []option.ClientOption{option.WithGRPCConn(conn)}
 	client, err := spanner.NewClientWithConfig(t.Context(), "projects/test/instances/test/databases/test",
-		spanner.ClientConfig{DisableNativeMetrics: true}, option.WithGRPCConn(conn))
+		spanner.ClientConfig{DisableNativeMetrics: true}, clientOpts...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -539,13 +541,14 @@ func newHeartbeatHarness(t *testing.T) *heartbeatHarness {
 	tm := NewTransactionManager(client, sysVars, spanner.ClientConfig{DisableNativeMetrics: true})
 	ticks := make(chan time.Time)
 	h := &heartbeatHarness{
-		tm:      tm,
-		server:  server,
-		ticks:   ticks,
-		arrived: make(chan struct{}),
-		release: make(chan struct{}),
-		attempt: make(chan struct{}, 8),
-		unblock: make(chan struct{}),
+		tm:         tm,
+		server:     server,
+		clientOpts: clientOpts,
+		ticks:      ticks,
+		arrived:    make(chan struct{}),
+		release:    make(chan struct{}),
+		attempt:    make(chan struct{}, 8),
+		unblock:    make(chan struct{}),
 	}
 	tm.heartbeatTicks = ticks
 	t.Cleanup(func() {
@@ -554,6 +557,13 @@ func newHeartbeatHarness(t *testing.T) *heartbeatHarness {
 		tm.clearTransactionContext()
 	})
 	return h
+}
+
+func (h *heartbeatHarness) attachSessionClient(session *Session) {
+	session.client = h.tm.client
+	session.clientConfig = h.tm.clientConfig
+	session.clientOpts = h.clientOpts
+	session.connection = ConnectionVars{Project: "test", Instance: "test", Database: "test"}
 }
 
 func (h *heartbeatHarness) releaseBarriers() {

@@ -62,6 +62,53 @@ func (tm *TransactionManager) rejectIfRecoveringLocked() error {
 	return nil
 }
 
+func (tm *TransactionManager) rejectIfRecovering() error {
+	if tm == nil {
+		return nil
+	}
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+	return tm.rejectIfRecoveringLocked()
+}
+
+func (tm *TransactionManager) clearLastCommitted() {
+	if tm == nil {
+		return
+	}
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+	if tm.tc != nil {
+		tm.tc.lastCommitted = nil
+	}
+}
+
+// handleBufferedOutputFailure retracts the statement that just committed into
+// the journal, then applies the same owner/attempt failure boundary as a
+// collection error. A marker still present enters recovery-required. A
+// replacement or independent owner is left unchanged.
+func (tm *TransactionManager) handleBufferedOutputFailure(ctx context.Context, err error) error {
+	if tm == nil || err == nil {
+		return err
+	}
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+	var tok *captureToken
+	if tm.tc != nil {
+		tok = tm.tc.lastCommitted
+		tm.tc.lastCommitted = nil
+	}
+	if tok.belongsToLocked(tm) && tm.tc.replay != nil {
+		tm.tc.replay.retractLastSQL(tok)
+	}
+	if !tok.belongsToLocked(tm) {
+		return err
+	}
+	if tm.shouldEnterRecoveryLocked() {
+		return tm.enterRecoveryLocked(ctx, err)
+	}
+	return tm.rollbackReadWriteIfAbortedLocked(ctx, err)
+}
+
 func savepointCleanupContext() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), savepointCleanupTimeout)
 }

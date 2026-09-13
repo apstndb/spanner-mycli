@@ -409,7 +409,7 @@ func newConstructedSession(
 	sysVars *systemVariables,
 	identity ConnectionVars,
 ) *Session {
-	return &Session{
+	s := &Session{
 		mode:            mode,
 		client:          client,
 		clientConfig:    clientConfig,
@@ -419,6 +419,10 @@ func newConstructedSession(
 		systemVariables: sysVars,
 		connection:      identity,
 	}
+	if sysVars != nil {
+		sysVars.inManualBatch = s.batch.IsActive
+	}
+	return s
 }
 
 func newSessionWithFactories(
@@ -775,9 +779,11 @@ func (s *Session) RecreateClient(ctx context.Context) error {
 	}
 	// Refuse the swap if a transaction context is still live: SetClient enforces
 	// the lifecycle invariant that the old client must not be closed while a
-	// transaction (and its heartbeat goroutine) could still use it. On refusal,
-	// close the NEW client and surface the error (it joins the Aborted error at
-	// the caller). Only on success close the OLD client and update Session.client.
+	// transaction (and its heartbeat goroutine) could still use it. Recoverable
+	// SAVEPOINT abort skips RecreateClient while that owner is attached. On
+	// refusal, close the NEW client and surface the error (it joins the Aborted
+	// error at the caller). Only on success close the OLD client and update
+	// Session.client.
 	if err := s.txn.SetClient(c); err != nil {
 		c.Close()
 		return err
@@ -851,6 +857,15 @@ func (s *Session) executeStatement(ctx context.Context, stmt Statement, out Oper
 	// Validate statement compatibility with current session mode
 	if err := s.ValidateStatementExecution(stmt); err != nil {
 		return nil, err
+	}
+
+	if s.txn != nil {
+		s.txn.clearLastCommitted()
+		if _, ok := stmt.(savepointRecoverySafeStatement); !ok {
+			if err := s.txn.rejectIfRecovering(); err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	// Apply statement timeout based on statement type

@@ -56,6 +56,8 @@ type RollbackToSavepointStatement struct {
 	Name string
 }
 
+func (s *RollbackToSavepointStatement) allowedDuringSavepointRecovery() {}
+
 func (s *RollbackToSavepointStatement) Execute(ctx context.Context, session *Session, _ OperationOutput) (*Result, error) {
 	if err := rejectSavepointCommand(session); err != nil {
 		return nil, err
