@@ -159,6 +159,49 @@ func TestSavepointPublicSetLocalAndOutputIsolation(t *testing.T) {
 	}
 }
 
+func TestSavepointPublicStreamingOutputIsolation(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	h := newHeartbeatHarness(t)
+	session := sessionForTM(t, h.tm)
+	session.systemVariables.Query.StreamingMode = enums.StreamingModeTrue
+	session.systemVariables.Display.CLIFormat = enums.DisplayModeCSV
+	cli := &Cli{SessionHandler: NewSessionHandler(session), SystemVariables: session.systemVariables}
+	mustExec(t, ctx, session, "SET CLI_SAVEPOINT_SUPPORT = 'ENABLED'")
+	mustExec(t, ctx, session, "BEGIN RW")
+	stmt, err := BuildStatement("SELECT 1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var prefixOut bytes.Buffer
+	if _, err := cli.executeStatement(ctx, stmt, false, "SELECT 1", &prefixOut); err != nil {
+		t.Fatalf("streaming prefix SELECT: %v", err)
+	}
+	mustExec(t, ctx, session, "SAVEPOINT keep")
+	prefixBytes := replayRetainedBytes(h.tm)
+
+	stmt2, err := BuildStatement("SELECT 2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if _, err := cli.executeStatement(ctx, stmt2, false, "SELECT 2", &out); err != nil {
+		t.Fatalf("streaming SELECT: %v", err)
+	}
+	cache := session.systemVariables.LastResult.QueryCache
+	readTs := session.systemVariables.LastResult.ReadTimestamp
+	mustExec(t, ctx, session, "ROLLBACK TO SAVEPOINT keep")
+	if session.systemVariables.LastResult.QueryCache != cache {
+		t.Fatal("streaming ROLLBACK TO overwrote LastResult.QueryCache")
+	}
+	if !session.systemVariables.LastResult.ReadTimestamp.Equal(readTs) {
+		t.Fatal("streaming ROLLBACK TO overwrote LastResult.ReadTimestamp")
+	}
+	if got := replayRetainedBytes(h.tm); got != prefixBytes {
+		t.Fatalf("replay retainedBytes=%d, want prefix %d", got, prefixBytes)
+	}
+}
+
 func TestSavepointPublicPendingMarkers(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()

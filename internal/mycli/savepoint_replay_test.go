@@ -267,6 +267,118 @@ func TestSavepointReplayFingerprintMismatchEndsTransaction(t *testing.T) {
 	}
 }
 
+func TestSavepointReplayQueryRowOrderMismatchEndsTransaction(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	const sql = "SELECT ordered"
+	h := newHeartbeatHarness(t)
+	h.tm.enableSavepointCaptureForTest()
+	session := sessionForTM(t, h.tm)
+	if err := h.tm.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+		t.Fatal(err)
+	}
+	h.server.setSQLRows(sql, []string{"1", "2"})
+	if _, err := executeSQLImplWithVars(ctx, session, sql, session.systemVariables, OperationOutput{w: io.Discard}); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.tm.CreateSavepoint(ctx, "keep"); err != nil {
+		t.Fatal(err)
+	}
+	h.server.setSQLRows(sql, []string{"2", "1"})
+	err := h.tm.RollbackToSavepoint(ctx, "keep")
+	assertReconstructionEnded(t, h, err, errSavepointFingerprintMismatch)
+}
+
+func TestSavepointReplayBatchCountVectorMismatchEndsTransaction(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	sqlA := "INSERT INTO T (id) VALUES (1)"
+	sqlB := "INSERT INTO T (id) VALUES (2)"
+	h := newHeartbeatHarness(t)
+	h.tm.enableSavepointCaptureForTest()
+	session := sessionForTM(t, h.tm)
+	if err := h.tm.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+		t.Fatal(err)
+	}
+	h.server.setSQLRowCount(sqlA, 1)
+	h.server.setSQLRowCount(sqlB, 2)
+	if _, err := executeBatchDML(ctx, session, []spanner.Statement{
+		spanner.NewStatement(sqlA),
+		spanner.NewStatement(sqlB),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.tm.CreateSavepoint(ctx, "keep"); err != nil {
+		t.Fatal(err)
+	}
+	h.server.setSQLRowCount(sqlA, 2)
+	h.server.setSQLRowCount(sqlB, 1)
+	err := h.tm.RollbackToSavepoint(ctx, "keep")
+	assertReconstructionEnded(t, h, err, errSavepointFingerprintMismatch)
+}
+
+func TestSavepointReplayUsesFrozenParamsOptionsAndTransactionTag(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	const sql = "SELECT @p"
+	h := newHeartbeatHarness(t)
+	session := sessionForTM(t, h.tm)
+	mustExec(t, ctx, session, "SET CLI_SAVEPOINT_SUPPORT = 'ENABLED'")
+	mustExec(t, ctx, session, "SET TRANSACTION_TAG = 'owner-tag'")
+	mustExec(t, ctx, session, "SET STATEMENT_TAG = 'stmt-tag'")
+	mustExec(t, ctx, session, "SET OPTIMIZER_VERSION = '1'")
+	mustExec(t, ctx, session, "SET PARAM p = 1")
+	mustExec(t, ctx, session, "BEGIN RW")
+	if _, err := executeSQLImplWithVars(ctx, session, sql, session.systemVariables, OperationOutput{w: io.Discard}); err != nil {
+		t.Fatal(err)
+	}
+	mustExec(t, ctx, session, "SAVEPOINT keep")
+	before := replayRetainedBytes(h.tm)
+	mustExec(t, ctx, session, "SET STATEMENT_TAG = 'later-tag'")
+	mustExec(t, ctx, session, "SET OPTIMIZER_VERSION = '2'")
+	mustExec(t, ctx, session, "SET PARAM p = 99")
+	mustExec(t, ctx, session, "ROLLBACK TO SAVEPOINT keep")
+	if got := replayRetainedBytes(h.tm); got != before {
+		t.Fatalf("replay retainedBytes=%d, want prefix %d", got, before)
+	}
+
+	replay, ok := lastSQLObservation(h.server.sqlObservations(), sql)
+	if !ok {
+		t.Fatal("no replay ExecuteSql for SELECT @p")
+	}
+	if replay.params["p"] != "1" {
+		t.Fatalf("replay param p = %q, want frozen 1; obs=%v", replay.params["p"], replay.params)
+	}
+	if replay.reqTag != "stmt-tag" {
+		t.Fatalf("replay STATEMENT_TAG = %q", replay.reqTag)
+	}
+	if replay.optimizer != "1" {
+		t.Fatalf("replay OPTIMIZER_VERSION = %q", replay.optimizer)
+	}
+
+	begins := h.server.beginObservations()
+	if len(begins) < 2 {
+		t.Fatalf("begin observations = %+v", begins)
+	}
+	if begins[0].txnTag != "owner-tag" {
+		t.Fatalf("original begin tag = %q", begins[0].txnTag)
+	}
+	if begins[len(begins)-1].txnTag != "owner-tag" {
+		t.Fatalf("reconstructed begin tag = %q, want frozen owner-tag", begins[len(begins)-1].txnTag)
+	}
+	if got := mustGetVar(t, session, "TRANSACTION_TAG"); got != "owner-tag" {
+		t.Fatalf("applied TRANSACTION_TAG after replay = %q", got)
+	}
+
+	mustExec(t, ctx, session, "COMMIT")
+	mustExec(t, ctx, session, "SET TRANSACTION_TAG = 'next-txn'")
+	mustExec(t, ctx, session, "BEGIN RW")
+	begins = h.server.beginObservations()
+	if begins[len(begins)-1].txnTag != "next-txn" {
+		t.Fatalf("next transaction tag = %q; reconstruction consumed the next-owner slot; begins=%+v", begins[len(begins)-1].txnTag, begins)
+	}
+}
+
 func TestSavepointRollbackToDropsEqualPositionMarkers(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()

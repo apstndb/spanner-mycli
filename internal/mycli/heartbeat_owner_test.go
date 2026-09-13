@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"slices"
 	"sync"
@@ -52,6 +53,13 @@ type sqlObservation struct {
 	readOnly  bool
 	hadReadTs bool
 	queryMode sppb.ExecuteSqlRequest_QueryMode
+	params    map[string]string
+	optimizer string
+}
+
+type beginObservation struct {
+	txnID  string
+	txnTag string
 }
 
 type batchDMLObservation struct {
@@ -70,6 +78,7 @@ type heartbeatRPCServer struct {
 	heartbeats   []heartbeatRecord
 	sqlObs       []sqlObservation
 	batchObs     []batchDMLObservation
+	begins       []beginObservation
 	rollbacks    []string
 	commits      []string
 	failROQuery  error
@@ -77,6 +86,7 @@ type heartbeatRPCServer struct {
 	failBatchDML error
 	sqlRowCount  map[string]int64
 	sqlValue     map[string]string
+	sqlRows      map[string][]string
 
 	heartbeatStarted     chan struct{}
 	heartbeatStartedOnce sync.Once
@@ -176,6 +186,15 @@ func (s *heartbeatRPCServer) setSQLValue(sql, value string) {
 	s.sqlValue[sql] = value
 }
 
+func (s *heartbeatRPCServer) setSQLRows(sql string, values []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.sqlRows == nil {
+		s.sqlRows = make(map[string][]string)
+	}
+	s.sqlRows[sql] = slices.Clone(values)
+}
+
 func (s *heartbeatRPCServer) rollbackIDs() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -207,7 +226,20 @@ func (s *heartbeatRPCServer) batchObservations() []batchDMLObservation {
 func (s *heartbeatRPCServer) sqlObservations() []sqlObservation {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return slices.Clone(s.sqlObs)
+	out := make([]sqlObservation, len(s.sqlObs))
+	for i, obs := range s.sqlObs {
+		out[i] = obs
+		if obs.params != nil {
+			out[i].params = maps.Clone(obs.params)
+		}
+	}
+	return out
+}
+
+func (s *heartbeatRPCServer) beginObservations() []beginObservation {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.begins)
 }
 
 func lastSQLObservation(obs []sqlObservation, sql string) (sqlObservation, bool) {
@@ -314,6 +346,10 @@ func (s *heartbeatRPCServer) BeginTransaction(_ context.Context, r *sppb.BeginTr
 	txn := &sppb.Transaction{Id: id}
 	s.mu.Lock()
 	s.ensureTxnMapsLocked()
+	s.begins = append(s.begins, beginObservation{
+		txnID:  string(id),
+		txnTag: r.GetRequestOptions().GetTransactionTag(),
+	})
 	if r.GetOptions().GetReadOnly() != nil {
 		s.roIDs[string(id)] = struct{}{}
 		txn.ReadTimestamp = timestamppb.Now()
@@ -361,9 +397,13 @@ func (s *heartbeatRPCServer) ExecuteBatchDml(_ context.Context, r *sppb.ExecuteB
 	}
 	results := make([]*sppb.ResultSet, len(r.GetStatements()))
 	for i := range results {
+		sql := ""
+		if i < len(sqls) {
+			sql = sqls[i]
+		}
 		results[i] = &sppb.ResultSet{
 			Stats: &sppb.ResultSetStats{
-				RowCount: &sppb.ResultSetStats_RowCountExact{RowCountExact: 1},
+				RowCount: &sppb.ResultSetStats_RowCountExact{RowCountExact: s.rowCountLocked(sql)},
 			},
 		}
 	}
@@ -384,11 +424,22 @@ func (s *heartbeatRPCServer) ExecuteStreamingSql(r *sppb.ExecuteSqlRequest, stre
 		return err
 	}
 	rs := s.resultSet(txnID, readTs, r.GetSql())
-	return stream.Send(&sppb.PartialResultSet{
-		Metadata: rs.Metadata,
-		Values:   rs.Rows[0].GetValues(),
-		Stats:    rs.Stats,
-	})
+	if len(rs.Rows) == 0 {
+		return stream.Send(&sppb.PartialResultSet{Metadata: rs.Metadata, Stats: rs.Stats})
+	}
+	for i, row := range rs.Rows {
+		prs := &sppb.PartialResultSet{Values: row.GetValues()}
+		if i == 0 {
+			prs.Metadata = rs.Metadata
+		}
+		if i == len(rs.Rows)-1 {
+			prs.Stats = rs.Stats
+		}
+		if err := stream.Send(prs); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *heartbeatRPCServer) prepareSQL(ctx context.Context, r *sppb.ExecuteSqlRequest) ([]byte, *timestamppb.Timestamp, error) {
@@ -437,6 +488,8 @@ func (s *heartbeatRPCServer) prepareSQL(ctx context.Context, r *sppb.ExecuteSqlR
 		readOnly:  ro,
 		hadReadTs: readTs != nil,
 		queryMode: r.GetQueryMode(),
+		params:    paramStringValues(r.GetParams()),
+		optimizer: r.GetQueryOptions().GetOptimizerVersion(),
 	})
 	return txnID, readTs, nil
 }
@@ -459,6 +512,15 @@ func (s *heartbeatRPCServer) valueLocked(sql string) string {
 	return "1"
 }
 
+func (s *heartbeatRPCServer) rowValuesLocked(sql string) []string {
+	if s.sqlRows != nil {
+		if values, ok := s.sqlRows[sql]; ok && len(values) > 0 {
+			return values
+		}
+	}
+	return []string{s.valueLocked(sql)}
+}
+
 func (s *heartbeatRPCServer) waitHeartbeatIfNeeded(ctx context.Context, r *sppb.ExecuteSqlRequest) error {
 	if r.GetRequestOptions().GetRequestTag() != "spanner_mycli_heartbeat" || s.blockHeartbeat == nil {
 		return nil
@@ -474,8 +536,12 @@ func (s *heartbeatRPCServer) waitHeartbeatIfNeeded(ctx context.Context, r *sppb.
 func (s *heartbeatRPCServer) resultSet(txnID []byte, readTs *timestamppb.Timestamp, sql string) *sppb.ResultSet {
 	s.mu.Lock()
 	count := s.rowCountLocked(sql)
-	value := s.valueLocked(sql)
+	values := s.rowValuesLocked(sql)
 	s.mu.Unlock()
+	rows := make([]*structpb.ListValue, len(values))
+	for i, value := range values {
+		rows[i] = &structpb.ListValue{Values: []*structpb.Value{structpb.NewStringValue(value)}}
+	}
 	return &sppb.ResultSet{
 		Metadata: &sppb.ResultSetMetadata{
 			RowType: &sppb.StructType{Fields: []*sppb.StructType_Field{
@@ -483,13 +549,23 @@ func (s *heartbeatRPCServer) resultSet(txnID []byte, readTs *timestamppb.Timesta
 			}},
 			Transaction: &sppb.Transaction{Id: txnID, ReadTimestamp: readTs},
 		},
-		Rows: []*structpb.ListValue{{
-			Values: []*structpb.Value{structpb.NewStringValue(value)},
-		}},
+		Rows: rows,
 		Stats: &sppb.ResultSetStats{
 			RowCount: &sppb.ResultSetStats_RowCountExact{RowCountExact: count},
 		},
 	}
+}
+
+func paramStringValues(params *structpb.Struct) map[string]string {
+	fields := params.GetFields()
+	if len(fields) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(fields))
+	for k, v := range fields {
+		out[k] = v.GetStringValue()
+	}
+	return out
 }
 
 type heartbeatHarness struct {

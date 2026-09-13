@@ -112,3 +112,73 @@ func TestSavepointEmulatorNestedReleaseAndPending(t *testing.T) {
 		)),
 	})
 }
+
+func TestSavepointEmulatorMixedWritesAndConstraintRecovery(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
+	defer cancel()
+
+	_, session := initializeWithRandomDB(t, testTableDDLs, nil)
+
+	for _, sql := range []string{
+		"SET CLI_SAVEPOINT_SUPPORT = 'ENABLED'",
+		"BEGIN",
+		"INSERT INTO tbl (id, active) VALUES (1, true)",
+		"UPDATE tbl SET active = false WHERE id = 1",
+		"SAVEPOINT keep",
+		"INSERT INTO tbl (id, active) VALUES (2, true)",
+	} {
+		stmt, err := BuildStatement(sql)
+		if err != nil {
+			t.Fatalf("BuildStatement(%q): %v", sql, err)
+		}
+		if _, err := stmt.Execute(ctx, session, OperationOutput{}); err != nil {
+			t.Fatalf("%s: %v", sql, err)
+		}
+	}
+
+	dup, err := BuildStatement("INSERT INTO tbl (id, active) VALUES (1, true)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := dup.Execute(ctx, session, OperationOutput{}); err == nil {
+		t.Fatal("duplicate insert succeeded")
+	}
+	if !session.txn.NeedsRecovery() {
+		t.Fatal("constraint failure did not enter recovery-required")
+	}
+
+	for _, sql := range []string{
+		"ROLLBACK TO SAVEPOINT keep",
+		"INSERT INTO tbl (id, active) VALUES (3, true)",
+		"COMMIT",
+	} {
+		stmt, err := BuildStatement(sql)
+		if err != nil {
+			t.Fatalf("BuildStatement(%q): %v", sql, err)
+		}
+		if _, err := stmt.Execute(ctx, session, OperationOutput{}); err != nil {
+			t.Fatalf("%s: %v", sql, err)
+		}
+	}
+
+	stmt, err := BuildStatement("SELECT id, active FROM tbl ORDER BY id ASC")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := stmt.Execute(ctx, session, OperationOutput{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	compareResult(t, result, &Result{
+		AffectedRows: 2,
+		TableHeader:  toTableHeader(testTableRowType),
+		Body: PresentationBody(sliceOf(
+			toRow("1", "false"),
+			toRow("3", "true"),
+		)),
+	})
+}
