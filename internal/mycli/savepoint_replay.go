@@ -19,12 +19,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 	"unicode/utf8"
 
 	"cloud.google.com/go/spanner"
 )
 
-const savepointNameLimit = 128
+const (
+	savepointNameLimit      = 128
+	savepointCleanupTimeout = 5 * time.Second
+)
 
 var (
 	errSavepointNotInTransaction     = errors.New("SAVEPOINT requires an explicit transaction")
@@ -55,17 +59,29 @@ func (tm *TransactionManager) rejectIfRecoveringLocked() error {
 	return nil
 }
 
-func (tm *TransactionManager) shouldEnterRecoveryLocked() bool {
-	return tm.capturingLocked() && tm.tc.replay.hasMarkers() && !tm.tc.replay.needsRecovery()
+func savepointCleanupContext() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), savepointCleanupTimeout)
 }
 
-func (tm *TransactionManager) discardPhysicalLocked(ctx context.Context) {
+func (tm *TransactionManager) shouldEnterRecoveryLocked() bool {
+	return tm.capturingLocked() &&
+		tm.tc.attrs.mode == transactionModeReadWrite &&
+		tm.tc.replay.hasMarkers() &&
+		!tm.tc.replay.needsRecovery()
+}
+
+func (tm *TransactionManager) discardPhysicalLocked(context.Context) {
 	if tm.tc == nil {
 		return
 	}
 	tm.tc.Close()
-	if rwTxn, ok := tm.tc.txn.(*spanner.ReadWriteStmtBasedTransaction); ok {
-		rwTxn.Rollback(ctx)
+	cleanup, cancel := savepointCleanupContext()
+	defer cancel()
+	switch txn := tm.tc.txn.(type) {
+	case *spanner.ReadWriteStmtBasedTransaction:
+		txn.Rollback(cleanup)
+	case *spanner.ReadOnlyTransaction:
+		txn.Close()
 	}
 	tm.tc.txn = nil
 }
@@ -85,6 +101,9 @@ func (tm *TransactionManager) enterRecoveryLocked(ctx context.Context, err error
 }
 
 func (tm *TransactionManager) handleOwnerFailureLocked(ctx context.Context, err error) error {
+	if isAdmissionError(err) {
+		return err
+	}
 	if tm.shouldEnterRecoveryLocked() {
 		return tm.enterRecoveryLocked(ctx, err)
 	}
@@ -95,7 +114,7 @@ func (tm *TransactionManager) handleOwnerFailureLocked(ctx context.Context, err 
 }
 
 func (tm *TransactionManager) HandleOwnerFailure(ctx context.Context, err error) error {
-	if tm == nil || err == nil {
+	if tm == nil || err == nil || isAdmissionError(err) {
 		return err
 	}
 	tm.mu.Lock()
@@ -135,10 +154,15 @@ func (tm *TransactionManager) CreateSavepoint(ctx context.Context, name string) 
 		if _, _, ok := tm.tc.replay.lookup(name); ok {
 			return errSavepointDuplicate
 		}
-		if _, _, err := tm.flushAutomaticDMLLocked(ctx); err != nil {
+		n := savepointMarkerBytes(name)
+		if err := tm.tc.replay.reserve(n); err != nil {
 			return err
 		}
-		return tm.tc.replay.addSavepoint(name)
+		if _, _, err := tm.flushAutomaticDMLLocked(ctx); err != nil {
+			tm.tc.replay.release(n)
+			return err
+		}
+		return tm.tc.replay.commitSavepoint(name, n)
 	})
 }
 
@@ -182,7 +206,7 @@ func (tm *TransactionManager) rollbackToSavepointLocked(ctx context.Context, nam
 	if !tm.capturingLocked() {
 		return errSavepointNotInTransaction
 	}
-	_, sp, ok := tm.tc.replay.lookup(name)
+	idx, _, ok := tm.tc.replay.lookup(name)
 	if !ok {
 		return errSavepointUnknown
 	}
@@ -190,12 +214,12 @@ func (tm *TransactionManager) rollbackToSavepointLocked(ctx context.Context, nam
 	tm.tc.autoDML = nil
 
 	if tm.tc.attrs.mode != transactionModeReadWrite {
-		tm.tc.replay.truncateAfter(sp.position)
+		tm.tc.replay.rollbackToMarker(idx)
 		tm.tc.replay.recoveryRequired = nil
 		return nil
 	}
 
-	prefix := append([]replayEntry(nil), tm.tc.replay.entries[:sp.position]...)
+	prefix := append([]replayEntry(nil), tm.tc.replay.entries[:tm.tc.replay.savepoints[idx].position]...)
 	ctor := tm.tc.ctorOpts
 	tm.tc.replacing = true
 	defer func() {
@@ -210,11 +234,13 @@ func (tm *TransactionManager) rollbackToSavepointLocked(ctx context.Context, nam
 		return tm.failReconstructionLocked(err)
 	}
 	if err := replayPrefix(ctx, candidate, prefix); err != nil {
-		candidate.Rollback(ctx)
+		cleanup, cancel := savepointCleanupContext()
+		candidate.Rollback(cleanup)
+		cancel()
 		return tm.failReconstructionLocked(err)
 	}
-	tm.tc.txn = candidate
-	tm.tc.replay.truncateAfter(sp.position)
+	tm.tc.publishPhysical(candidate)
+	tm.tc.replay.rollbackToMarker(idx)
 	tm.tc.replay.recoveryRequired = nil
 	if tm.tc.attrs.sendHeartbeat {
 		tm.tc.EnableHeartbeat()
@@ -224,7 +250,7 @@ func (tm *TransactionManager) rollbackToSavepointLocked(ctx context.Context, nam
 
 func (tm *TransactionManager) failReconstructionLocked(err error) error {
 	tm.retireTransactionContextLocked()
-	return fmt.Errorf("%w: %v", errSavepointReconstructionFailed, err)
+	return fmt.Errorf("%w: %w", errSavepointReconstructionFailed, err)
 }
 
 func (s frozenStatement) statement() spanner.Statement {
@@ -260,14 +286,14 @@ func replayEntryOn(ctx context.Context, tx *spanner.ReadWriteStmtBasedTransactio
 func replaySQL(ctx context.Context, tx *spanner.ReadWriteStmtBasedTransaction, e replayEntry) error {
 	iter := tx.QueryWithOptions(ctx, e.stmt.statement(), e.stmt.Opts.toQueryOptions())
 	rec := &operationReceipt{}
-	_, _, _, _, err := consumeRowIterObserving(iter, func(*spanner.Row) error { return nil }, rec)
+	_, count, _, _, err := consumeRowIterObserving(iter, func(*spanner.Row) error { return nil }, rec)
 	if err != nil {
 		_, _ = rec.Finish(err)
 		return err
 	}
 	var fp []byte
 	if e.dml {
-		fp, err = rec.FinishDML(e.affected, nil)
+		fp, err = rec.FinishDML(count, nil)
 	} else {
 		fp, err = rec.Finish(nil)
 	}

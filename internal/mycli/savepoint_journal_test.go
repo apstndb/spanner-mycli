@@ -486,6 +486,35 @@ func TestReplayStateByteAccountingAndTruncate(t *testing.T) {
 	}
 }
 
+func TestReplayStateRollbackToMarkerDropsEqualPositionNames(t *testing.T) {
+	t.Parallel()
+	rs := &replayState{}
+	if err := rs.addSavepoint("a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := rs.addSavepoint("b"); err != nil {
+		t.Fatal(err)
+	}
+	if err := rs.addSavepoint("c"); err != nil {
+		t.Fatal(err)
+	}
+	before := rs.retainedBytes
+	rs.rollbackToMarker(0)
+	if len(rs.savepoints) != 1 || rs.savepoints[0].name != "a" {
+		t.Fatalf("markers after rollback to a: %+v", rs.savepoints)
+	}
+	if len(rs.entries) != 0 {
+		t.Fatalf("entries: %+v", rs.entries)
+	}
+	if rs.retainedBytes >= before || rs.retainedBytes != rs.savepoints[0].bytes {
+		t.Fatalf("retainedBytes=%d, want marker a only", rs.retainedBytes)
+	}
+	backing := rs.savepoints
+	if len(backing) > 1 && (backing[:cap(backing)][1].name != "" || backing[:cap(backing)][2].name != "") {
+		t.Fatal("later equal-position markers still reachable in backing array")
+	}
+}
+
 func TestFreezeStatementRejectsNonGenericParams(t *testing.T) {
 	t.Parallel()
 	_, err := freezeStatement("SELECT @p", map[string]any{"p": int64(1)}, spanner.QueryOptions{})

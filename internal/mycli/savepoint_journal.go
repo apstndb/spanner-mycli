@@ -213,6 +213,42 @@ func (rs *replayState) addSavepoint(name string) error {
 	return nil
 }
 
+func (rs *replayState) commitSavepoint(name string, n int64) error {
+	if _, _, ok := rs.lookup(name); ok {
+		rs.release(n)
+		return errSavepointDuplicate
+	}
+	rs.savepoints = append(rs.savepoints, savepoint{
+		name:     name,
+		position: len(rs.entries),
+		bytes:    n,
+	})
+	return nil
+}
+
+func (rs *replayState) rollbackToMarker(idx int) {
+	if rs == nil || idx < 0 || idx >= len(rs.savepoints) {
+		return
+	}
+	position := rs.savepoints[idx].position
+	if position > len(rs.entries) {
+		position = len(rs.entries)
+	}
+	for _, e := range rs.entries[position:] {
+		rs.retainedBytes -= e.payloadBytes
+	}
+	clear(rs.entries[position:])
+	rs.entries = rs.entries[:position]
+	for _, sp := range rs.savepoints[idx+1:] {
+		rs.retainedBytes -= sp.bytes
+	}
+	clear(rs.savepoints[idx+1:])
+	rs.savepoints = rs.savepoints[:idx+1]
+	if rs.retainedBytes < 0 {
+		rs.retainedBytes = 0
+	}
+}
+
 func (rs *replayState) truncateAfter(position int) {
 	if rs == nil || position < 0 {
 		return

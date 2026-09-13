@@ -484,3 +484,19 @@ func replayQueued(tm *TransactionManager) []frozenStatement {
 	}
 	return append([]frozenStatement(nil), tm.tc.replay.queued...)
 }
+
+func replayMarkerNames(tm *TransactionManager) []string {
+	if tm == nil {
+		return nil
+	}
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+	if tm.tc == nil || tm.tc.replay == nil {
+		return nil
+	}
+	names := make([]string, len(tm.tc.replay.savepoints))
+	for i, sp := range tm.tc.replay.savepoints {
+		names[i] = sp.name
+	}
+	return names
+}

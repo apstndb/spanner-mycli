@@ -1252,6 +1252,10 @@ func (tm *TransactionManager) startHeartbeat(ctx context.Context, owner *transac
 	ticks, stop := tm.heartbeatTickSource()
 	defer stop()
 
+	tm.mu.RLock()
+	startedAttempt := owner.attempt
+	tm.mu.RUnlock()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -1277,7 +1281,7 @@ func (tm *TransactionManager) startHeartbeat(ctx context.Context, owner *transac
 				// used to access the transaction. A delayed tick after A ends
 				// must exit rather than issue SELECT 1 on replacement owner B.
 				err := tm.withReadWriteTransactionContext(func(txn *spanner.ReadWriteStmtBasedTransaction, tc *transactionContext) error {
-					if tc != owner || tc.replacing {
+					if tc != owner || tc.replacing || tc.attempt != startedAttempt {
 						return errHeartbeatOwnerReplaced
 					}
 					// Always use LOW priority for heartbeat to avoid interfering with real work
