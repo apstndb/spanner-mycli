@@ -198,6 +198,7 @@ type queryExecution struct {
 	// rendering. Nil skips publication (DUMP's executeSQLWithFormatAndTxn
 	// path). Ownership is never inferred from pointer equality or display format.
 	QueryCacheDest **LastQueryCache
+	Receipt        *operationReceipt
 }
 
 func (qe *queryExecution) outputWriter() io.Writer {
@@ -498,8 +499,8 @@ func executeWithBuffering(ctx context.Context, qe *queryExecution) (*Result, err
 	// Capture the raw typed rows (identity transform); display formatting is
 	// deferred to printTableData so every CLI_FORMAT re-renders from values
 	// (issue #738). Format is therefore no longer decided at collection time.
-	rows, stats, _, metadata, plan, err := consumeRowIterCollectWithMetrics(
-		qe.Iter, func(r *spanner.Row) (*spanner.Row, error) { return r, nil }, qe.Metrics)
+	rows, stats, _, metadata, plan, err := consumeRowIterCollectObservingWithMetrics(
+		qe.Iter, func(r *spanner.Row) (*spanner.Row, error) { return r, nil }, qe.Metrics, qe.Receipt)
 	if err != nil {
 		return nil, err
 	}

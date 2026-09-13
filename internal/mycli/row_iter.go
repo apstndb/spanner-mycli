@@ -40,39 +40,58 @@ func consumeRowIterDiscard(iter *spanner.RowIterator) (queryStats map[string]int
 
 // consumeRowIter calls iter.Stop().
 func consumeRowIter(iter *spanner.RowIterator, f func(*spanner.Row) error) (queryStats map[string]interface{}, rowCount int64, metadata *sppb.ResultSetMetadata, queryPlan *sppb.QueryPlan, err error) {
+	return consumeRowIterObserving(iter, f, nil)
+}
+
+func consumeRowIterObserving(iter *spanner.RowIterator, f func(*spanner.Row) error, rec *operationReceipt) (queryStats map[string]interface{}, rowCount int64, metadata *sppb.ResultSetMetadata, queryPlan *sppb.QueryPlan, err error) {
 	var result spaniter.RowIteratorResult
 	for row, rowErr := range spaniter.RowIteratorSeq(iter, spaniter.WithResult(&result)) {
 		if rowErr != nil {
+			_, _ = rec.Finish(rowErr)
 			return nil, 0, nil, nil, rowErr
 		}
+		if err := rec.ObserveRow(row); err != nil {
+			_, _ = rec.Finish(err)
+			return nil, 0, nil, nil, err
+		}
 		if err := f(row); err != nil {
+			_, _ = rec.Finish(err)
 			return nil, 0, nil, nil, err
 		}
 	}
 
+	if err := rec.ObserveMetadata(result.Metadata); err != nil {
+		return nil, 0, nil, nil, err
+	}
+	if _, err := rec.Finish(nil); err != nil {
+		return nil, 0, nil, nil, err
+	}
 	return result.Stats.QueryStats, result.Stats.RowCount, result.Metadata, result.Stats.QueryPlan, nil
 }
 
 func consumeRowIterCollect[T any](iter *spanner.RowIterator, f func(*spanner.Row) (T, error)) (rows []T, queryStats map[string]interface{}, rowCount int64, metadata *sppb.ResultSetMetadata, queryPlan *sppb.QueryPlan, err error) {
+	return consumeRowIterCollectObserving(iter, f, nil)
+}
+
+func consumeRowIterCollectObserving[T any](iter *spanner.RowIterator, f func(*spanner.Row) (T, error), rec *operationReceipt) (rows []T, queryStats map[string]interface{}, rowCount int64, metadata *sppb.ResultSetMetadata, queryPlan *sppb.QueryPlan, err error) {
 	var results []T
-	stats, count, metadata, plan, err := consumeRowIter(iter, func(row *spanner.Row) error {
+	stats, count, metadata, plan, err := consumeRowIterObserving(iter, func(row *spanner.Row) error {
 		v, err := f(row)
 		if err != nil {
 			return err
 		}
 		results = append(results, v)
 		return nil
-	})
+	}, rec)
 
 	return results, stats, count, metadata, plan, err
 }
 
-// consumeRowIterCollectWithMetrics is like consumeRowIterCollect but collects metrics during execution.
-func consumeRowIterCollectWithMetrics[T any](iter *spanner.RowIterator, f func(*spanner.Row) (T, error), m *metrics.ExecutionMetrics) (rows []T, queryStats map[string]interface{}, rowCount int64, metadata *sppb.ResultSetMetadata, queryPlan *sppb.QueryPlan, err error) {
+func consumeRowIterCollectObservingWithMetrics[T any](iter *spanner.RowIterator, f func(*spanner.Row) (T, error), m *metrics.ExecutionMetrics, rec *operationReceipt) (rows []T, queryStats map[string]interface{}, rowCount int64, metadata *sppb.ResultSetMetadata, queryPlan *sppb.QueryPlan, err error) {
 	var results []T
 	firstRow := true
 
-	stats, count, metadata, plan, err := consumeRowIter(iter, func(row *spanner.Row) error {
+	stats, count, metadata, plan, err := consumeRowIterObserving(iter, func(row *spanner.Row) error {
 		now := time.Now()
 
 		// Record TTFB on first row
@@ -92,7 +111,7 @@ func consumeRowIterCollectWithMetrics[T any](iter *spanner.RowIterator, f func(*
 		m.RowCount = int64(len(results))
 
 		return nil
-	})
+	}, rec)
 
 	return results, stats, count, metadata, plan, err
 }
