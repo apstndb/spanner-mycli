@@ -33,6 +33,7 @@ import (
 type captureToken struct {
 	owner    *transactionContext
 	attempt  uint64
+	id       uint64
 	frozen   frozenStatement
 	rec      *operationReceipt
 	reserved int64
@@ -227,7 +228,7 @@ func (tm *TransactionManager) finishQueryCaptureLocked(tok *captureToken, consum
 		fingerprint:  pending.rec.fingerprint,
 		payloadBytes: pending.reserved,
 	}
-	tm.tc.replay.commitPrepared(e)
+	pending.id = tm.tc.replay.commitPrepared(e)
 	return nil
 }
 
@@ -265,7 +266,7 @@ func (tm *TransactionManager) finishDMLCaptureLocked(tok *captureToken, count in
 		payloadBytes: pending.reserved,
 		dml:          true,
 	}
-	tm.tc.replay.commitPrepared(e)
+	pending.id = tm.tc.replay.commitPrepared(e)
 	return nil
 }
 
@@ -349,10 +350,11 @@ func (tm *TransactionManager) completeBatchDMLLocked(counts []int64, rpcErr erro
 		counts:       append([]int64(nil), counts...),
 		payloadBytes: reserved,
 	}
-	rs.commitPrepared(e)
+	id := rs.commitPrepared(e)
 	return &captureToken{
 		owner:    tm.tc,
 		attempt:  tm.tc.attempt,
+		id:       id,
 		reserved: reserved,
 		kind:     replayKindBatchDML,
 		n:        len(batch),
@@ -397,10 +399,11 @@ func (tm *TransactionManager) completeMutationsLocked(rpcErr error) (*captureTok
 		fingerprint:  fp,
 		payloadBytes: reserved,
 	}
-	rs.commitPrepared(e)
+	id := rs.commitPrepared(e)
 	return &captureToken{
 		owner:    tm.tc,
 		attempt:  tm.tc.attempt,
+		id:       id,
 		reserved: reserved,
 		kind:     replayKindMutate,
 		n:        len(frozen),

@@ -561,7 +561,7 @@ func TestFreezeStatementRejectsNonGenericParams(t *testing.T) {
 	}
 }
 
-func TestReplayStateRetractLastClearsBackingSlot(t *testing.T) {
+func TestReplayStateRetractClearsBackingSlot(t *testing.T) {
 	t.Parallel()
 	fp, err := newResultFingerprinter(nil)
 	if err != nil {
@@ -584,10 +584,10 @@ func TestReplayStateRetractLastClearsBackingSlot(t *testing.T) {
 		if err := rs.appendEntry(replayEntry{kind: replayKindSQL, stmt: stmt, fingerprint: slices.Clone(sum)}); err != nil {
 			t.Fatal(err)
 		}
-		tok := &captureToken{kind: replayKindSQL, frozen: stmt, reserved: rs.entries[0].payloadBytes}
+		tok := &captureToken{id: rs.entries[0].id}
 		backing := rs.entries
-		if !rs.retractLast(tok) {
-			t.Fatal("retractLast SQL")
+		if !rs.retract(tok) {
+			t.Fatal("retract SQL")
 		}
 		if len(rs.entries) != 0 || rs.retainedBytes != 0 {
 			t.Fatalf("after retract: entries=%d bytes=%d", len(rs.entries), rs.retainedBytes)
@@ -609,10 +609,10 @@ func TestReplayStateRetractLastClearsBackingSlot(t *testing.T) {
 		if err := rs.appendEntry(replayEntry{kind: replayKindBatchDML, batch: []frozenStatement{stmt}, fingerprint: slices.Clone(sum), counts: []int64{1}}); err != nil {
 			t.Fatal(err)
 		}
-		tok := &captureToken{kind: replayKindBatchDML, reserved: rs.entries[0].payloadBytes, n: 1}
+		tok := &captureToken{id: rs.entries[0].id}
 		backing := rs.entries
-		if !rs.retractLast(tok) {
-			t.Fatal("retractLast batch")
+		if !rs.retract(tok) {
+			t.Fatal("retract batch")
 		}
 		for _, e := range backing[:cap(backing)] {
 			if e.batch != nil || e.fingerprint != nil {
@@ -628,15 +628,46 @@ func TestReplayStateRetractLastClearsBackingSlot(t *testing.T) {
 		if err := rs.appendEntry(replayEntry{kind: replayKindMutate, mutations: []frozenMutation{mut}, fingerprint: slices.Clone(sum)}); err != nil {
 			t.Fatal(err)
 		}
-		tok := &captureToken{kind: replayKindMutate, reserved: rs.entries[0].payloadBytes, n: 1}
+		tok := &captureToken{id: rs.entries[0].id}
 		backing := rs.entries
-		if !rs.retractLast(tok) {
-			t.Fatal("retractLast mutate")
+		if !rs.retract(tok) {
+			t.Fatal("retract mutate")
 		}
 		for _, e := range backing[:cap(backing)] {
 			if e.mutations != nil || e.fingerprint != nil {
 				t.Fatal("retracted mutate entry still reachable in backing array")
 			}
+		}
+	})
+
+	t.Run("identical_sql_suffix", func(t *testing.T) {
+		t.Parallel()
+		rs := &replayState{}
+		stmt, err := freezeStatement("SELECT 1", nil, spanner.QueryOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := rs.appendEntry(replayEntry{kind: replayKindSQL, stmt: stmt, fingerprint: slices.Clone(sum)}); err != nil {
+			t.Fatal(err)
+		}
+		first := rs.entries[0].id
+		if err := rs.appendEntry(replayEntry{kind: replayKindSQL, stmt: stmt, fingerprint: slices.Clone(sum)}); err != nil {
+			t.Fatal(err)
+		}
+		if err := rs.addSavepoint("later"); err != nil {
+			t.Fatal(err)
+		}
+		if !rs.retract(&captureToken{id: first}) {
+			t.Fatal("retract first identical SQL")
+		}
+		if len(rs.entries) != 0 {
+			t.Fatalf("suffix remained: %+v", rs.entries)
+		}
+		if _, _, ok := rs.lookup("later"); ok {
+			t.Fatal("dependent marker survived retract")
+		}
+		if rs.retainedBytes != 0 {
+			t.Fatalf("retainedBytes=%d after suffix retract", rs.retainedBytes)
 		}
 	})
 }

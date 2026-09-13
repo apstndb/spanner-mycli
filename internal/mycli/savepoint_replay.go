@@ -71,11 +71,13 @@ func (tm *TransactionManager) rejectIfRecovering() error {
 	return tm.rejectIfRecoveringLocked()
 }
 
-// handleBufferedOutputFailure retracts the identified command's journal entry
-// when that command still belongs to the current owner/attempt, then applies
-// the same owner/attempt failure boundary as a collection error. A stale,
-// independent, or replaced command is left unchanged. A marker still present
-// on a matching owner enters recovery-required.
+// handleBufferedOutputFailure retracts the identified command's journal
+// entry and any dependent suffix/markers when that command still belongs to
+// the current owner/attempt, then applies the same owner/attempt failure
+// boundary as a collection error. A stale, independent, or replaced command
+// is left unchanged. A marker still present on a matching owner enters
+// recovery-required. Called after display returns, so it does not hold the
+// writer under this lock.
 func (tm *TransactionManager) handleBufferedOutputFailure(ctx context.Context, tok *captureToken, err error) error {
 	if tm == nil || err == nil {
 		return err
@@ -83,7 +85,7 @@ func (tm *TransactionManager) handleBufferedOutputFailure(ctx context.Context, t
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
 	if tok.belongsToLocked(tm) && tm.tc.replay != nil {
-		tm.tc.replay.retractLast(tok)
+		tm.tc.replay.retract(tok)
 	}
 	if !tok.belongsToLocked(tm) {
 		return err

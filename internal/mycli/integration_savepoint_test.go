@@ -126,10 +126,15 @@ func TestSavepointEmulatorMixedWritesAndConstraintRecovery(t *testing.T) {
 	for _, sql := range []string{
 		"SET CLI_SAVEPOINT_SUPPORT = 'ENABLED'",
 		"BEGIN",
-		"INSERT INTO tbl (id, active) VALUES (1, true)",
-		"UPDATE tbl SET active = false WHERE id = 1",
+		"MUTATE tbl INSERT STRUCT(1 AS id, TRUE AS active)",
+		"MUTATE tbl INSERT STRUCT(2 AS id, TRUE AS active)",
+		"MUTATE tbl DELETE KEY_RANGE(start_closed=>(2), end_open=>(3))",
+		"START BATCH DML",
+		"INSERT INTO tbl (id, active) VALUES (3, true)",
+		"RUN BATCH",
+		"INSERT INTO tbl (id, active) VALUES (4, false) THEN RETURN id",
 		"SAVEPOINT keep",
-		"INSERT INTO tbl (id, active) VALUES (2, true)",
+		"INSERT INTO tbl (id, active) VALUES (5, true)",
 	} {
 		stmt, err := BuildStatement(sql)
 		if err != nil {
@@ -140,7 +145,7 @@ func TestSavepointEmulatorMixedWritesAndConstraintRecovery(t *testing.T) {
 		}
 	}
 
-	dup, err := BuildStatement("INSERT INTO tbl (id, active) VALUES (1, true)")
+	dup, err := BuildStatement("INSERT INTO tbl (id, active) VALUES (3, true)")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +158,7 @@ func TestSavepointEmulatorMixedWritesAndConstraintRecovery(t *testing.T) {
 
 	for _, sql := range []string{
 		"ROLLBACK TO SAVEPOINT keep",
-		"INSERT INTO tbl (id, active) VALUES (3, true)",
+		"INSERT INTO tbl (id, active) VALUES (6, true)",
 		"COMMIT",
 	} {
 		stmt, err := BuildStatement(sql)
@@ -174,11 +179,13 @@ func TestSavepointEmulatorMixedWritesAndConstraintRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	compareResult(t, result, &Result{
-		AffectedRows: 2,
+		AffectedRows: 4,
 		TableHeader:  toTableHeader(testTableRowType),
 		Body: PresentationBody(sliceOf(
-			toRow("1", "false"),
+			toRow("1", "true"),
 			toRow("3", "true"),
+			toRow("4", "false"),
+			toRow("6", "true"),
 		)),
 	})
 }

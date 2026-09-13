@@ -337,6 +337,9 @@ func TestSavepointReplayUsesFrozenParamsOptionsAndTransactionTag(t *testing.T) {
 	mustExec(t, ctx, session, "SET STATEMENT_TAG = 'later-tag'")
 	mustExec(t, ctx, session, "SET OPTIMIZER_VERSION = '2'")
 	mustExec(t, ctx, session, "SET PARAM p = 99")
+	h.tm.mu.Lock()
+	h.tm.sysVars.Transaction.TransactionTag = "next-txn"
+	h.tm.mu.Unlock()
 	mustExec(t, ctx, session, "ROLLBACK TO SAVEPOINT keep")
 	if got := replayRetainedBytes(h.tm); got != before {
 		t.Fatalf("replay retainedBytes=%d, want prefix %d", got, before)
@@ -370,8 +373,24 @@ func TestSavepointReplayUsesFrozenParamsOptionsAndTransactionTag(t *testing.T) {
 		t.Fatalf("applied TRANSACTION_TAG after replay = %q", got)
 	}
 
+	if _, err := executeSQLImplWithVars(ctx, session, sql, session.systemVariables, OperationOutput{w: io.Discard}); err != nil {
+		t.Fatal(err)
+	}
+	later, ok := lastSQLObservation(h.server.sqlObservations(), sql)
+	if !ok {
+		t.Fatal("no later ExecuteSql for SELECT @p")
+	}
+	if later.params["p"] != "99" {
+		t.Fatalf("later param p = %q, want current 99; obs=%v", later.params["p"], later.params)
+	}
+	if later.reqTag != "later-tag" {
+		t.Fatalf("later STATEMENT_TAG = %q", later.reqTag)
+	}
+	if later.optimizer != "2" {
+		t.Fatalf("later OPTIMIZER_VERSION = %q", later.optimizer)
+	}
+
 	mustExec(t, ctx, session, "COMMIT")
-	mustExec(t, ctx, session, "SET TRANSACTION_TAG = 'next-txn'")
 	mustExec(t, ctx, session, "BEGIN RW")
 	begins = h.server.beginObservations()
 	if begins[len(begins)-1].txnTag != "next-txn" {

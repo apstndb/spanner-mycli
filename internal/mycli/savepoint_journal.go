@@ -83,6 +83,7 @@ type frozenMutation struct {
 }
 
 type replayEntry struct {
+	id           uint64
 	kind         replayKind
 	stmt         frozenStatement
 	batch        []frozenStatement
@@ -98,6 +99,7 @@ type replayState struct {
 	entries          []replayEntry
 	savepoints       []savepoint
 	retainedBytes    int64
+	nextID           uint64
 	recoveryRequired error
 	// queued holds frozen automatic DML reserved at enqueue. It is not a
 	// replay entry until BatchUpdate succeeds.
@@ -133,46 +135,38 @@ func (rs *replayState) release(n int64) {
 	}
 }
 
-func (rs *replayState) commitPrepared(e replayEntry) {
+func (rs *replayState) commitPrepared(e replayEntry) uint64 {
 	if e.payloadBytes == 0 {
 		e.payloadBytes = e.accountedBytes()
 	}
+	rs.assignID(&e)
 	rs.entries = append(rs.entries, e)
+	return e.id
 }
 
-// retractLast drops the last journaled entry when it is the just-completed
-// capture identified by tok. Used when buffered CLI output fails after
-// collection already committed the operation. The backing slot is cleared
-// so frozen SQL/parameters/mutations are not retained after truncation.
-func (rs *replayState) retractLast(tok *captureToken) bool {
-	if rs == nil || tok == nil || tok.planOnly || len(rs.entries) == 0 {
+func (rs *replayState) assignID(e *replayEntry) {
+	if rs == nil || e == nil {
+		return
+	}
+	rs.nextID++
+	e.id = rs.nextID
+}
+
+// retract drops the journaled capture identified by tok.id and every later
+// entry and marker. Identity is the capture sequence, not SQL text, payload
+// size, or batch length. Used when buffered CLI output fails after collection
+// already committed the operation. Backing slots are cleared.
+func (rs *replayState) retract(tok *captureToken) bool {
+	if rs == nil || tok == nil || tok.planOnly || tok.id == 0 {
 		return false
 	}
-	lastIdx := len(rs.entries) - 1
-	last := rs.entries[lastIdx]
-	if last.kind != tok.kind || last.payloadBytes != tok.reserved {
-		return false
+	for i, e := range rs.entries {
+		if e.id == tok.id {
+			rs.truncateAfter(i)
+			return true
+		}
 	}
-	switch tok.kind {
-	case replayKindSQL:
-		if last.stmt.SQL != tok.frozen.SQL {
-			return false
-		}
-	case replayKindBatchDML:
-		if len(last.batch) != tok.n {
-			return false
-		}
-	case replayKindMutate:
-		if len(last.mutations) != tok.n {
-			return false
-		}
-	default:
-		return false
-	}
-	rs.release(last.payloadBytes)
-	clear(rs.entries[lastIdx : lastIdx+1])
-	rs.entries = rs.entries[:lastIdx]
-	return true
+	return false
 }
 
 func (rs *replayState) dropQueued() {
@@ -194,6 +188,7 @@ func (rs *replayState) appendEntry(e replayEntry) error {
 	if err := rs.reserve(e.payloadBytes); err != nil {
 		return err
 	}
+	rs.assignID(&e)
 	rs.entries = append(rs.entries, e)
 	return nil
 }

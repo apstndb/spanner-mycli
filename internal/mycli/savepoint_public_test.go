@@ -31,6 +31,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/apstndb/spanner-mycli/enums"
+	"github.com/apstndb/spanner-mycli/internal/mycli/streamio"
 )
 
 func TestCLISavepointSupportDefaultDisabled(t *testing.T) {
@@ -163,44 +164,88 @@ func TestSavepointPublicSetLocalAndOutputIsolation(t *testing.T) {
 
 func TestSavepointPublicStreamingOutputIsolation(t *testing.T) {
 	t.Parallel()
-	ctx := t.Context()
-	h := newHeartbeatHarness(t)
-	session := sessionForTM(t, h.tm)
-	session.systemVariables.Query.StreamingMode = enums.StreamingModeTrue
-	session.systemVariables.Display.CLIFormat = enums.DisplayModeCSV
-	cli := &Cli{SessionHandler: NewSessionHandler(session), SystemVariables: session.systemVariables}
-	mustExec(t, ctx, session, "SET CLI_SAVEPOINT_SUPPORT = 'ENABLED'")
-	mustExec(t, ctx, session, "BEGIN RW")
-	stmt, err := BuildStatement("SELECT 1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var prefixOut bytes.Buffer
-	if _, err := cli.executeStatement(ctx, stmt, false, "SELECT 1", &prefixOut); err != nil {
-		t.Fatalf("streaming prefix SELECT: %v", err)
-	}
-	mustExec(t, ctx, session, "SAVEPOINT keep")
-	prefixBytes := replayRetainedBytes(h.tm)
+	for _, tc := range []struct {
+		name      string
+		format    enums.DisplayMode
+		streaming enums.StreamingMode
+		wantQuery func(string) bool
+	}{
+		{
+			name:      "table_buffered",
+			format:    enums.DisplayModeTable,
+			streaming: enums.StreamingModeFalse,
+			wantQuery: func(got string) bool { return strings.Contains(got, "1") },
+		},
+		{
+			name:      "table_streaming",
+			format:    enums.DisplayModeTable,
+			streaming: enums.StreamingModeTrue,
+			wantQuery: func(got string) bool { return strings.Contains(got, "1") },
+		},
+		{
+			name:      "csv",
+			format:    enums.DisplayModeCSV,
+			streaming: enums.StreamingModeTrue,
+			wantQuery: func(got string) bool { return strings.Contains(got, "1") },
+		},
+		{
+			name:      "jsonl",
+			format:    enums.DisplayModeJSONL,
+			streaming: enums.StreamingModeTrue,
+			wantQuery: func(got string) bool { return strings.Contains(got, "1") },
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := t.Context()
+			h := newHeartbeatHarness(t)
+			session := sessionForTM(t, h.tm)
+			session.systemVariables.Display.CLIFormat = tc.format
+			session.systemVariables.Query.StreamingMode = tc.streaming
+			session.systemVariables.Display.SuppressResultLines = true
+			var defaultOut bytes.Buffer
+			session.systemVariables.StreamManager = streamio.NewStreamManager(io.NopCloser(strings.NewReader("")), &defaultOut, io.Discard)
+			cli := &Cli{SessionHandler: NewSessionHandler(session), SystemVariables: session.systemVariables}
 
-	stmt2, err := BuildStatement("SELECT 2")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var out bytes.Buffer
-	if _, err := cli.executeStatement(ctx, stmt2, false, "SELECT 2", &out); err != nil {
-		t.Fatalf("streaming SELECT: %v", err)
-	}
-	cache := session.systemVariables.LastResult.QueryCache
-	readTs := session.systemVariables.LastResult.ReadTimestamp
-	mustExec(t, ctx, session, "ROLLBACK TO SAVEPOINT keep")
-	if session.systemVariables.LastResult.QueryCache != cache {
-		t.Fatal("streaming ROLLBACK TO overwrote LastResult.QueryCache")
-	}
-	if !session.systemVariables.LastResult.ReadTimestamp.Equal(readTs) {
-		t.Fatal("streaming ROLLBACK TO overwrote LastResult.ReadTimestamp")
-	}
-	if got := replayRetainedBytes(h.tm); got != prefixBytes {
-		t.Fatalf("replay retainedBytes=%d, want prefix %d", got, prefixBytes)
+			mustExec(t, ctx, session, "SET CLI_SAVEPOINT_SUPPORT = 'ENABLED'")
+			mustExec(t, ctx, session, "BEGIN RW")
+			stmt, err := BuildStatement("SELECT 1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := cli.executeStatement(ctx, stmt, false, "SELECT 1", nil); err != nil {
+				t.Fatalf("prefix SELECT: %v", err)
+			}
+			if !tc.wantQuery(defaultOut.String()) {
+				t.Fatalf("positive control missing query output %q", defaultOut.String())
+			}
+			mustExec(t, ctx, session, "SAVEPOINT keep")
+			prefixBytes := replayRetainedBytes(h.tm)
+			cache := session.systemVariables.LastResult.QueryCache
+			readTs := session.systemVariables.LastResult.ReadTimestamp
+			afterQuery := defaultOut.Len()
+
+			rb, err := BuildStatement("ROLLBACK TO SAVEPOINT keep")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := cli.executeStatement(ctx, rb, false, "ROLLBACK TO SAVEPOINT keep", nil); err != nil {
+				t.Fatalf("ROLLBACK TO: %v", err)
+			}
+			replayed := defaultOut.String()[afterQuery:]
+			if tc.wantQuery(replayed) {
+				t.Fatalf("replay emitted query bytes %q", replayed)
+			}
+			if session.systemVariables.LastResult.QueryCache != cache {
+				t.Fatal("ROLLBACK TO overwrote LastResult.QueryCache")
+			}
+			if !session.systemVariables.LastResult.ReadTimestamp.Equal(readTs) {
+				t.Fatal("ROLLBACK TO overwrote LastResult.ReadTimestamp")
+			}
+			if got := replayRetainedBytes(h.tm); got != prefixBytes {
+				t.Fatalf("replay retainedBytes=%d, want prefix %d", got, prefixBytes)
+			}
+		})
 	}
 }
 
@@ -542,6 +587,87 @@ func TestSavepointPublicBufferedOutputFailureIgnoresStaleCommand(t *testing.T) {
 				t.Fatal("replacement owner reused the original transactionContext")
 			}
 		})
+	}
+}
+
+func TestSavepointPublicBufferedOutputFailureInvalidatesSameAttemptSuffix(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	h := newHeartbeatHarness(t)
+	session := sessionForTM(t, h.tm)
+	enableBufferedMarkdownOutput(session)
+	cli := &Cli{SessionHandler: NewSessionHandler(session), SystemVariables: session.systemVariables}
+
+	mustExec(t, ctx, session, "SET CLI_SAVEPOINT_SUPPORT = 'ENABLED'")
+	mustExec(t, ctx, session, "BEGIN RW")
+	mustExec(t, ctx, session, "SAVEPOINT keep")
+	owner := txnContext(h.tm)
+	attempt := owner.attempt
+
+	stmt, err := BuildStatement("SELECT 1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cause := errors.New("incomplete buffered display failed")
+	w := &barrierFailWriter{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+		err:     cause,
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := cli.executeStatement(ctx, stmt, false, "SELECT 1", w)
+		done <- err
+	}()
+	select {
+	case <-w.started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("buffered writer did not start")
+	}
+
+	mustExec(t, ctx, session, "SELECT 2")
+	mustExec(t, ctx, session, "SAVEPOINT incomplete")
+	if txnContext(h.tm) != owner || owner.attempt != attempt {
+		t.Fatal("same-attempt suffix used a different owner/attempt")
+	}
+	beforeFail := replayJournal(h.tm)
+	if len(beforeFail) != 2 {
+		t.Fatalf("journal before stale failure: %+v", beforeFail)
+	}
+
+	close(w.release)
+	select {
+	case err := <-done:
+		if !errors.Is(err, cause) {
+			t.Fatalf("incomplete buffered error = %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("incomplete buffered display did not return")
+	}
+	if txnContext(h.tm) != owner {
+		t.Fatal("same-attempt display failure retired the logical owner")
+	}
+	if !h.tm.NeedsRecovery() {
+		t.Fatal("incomplete output did not enter recovery-required")
+	}
+	after := replayJournal(h.tm)
+	if len(after) != 0 {
+		t.Fatalf("failed output remained a checkpoint: %+v", after)
+	}
+	if _, err := execSQL(t, ctx, session, "ROLLBACK TO SAVEPOINT incomplete"); !errors.Is(err, errSavepointUnknown) {
+		t.Fatalf("dependent marker after incomplete output: %v", err)
+	}
+
+	obsBefore := len(h.server.sqlObservations())
+	mustExec(t, ctx, session, "ROLLBACK TO SAVEPOINT keep")
+	if h.tm.NeedsRecovery() {
+		t.Fatal("ROLLBACK TO keep did not clear recovery-required")
+	}
+	for _, rec := range h.server.sqlObservations()[obsBefore:] {
+		switch rec.sql {
+		case "SELECT 1", "SELECT 2":
+			t.Fatalf("replayed failed or suffix command %q", rec.sql)
+		}
 	}
 }
 
