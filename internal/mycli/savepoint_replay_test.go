@@ -962,6 +962,157 @@ func TestSavepointExplainAnalyzeFailureEntersRecovery(t *testing.T) {
 	}
 }
 
+func TestSavepointExplainDescribeSelectFailureEntersRecovery(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		code codes.Code
+		run  func(context.Context, *testing.T, *Session) error
+	}{
+		{
+			name: "explain_select_permission_denied",
+			code: codes.PermissionDenied,
+			run: func(ctx context.Context, t *testing.T, session *Session) error {
+				t.Helper()
+				_, err := executeExplain(ctx, session, "SELECT 2", false, enums.ExplainFormatUnspecified, 0, nil)
+				return err
+			},
+		},
+		{
+			name: "describe_select_permission_denied",
+			code: codes.PermissionDenied,
+			run: func(ctx context.Context, t *testing.T, session *Session) error {
+				t.Helper()
+				_, err := (&DescribeStatement{Statement: "SELECT 2"}).Execute(ctx, session, OperationOutput{w: io.Discard})
+				return err
+			},
+		},
+		{
+			name: "explain_select_aborted",
+			code: codes.Aborted,
+			run: func(ctx context.Context, t *testing.T, session *Session) error {
+				t.Helper()
+				_, err := executeExplain(ctx, session, "SELECT 2", false, enums.ExplainFormatUnspecified, 0, nil)
+				return err
+			},
+		},
+		{
+			name: "describe_select_aborted",
+			code: codes.Aborted,
+			run: func(ctx context.Context, t *testing.T, session *Session) error {
+				t.Helper()
+				_, err := (&DescribeStatement{Statement: "SELECT 2"}).Execute(ctx, session, OperationOutput{w: io.Discard})
+				return err
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := t.Context()
+			h := newHeartbeatHarness(t)
+			h.tm.enableSavepointCaptureForTest()
+			session := sessionForTM(t, h.tm)
+			if err := h.tm.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := executeSQLImplWithVars(ctx, session, "SELECT 1", session.systemVariables, OperationOutput{w: io.Discard}); err != nil {
+				t.Fatal(err)
+			}
+			if err := h.tm.CreateSavepoint(ctx, "keep"); err != nil {
+				t.Fatal(err)
+			}
+			owner := txnContext(h.tm)
+			prefix := replayJournal(h.tm)
+
+			h.server.setFailSQL(status.Error(tc.code, "injected explain describe select failure"))
+			err := tc.run(ctx, t, session)
+			if err == nil {
+				t.Fatal("EXPLAIN/DESCRIBE SELECT succeeded")
+			}
+			if spanner.ErrCode(err) != tc.code {
+				t.Fatalf("error = %v (%v), want %v", err, spanner.ErrCode(err), tc.code)
+			}
+			if txnContext(h.tm) != owner {
+				t.Fatal("EXPLAIN/DESCRIBE SELECT failure retired the logical owner")
+			}
+			if !h.tm.NeedsRecovery() {
+				t.Fatal("EXPLAIN/DESCRIBE SELECT failure did not enter recovery-required")
+			}
+			h.tm.mu.RLock()
+			handle := h.tm.tc.txn
+			inFlight := h.tm.tc.inFlight
+			h.tm.mu.RUnlock()
+			if handle != nil {
+				t.Fatal("recovery left the failed physical handle")
+			}
+			if inFlight != 0 {
+				t.Fatalf("recovery left inFlight=%d", inFlight)
+			}
+			if _, err := h.tm.CommitReadWriteTransaction(ctx); !errors.Is(err, errSavepointRecovery) {
+				t.Fatalf("COMMIT during recovery: %v", err)
+			}
+			if err := h.tm.CreateSavepoint(ctx, "after_error"); err == nil || !errors.Is(err, errSavepointRecovery) {
+				t.Fatalf("CreateSavepoint after PLAN failure: %v", err)
+			}
+
+			h.server.setFailSQL(nil)
+			if err := h.tm.RollbackToSavepoint(ctx, "keep"); err != nil {
+				t.Fatal(err)
+			}
+			if h.tm.NeedsRecovery() {
+				t.Fatal("ROLLBACK TO did not clear recovery-required")
+			}
+			after := replayJournal(h.tm)
+			if len(after) != len(prefix) {
+				t.Fatalf("recovered journal = %+v, want prefix %+v", after, prefix)
+			}
+		})
+	}
+}
+
+func TestSavepointExplainSelectSuccessStaysOutOfJournal(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	h := newHeartbeatHarness(t)
+	h.tm.enableSavepointCaptureForTest()
+	session := sessionForTM(t, h.tm)
+	if err := h.tm.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := executeSQLImplWithVars(ctx, session, "SELECT 1", session.systemVariables, OperationOutput{w: io.Discard}); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.tm.CreateSavepoint(ctx, "keep"); err != nil {
+		t.Fatal(err)
+	}
+	prefix := replayJournal(h.tm)
+	if _, _, err := h.tm.RunAnalyzeQuery(ctx, spanner.NewStatement("SELECT 2")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (&DescribeStatement{Statement: "SELECT 2"}).Execute(ctx, session, OperationOutput{w: io.Discard}); err != nil {
+		t.Fatal(err)
+	}
+	after := replayJournal(h.tm)
+	if len(after) != len(prefix) {
+		t.Fatalf("successful PLAN journaled: %+v, want prefix %+v", after, prefix)
+	}
+	h.tm.mu.RLock()
+	inFlight := 0
+	if h.tm.tc != nil {
+		inFlight = h.tm.tc.inFlight
+	}
+	h.tm.mu.RUnlock()
+	if inFlight != 0 {
+		t.Fatalf("successful PLAN left inFlight=%d", inFlight)
+	}
+	if h.tm.NeedsRecovery() {
+		t.Fatal("successful PLAN entered recovery-required")
+	}
+	if err := h.tm.CreateSavepoint(ctx, "after_plan"); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func isCanceledCause(err error) bool {
 	if err == nil {
 		return false
