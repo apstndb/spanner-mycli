@@ -140,19 +140,38 @@ func (rs *replayState) commitPrepared(e replayEntry) {
 	rs.entries = append(rs.entries, e)
 }
 
-// retractLastSQL drops the last journaled SQL/DML entry when it is the
-// just-committed capture identified by tok. Used when buffered CLI output
-// fails after collection already committed the operation.
-func (rs *replayState) retractLastSQL(tok *captureToken) bool {
+// retractLast drops the last journaled entry when it is the just-completed
+// capture identified by tok. Used when buffered CLI output fails after
+// collection already committed the operation. The backing slot is cleared
+// so frozen SQL/parameters/mutations are not retained after truncation.
+func (rs *replayState) retractLast(tok *captureToken) bool {
 	if rs == nil || tok == nil || tok.planOnly || len(rs.entries) == 0 {
 		return false
 	}
-	last := rs.entries[len(rs.entries)-1]
-	if last.kind != replayKindSQL || last.stmt.SQL != tok.frozen.SQL || last.payloadBytes != tok.reserved {
+	lastIdx := len(rs.entries) - 1
+	last := rs.entries[lastIdx]
+	if last.kind != tok.kind || last.payloadBytes != tok.reserved {
 		return false
 	}
-	rs.entries = rs.entries[:len(rs.entries)-1]
+	switch tok.kind {
+	case replayKindSQL:
+		if last.stmt.SQL != tok.frozen.SQL {
+			return false
+		}
+	case replayKindBatchDML:
+		if len(last.batch) != tok.n {
+			return false
+		}
+	case replayKindMutate:
+		if len(last.mutations) != tok.n {
+			return false
+		}
+	default:
+		return false
+	}
 	rs.release(last.payloadBytes)
+	clear(rs.entries[lastIdx : lastIdx+1])
+	rs.entries = rs.entries[:lastIdx]
 	return true
 }
 

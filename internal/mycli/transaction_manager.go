@@ -67,6 +67,7 @@ type UpdateResult struct {
 	Count    int64                   // Number of rows affected by the update
 	Metadata *sppb.ResultSetMetadata // Metadata about the result set
 	Plan     *sppb.QueryPlan         // Query execution plan (when requested)
+	capture  *captureToken           // journal identity for buffered display completion
 }
 
 // DMLResult holds the results of a DML operation execution including commit information.
@@ -191,6 +192,18 @@ func bindTransactionManagerCallbacks(sv *systemVariables, tm *TransactionManager
 	sv.inTransaction = tm.InTransaction
 	sv.transactionTagView = tm.transactionTagView
 	sv.setTransactionTagSlot = tm.setTransactionTagSlot
+}
+
+// bindLiveSessionCallbacks publishes the live inTransaction / TRANSACTION_TAG
+// and inManualBatch callbacks after a session is successfully constructed or
+// adopted. Candidate USE/DETACH sessions must not call this; they share
+// systemVariables with the live session.
+func bindLiveSessionCallbacks(sv *systemVariables, session *Session) {
+	if sv == nil || session == nil {
+		return
+	}
+	bindTransactionManagerCallbacks(sv, session.txn)
+	sv.inManualBatch = session.batch.IsActive
 }
 
 // SetClient replaces the Spanner client under tm.mu. It refuses to replace
@@ -1013,6 +1026,7 @@ func (tm *TransactionManager) runUpdateOnTransaction(ctx context.Context, tx *sp
 		Count:    count,
 		Metadata: metadata,
 		Plan:     plan,
+		capture:  capture,
 	}, nil
 }
 

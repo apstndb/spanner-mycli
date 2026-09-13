@@ -21,7 +21,9 @@ import (
 	"io"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
@@ -422,6 +424,233 @@ func TestSavepointPublicBufferedOutputFailureEntersRecovery(t *testing.T) {
 	if len(journal) != len(prefix)+1 {
 		t.Fatalf("successful buffered query journal: %+v", journal)
 	}
+}
+
+type barrierFailWriter struct {
+	started chan struct{}
+	release chan struct{}
+	err     error
+	once    sync.Once
+}
+
+func (w *barrierFailWriter) Write([]byte) (int, error) {
+	w.once.Do(func() { close(w.started) })
+	<-w.release
+	return 0, w.err
+}
+
+func enableBufferedMarkdownOutput(session *Session) {
+	session.systemVariables.Display.CLIFormat = enums.DisplayModeTable
+	session.systemVariables.Query.StreamingMode = enums.StreamingModeFalse
+	session.systemVariables.Display.MarkdownCodeblock = true
+	session.systemVariables.Display.Verbose = true
+}
+
+func TestSavepointPublicBufferedOutputFailureIgnoresStaleCommand(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	h := newHeartbeatHarness(t)
+	session := sessionForTM(t, h.tm)
+	enableBufferedMarkdownOutput(session)
+	cli := &Cli{SessionHandler: NewSessionHandler(session), SystemVariables: session.systemVariables}
+
+	mustExec(t, ctx, session, "SET CLI_SAVEPOINT_SUPPORT = 'ENABLED'")
+	mustExec(t, ctx, session, "BEGIN RW")
+	mustExec(t, ctx, session, "SAVEPOINT keep")
+
+	stmt, err := BuildStatement("SELECT 1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cause := errors.New("stale buffered display failed")
+	w := &barrierFailWriter{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+		err:     cause,
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := cli.executeStatement(ctx, stmt, false, "SELECT 1", w)
+		done <- err
+	}()
+	select {
+	case <-w.started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("buffered writer did not start")
+	}
+
+	mustExec(t, ctx, session, "ROLLBACK")
+	mustExec(t, ctx, session, "BEGIN RW")
+	mustExec(t, ctx, session, "SAVEPOINT next")
+	mustExec(t, ctx, session, "SELECT 2")
+	replacement := txnContext(h.tm)
+	afterSelect2 := replayJournal(h.tm)
+	if len(afterSelect2) != 1 || afterSelect2[0].stmt.SQL != "SELECT 2" {
+		t.Fatalf("replacement journal before stale error: %+v", afterSelect2)
+	}
+
+	close(w.release)
+	select {
+	case err := <-done:
+		if !errors.Is(err, cause) {
+			t.Fatalf("stale buffered error = %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("stale buffered display did not return")
+	}
+	if txnContext(h.tm) != replacement {
+		t.Fatal("stale display error replaced the new logical owner")
+	}
+	if h.tm.NeedsRecovery() {
+		t.Fatal("stale display error entered recovery on the replacement owner")
+	}
+	after := replayJournal(h.tm)
+	if len(after) != 1 || after[0].stmt.SQL != "SELECT 2" {
+		t.Fatalf("stale display error retracted the replacement journal: %+v", after)
+	}
+}
+
+func TestSavepointPublicBufferedOutputFailureRetractsMutateAndBatch(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	for _, tc := range []struct {
+		name string
+		sql  string
+		kind replayKind
+		prep func(*testing.T, context.Context, *Session)
+	}{
+		{name: "mutate", sql: "MUTATE T INSERT STRUCT(1 AS id)", kind: replayKindMutate},
+		{
+			name: "run_batch",
+			sql:  "RUN BATCH",
+			kind: replayKindBatchDML,
+			prep: func(t *testing.T, ctx context.Context, session *Session) {
+				mustExec(t, ctx, session, "START BATCH DML")
+				mustExec(t, ctx, session, "INSERT INTO T (id) VALUES (1)")
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			h := newHeartbeatHarness(t)
+			session := sessionForTM(t, h.tm)
+			enableBufferedMarkdownOutput(session)
+			cli := &Cli{SessionHandler: NewSessionHandler(session), SystemVariables: session.systemVariables}
+
+			mustExec(t, ctx, session, "SET CLI_SAVEPOINT_SUPPORT = 'ENABLED'")
+			mustExec(t, ctx, session, "BEGIN RW")
+			mustExec(t, ctx, session, "SAVEPOINT keep")
+			owner := txnContext(h.tm)
+			prefix := replayJournal(h.tm)
+
+			if tc.prep != nil {
+				tc.prep(t, ctx, session)
+			}
+			stmt, err := BuildStatement(tc.sql)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cause := errors.New(tc.name + " markdown fence failed")
+			_, err = cli.executeStatement(ctx, stmt, false, tc.sql, &resultFailureWriter{err: cause})
+			if !errors.Is(err, cause) {
+				t.Fatalf("%s display error = %v", tc.name, err)
+			}
+			if txnContext(h.tm) != owner {
+				t.Fatal("buffered output failure retired the logical owner")
+			}
+			if !h.tm.NeedsRecovery() {
+				t.Fatal("buffered output failure did not enter recovery-required")
+			}
+			after := replayJournal(h.tm)
+			if len(after) != len(prefix) {
+				t.Fatalf("failed %s remained journaled: %+v", tc.name, after)
+			}
+			if _, err := execSQL(t, ctx, session, "SAVEPOINT later"); !errors.Is(err, errSavepointRecovery) {
+				t.Fatalf("SAVEPOINT after buffered failure: %v", err)
+			}
+
+			mustExec(t, ctx, session, "ROLLBACK TO SAVEPOINT keep")
+			if h.tm.NeedsRecovery() {
+				t.Fatal("ROLLBACK TO did not clear recovery-required")
+			}
+
+			if tc.prep != nil {
+				tc.prep(t, ctx, session)
+			}
+			var ok bytes.Buffer
+			if _, err := cli.executeStatement(ctx, stmt, false, tc.sql, &ok); err != nil {
+				t.Fatalf("successful %s output: %v", tc.name, err)
+			}
+			if h.tm.NeedsRecovery() {
+				t.Fatal("successful buffered output entered recovery-required")
+			}
+			journal := replayJournal(h.tm)
+			if len(journal) != len(prefix)+1 || journal[len(journal)-1].kind != tc.kind {
+				t.Fatalf("successful %s journal: %+v", tc.name, journal)
+			}
+		})
+	}
+}
+
+func TestSavepointPublicFailedUseCandidatePreservesManualBatchCallback(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	live := ConnectionVars{Project: "p", Instance: "i", Database: "db"}
+
+	t.Run("failed_candidate", func(t *testing.T) {
+		t.Parallel()
+		sv, session := newBoundSwitchSession(t, live)
+		handler := NewSessionHandler(session)
+		handler.constructCandidate = func(_ context.Context, identity ConnectionVars) (*Session, error) {
+			c := newConstructedSession(DatabaseConnected, nil, nil, spanner.ClientConfig{}, nil, sv, identity)
+			c.databaseExistsOverride = func(context.Context) (bool, error) { return false, nil }
+			return c, nil
+		}
+		_, err := handler.ExecuteStatement(ctx, &UseStatement{Database: "missing"})
+		if err == nil || !strings.Contains(err.Error(), `unknown database "missing"`) {
+			t.Fatalf("USE missing: %v", err)
+		}
+		if handler.Session != session {
+			t.Fatal("failed USE replaced the live session")
+		}
+		mustExec(t, ctx, session, "START BATCH DML")
+		if _, err := execSQL(t, ctx, session, "SET CLI_SAVEPOINT_SUPPORT = 'ENABLED'"); !errors.Is(err, errSetterInManualBatch) {
+			t.Fatalf("SET after failed USE candidate: %v", err)
+		}
+		if !session.batch.IsActive() {
+			t.Fatal("rejected SET aborted the batch")
+		}
+	})
+
+	t.Run("successful_initial", func(t *testing.T) {
+		t.Parallel()
+		_, session := newBoundSwitchSession(t, live)
+		mustExec(t, ctx, session, "START BATCH DML")
+		if _, err := execSQL(t, ctx, session, "SET CLI_SAVEPOINT_SUPPORT = 'ENABLED'"); !errors.Is(err, errSetterInManualBatch) {
+			t.Fatalf("SET on initial session: %v", err)
+		}
+	})
+
+	t.Run("successful_adoption", func(t *testing.T) {
+		t.Parallel()
+		sv, session := newBoundSwitchSession(t, live)
+		handler := NewSessionHandler(session)
+		handler.constructCandidate = func(_ context.Context, identity ConnectionVars) (*Session, error) {
+			c := newConstructedSession(DatabaseConnected, nil, nil, spanner.ClientConfig{}, nil, sv, identity)
+			c.databaseExistsOverride = func(context.Context) (bool, error) { return true, nil }
+			return c, nil
+		}
+		if _, err := handler.ExecuteStatement(ctx, &UseStatement{Database: "next"}); err != nil {
+			t.Fatal(err)
+		}
+		if handler.Session == session {
+			t.Fatal("successful USE did not adopt the candidate")
+		}
+		mustExec(t, ctx, handler.Session, "START BATCH DML")
+		if _, err := execSQL(t, ctx, handler.Session, "SET CLI_SAVEPOINT_SUPPORT = 'ENABLED'"); !errors.Is(err, errSetterInManualBatch) {
+			t.Fatalf("SET after adoption: %v", err)
+		}
+	})
 }
 
 func TestCli_executeStatement_abortedSkipsRecreateWhenSavepointRecoverable(t *testing.T) {

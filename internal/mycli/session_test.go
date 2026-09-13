@@ -819,7 +819,7 @@ func newBoundSwitchSession(t *testing.T, identity ConnectionVars) (*systemVariab
 		connection:      identity,
 		txn:             newTransactionManager(nil, sv, spanner.ClientConfig{}),
 	}
-	bindTransactionManagerCallbacks(sv, session.txn)
+	bindLiveSessionCallbacks(sv, session)
 	return sv, session
 }
 

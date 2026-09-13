@@ -312,6 +312,11 @@ type Result struct {
 	BatchInfo      *BatchInfo
 	PartitionCount int
 	Metrics        *metrics.ExecutionMetrics // Performance metrics for query execution
+
+	// capture is the owner/attempt identity of this command's journaled
+	// operation. Buffered CLI display failure uses this receipt rather than
+	// the current owner's latest-operation slot.
+	capture *captureToken
 }
 
 // Row is a type alias for format.Row (= []Cell).

@@ -393,6 +393,10 @@ func executeSQLImplWithQueryRunner(ctx context.Context, session *Session, sql st
 		return nil, applyOwnerQueryFailure(ctx, session, tok, err, rollbackActiveTransactionOnAbort)
 	}
 
+	if result != nil {
+		result.capture = tok
+	}
+
 	if render.ValueFmtMode == format.SQLLiteralValues && render.Export.SQLTableName != "" {
 		result.SQLTableNameForExport = render.Export.SQLTableName
 	}

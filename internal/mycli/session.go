@@ -223,7 +223,8 @@ func (h *SessionHandler) ExecuteStatement(ctx context.Context, stmt Statement) (
 
 // createCandidateSession builds a replacement Session for identity while
 // sharing the live systemVariables. Constructor internals do not bind
-// inTransaction / TRANSACTION_TAG callbacks; adoptSession publishes them.
+// inTransaction / TRANSACTION_TAG / inManualBatch callbacks; adoptSession
+// publishes them.
 func (h *SessionHandler) createCandidateSession(ctx context.Context, identity ConnectionVars) (*Session, error) {
 	if h.constructCandidate != nil {
 		return h.constructCandidate(ctx, identity)
@@ -253,10 +254,11 @@ func (h *SessionHandler) validateSessionSwitch() error {
 }
 
 // adoptSession retires the current session and publishes candidate as the live
-// session. Live Database/Role and the three TransactionManager callbacks are
-// assigned together after the old session is closed. No validation or client
-// creation happens here. Callback presence is preserved (including DETACH):
-// init-only policy treats a non-nil inTransaction as "session initialized".
+// session. Live Database/Role and the live session callbacks (inTransaction,
+// TRANSACTION_TAG, inManualBatch) are assigned together after the old session
+// is closed. No validation or client creation happens here. Callback presence
+// is preserved (including DETACH): init-only policy treats a non-nil
+// inTransaction as "session initialized".
 func (h *SessionHandler) adoptSession(candidate *Session) {
 	old := h.Session
 	if old != nil {
@@ -266,7 +268,7 @@ func (h *SessionHandler) adoptSession(candidate *Session) {
 	h.Session = candidate
 	sv.Connection.Database = candidate.connection.Database
 	sv.Connection.Role = candidate.connection.Role
-	bindTransactionManagerCallbacks(sv, candidate.txn)
+	bindLiveSessionCallbacks(sv, candidate)
 }
 
 // switchSession constructs and validates a replacement session for database/role
@@ -354,16 +356,16 @@ func NewSession(ctx context.Context, sysVars *systemVariables, opts ...option.Cl
 	if err != nil {
 		return nil, err
 	}
-	bindTransactionManagerCallbacks(sysVars, session.txn)
+	bindLiveSessionCallbacks(sysVars, session)
 	return session, nil
 }
 
 // createSessionWithIdentity constructs a Session for identity while sharing
 // sysVars for registry, query/transaction settings, runtime logging,
 // StreamManager and feature variables. It does not bind inTransaction,
-// transactionTagView or setTransactionTagSlot; public constructors and
-// SessionHandler.adoptSession publish those callbacks after the session is
-// fully constructed and validated.
+// transactionTagView, setTransactionTagSlot, or inManualBatch; public
+// constructors and SessionHandler.adoptSession publish those callbacks after
+// the session is fully constructed and validated.
 func createSessionWithIdentity(ctx context.Context, sysVars *systemVariables, identity ConnectionVars, opts ...option.ClientOption) (*Session, error) {
 	if identity.Database == "" {
 		return newAdminSessionWithIdentity(ctx, sysVars, identity, opts...)
@@ -419,9 +421,6 @@ func newConstructedSession(
 		systemVariables: sysVars,
 		connection:      identity,
 	}
-	if sysVars != nil {
-		sysVars.inManualBatch = s.batch.IsActive
-	}
 	return s
 }
 
@@ -455,7 +454,7 @@ func NewAdminSession(ctx context.Context, sysVars *systemVariables, opts ...opti
 	if err != nil {
 		return nil, err
 	}
-	bindTransactionManagerCallbacks(sysVars, session.txn)
+	bindLiveSessionCallbacks(sysVars, session)
 	return session, nil
 }
 
@@ -860,7 +859,6 @@ func (s *Session) executeStatement(ctx context.Context, stmt Statement, out Oper
 	}
 
 	if s.txn != nil {
-		s.txn.clearLastCommitted()
 		if _, ok := stmt.(savepointRecoverySafeStatement); !ok {
 			if err := s.txn.rejectIfRecovering(); err != nil {
 				return nil, err
@@ -994,6 +992,6 @@ func createSession(ctx context.Context, credential []byte, sysVars *systemVariab
 	if err != nil {
 		return nil, err
 	}
-	bindTransactionManagerCallbacks(sysVars, session.txn)
+	bindLiveSessionCallbacks(sysVars, session)
 	return session, nil
 }

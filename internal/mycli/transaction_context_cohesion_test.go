@@ -230,14 +230,13 @@ func TestTransactionContextPendingActivationReadOnlyKeepsIdentity(t *testing.T) 
 func sessionForTM(t *testing.T, tm *TransactionManager) *Session {
 	t.Helper()
 	tm.sysVars.ensureRegistry()
-	tm.sysVars.inTransaction = tm.InTransaction
 	session := &Session{
 		mode:            DatabaseConnected,
 		systemVariables: tm.sysVars,
 		connection:      tm.sysVars.Connection,
 		txn:             tm,
 	}
-	tm.sysVars.inManualBatch = session.batch.IsActive
+	bindLiveSessionCallbacks(tm.sysVars, session)
 	return session
 }
 
