@@ -57,6 +57,8 @@ type transactionContext struct {
 	ctorOpts spanner.TransactionOptions
 	inFlight int
 	pending  *sqlCapture
+	// replacing is true while ROLLBACK TO is replacing the physical RW handle.
+	replacing bool
 }
 
 // EnableHeartbeat enables sending periodic heartbeats for this transaction.

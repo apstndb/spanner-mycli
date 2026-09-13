@@ -369,6 +369,12 @@ func executeSQLImplWithQueryRunner(ctx context.Context, session *Session, sql st
 		}
 	}
 	if err != nil {
+		if session != nil && session.txn != nil {
+			err = session.txn.HandleOwnerFailure(ctx, err)
+			if session.txn.NeedsRecovery() {
+				return nil, err
+			}
+		}
 		if rollbackActiveTransactionOnAbort {
 			return nil, rollbackReadWriteIfAborted(ctx, session, err)
 		}

@@ -84,6 +84,7 @@ type replayEntry struct {
 	affected     int64
 	counts       []int64
 	payloadBytes int64
+	dml          bool
 }
 
 type replayState struct {
@@ -152,7 +153,42 @@ func (rs *replayState) appendEntry(e replayEntry) error {
 	return nil
 }
 
+func (rs *replayState) lookup(name string) (int, savepoint, bool) {
+	if rs == nil {
+		return -1, savepoint{}, false
+	}
+	for i, sp := range rs.savepoints {
+		if sp.name == name {
+			return i, sp, true
+		}
+	}
+	return -1, savepoint{}, false
+}
+
+func (rs *replayState) hasMarkers() bool {
+	return rs != nil && len(rs.savepoints) > 0
+}
+
+func (rs *replayState) releaseNamed(name string) error {
+	idx, _, ok := rs.lookup(name)
+	if !ok {
+		return errSavepointUnknown
+	}
+	for _, sp := range rs.savepoints[idx:] {
+		rs.retainedBytes -= sp.bytes
+	}
+	clear(rs.savepoints[idx:])
+	rs.savepoints = rs.savepoints[:idx]
+	if rs.retainedBytes < 0 {
+		rs.retainedBytes = 0
+	}
+	return nil
+}
+
 func (rs *replayState) addSavepoint(name string) error {
+	if _, _, ok := rs.lookup(name); ok {
+		return errSavepointDuplicate
+	}
 	n := savepointMarkerBytes(name)
 	if err := rs.reserve(n); err != nil {
 		return err

@@ -67,11 +67,17 @@ func (tm *TransactionManager) capturingLocked() bool {
 }
 
 func (tm *TransactionManager) startOwnerSQLCaptureLocked(stmt spanner.Statement, opts spanner.QueryOptions, dml bool) error {
+	if err := tm.rejectIfRecoveringLocked(); err != nil {
+		return err
+	}
 	if !tm.capturingLocked() || queryModeIsPlan(opts) {
 		return nil
 	}
 	if tm.tc.attrs.mode != transactionModeReadWrite {
 		return nil
+	}
+	if tm.tc.replacing {
+		return fmt.Errorf("savepoint journal: physical replacement is in progress")
 	}
 	if tm.tc.pending != nil || tm.tc.inFlight > 0 {
 		return fmt.Errorf("savepoint journal: a query is already in flight")
@@ -178,6 +184,7 @@ func (tm *TransactionManager) finishDMLCaptureLocked(count int64, consumeErr err
 		fingerprint:  fp,
 		affected:     count,
 		payloadBytes: pending.reserved,
+		dml:          true,
 	}
 	tm.tc.replay.commitPrepared(e)
 	return nil

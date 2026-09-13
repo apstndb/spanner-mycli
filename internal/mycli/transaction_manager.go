@@ -706,7 +706,13 @@ func (tm *TransactionManager) BeginReadWriteTransaction(ctx context.Context, iso
 // CommitReadWriteTransactionLocked commits read-write transaction and returns commit timestamp if successful.
 // Caller must hold tm.mu.
 func (tm *TransactionManager) CommitReadWriteTransactionLocked(ctx context.Context) (spanner.CommitResponse, error) {
-	if tm.tc == nil || tm.tc.txn == nil {
+	if tm.tc == nil || tm.tc.attrs.mode != transactionModeReadWrite {
+		return spanner.CommitResponse{}, ErrNotInReadWriteTransaction
+	}
+	if err := tm.rejectIfRecoveringLocked(); err != nil {
+		return spanner.CommitResponse{}, err
+	}
+	if tm.tc.txn == nil {
 		return spanner.CommitResponse{}, ErrNotInReadWriteTransaction
 	}
 
@@ -751,7 +757,14 @@ func (tm *TransactionManager) CommitReadWriteTransaction(ctx context.Context) (s
 // RollbackReadWriteTransactionLocked rollbacks read-write transaction.
 // Caller must hold tm.mu.
 func (tm *TransactionManager) RollbackReadWriteTransactionLocked(ctx context.Context) error {
-	if tm.tc == nil || tm.tc.txn == nil {
+	if tm.tc == nil || tm.tc.attrs.mode != transactionModeReadWrite {
+		return ErrNotInReadWriteTransaction
+	}
+	if tm.tc.txn == nil {
+		if tm.capturingLocked() && tm.tc.replay.needsRecovery() {
+			tm.retireTransactionContextLocked()
+			return nil
+		}
 		return ErrNotInReadWriteTransaction
 	}
 
@@ -1249,7 +1262,7 @@ func (tm *TransactionManager) startHeartbeat(ctx context.Context, owner *transac
 				// used to access the transaction. A delayed tick after A ends
 				// must exit rather than issue SELECT 1 on replacement owner B.
 				err := tm.withReadWriteTransactionContext(func(txn *spanner.ReadWriteStmtBasedTransaction, tc *transactionContext) error {
-					if tc != owner {
+					if tc != owner || tc.replacing {
 						return errHeartbeatOwnerReplaced
 					}
 					// Always use LOW priority for heartbeat to avoid interfering with real work
@@ -1306,6 +1319,9 @@ func (tm *TransactionManager) RunInNewOrExistRwTxLocked(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
+	if err := tm.rejectIfRecoveringLocked(); err != nil {
+		return nil, err
+	}
 
 	// Check transaction state (no lock needed, we already hold it)
 	attrs := tm.transactionAttrsLocked()
@@ -1348,10 +1364,7 @@ func (tm *TransactionManager) RunInNewOrExistRwTxLocked(ctx context.Context,
 	}
 
 	if err != nil {
-		// Rollback the transaction while holding the lock
-		if rollbackErr := tm.RollbackReadWriteTransactionLocked(ctx); rollbackErr != nil {
-			err = errors.Join(err, fmt.Errorf("error on rollback: %w", rollbackErr))
-		}
+		err = tm.handleOwnerFailureLocked(ctx, err)
 		return nil, fmt.Errorf("transaction was aborted: %w", err)
 	}
 
