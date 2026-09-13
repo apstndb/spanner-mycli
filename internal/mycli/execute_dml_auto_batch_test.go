@@ -496,7 +496,7 @@ func TestEnqueueAutomaticDMLEnablesHeartbeat(t *testing.T) {
 	started := make(chan struct{})
 	tm.tc = &transactionContext{
 		attrs: transactionAttributes{mode: transactionModeReadWrite},
-		heartbeatFunc: func(ctx context.Context) {
+		heartbeatFunc: func(ctx context.Context, _ uint64) {
 			close(started)
 			<-ctx.Done()
 		},

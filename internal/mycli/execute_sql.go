@@ -2,8 +2,6 @@ package mycli
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"math"
@@ -17,7 +15,6 @@ import (
 	"github.com/apstndb/spanner-mycli/internal/mycli/metrics"
 	"github.com/apstndb/spanvalue"
 	"github.com/samber/lo"
-	"google.golang.org/grpc/codes"
 )
 
 // effectiveQueryMode resolves the request-level ExecuteSqlRequest.QueryMode for
@@ -298,30 +295,21 @@ func rollbackReadWriteIfAborted(ctx context.Context, session *Session, tok *capt
 	if err == nil || session == nil || session.txn == nil {
 		return err
 	}
-	if tok != nil && !session.txn.tokenBelongsToCurrentOwner(tok) {
-		return err
-	}
-	if !session.txn.InReadWriteTransaction() || spanner.ErrCode(err) != codes.Aborted {
-		return err
-	}
-	if rollbackErr := session.txn.RollbackReadWriteTransaction(ctx); rollbackErr != nil {
-		return errors.Join(err, fmt.Errorf("error on rollback: %w", rollbackErr))
-	}
-	return err
+	return session.txn.rollbackReadWriteIfAborted(ctx, tok, err)
 }
 
 // applyOwnerQueryFailure is the owner/attempt-bound failure contract for
 // ordinary SELECT and EXPLAIN ANALYZE SELECT (including CLI_QUERY_MODE=PROFILE).
-// Recovery-required is entered when the captured token still belongs to the
-// current explicit RW owner with a completed marker. Aborted cleanup of a
-// live owner happens only when that recovery transition does not apply.
+// A captured token's recovery-or-abort cleanup runs under one lock in
+// HandleOwnerFailure. Nil-token paths (capture off, unadmitted) still use
+// rollbackOnAbort for capture-off abort cleanup without poisoning a captured owner.
 func applyOwnerQueryFailure(ctx context.Context, session *Session, tok *captureToken, err error, rollbackOnAbort bool) error {
 	if err == nil {
 		return nil
 	}
 	if session != nil && session.txn != nil {
 		err = session.txn.HandleOwnerFailure(ctx, tok, err)
-		if session.txn.NeedsRecovery() {
+		if tok != nil {
 			return err
 		}
 	}

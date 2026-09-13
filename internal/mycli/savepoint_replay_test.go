@@ -20,6 +20,8 @@ import (
 	"io"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -383,6 +385,85 @@ func TestSavepointHeartbeatDelayedTickDoesNotHitReplacementAttempt(t *testing.T)
 	assertHeartbeatMeta(t, h.server.heartbeatRecords())
 }
 
+func TestSavepointHeartbeatDelayedStartupDoesNotHitReplacementAttempt(t *testing.T) {
+	t.Parallel()
+	h := newHeartbeatHarness(t)
+	ctx := t.Context()
+	h.tm.enableSavepointCaptureForTest()
+	session := sessionForTM(t, h.tm)
+
+	if err := h.tm.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+		t.Fatal(err)
+	}
+	startGate := make(chan struct{})
+	oldDone := make(chan struct{})
+	t.Cleanup(func() {
+		select {
+		case <-startGate:
+		default:
+			close(startGate)
+		}
+	})
+	var n atomic.Int32
+	h.tm.mu.Lock()
+	orig := h.tm.tc.heartbeatFunc
+	h.tm.tc.heartbeatFunc = func(hbCtx context.Context, startedAttempt uint64) {
+		if n.Add(1) == 1 {
+			<-startGate
+			defer close(oldDone)
+		}
+		orig(hbCtx, startedAttempt)
+	}
+	h.tm.mu.Unlock()
+
+	if _, err := executeSQLImplWithVars(ctx, session, "SELECT 1 AS keep", session.systemVariables, OperationOutput{w: io.Discard}); err != nil {
+		t.Fatal(err)
+	}
+	if !h.tm.heartbeatEnabled() {
+		t.Fatal("first user operation did not enable heartbeat")
+	}
+	idOld := lastUserSQLTxnID(h, "SELECT 1 AS keep")
+	if idOld == "" {
+		t.Fatal("no transaction id captured for the original attempt")
+	}
+	if err := h.tm.CreateSavepoint(ctx, "keep"); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.tm.RollbackToSavepoint(ctx, "keep"); err != nil {
+		t.Fatal(err)
+	}
+	idNew := lastUserSQLTxnID(h, "SELECT 1 AS keep")
+	if idNew == "" || idNew == idOld {
+		t.Fatalf("replay did not start a new physical attempt; old=%s new=%s obs=%v", idOld, idNew, h.server.sqlObservations())
+	}
+
+	close(startGate)
+	waitChan(t, oldDone, "delayed original heartbeat startup")
+	if got := h.server.heartbeatIDs(); slices.Contains(got, idNew) {
+		t.Fatalf("delayed old startup issued SELECT 1 on new attempt %s; heartbeats=%v", idNew, got)
+	}
+	if got := h.server.heartbeatIDs(); slices.Contains(got, idOld) {
+		t.Fatalf("delayed old startup issued SELECT 1 on discarded attempt %s; heartbeats=%v", idOld, got)
+	}
+
+	h.tm.heartbeatAfterAttempt = func() {
+		select {
+		case h.attempt <- struct{}{}:
+		default:
+		}
+	}
+	sendTick(t, h.ticks)
+	waitChan(t, h.attempt, "restarted heartbeat after delayed startup")
+	got := h.server.heartbeatIDs()
+	if !slices.Contains(got, idNew) {
+		t.Fatalf("restarted heartbeat missing on new attempt; heartbeats=%v new=%s", got, idNew)
+	}
+	if slices.Contains(got, idOld) {
+		t.Fatalf("restarted heartbeat also hit old attempt; heartbeats=%v old=%s new=%s", got, idOld, idNew)
+	}
+	assertHeartbeatMeta(t, h.server.heartbeatRecords())
+}
+
 func TestSavepointROQueryFailurePreservesHandleWithoutRecovery(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
@@ -460,6 +541,75 @@ func TestSavepointCreateReservesMarkerBeforeAutomaticFlush(t *testing.T) {
 	}
 }
 
+func TestSavepointCreateFirstMarkerAutomaticFlushFailureDoesNotPanic(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	h := newHeartbeatHarness(t)
+	h.tm.enableSavepointCaptureForTest()
+	if err := h.tm.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+		t.Fatal(err)
+	}
+	ok, err := h.tm.TryEnqueueAutomaticDML(spanner.NewStatement("INSERT INTO T (id) VALUES (2)"))
+	if err != nil || !ok {
+		t.Fatalf("enqueue: ok=%v err=%v", ok, err)
+	}
+	h.server.setFailBatchDML(status.Error(codes.PermissionDenied, "injected first-marker flush failure"))
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("CreateSavepoint panicked after terminal flush: %v", r)
+		}
+	}()
+	err = h.tm.CreateSavepoint(ctx, "first")
+	if err == nil {
+		t.Fatal("CreateSavepoint succeeded after automatic DML flush failure")
+	}
+	if h.tm.InTransaction() {
+		t.Fatal("first-marker flush failure left a logical owner")
+	}
+	if h.tm.NeedsRecovery() {
+		t.Fatal("first-marker flush failure entered reconstruction recovery")
+	}
+	if got := replayMarkerNames(h.tm); len(got) != 0 {
+		t.Fatalf("failed first marker was recorded: %v", got)
+	}
+}
+
+func TestSavepointCreateLaterMarkerAutomaticFlushFailureEntersRecovery(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	h := newHeartbeatHarness(t)
+	h.tm.enableSavepointCaptureForTest()
+	if err := h.tm.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.tm.CreateSavepoint(ctx, "keep"); err != nil {
+		t.Fatal(err)
+	}
+	owner := txnContext(h.tm)
+	keepBytes := replayRetainedBytes(h.tm)
+	ok, err := h.tm.TryEnqueueAutomaticDML(spanner.NewStatement("INSERT INTO T (id) VALUES (2)"))
+	if err != nil || !ok {
+		t.Fatalf("enqueue: ok=%v err=%v", ok, err)
+	}
+	h.server.setFailBatchDML(status.Error(codes.PermissionDenied, "injected later-marker flush failure"))
+	if err := h.tm.CreateSavepoint(ctx, "later"); err == nil {
+		t.Fatal("CreateSavepoint succeeded after automatic DML flush failure")
+	}
+	if txnContext(h.tm) != owner {
+		t.Fatal("later-marker flush failure retired the logical owner")
+	}
+	if !h.tm.NeedsRecovery() {
+		t.Fatal("later-marker flush failure did not enter recovery-required")
+	}
+	if got := replayMarkerNames(h.tm); !slices.Equal(got, []string{"keep"}) {
+		t.Fatalf("markers after later-marker flush failure = %v, want [keep]", got)
+	}
+	if got := replayRetainedBytes(h.tm); got != keepBytes {
+		t.Fatalf("retained after later-marker flush failure = %d, want keep marker %d", got, keepBytes)
+	}
+	assertReplayReservationEqualsPayload(t, h.tm)
+}
+
 func TestSavepointReplayCancellationCleansUpWithoutCommit(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
@@ -472,17 +622,67 @@ func TestSavepointReplayCancellationCleansUpWithoutCommit(t *testing.T) {
 	if _, err := executeSQLImplWithVars(ctx, session, "SELECT 1", session.systemVariables, OperationOutput{w: io.Discard}); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := executeSQLImplWithVars(ctx, session, "SELECT 2", session.systemVariables, OperationOutput{w: io.Discard}); err != nil {
+		t.Fatal(err)
+	}
 	if err := h.tm.CreateSavepoint(ctx, "keep"); err != nil {
 		t.Fatal(err)
 	}
-	h.server.setFailSQL(status.Error(codes.Canceled, "context canceled"))
-	err := h.tm.RollbackToSavepoint(ctx, "keep")
+	idOld := lastUserSQLTxnID(h, "SELECT 1")
+	if idOld == "" {
+		t.Fatal("no transaction id captured for the original attempt")
+	}
+
+	releaseSQL := make(chan struct{})
+	blocked := make(chan struct{})
+	h.server.setSQLBlocked(sync.OnceFunc(func() { close(blocked) }))
+	h.server.setSkipSQL(1)
+	h.server.setBlockSQL(releaseSQL)
+	t.Cleanup(func() {
+		select {
+		case <-releaseSQL:
+		default:
+			close(releaseSQL)
+		}
+	})
+
+	cmdCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- h.tm.RollbackToSavepoint(cmdCtx, "keep")
+	}()
+
+	waitChan(t, blocked, "reconstruction candidate SQL after id assignment")
+	candidateID := lastUserSQLTxnID(h, "SELECT 1")
+	if candidateID == "" || candidateID == idOld {
+		t.Fatalf("blocked replay did not preserve a new candidate id; old=%s new=%s obs=%v", idOld, candidateID, h.server.sqlObservations())
+	}
+
+	cancel()
+	select {
+	case <-releaseSQL:
+	default:
+		close(releaseSQL)
+	}
+
+	var err error
+	select {
+	case err = <-errCh:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timeout waiting for cancelled ROLLBACK TO")
+	case <-t.Context().Done():
+		t.Fatalf("test cancelled waiting for ROLLBACK TO: %v", t.Context().Err())
+	}
 	assertReconstructionEnded(t, h, err, nil)
 	if !isCanceledCause(err) {
 		t.Fatalf("cancelled replay error = %v, want canceled cause", err)
 	}
-	if len(h.server.rollbackIDs()) == 0 {
-		t.Fatal("cancelled replay did not attempt rollback cleanup")
+	if !slices.Contains(h.server.rollbackIDs(), candidateID) {
+		t.Fatalf("cancelled replay cleanup missed candidate %s; rollbacks=%v", candidateID, h.server.rollbackIDs())
+	}
+	if slices.Contains(h.server.commitIDs(), candidateID) {
+		t.Fatalf("cancelled replay committed candidate %s; commits=%v", candidateID, h.server.commitIDs())
 	}
 }
 
