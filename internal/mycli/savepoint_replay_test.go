@@ -332,8 +332,21 @@ func TestSavepointHeartbeatDelayedTickDoesNotHitReplacementAttempt(t *testing.T)
 	ctx := t.Context()
 	h.tm.enableSavepointCaptureForTest()
 	h.installBeforeAcquireBarrier()
+	session := sessionForTM(t, h.tm)
 
-	idOld := beginRWAndProbe(t, ctx, h, "SELECT 1 AS keep")
+	if err := h.tm.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := executeSQLImplWithVars(ctx, session, "SELECT 1 AS keep", session.systemVariables, OperationOutput{w: io.Discard}); err != nil {
+		t.Fatal(err)
+	}
+	if !h.tm.heartbeatEnabled() {
+		t.Fatal("first user operation did not enable heartbeat")
+	}
+	idOld := lastUserSQLTxnID(h, "SELECT 1 AS keep")
+	if idOld == "" {
+		t.Fatal("no transaction id captured for the original attempt")
+	}
 	if err := h.tm.CreateSavepoint(ctx, "keep"); err != nil {
 		t.Fatal(err)
 	}
@@ -461,10 +474,30 @@ func TestSavepointReplayCancellationCleansUpWithoutCommit(t *testing.T) {
 	if err := h.tm.CreateSavepoint(ctx, "keep"); err != nil {
 		t.Fatal(err)
 	}
-	h.server.setFailSQL(context.Canceled)
+	h.server.setFailSQL(status.Error(codes.Canceled, "context canceled"))
 	err := h.tm.RollbackToSavepoint(ctx, "keep")
-	assertReconstructionEnded(t, h, err, context.Canceled)
+	assertReconstructionEnded(t, h, err, nil)
+	if !isCanceledCause(err) {
+		t.Fatalf("cancelled replay error = %v, want canceled cause", err)
+	}
 	if len(h.server.rollbackIDs()) == 0 {
 		t.Fatal("cancelled replay did not attempt rollback cleanup")
+	}
+}
+
+func isCanceledCause(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) || status.Code(err) == codes.Canceled || spanner.ErrCode(err) == codes.Canceled {
+		return true
+	}
+	switch x := err.(type) {
+	case interface{ Unwrap() error }:
+		return isCanceledCause(x.Unwrap())
+	case interface{ Unwrap() []error }:
+		return slices.ContainsFunc(x.Unwrap(), isCanceledCause)
+	default:
+		return false
 	}
 }
