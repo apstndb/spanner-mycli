@@ -1069,13 +1069,20 @@ func (tm *TransactionManager) RunAnalyzeQuery(ctx context.Context, stmt spanner.
 		Mode:     &mode,
 		Priority: tm.currentPriorityWithLock(),
 	}
-	iter, _, _, err := tm.runQueryWithOptions(ctx, stmt, opts)
+	iter, _, tok, err := tm.runQueryWithOptions(ctx, stmt, opts)
 	if err != nil {
-		return nil, nil, err
+		_ = tm.finishQueryCapture(tok, err)
+		return nil, nil, tm.applyOwnerQueryFailure(ctx, tok, err, true)
 	}
 
 	_, _, metadata, plan, err := consumeRowIterDiscard(iter)
-	return plan, metadata, err
+	if capErr := tm.finishQueryCapture(tok, err); err == nil {
+		err = capErr
+	}
+	if err != nil {
+		return nil, nil, tm.applyOwnerQueryFailure(ctx, tok, err, true)
+	}
+	return plan, metadata, nil
 }
 
 func (tm *TransactionManager) runQueryWithOptions(ctx context.Context, stmt spanner.Statement, opts spanner.QueryOptions) (*spanner.RowIterator, *spanner.ReadOnlyTransaction, *captureToken, error) {

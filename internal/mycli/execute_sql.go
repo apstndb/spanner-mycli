@@ -299,22 +299,30 @@ func rollbackReadWriteIfAborted(ctx context.Context, session *Session, tok *capt
 }
 
 // applyOwnerQueryFailure is the owner/attempt-bound failure contract for
-// ordinary SELECT and EXPLAIN ANALYZE SELECT (including CLI_QUERY_MODE=PROFILE).
-// A captured token's recovery-or-abort cleanup runs under one lock in
-// HandleOwnerFailure. Nil-token paths (capture off, unadmitted) still use
+// ordinary SELECT, PLAN-mode EXPLAIN/DESCRIBE SELECT, and EXPLAIN ANALYZE
+// SELECT (including CLI_QUERY_MODE=PROFILE). A captured token's
+// recovery-or-abort cleanup runs under one lock in HandleOwnerFailure.
+// Nil-token paths (capture off, unadmitted, single-use/RO) still use
 // rollbackOnAbort for capture-off abort cleanup without poisoning a captured owner.
 func applyOwnerQueryFailure(ctx context.Context, session *Session, tok *captureToken, err error, rollbackOnAbort bool) error {
+	if session == nil {
+		return err
+	}
+	return session.txn.applyOwnerQueryFailure(ctx, tok, err, rollbackOnAbort)
+}
+
+func (tm *TransactionManager) applyOwnerQueryFailure(ctx context.Context, tok *captureToken, err error, rollbackOnAbort bool) error {
 	if err == nil {
 		return nil
 	}
-	if session != nil && session.txn != nil {
-		err = session.txn.HandleOwnerFailure(ctx, tok, err)
+	if tm != nil {
+		err = tm.HandleOwnerFailure(ctx, tok, err)
 		if tok != nil {
 			return err
 		}
 	}
 	if rollbackOnAbort {
-		return rollbackReadWriteIfAborted(ctx, session, tok, err)
+		return tm.rollbackReadWriteIfAborted(ctx, tok, err)
 	}
 	return err
 }
