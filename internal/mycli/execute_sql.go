@@ -2,8 +2,6 @@ package mycli
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"math"
@@ -17,7 +15,6 @@ import (
 	"github.com/apstndb/spanner-mycli/internal/mycli/metrics"
 	"github.com/apstndb/spanvalue"
 	"github.com/samber/lo"
-	"google.golang.org/grpc/codes"
 )
 
 // effectiveQueryMode resolves the request-level ExecuteSqlRequest.QueryMode for
@@ -290,15 +287,42 @@ func executeSQLImplWithVars(ctx context.Context, session *Session, sql string, s
 // RecreateClient can replace the session. The initiating error is preserved.
 // Rollback emits no statement output, so this calls the transaction manager
 // directly instead of manufacturing a nested Statement.Execute destination.
-func rollbackReadWriteIfAborted(ctx context.Context, session *Session, err error) error {
+// tok is the captured owner/attempt of the failed operation. A non-nil token
+// that does not belong to the current owner/attempt must not roll back a
+// replacement owner. A nil token is an uncaptured path on the current owner
+// (capture disabled); single-use callers pass rollbackActiveTransactionOnAbort=false.
+func rollbackReadWriteIfAborted(ctx context.Context, session *Session, tok *captureToken, err error) error {
 	if err == nil || session == nil || session.txn == nil {
 		return err
 	}
-	if !session.txn.InReadWriteTransaction() || spanner.ErrCode(err) != codes.Aborted {
+	return session.txn.rollbackReadWriteIfAborted(ctx, tok, err)
+}
+
+// applyOwnerQueryFailure is the owner/attempt-bound failure contract for
+// ordinary SELECT, PLAN-mode EXPLAIN/DESCRIBE SELECT, and EXPLAIN ANALYZE
+// SELECT (including CLI_QUERY_MODE=PROFILE). A captured token's
+// recovery-or-abort cleanup runs under one lock in HandleOwnerFailure.
+// Nil-token paths (capture off, unadmitted, single-use/RO) still use
+// rollbackOnAbort for capture-off abort cleanup without poisoning a captured owner.
+func applyOwnerQueryFailure(ctx context.Context, session *Session, tok *captureToken, err error, rollbackOnAbort bool) error {
+	if session == nil {
 		return err
 	}
-	if rollbackErr := session.txn.RollbackReadWriteTransaction(ctx); rollbackErr != nil {
-		return errors.Join(err, fmt.Errorf("error on rollback: %w", rollbackErr))
+	return session.txn.applyOwnerQueryFailure(ctx, tok, err, rollbackOnAbort)
+}
+
+func (tm *TransactionManager) applyOwnerQueryFailure(ctx context.Context, tok *captureToken, err error, rollbackOnAbort bool) error {
+	if err == nil {
+		return nil
+	}
+	if tm != nil {
+		err = tm.HandleOwnerFailure(ctx, tok, err)
+		if tok != nil {
+			return err
+		}
+	}
+	if rollbackOnAbort {
+		return tm.rollbackReadWriteIfAborted(ctx, tok, err)
 	}
 	return err
 }
@@ -366,10 +390,7 @@ func executeSQLImplWithQueryRunner(ctx context.Context, session *Session, sql st
 		}
 	}
 	if err != nil {
-		if rollbackActiveTransactionOnAbort {
-			return nil, rollbackReadWriteIfAborted(ctx, session, err)
-		}
-		return nil, err
+		return nil, applyOwnerQueryFailure(ctx, session, tok, err, rollbackActiveTransactionOnAbort)
 	}
 
 	if render.ValueFmtMode == format.SQLLiteralValues && render.Export.SQLTableName != "" {

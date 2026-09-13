@@ -36,6 +36,11 @@ type captureToken struct {
 	rec      *operationReceipt
 	reserved int64
 	dml      bool
+	// planOnly is set for PLAN-mode EXPLAIN/DESCRIBE SELECT (and
+	// CLI_QUERY_MODE=PLAN). The token still carries owner/attempt identity and
+	// occupies inFlight through collection, but a successful plan is not
+	// reserved or committed into the replay journal.
+	planOnly bool
 }
 
 type savepointAdmissionError struct {
@@ -114,19 +119,40 @@ func (tok *captureToken) receipt() *operationReceipt {
 	return tok.rec
 }
 
+func (tok *captureToken) belongsToLocked(tm *TransactionManager) bool {
+	return tok != nil && tm != nil && tm.tc != nil && tok.owner == tm.tc && tok.attempt == tm.tc.attempt
+}
+
 func (tok *captureToken) matchesLocked(tm *TransactionManager) bool {
-	return tok != nil && tm != nil && tm.tc != nil && tok.owner == tm.tc && tok.attempt == tm.tc.attempt && tm.tc.pending == tok
+	return tok.belongsToLocked(tm) && tm.tc.pending == tok
 }
 
 func (tm *TransactionManager) startOwnerSQLCaptureLocked(stmt spanner.Statement, opts spanner.QueryOptions, dml bool) (*captureToken, error) {
-	if !tm.capturingLocked() || queryModeIsPlan(opts) {
+	if err := tm.rejectIfRecoveringLocked(); err != nil {
+		return nil, err
+	}
+	if !tm.capturingLocked() {
 		return nil, nil
 	}
 	if tm.tc.attrs.mode != transactionModeReadWrite {
 		return nil, nil
 	}
+	if tm.tc.replacing {
+		return nil, fmt.Errorf("savepoint journal: physical replacement is in progress")
+	}
 	if tm.tc.pending != nil || tm.tc.inFlight > 0 {
 		return nil, fmt.Errorf("savepoint journal: a query is already in flight")
+	}
+	if queryModeIsPlan(opts) {
+		tok := &captureToken{
+			owner:    tm.tc,
+			attempt:  tm.tc.attempt,
+			rec:      &operationReceipt{},
+			planOnly: true,
+		}
+		tm.tc.pending = tok
+		tm.tc.inFlight++
+		return tok, nil
 	}
 	frozen, err := freezeStatement(stmt.SQL, stmt.Params, opts)
 	if err != nil {
@@ -168,7 +194,7 @@ func (tm *TransactionManager) finishQueryCaptureLocked(tok *captureToken, consum
 	if tm.tc.inFlight > 0 {
 		tm.tc.inFlight--
 	}
-	if tm.tc.replay == nil {
+	if pending.planOnly || tm.tc.replay == nil {
 		return consumeErr
 	}
 	if consumeErr != nil {
@@ -487,4 +513,20 @@ func replayQueued(tm *TransactionManager) []frozenStatement {
 		return nil
 	}
 	return append([]frozenStatement(nil), tm.tc.replay.queued...)
+}
+
+func replayMarkerNames(tm *TransactionManager) []string {
+	if tm == nil {
+		return nil
+	}
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+	if tm.tc == nil || tm.tc.replay == nil {
+		return nil
+	}
+	names := make([]string, len(tm.tc.replay.savepoints))
+	for i, sp := range tm.tc.replay.savepoints {
+		names[i] = sp.name
+	}
+	return names
 }

@@ -163,7 +163,42 @@ func (rs *replayState) appendEntry(e replayEntry) error {
 	return nil
 }
 
+func (rs *replayState) lookup(name string) (int, savepoint, bool) {
+	if rs == nil {
+		return -1, savepoint{}, false
+	}
+	for i, sp := range rs.savepoints {
+		if sp.name == name {
+			return i, sp, true
+		}
+	}
+	return -1, savepoint{}, false
+}
+
+func (rs *replayState) hasMarkers() bool {
+	return rs != nil && len(rs.savepoints) > 0
+}
+
+func (rs *replayState) releaseNamed(name string) error {
+	idx, _, ok := rs.lookup(name)
+	if !ok {
+		return errSavepointUnknown
+	}
+	for _, sp := range rs.savepoints[idx:] {
+		rs.retainedBytes -= sp.bytes
+	}
+	clear(rs.savepoints[idx:])
+	rs.savepoints = rs.savepoints[:idx]
+	if rs.retainedBytes < 0 {
+		rs.retainedBytes = 0
+	}
+	return nil
+}
+
 func (rs *replayState) addSavepoint(name string) error {
+	if _, _, ok := rs.lookup(name); ok {
+		return errSavepointDuplicate
+	}
 	n := savepointMarkerBytes(name)
 	if err := rs.reserve(n); err != nil {
 		return err
@@ -174,6 +209,42 @@ func (rs *replayState) addSavepoint(name string) error {
 		bytes:    n,
 	})
 	return nil
+}
+
+func (rs *replayState) commitSavepoint(name string, n int64) error {
+	if _, _, ok := rs.lookup(name); ok {
+		rs.release(n)
+		return errSavepointDuplicate
+	}
+	rs.savepoints = append(rs.savepoints, savepoint{
+		name:     name,
+		position: len(rs.entries),
+		bytes:    n,
+	})
+	return nil
+}
+
+func (rs *replayState) rollbackToMarker(idx int) {
+	if rs == nil || idx < 0 || idx >= len(rs.savepoints) {
+		return
+	}
+	position := rs.savepoints[idx].position
+	if position > len(rs.entries) {
+		position = len(rs.entries)
+	}
+	for _, e := range rs.entries[position:] {
+		rs.retainedBytes -= e.payloadBytes
+	}
+	clear(rs.entries[position:])
+	rs.entries = rs.entries[:position]
+	for _, sp := range rs.savepoints[idx+1:] {
+		rs.retainedBytes -= sp.bytes
+	}
+	clear(rs.savepoints[idx+1:])
+	rs.savepoints = rs.savepoints[:idx+1]
+	if rs.retainedBytes < 0 {
+		rs.retainedBytes = 0
+	}
 }
 
 func (rs *replayState) truncateAfter(position int) {

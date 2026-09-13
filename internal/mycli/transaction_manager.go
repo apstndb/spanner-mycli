@@ -691,8 +691,8 @@ func (tm *TransactionManager) BeginReadWriteTransactionLocked(ctx context.Contex
 		isolationLevel: resolvedIsolationLevel,
 	}, txn)
 	owner.ctorOpts = freezeTxnCtor(opts)
-	owner.heartbeatFunc = func(ctx context.Context) {
-		tm.startHeartbeat(ctx, owner)
+	owner.heartbeatFunc = func(ctx context.Context, startedAttempt uint64) {
+		tm.startHeartbeat(ctx, owner, startedAttempt)
 	}
 
 	// Heartbeat will be started by EnableHeartbeat() after the first operation.
@@ -714,7 +714,13 @@ func (tm *TransactionManager) BeginReadWriteTransaction(ctx context.Context, iso
 // CommitReadWriteTransactionLocked commits read-write transaction and returns commit timestamp if successful.
 // Caller must hold tm.mu.
 func (tm *TransactionManager) CommitReadWriteTransactionLocked(ctx context.Context) (spanner.CommitResponse, error) {
-	if tm.tc == nil || tm.tc.txn == nil {
+	if tm.tc == nil || tm.tc.attrs.mode != transactionModeReadWrite {
+		return spanner.CommitResponse{}, ErrNotInReadWriteTransaction
+	}
+	if err := tm.rejectIfRecoveringLocked(); err != nil {
+		return spanner.CommitResponse{}, err
+	}
+	if tm.tc.txn == nil {
 		return spanner.CommitResponse{}, ErrNotInReadWriteTransaction
 	}
 
@@ -759,7 +765,14 @@ func (tm *TransactionManager) CommitReadWriteTransaction(ctx context.Context) (s
 // RollbackReadWriteTransactionLocked rollbacks read-write transaction.
 // Caller must hold tm.mu.
 func (tm *TransactionManager) RollbackReadWriteTransactionLocked(ctx context.Context) error {
-	if tm.tc == nil || tm.tc.txn == nil {
+	if tm.tc == nil || tm.tc.attrs.mode != transactionModeReadWrite {
+		return ErrNotInReadWriteTransaction
+	}
+	if tm.tc.txn == nil {
+		if tm.capturingLocked() && tm.tc.replay.needsRecovery() {
+			tm.retireTransactionContextLocked()
+			return nil
+		}
 		return ErrNotInReadWriteTransaction
 	}
 
@@ -1056,13 +1069,20 @@ func (tm *TransactionManager) RunAnalyzeQuery(ctx context.Context, stmt spanner.
 		Mode:     &mode,
 		Priority: tm.currentPriorityWithLock(),
 	}
-	iter, _, _, err := tm.runQueryWithOptions(ctx, stmt, opts)
+	iter, _, tok, err := tm.runQueryWithOptions(ctx, stmt, opts)
 	if err != nil {
-		return nil, nil, err
+		_ = tm.finishQueryCapture(tok, err)
+		return nil, nil, tm.applyOwnerQueryFailure(ctx, tok, err, true)
 	}
 
 	_, _, metadata, plan, err := consumeRowIterDiscard(iter)
-	return plan, metadata, err
+	if capErr := tm.finishQueryCapture(tok, err); err == nil {
+		err = capErr
+	}
+	if err != nil {
+		return nil, nil, tm.applyOwnerQueryFailure(ctx, tok, err, true)
+	}
+	return plan, metadata, nil
 }
 
 func (tm *TransactionManager) runQueryWithOptions(ctx context.Context, stmt spanner.Statement, opts spanner.QueryOptions) (*spanner.RowIterator, *spanner.ReadOnlyTransaction, *captureToken, error) {
@@ -1111,6 +1131,9 @@ func (tm *TransactionManager) tryQueryInTransaction(ctx context.Context, stmt sp
 	// Check if we're in an active transaction
 	if tm.tc == nil || (tm.tc.attrs.mode != transactionModeReadWrite && tm.tc.attrs.mode != transactionModeReadOnly) {
 		return nil, nil, nil, nil
+	}
+	if err := tm.rejectIfRecoveringLocked(); err != nil {
+		return nil, nil, nil, err
 	}
 
 	// Validate transaction state
@@ -1237,7 +1260,7 @@ func (tm *TransactionManager) buildQueryOptions(mode *sppb.ExecuteSqlRequest_Que
 // We send an actual heartbeat only if the read-write transaction is active and
 // at least one user-initialized SQL query has been executed on the transaction.
 // Background: https://github.com/cloudspannerecosystem/spanner-cli/issues/100
-func (tm *TransactionManager) startHeartbeat(ctx context.Context, owner *transactionContext) {
+func (tm *TransactionManager) startHeartbeat(ctx context.Context, owner *transactionContext, startedAttempt uint64) {
 	ticks, stop := tm.heartbeatTickSource()
 	defer stop()
 
@@ -1265,8 +1288,10 @@ func (tm *TransactionManager) startHeartbeat(ctx context.Context, owner *transac
 				// Compare the originating owner with tm.tc under the same lock
 				// used to access the transaction. A delayed tick after A ends
 				// must exit rather than issue SELECT 1 on replacement owner B.
+				// startedAttempt is captured in EnableHeartbeat before go so a
+				// delayed startup cannot observe a later ROLLBACK TO attempt.
 				err := tm.withReadWriteTransactionContext(func(txn *spanner.ReadWriteStmtBasedTransaction, tc *transactionContext) error {
-					if tc != owner {
+					if ctx.Err() != nil || tc != owner || tc.replacing || tc.attempt != startedAttempt {
 						return errHeartbeatOwnerReplaced
 					}
 					// Always use LOW priority for heartbeat to avoid interfering with real work
@@ -1323,6 +1348,9 @@ func (tm *TransactionManager) RunInNewOrExistRwTxLocked(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
+	if err := tm.rejectIfRecoveringLocked(); err != nil {
+		return nil, err
+	}
 
 	// Check transaction state (no lock needed, we already hold it)
 	attrs := tm.transactionAttrsLocked()
@@ -1368,10 +1396,7 @@ func (tm *TransactionManager) RunInNewOrExistRwTxLocked(ctx context.Context,
 		if isAdmissionError(err) {
 			return nil, err
 		}
-		// Rollback the transaction while holding the lock
-		if rollbackErr := tm.RollbackReadWriteTransactionLocked(ctx); rollbackErr != nil {
-			err = errors.Join(err, fmt.Errorf("error on rollback: %w", rollbackErr))
-		}
+		err = tm.handleOwnerFailureLocked(ctx, err)
 		return nil, fmt.Errorf("transaction was aborted: %w", err)
 	}
 

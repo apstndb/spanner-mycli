@@ -40,7 +40,7 @@ type transactionContext struct {
 	attrs           transactionAttributes
 	txn             transaction
 	heartbeatCancel context.CancelFunc
-	heartbeatFunc   func(ctx context.Context) // Function to run heartbeat
+	heartbeatFunc   func(ctx context.Context, startedAttempt uint64) // Function to run heartbeat
 	// localVarUndo is this transaction's SET LOCAL undo log. It survives
 	// pending activation and is detached into
 	// TransactionManager.pendingLocalVarRestore only when the context is
@@ -58,6 +58,8 @@ type transactionContext struct {
 	attempt  uint64
 	inFlight int
 	pending  *captureToken
+	// replacing is true while ROLLBACK TO is replacing the physical RW handle.
+	replacing bool
 }
 
 // EnableHeartbeat enables sending periodic heartbeats for this transaction.
@@ -67,11 +69,10 @@ func (tc *transactionContext) EnableHeartbeat() {
 		tc.attrs.sendHeartbeat = true
 		// Start heartbeat goroutine if not already started
 		if tc.heartbeatCancel == nil && tc.heartbeatFunc != nil {
+			startedAttempt := tc.attempt
 			ctx, cancel := context.WithCancel(context.Background())
 			tc.heartbeatCancel = cancel
-			// Debug: Log when heartbeat is started
-			// fmt.Println("DEBUG: Starting heartbeat goroutine")
-			go tc.heartbeatFunc(ctx)
+			go tc.heartbeatFunc(ctx, startedAttempt)
 		}
 	}
 }

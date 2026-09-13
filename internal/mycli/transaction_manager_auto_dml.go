@@ -16,7 +16,6 @@ package mycli
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"cloud.google.com/go/spanner"
@@ -67,6 +66,9 @@ func (tm *TransactionManager) TryEnqueueAutomaticDML(stmt spanner.Statement) (bo
 	err := tm.withTransactionContextWithLock(func(**transactionContext) error {
 		if tm.tc == nil || tm.tc.attrs.mode != transactionModeReadWrite {
 			return nil
+		}
+		if err := tm.rejectIfRecoveringLocked(); err != nil {
+			return err
 		}
 		if err := tm.enqueueFrozenAutomaticDMLLocked(stmt); err != nil {
 			return err
@@ -132,9 +134,7 @@ func (tm *TransactionManager) flushAutomaticDMLLocked(ctx context.Context) ([]sp
 		tm.tc.EnableHeartbeat()
 	}
 	if err != nil {
-		if rollbackErr := tm.RollbackReadWriteTransactionLocked(ctx); rollbackErr != nil {
-			err = errors.Join(err, fmt.Errorf("error on rollback: %w", rollbackErr))
-		}
+		err = tm.handleOwnerFailureLocked(ctx, err)
 		return nil, nil, fmt.Errorf("transaction was aborted: %w", err)
 	}
 	return dmls, counts, nil
