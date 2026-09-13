@@ -73,11 +73,11 @@ func (tm *TransactionManager) rejectIfRecovering() error {
 
 // handleBufferedOutputFailure retracts the identified command's journal
 // entry and any dependent suffix/markers when that command still belongs to
-// the current owner/attempt, then applies the same owner/attempt failure
-// boundary as a collection error. A stale, independent, or replaced command
-// is left unchanged. A marker still present on a matching owner enters
-// recovery-required. Called after display returns, so it does not hold the
-// writer under this lock.
+// the current owner/attempt, then applies the output-completion failure
+// boundary. A stale, independent, or replaced command is left unchanged. A
+// surviving marker keeps the recovery owner even if recovery already
+// started. Called after display returns, so it does not hold the writer
+// under this lock.
 func (tm *TransactionManager) handleBufferedOutputFailure(ctx context.Context, tok *captureToken, err error) error {
 	if tm == nil || err == nil {
 		return err
@@ -90,9 +90,15 @@ func (tm *TransactionManager) handleBufferedOutputFailure(ctx context.Context, t
 	if !tok.belongsToLocked(tm) {
 		return err
 	}
-	// After retract, an earlier surviving marker stays recoverable. If the
-	// failed write had no prior checkpoint, or suffix invalidation removed the
-	// only marker, reuse the owner-failure path so the physical attempt ends.
+	// A surviving marker is a valid checkpoint even if recovery already
+	// started. shouldEnterRecoveryLocked is only the first transition, so
+	// overlapping display failures must not fall through to retirement.
+	if tm.hasValidRecoveryMarkerLocked() {
+		if tm.tc.replay.needsRecovery() {
+			return err
+		}
+		return tm.enterRecoveryLocked(ctx, err)
+	}
 	return tm.handleOwnerFailureLocked(ctx, err)
 }
 
@@ -100,11 +106,14 @@ func savepointCleanupContext() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), savepointCleanupTimeout)
 }
 
-func (tm *TransactionManager) shouldEnterRecoveryLocked() bool {
+func (tm *TransactionManager) hasValidRecoveryMarkerLocked() bool {
 	return tm.capturingLocked() &&
 		tm.tc.attrs.mode == transactionModeReadWrite &&
-		tm.tc.replay.hasMarkers() &&
-		!tm.tc.replay.needsRecovery()
+		tm.tc.replay.hasMarkers()
+}
+
+func (tm *TransactionManager) shouldEnterRecoveryLocked() bool {
+	return tm.hasValidRecoveryMarkerLocked() && !tm.tc.replay.needsRecovery()
 }
 
 func (tm *TransactionManager) discardPhysicalLocked(context.Context) {

@@ -671,6 +671,106 @@ func TestSavepointPublicBufferedOutputFailureInvalidatesSameAttemptSuffix(t *tes
 	}
 }
 
+func TestSavepointPublicBufferedOutputFailurePreservesRecoveryAcrossOverlappingDisplay(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name             string
+		failSelect2First bool
+	}{
+		{name: "later_then_earlier", failSelect2First: true},
+		{name: "earlier_then_later", failSelect2First: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := t.Context()
+			h := newHeartbeatHarness(t)
+			session := sessionForTM(t, h.tm)
+			enableBufferedMarkdownOutput(session)
+			cli := &Cli{SessionHandler: NewSessionHandler(session), SystemVariables: session.systemVariables}
+
+			mustExec(t, ctx, session, "SET CLI_SAVEPOINT_SUPPORT = 'ENABLED'")
+			mustExec(t, ctx, session, "BEGIN RW")
+			mustExec(t, ctx, session, "SAVEPOINT keep")
+			owner := txnContext(h.tm)
+
+			stmt1, err := BuildStatement("SELECT 1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			stmt2, err := BuildStatement("SELECT 2")
+			if err != nil {
+				t.Fatal(err)
+			}
+			cause1 := errors.New("select1 markdown fence failed")
+			cause2 := errors.New("select2 markdown fence failed")
+			w1 := &barrierFailWriter{started: make(chan struct{}), release: make(chan struct{}), err: cause1}
+			w2 := &barrierFailWriter{started: make(chan struct{}), release: make(chan struct{}), err: cause2}
+			done1 := make(chan error, 1)
+			done2 := make(chan error, 1)
+			go func() {
+				_, err := cli.executeStatement(ctx, stmt1, false, "SELECT 1", w1)
+				done1 <- err
+			}()
+			select {
+			case <-w1.started:
+			case <-time.After(5 * time.Second):
+				t.Fatal("SELECT 1 writer did not start")
+			}
+			go func() {
+				_, err := cli.executeStatement(ctx, stmt2, false, "SELECT 2", w2)
+				done2 <- err
+			}()
+			select {
+			case <-w2.started:
+			case <-time.After(5 * time.Second):
+				t.Fatal("SELECT 2 writer did not start")
+			}
+
+			fail := func(release chan struct{}, done chan error, cause error, name string) {
+				t.Helper()
+				close(release)
+				select {
+				case err := <-done:
+					if !errors.Is(err, cause) {
+						t.Fatalf("%s display error = %v", name, err)
+					}
+				case <-time.After(5 * time.Second):
+					t.Fatalf("%s display did not return", name)
+				}
+			}
+			if tc.failSelect2First {
+				fail(w2.release, done2, cause2, "SELECT 2")
+			} else {
+				fail(w1.release, done1, cause1, "SELECT 1")
+			}
+			if txnContext(h.tm) != owner {
+				t.Fatal("first overlapping display failure retired the logical owner")
+			}
+			if !h.tm.NeedsRecovery() {
+				t.Fatal("first overlapping display failure did not enter recovery-required")
+			}
+			if tc.failSelect2First {
+				fail(w1.release, done1, cause1, "SELECT 1")
+			} else {
+				fail(w2.release, done2, cause2, "SELECT 2")
+			}
+			if txnContext(h.tm) != owner {
+				t.Fatal("second overlapping display failure retired the recovery owner")
+			}
+			if !h.tm.NeedsRecovery() {
+				t.Fatal("second overlapping display failure cleared recovery-required")
+			}
+			mustExec(t, ctx, session, "ROLLBACK TO SAVEPOINT keep")
+			if h.tm.NeedsRecovery() {
+				t.Fatal("ROLLBACK TO keep did not clear recovery-required")
+			}
+			if txnContext(h.tm) != owner {
+				t.Fatal("ROLLBACK TO keep retired the logical owner")
+			}
+		})
+	}
+}
+
 func TestSavepointPublicBufferedOutputFailureRetractsMutateAndBatch(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
