@@ -338,9 +338,16 @@ func executeSQLImplWithQueryRunner(ctx context.Context, session *Session, sql st
 
 	iter, roTxn, err := run(ctx, stmt, false, effectiveQueryMode(sysVars.Query.QueryMode))
 	if err != nil {
+		if session != nil && session.txn != nil {
+			_ = session.txn.finishQueryCapture(err)
+		}
 		return nil, err
 	}
 
+	var rec *operationReceipt
+	if session != nil && session.txn != nil {
+		rec = session.txn.queryReceipt()
+	}
 	result, err := executeAndCollect(ctx, &queryExecution{
 		Session:        session,
 		Out:            out,
@@ -351,9 +358,15 @@ func executeSQLImplWithQueryRunner(ctx context.Context, session *Session, sql st
 		Render:         render,
 		Metrics:        m,
 		QueryCacheDest: queryCacheDest,
+		Receipt:        rec,
 	})
-	if err == nil && session != nil && session.txn != nil {
-		err = session.txn.invokeQueryAfterCollectHook()
+	if session != nil && session.txn != nil {
+		if capErr := session.txn.finishQueryCapture(err); err == nil {
+			err = capErr
+		}
+		if err == nil {
+			err = session.txn.invokeQueryAfterCollectHook()
+		}
 	}
 	if err != nil {
 		if rollbackActiveTransactionOnAbort {

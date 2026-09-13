@@ -37,9 +37,16 @@ func (s *MutateStatement) Execute(ctx context.Context, session *Session, out Ope
 		return nil, err
 	}
 	result, err := session.txn.RunInNewOrExistRwTx(ctx, func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
+		var frozen []frozenMutation
+		if session.txn.capturingLocked() {
+			frozen, mutations, err = freezeMutate(s.Table, s.Operation, s.Body)
+			if err != nil {
+				return 0, nil, nil, err
+			}
+		}
 		err = tx.BufferWrite(mutations)
-		if err != nil {
-			return 0, nil, nil, err
+		if recErr := session.txn.recordMutationsLocked(frozen, err); err == nil {
+			err = recErr
 		}
 		return 0, nil, nil, err
 	})

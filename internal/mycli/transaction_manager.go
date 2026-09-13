@@ -151,6 +151,10 @@ type TransactionManager struct {
 	heartbeatTicks         <-chan time.Time
 	heartbeatBeforeAcquire func()
 	heartbeatAfterAttempt  func()
+
+	// savepointEnabled is a private capture switch for owner-journal
+	// integration tests. Public CLI_SAVEPOINT_SUPPORT arrives in a later PR.
+	savepointEnabled bool
 }
 
 // savedLocalVar is one SET LOCAL undo-log entry.
@@ -571,6 +575,7 @@ func (tm *TransactionManager) BeginPendingTransaction(ctx context.Context, isola
 			isolationLevel: resolvedIsolationLevel,
 		},
 	}
+	tm.ensureReplayLocked()
 	return nil
 }
 
@@ -677,6 +682,7 @@ func (tm *TransactionManager) BeginReadWriteTransactionLocked(ctx context.Contex
 		priority:       resolvedPriority,
 		isolationLevel: resolvedIsolationLevel,
 	}, txn)
+	owner.ctorOpts = freezeTxnCtor(opts)
 	owner.heartbeatFunc = func(ctx context.Context) {
 		tm.startHeartbeat(ctx, owner)
 	}
@@ -689,7 +695,11 @@ func (tm *TransactionManager) BeginReadWriteTransactionLocked(ctx context.Contex
 // BeginReadWriteTransaction starts read-write transaction.
 func (tm *TransactionManager) BeginReadWriteTransaction(ctx context.Context, isolationLevel sppb.TransactionOptions_IsolationLevel, priority sppb.RequestOptions_Priority) error {
 	return tm.withTransactionContextWithLock(func(tcPtr **transactionContext) error {
-		return tm.BeginReadWriteTransactionLocked(ctx, isolationLevel, priority)
+		if err := tm.BeginReadWriteTransactionLocked(ctx, isolationLevel, priority); err != nil {
+			return err
+		}
+		tm.ensureReplayLocked()
+		return nil
 	})
 }
 
@@ -830,8 +840,12 @@ func (tm *TransactionManager) BeginReadOnlyTransaction(ctx context.Context, typ 
 	var resultTimestamp time.Time
 	err := tm.withTransactionContextWithLock(func(tcPtr **transactionContext) error {
 		ts, err := tm.BeginReadOnlyTransactionLocked(ctx, typ, staleness, timestamp, priority)
+		if err != nil {
+			return err
+		}
+		tm.ensureReplayLocked()
 		resultTimestamp = ts
-		return err
+		return nil
 	})
 	return resultTimestamp, err
 }
@@ -936,14 +950,21 @@ func (tm *TransactionManager) runUpdateOnTransaction(ctx context.Context, tx *sp
 	// Reset STATEMENT_TAG
 	tm.sysVars.Transaction.RequestTag = ""
 
+	if err := tm.startOwnerSQLCaptureLocked(stmt, opts, true); err != nil {
+		return nil, err
+	}
+
 	// Capture the raw typed THEN RETURN rows (identity transform); display
 	// formatting is deferred to renderDMLReturnedRows so the value types are
 	// preserved for the active CLI_FORMAT (issue #738 PR2).
 	rows, stats, count, metadata, plan, err := consumeRowIterCollectObserving(
 		tx.QueryWithOptions(ctx, stmt, opts),
 		func(r *spanner.Row) (*spanner.Row, error) { return r, nil },
-		nil,
+		tm.queryReceiptLocked(),
 	)
+	if err2 := tm.finishDMLCaptureLocked(count, err); err == nil {
+		err = err2
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -973,8 +994,8 @@ func (tm *TransactionManager) RunQueryWithStats(ctx context.Context, stmt spanne
 
 	opts := tm.buildQueryOptions(&mode)
 	opts.LastStatement = implicit
-	iter, roTxn := tm.runQueryWithOptions(ctx, stmt, opts)
-	return iter, roTxn, nil
+	iter, roTxn, err := tm.runQueryWithOptions(ctx, stmt, opts)
+	return iter, roTxn, err
 }
 
 // RunSingleUseQueryWithStats executes a statement in a single-use read-only
@@ -1003,8 +1024,8 @@ func (tm *TransactionManager) RunQuery(ctx context.Context, stmt spanner.Stateme
 	}
 
 	opts := tm.buildQueryOptions(nil)
-	iter, roTxn := tm.runQueryWithOptions(ctx, stmt, opts)
-	return iter, roTxn, nil
+	iter, roTxn, err := tm.runQueryWithOptions(ctx, stmt, opts)
+	return iter, roTxn, err
 }
 
 // RunAnalyzeQuery analyzes a statement either on the running transaction or on the temporal read-only transaction.
@@ -1019,23 +1040,31 @@ func (tm *TransactionManager) RunAnalyzeQuery(ctx context.Context, stmt spanner.
 		Mode:     &mode,
 		Priority: tm.currentPriorityWithLock(),
 	}
-	iter, _ := tm.runQueryWithOptions(ctx, stmt, opts)
+	iter, _, err := tm.runQueryWithOptions(ctx, stmt, opts)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	_, _, metadata, plan, err := consumeRowIterDiscard(iter)
 	return plan, metadata, err
 }
 
-func (tm *TransactionManager) runQueryWithOptions(ctx context.Context, stmt spanner.Statement, opts spanner.QueryOptions) (*spanner.RowIterator, *spanner.ReadOnlyTransaction) {
+func (tm *TransactionManager) runQueryWithOptions(ctx context.Context, stmt spanner.Statement, opts spanner.QueryOptions) (*spanner.RowIterator, *spanner.ReadOnlyTransaction, error) {
 	// Prepare query options
 	tm.prepareQueryOptions(&opts)
 
 	// Try to execute in existing transaction first
-	if iter, txn := tm.tryQueryInTransaction(ctx, stmt, opts); iter != nil {
-		return iter, txn
+	iter, txn, err := tm.tryQueryInTransaction(ctx, stmt, opts)
+	if err != nil {
+		return nil, nil, err
+	}
+	if iter != nil {
+		return iter, txn, nil
 	}
 
 	// Fall back to single-use transaction
-	return tm.runSingleUseQuery(ctx, stmt, opts)
+	iter, txn = tm.runSingleUseQuery(ctx, stmt, opts)
+	return iter, txn, nil
 }
 
 // prepareQueryOptions sets up the query options with system variables
@@ -1053,8 +1082,8 @@ func (tm *TransactionManager) prepareQueryOptions(opts *spanner.QueryOptions) {
 }
 
 // tryQueryInTransaction attempts to execute a query within an existing transaction
-// Returns (nil, nil) if no active transaction
-func (tm *TransactionManager) tryQueryInTransaction(ctx context.Context, stmt spanner.Statement, opts spanner.QueryOptions) (*spanner.RowIterator, *spanner.ReadOnlyTransaction) {
+// Returns (nil, nil, nil) if no active transaction
+func (tm *TransactionManager) tryQueryInTransaction(ctx context.Context, stmt spanner.Statement, opts spanner.QueryOptions) (*spanner.RowIterator, *spanner.ReadOnlyTransaction, error) {
 	// Hold the lock for the entire operation to ensure atomicity.
 	// Performance impact: The single-lock approach adds minimal overhead for a CLI tool
 	// where queries are user-initiated and not high-frequency. The correctness guarantee
@@ -1065,7 +1094,7 @@ func (tm *TransactionManager) tryQueryInTransaction(ctx context.Context, stmt sp
 
 	// Check if we're in an active transaction
 	if tm.tc == nil || (tm.tc.attrs.mode != transactionModeReadWrite && tm.tc.attrs.mode != transactionModeReadOnly) {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	// Validate transaction state
@@ -1074,7 +1103,11 @@ func (tm *TransactionManager) tryQueryInTransaction(ctx context.Context, stmt sp
 		mode := tm.tc.attrs.mode
 		err := fmt.Errorf("internal error: %s transaction context exists but txn is nil", mode)
 		slog.Error("INTERNAL ERROR", "error", err)
-		return newStoppedIterator(), nil
+		return newStoppedIterator(), nil, nil
+	}
+
+	if err := tm.startOwnerSQLCaptureLocked(stmt, opts, false); err != nil {
+		return nil, nil, err
 	}
 
 	// Apply read-write specific settings
@@ -1098,13 +1131,13 @@ func (tm *TransactionManager) tryQueryInTransaction(ctx context.Context, stmt sp
 			// This shouldn't happen - log the error and return a stopped iterator
 			err := fmt.Errorf("internal error: transaction is not a ReadOnlyTransaction (got %T)", tm.tc.txn)
 			slog.Error("INTERNAL ERROR", "error", err)
-			return newStoppedIterator(), nil
+			return newStoppedIterator(), nil, nil
 		}
-		return iter, roTxn
+		return iter, roTxn, nil
 	}
 
 	// For read-write transactions, return nil as the second value
-	return iter, nil
+	return iter, nil, nil
 }
 
 // runSingleUseQuery executes a query in a single-use read-only transaction

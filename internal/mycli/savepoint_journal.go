@@ -67,10 +67,12 @@ type frozenStatement struct {
 }
 
 type frozenMutation struct {
-	Table   string
-	Op      string
-	Columns []string
-	Values  []spanner.GenericColumnValue
+	Table     string
+	Op        string
+	Columns   []string
+	Values    []spanner.GenericColumnValue
+	DeleteAll bool
+	Keys      [][]spanner.GenericColumnValue
 }
 
 type replayEntry struct {
@@ -89,6 +91,9 @@ type replayState struct {
 	savepoints       []savepoint
 	retainedBytes    int64
 	recoveryRequired error
+	// queued holds frozen automatic DML reserved at enqueue. It is not a
+	// replay entry until BatchUpdate succeeds.
+	queued []frozenStatement
 }
 
 func (rs *replayState) reserve(n int64) error {
@@ -103,6 +108,33 @@ func (rs *replayState) reserve(n int64) error {
 	}
 	rs.retainedBytes += n
 	return nil
+}
+
+func (rs *replayState) release(n int64) {
+	if rs == nil || n <= 0 {
+		return
+	}
+	rs.retainedBytes -= n
+	if rs.retainedBytes < 0 {
+		rs.retainedBytes = 0
+	}
+}
+
+func (rs *replayState) commitPrepared(e replayEntry) {
+	if e.payloadBytes == 0 {
+		e.payloadBytes = e.accountedBytes()
+	}
+	rs.entries = append(rs.entries, e)
+}
+
+func (rs *replayState) dropQueued() {
+	if rs == nil {
+		return
+	}
+	for _, stmt := range rs.queued {
+		rs.release(stmt.payloadBytes())
+	}
+	rs.queued = nil
 }
 
 func (rs *replayState) needsRecovery() bool {
@@ -281,6 +313,22 @@ func (m frozenMutation) Mutation() (*spanner.Mutation, error) {
 		return spanner.InsertOrUpdate(m.Table, m.Columns, vals), nil
 	case "REPLACE":
 		return spanner.Replace(m.Table, m.Columns, vals), nil
+	case "DELETE":
+		if m.DeleteAll {
+			return spanner.Delete(m.Table, spanner.AllKeys()), nil
+		}
+		keys := make([]spanner.Key, 0, len(m.Keys))
+		for _, row := range m.Keys {
+			key, err := toKeys(row)
+			if err != nil {
+				return nil, err
+			}
+			keys = append(keys, key)
+		}
+		if len(keys) == 1 {
+			return spanner.Delete(m.Table, keys[0]), nil
+		}
+		return spanner.Delete(m.Table, spanner.KeySetFromKeys(keys...)), nil
 	default:
 		return nil, fmt.Errorf("savepoint freeze: unsupported mutation op %q", m.Op)
 	}
@@ -321,6 +369,11 @@ func (m frozenMutation) payloadBytes() int64 {
 	}
 	for _, v := range m.Values {
 		n += gcvPayloadBytes(v)
+	}
+	for _, key := range m.Keys {
+		for _, v := range key {
+			n += gcvPayloadBytes(v)
+		}
 	}
 	return n
 }

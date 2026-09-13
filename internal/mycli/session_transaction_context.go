@@ -49,6 +49,14 @@ type transactionContext struct {
 	// autoDML is this transaction's automatic DML queue. Access it only under
 	// tm.mu. Manual START/RUN/ABORT BATCH state stays on Session.batch.
 	autoDML []spanner.Statement
+	// replay is the optional SAVEPOINT journal. Nil unless capture was
+	// enabled at explicit BEGIN. Public CLI_SAVEPOINT_SUPPORT is not
+	// registered yet.
+	replay *replayState
+	// ctorOpts is the frozen NewReadWriteStmtBasedTransactionWithOptions input.
+	ctorOpts spanner.TransactionOptions
+	inFlight int
+	pending  *sqlCapture
 }
 
 // EnableHeartbeat enables sending periodic heartbeats for this transaction.

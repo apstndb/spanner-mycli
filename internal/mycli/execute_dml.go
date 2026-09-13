@@ -130,6 +130,9 @@ func executeBatchDML(ctx context.Context, session *Session, dmls []spanner.State
 	var affectedRowSlice []int64
 	result, err := session.txn.RunInNewOrExistRwTx(ctx, func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
 		affectedRowSlice, err = tx.BatchUpdateWithOptions(ctx, dmls, spanner.QueryOptions{LastStatement: implicit})
+		if recErr := session.txn.recordBatchDMLLocked(dmls, spanner.QueryOptions{LastStatement: implicit}, affectedRowSlice, err); err == nil {
+			err = recErr
+		}
 		return lo.Sum(affectedRowSlice), nil, nil, err
 	})
 	if err != nil {

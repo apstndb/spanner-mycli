@@ -452,16 +452,26 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string, fo
 	// regardless of CLI_QUERY_MODE.
 	iter, roTxn, err := session.txn.RunQueryWithStats(ctx, stmt, false, sppb.ExecuteSqlRequest_PROFILE)
 	if err != nil {
+		if session.txn != nil {
+			_ = session.txn.finishQueryCapture(err)
+		}
 		return nil, rollbackReadWriteIfAborted(ctx, session, err)
 	}
 
 	// Count the actual data rows while draining the iterator;
 	// RowIterator.RowCount is only populated for DML.
 	var actualRows int64
-	stats, _, _, plan, err := consumeRowIter(iter, func(*spanner.Row) error {
+	rec := session.txn.queryReceipt()
+	stats, _, _, plan, err := consumeRowIterObserving(iter, func(*spanner.Row) error {
 		actualRows++
 		return nil
-	})
+	}, rec)
+	if err == nil {
+		_, err = rec.Finish(nil)
+	}
+	if capErr := session.txn.finishQueryCapture(err); err == nil {
+		err = capErr
+	}
 	if err == nil {
 		err = session.txn.invokeQueryAfterCollectHook()
 	}
@@ -584,10 +594,12 @@ func executeExplainAnalyzeDML(ctx context.Context, session *Session, sql string,
 
 	var queryStats map[string]any
 	dmlResult, err := session.txn.RunInNewOrExistRwTx(ctx, func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (int64, *sppb.QueryPlan, *sppb.ResultSetMetadata, error) {
-		iter := session.txn.runQueryWithStatsOnTransaction(ctx, tx, stmt, implicit)
-		qs, count, metadata, plan, err := consumeRowIterDiscard(iter)
-		queryStats = qs
-		return count, plan, metadata, err
+		updateResult, err := session.txn.runUpdateOnTransaction(ctx, tx, stmt, implicit)
+		if err != nil {
+			return 0, nil, nil, err
+		}
+		queryStats = updateResult.Stats
+		return updateResult.Count, updateResult.Plan, updateResult.Metadata, nil
 	})
 	if err != nil {
 		return nil, err
