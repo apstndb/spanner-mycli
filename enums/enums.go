@@ -99,6 +99,16 @@ const (
 	WidthStrategyMarginalCost                         // Marginal cost minimization via max-heap
 )
 
+// SavepointSupport enables client-emulated SAVEPOINT on explicit transactions.
+//
+//go:generate go tool enumer -type=SavepointSupport -trimprefix=SavepointSupport -transform=snake_upper
+type SavepointSupport int
+
+const (
+	SavepointSupportDisabled SavepointSupport = iota
+	SavepointSupportEnabled
+)
+
 // IsSQLExport returns true if the display mode is one of the SQL export formats
 func (d DisplayMode) IsSQLExport() bool {
 	return d == DisplayModeSQLInsert || d == DisplayModeSQLInsertOrUpdate || d == DisplayModeSQLInsertOrIgnore

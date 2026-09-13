@@ -153,7 +153,7 @@ type TransactionManager struct {
 	heartbeatAfterAttempt  func()
 
 	// savepointEnabled is a private capture switch for owner-journal
-	// integration tests. Public CLI_SAVEPOINT_SUPPORT arrives in a later PR.
+	// integration tests. Public CLI_SAVEPOINT_SUPPORT also enables capture.
 	savepointEnabled bool
 }
 

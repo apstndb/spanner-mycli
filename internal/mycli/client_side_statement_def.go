@@ -917,6 +917,56 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 	{
 		Descriptions: []clientSideStatementDescription{
 			{
+				Usage:  `Create a savepoint in the current explicit transaction`,
+				Syntax: `SAVEPOINT <name>`,
+				Note:   "Requires `CLI_SAVEPOINT_SUPPORT=ENABLED`. Client-emulated replay, not a native Spanner savepoint. Rejected while a manual batch is open.",
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^SAVEPOINT\s+(?P<name>.+)$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			name, err := parseSavepointName(groups["name"])
+			if err != nil {
+				return nil, err
+			}
+			return &SavepointStatement{Name: name}, nil
+		},
+	},
+	{
+		Descriptions: []clientSideStatementDescription{
+			{
+				Usage:  `Roll the current explicit transaction back to a savepoint`,
+				Syntax: `ROLLBACK [TRANSACTION] TO [SAVEPOINT] <name>`,
+				Note:   "Keeps the named savepoint. Distinct from full `ROLLBACK`/`CLOSE`.",
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^ROLLBACK(?:\s+TRANSACTION)?\s+TO(?:\s+SAVEPOINT)?\s+(?P<name>.+)$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			name, err := parseSavepointName(groups["name"])
+			if err != nil {
+				return nil, err
+			}
+			return &RollbackToSavepointStatement{Name: name}, nil
+		},
+	},
+	{
+		Descriptions: []clientSideStatementDescription{
+			{
+				Usage:  `Release a savepoint without undoing later work`,
+				Syntax: `RELEASE [SAVEPOINT] <name>`,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^RELEASE(?:\s+SAVEPOINT)?\s+(?P<name>.+)$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			name, err := parseSavepointName(groups["name"])
+			if err != nil {
+				return nil, err
+			}
+			return &ReleaseSavepointStatement{Name: name}, nil
+		},
+	},
+	{
+		Descriptions: []clientSideStatementDescription{
+			{
 				Usage:  "Rollback R/W transaction or end R/O transaction",
 				Syntax: `ROLLBACK [TRANSACTION]`,
 				Note:   "`CLOSE` can be used as a synonym of `ROLLBACK`.",

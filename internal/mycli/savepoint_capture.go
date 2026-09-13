@@ -22,6 +22,7 @@ import (
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"google.golang.org/protobuf/proto"
 )
@@ -94,8 +95,18 @@ func (tm *TransactionManager) enableSavepointCaptureForTest() {
 	tm.savepointEnabled = true
 }
 
+func (tm *TransactionManager) savepointCaptureEnabledLocked() bool {
+	if tm == nil {
+		return false
+	}
+	if tm.savepointEnabled {
+		return true
+	}
+	return tm.sysVars != nil && tm.sysVars.Transaction.SavepointSupport == enums.SavepointSupportEnabled
+}
+
 func (tm *TransactionManager) ensureReplayLocked() {
-	if tm == nil || !tm.savepointEnabled || tm.tc == nil {
+	if tm == nil || tm.tc == nil || !tm.savepointCaptureEnabledLocked() {
 		return
 	}
 	if tm.tc.replay == nil {

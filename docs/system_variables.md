@@ -92,6 +92,7 @@ both `SHOW` and `SET`.
 | `CLI_PROTOTEXT_MULTILINE`         | read,write     | Enable multiline prototext output.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `CLI_QUERY_MODE`                  | read,write     | Query execution mode.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | `CLI_ROLE`                        | read           | Cloud Spanner database role.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `CLI_SAVEPOINT_SUPPORT`           | read,write     | Enable client-emulated SAVEPOINT for explicit transactions. DISABLED (default) preserves current behavior. ENABLED records a journal from BEGIN and reconstructs RW prefixes on ROLLBACK TO. This is replay with result validation, not a native Spanner savepoint. SET is rejected while a transaction is pending or active; SET LOCAL is not supported.                                                                                                                                                                 |
 | `CLI_SKIP_COLUMN_NAMES`           | read,write     | A boolean indicating whether to suppress column headers in output. The default is false.                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `CLI_SKIP_SYSTEM_COMMAND`         | read           | A read-only boolean indicating whether system commands are disabled. Set by --skip-system-command or --system-command=OFF.                                                                                                                                                                                                                                                                                                                                                                                                |
 | `CLI_SQL_BATCH_SIZE`              | read,write     | Number of VALUES per INSERT statement for SQL export. 0 (default): single-row INSERT statements. 2+: multi-row INSERT with up to N rows per statement.                                                                                                                                                                                                                                                                                                                                                                    |
@@ -395,6 +396,17 @@ more explanation than the reference table above.
   - The default `"NULL=dim"` renders NULL values in dim (faint) text
   - Styling only applies when output supports ANSI escape codes (interactive terminal with styled formats)
   - Inspired by `LS_COLORS`, `GCC_COLORS`, and `JQ_COLORS` environment variable patterns
+
+### CLI_SAVEPOINT_SUPPORT
+
+Client-emulated SAVEPOINT for explicit transactions. `DISABLED` (default) leaves
+behavior unchanged. `ENABLED` records a journal from `BEGIN` and reconstructs
+read-write prefixes on `ROLLBACK TO`. This is replay with result validation, not
+a native Spanner savepoint. SET is rejected while a transaction is pending or
+active; SET LOCAL is not supported.
+
+See [savepoint.md](savepoint.md) for syntax, recovery, and volatile-write
+limits.
 
 Variables not covered in this section are described by the generated
 [reference table](#reference) above.

@@ -555,7 +555,14 @@ var varDefs = []varDef{
 		},
 	},
 
-	// === Custom enum types ===
+	{
+		name:     "CLI_SAVEPOINT_SUPPORT",
+		desc:     "Enable client-emulated SAVEPOINT for explicit transactions. DISABLED (default) preserves current behavior. ENABLED records a journal from BEGIN and reconstructs RW prefixes on ROLLBACK TO. This is replay with result validation, not a native Spanner savepoint. SET is rejected while a transaction is pending or active; SET LOCAL is not supported.",
+		scope:    scopeSession,
+		txnGuard: true,
+		noLocal:  true,
+		bind:     func(sv *systemVariables) Variable { return SavepointSupportVar(&sv.Transaction.SavepointSupport) },
+	},
 	{
 		name:  "AUTOCOMMIT_DML_MODE",
 		desc:  "A STRING property indicating the autocommit mode for Data Manipulation Language (DML) statements.",

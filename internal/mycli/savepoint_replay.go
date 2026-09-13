@@ -40,6 +40,8 @@ var (
 	errSavepointRecovery             = errors.New("transaction requires ROLLBACK TO SAVEPOINT")
 	errSavepointReconstructionFailed = errors.New("savepoint reconstruction failed; transaction ended")
 	errSavepointFingerprintMismatch  = errors.New("savepoint replay fingerprint mismatch")
+	errSavepointDisabled             = errors.New("SAVEPOINT requires CLI_SAVEPOINT_SUPPORT=ENABLED")
+	errSavepointInManualBatch        = errors.New("savepoint commands are not allowed while a manual batch is open")
 )
 
 func validateSavepointName(name string) error {
@@ -149,7 +151,7 @@ func (tm *TransactionManager) CreateSavepoint(ctx context.Context, name string) 
 			return err
 		}
 		if !tm.capturingLocked() {
-			return errSavepointNotInTransaction
+			return errSavepointDisabled
 		}
 		if _, _, ok := tm.tc.replay.lookup(name); ok {
 			return errSavepointDuplicate
@@ -181,7 +183,7 @@ func (tm *TransactionManager) ReleaseSavepoint(name string) error {
 			return err
 		}
 		if !tm.capturingLocked() {
-			return errSavepointNotInTransaction
+			return errSavepointDisabled
 		}
 		return tm.tc.replay.releaseNamed(name)
 	})
@@ -204,7 +206,7 @@ func (tm *TransactionManager) rollbackToSavepointLocked(ctx context.Context, nam
 		return errSavepointInFlight
 	}
 	if !tm.capturingLocked() {
-		return errSavepointNotInTransaction
+		return errSavepointDisabled
 	}
 	idx, _, ok := tm.tc.replay.lookup(name)
 	if !ok {
