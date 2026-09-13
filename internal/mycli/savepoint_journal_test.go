@@ -486,6 +486,44 @@ func TestReplayStateByteAccountingAndTruncate(t *testing.T) {
 	}
 }
 
+func TestQueuedAccountedEmptyIsZero(t *testing.T) {
+	t.Parallel()
+	if got := queuedAccounted(nil); got != 0 {
+		t.Fatalf("queuedAccounted(nil)=%d, want 0", got)
+	}
+	if got := queuedAccounted([]frozenStatement{}); got != 0 {
+		t.Fatalf("queuedAccounted(empty)=%d, want 0", got)
+	}
+	if batchReplayAccounted(nil) == 0 {
+		t.Fatal("batchReplayAccounted(nil) should include fingerprint overhead")
+	}
+
+	frozen, err := freezeStatement("UPDATE T SET v=2 WHERE id=1", nil, spanner.QueryOptions{LastStatement: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rs := &replayState{}
+	if err := rs.addSavepoint("keep"); err != nil {
+		t.Fatal(err)
+	}
+	marker := savepointMarkerBytes("keep")
+	full := queuedAccounted([]frozenStatement{frozen})
+	if err := rs.reserve(full); err != nil {
+		t.Fatal(err)
+	}
+	rs.queued = []frozenStatement{frozen}
+	if rs.retainedBytes != marker+full {
+		t.Fatalf("queued retained=%d, want %d", rs.retainedBytes, marker+full)
+	}
+	rs.dropQueued()
+	if len(rs.queued) != 0 {
+		t.Fatal("dropQueued left statements")
+	}
+	if rs.retainedBytes != marker {
+		t.Fatalf("dropQueued retained=%d, want marker %d", rs.retainedBytes, marker)
+	}
+}
+
 func TestFreezeStatementRejectsNonGenericParams(t *testing.T) {
 	t.Parallel()
 	_, err := freezeStatement("SELECT @p", map[string]any{"p": int64(1)}, spanner.QueryOptions{})

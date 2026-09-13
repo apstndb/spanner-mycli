@@ -144,9 +144,7 @@ func (rs *replayState) dropQueued() {
 	if rs == nil {
 		return
 	}
-	for _, stmt := range rs.queued {
-		rs.release(stmt.payloadBytes())
-	}
+	rs.release(queuedAccounted(rs.queued))
 	rs.queued = nil
 }
 
