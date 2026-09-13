@@ -23,6 +23,7 @@ import (
 	"unicode/utf8"
 
 	"cloud.google.com/go/spanner"
+	"google.golang.org/grpc/codes"
 )
 
 const (
@@ -115,16 +116,46 @@ func (tm *TransactionManager) handleOwnerFailureLocked(ctx context.Context, err 
 	return err
 }
 
-func (tm *TransactionManager) HandleOwnerFailure(ctx context.Context, err error) error {
+func (tm *TransactionManager) HandleOwnerFailure(ctx context.Context, tok *captureToken, err error) error {
 	if tm == nil || err == nil || isAdmissionError(err) {
 		return err
 	}
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
+	// finishQueryCapture clears pending, so this must not require a still-matching
+	// pending token. Unadmitted and single-use operations pass a nil token.
+	if !tok.belongsToLocked(tm) {
+		return err
+	}
 	if tm.shouldEnterRecoveryLocked() {
 		return tm.enterRecoveryLocked(ctx, err)
 	}
+	return tm.rollbackReadWriteIfAbortedLocked(ctx, err)
+}
+
+func (tm *TransactionManager) rollbackReadWriteIfAbortedLocked(ctx context.Context, err error) error {
+	if tm.tc == nil || tm.tc.attrs.mode != transactionModeReadWrite || spanner.ErrCode(err) != codes.Aborted {
+		return err
+	}
+	if rollbackErr := tm.RollbackReadWriteTransactionLocked(ctx); rollbackErr != nil {
+		return errors.Join(err, fmt.Errorf("error on rollback: %w", rollbackErr))
+	}
 	return err
+}
+
+func (tm *TransactionManager) rollbackReadWriteIfAborted(ctx context.Context, tok *captureToken, err error) error {
+	if tm == nil || err == nil {
+		return err
+	}
+	if spanner.ErrCode(err) != codes.Aborted {
+		return err
+	}
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+	if tok != nil && !tok.belongsToLocked(tm) {
+		return err
+	}
+	return tm.rollbackReadWriteIfAbortedLocked(ctx, err)
 }
 
 func (tm *TransactionManager) NeedsRecovery() bool {
@@ -156,15 +187,18 @@ func (tm *TransactionManager) CreateSavepoint(ctx context.Context, name string) 
 		if _, _, ok := tm.tc.replay.lookup(name); ok {
 			return errSavepointDuplicate
 		}
+		rs := tm.tc.replay
 		n := savepointMarkerBytes(name)
-		if err := tm.tc.replay.reserve(n); err != nil {
+		if err := rs.reserve(n); err != nil {
 			return err
 		}
 		if _, _, err := tm.flushAutomaticDMLLocked(ctx); err != nil {
-			tm.tc.replay.release(n)
+			// flushAutomaticDMLLocked may retire tm.tc on a first-marker
+			// failure. Release against the reservation owner, not tm.tc.
+			rs.release(n)
 			return err
 		}
-		return tm.tc.replay.commitSavepoint(name, n)
+		return rs.commitSavepoint(name, n)
 	})
 }
 

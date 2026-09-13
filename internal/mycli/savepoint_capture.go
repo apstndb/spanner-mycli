@@ -125,8 +125,12 @@ func (tok *captureToken) receipt() *operationReceipt {
 	return tok.rec
 }
 
+func (tok *captureToken) belongsToLocked(tm *TransactionManager) bool {
+	return tok != nil && tm != nil && tm.tc != nil && tok.owner == tm.tc && tok.attempt == tm.tc.attempt
+}
+
 func (tok *captureToken) matchesLocked(tm *TransactionManager) bool {
-	return tok != nil && tm != nil && tm.tc != nil && tok.owner == tm.tc && tok.attempt == tm.tc.attempt && tm.tc.pending == tok
+	return tok.belongsToLocked(tm) && tm.tc.pending == tok
 }
 
 func (tm *TransactionManager) startOwnerSQLCaptureLocked(stmt spanner.Statement, opts spanner.QueryOptions, dml bool) (*captureToken, error) {
@@ -254,6 +258,16 @@ func batchReplayAccounted(batch []frozenStatement) int64 {
 	}.accountedBytes()
 }
 
+// queuedAccounted is the reserved amount for automatic DML waiting to
+// become a batch replay entry. An empty queue has no reservation; the
+// fingerprint and count-vector overhead is charged on the first enqueue.
+func queuedAccounted(queued []frozenStatement) int64 {
+	if len(queued) == 0 {
+		return 0
+	}
+	return batchReplayAccounted(queued)
+}
+
 func mutateReplayAccounted(mutations []frozenMutation) int64 {
 	return replayEntry{
 		kind:        replayKindMutate,
@@ -290,7 +304,7 @@ func (tm *TransactionManager) completeBatchDMLLocked(counts []int64, rpcErr erro
 	batch := rs.queued
 	reserved := int64(0)
 	if len(batch) > 0 {
-		reserved = batchReplayAccounted(batch)
+		reserved = queuedAccounted(batch)
 		rs.queued = nil
 	} else {
 		batch = rs.admittedBatch
@@ -381,9 +395,9 @@ func (tm *TransactionManager) enqueueFrozenAutomaticDMLLocked(stmt spanner.State
 	if err != nil {
 		return err
 	}
-	old := batchReplayAccounted(tm.tc.replay.queued)
+	old := queuedAccounted(tm.tc.replay.queued)
 	next := append(append([]frozenStatement(nil), tm.tc.replay.queued...), frozen)
-	delta := batchReplayAccounted(next) - old
+	delta := queuedAccounted(next) - old
 	if err := tm.tc.replay.reserve(delta); err != nil {
 		return err
 	}

@@ -23,6 +23,7 @@ import (
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/testing/protocmp"
 )
@@ -403,5 +404,246 @@ func TestSavepointOwnerLocalAdmissionPreservesOwnerWithoutRPC(t *testing.T) {
 	}
 	if diff := cmp.Diff(parsed, muts, cmp.AllowUnexported(spanner.Mutation{}), protocmp.Transform()); diff != "" {
 		t.Fatalf("KEY_RANGE parse/freeze mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestDMLQueryModeMatchesCallerEffectiveMode(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		capture bool
+	}{
+		{name: "capture_enabled", capture: true},
+		{name: "capture_disabled", capture: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := t.Context()
+			h := newHeartbeatHarness(t)
+			if tc.capture {
+				h.tm.enableSavepointCaptureForTest()
+			}
+			h.tm.sysVars.Query.QueryMode = sppb.ExecuteSqlRequest_WITH_STATS.Enum()
+			session := sessionForTM(t, h.tm)
+			if err := h.tm.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+				t.Fatal(err)
+			}
+
+			const dmlSQL = "UPDATE T SET v = 1 WHERE id = 1"
+			if _, err := executeDML(ctx, session, dmlSQL); err != nil {
+				t.Fatal(err)
+			}
+			obs, ok := lastSQLObservation(h.server.sqlObservations(), dmlSQL)
+			if !ok {
+				t.Fatal("ordinary DML was not observed on the wire")
+			}
+			if obs.queryMode != sppb.ExecuteSqlRequest_WITH_STATS {
+				t.Fatalf("ordinary DML QueryMode = %v, want WITH_STATS", obs.queryMode)
+			}
+			assertFrozenSQLMode(t, h.tm, tc.capture, dmlSQL, sppb.ExecuteSqlRequest_WITH_STATS)
+
+			const explainSQL = "UPDATE T SET v = 2 WHERE id = 1"
+			_, err := executeExplainAnalyzeDML(ctx, session, explainSQL, enums.ExplainFormatUnspecified, 0, nil)
+			if err != nil && !errors.Is(err, errExplainAnalyzeUnsupportedOnEmulator) {
+				t.Fatalf("EXPLAIN ANALYZE DML: %v", err)
+			}
+			obs, ok = lastSQLObservation(h.server.sqlObservations(), explainSQL)
+			if !ok {
+				t.Fatal("EXPLAIN ANALYZE DML was not observed on the wire")
+			}
+			if obs.queryMode != sppb.ExecuteSqlRequest_PROFILE {
+				t.Fatalf("EXPLAIN ANALYZE DML QueryMode = %v, want PROFILE", obs.queryMode)
+			}
+			assertFrozenSQLMode(t, h.tm, tc.capture, explainSQL, sppb.ExecuteSqlRequest_PROFILE)
+		})
+	}
+}
+
+func assertFrozenSQLMode(t *testing.T, tm *TransactionManager, capture bool, sql string, want sppb.ExecuteSqlRequest_QueryMode) {
+	t.Helper()
+	entries := replayJournal(tm)
+	if !capture {
+		if len(entries) != 0 {
+			t.Fatalf("capture disabled journaled: %+v", entries)
+		}
+		return
+	}
+	for i := len(entries) - 1; i >= 0; i-- {
+		e := entries[i]
+		if e.kind != replayKindSQL || e.stmt.SQL != sql {
+			continue
+		}
+		if e.stmt.Opts.Mode == nil || *e.stmt.Opts.Mode != want {
+			t.Fatalf("frozen %q mode = %v, want %v", sql, e.stmt.Opts.Mode, want)
+		}
+		return
+	}
+	t.Fatalf("frozen journal missing %q: %+v", sql, entries)
+}
+
+func TestSavepointOwnerAutomaticQueueReservationAccounting(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	h := newHeartbeatHarness(t)
+	h.tm.enableSavepointCaptureForTest()
+	if err := h.tm.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+		t.Fatal(err)
+	}
+
+	h.tm.mu.Lock()
+	if err := h.tm.tc.replay.addSavepoint("keep"); err != nil {
+		h.tm.mu.Unlock()
+		t.Fatal(err)
+	}
+	h.tm.mu.Unlock()
+	assertReplayReservationEqualsPayload(t, h.tm)
+
+	stmt := spanner.NewStatement("UPDATE T SET v=2 WHERE id=1")
+	frozen, err := freezeStatement(stmt.SQL, stmt.Params, spanner.QueryOptions{LastStatement: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	full := queuedAccounted([]frozenStatement{frozen})
+	marker := savepointMarkerBytes("keep")
+	if full <= frozen.payloadBytes() {
+		t.Fatal("first queued statement must charge fingerprint and count-vector overhead")
+	}
+	if got := replayRetainedBytes(h.tm); got != marker {
+		t.Fatalf("marker retained=%d, want %d", got, marker)
+	}
+
+	ok, err := h.tm.TryEnqueueAutomaticDML(stmt)
+	if err != nil || !ok {
+		t.Fatalf("first enqueue: ok=%v err=%v", ok, err)
+	}
+	assertReplayReservationEqualsPayload(t, h.tm)
+	if got := replayRetainedBytes(h.tm); got != marker+full {
+		t.Fatalf("first enqueue retained=%d, want marker+batch %d", got, marker+full)
+	}
+
+	h.tm.DiscardAutomaticDML()
+	assertReplayReservationEqualsPayload(t, h.tm)
+	if got := replayRetainedBytes(h.tm); got != marker {
+		t.Fatalf("discard retained=%d, want marker %d", got, marker)
+	}
+
+	for range 3 {
+		ok, err := h.tm.TryEnqueueAutomaticDML(stmt)
+		if err != nil || !ok {
+			t.Fatalf("repeat enqueue: ok=%v err=%v", ok, err)
+		}
+		assertReplayReservationEqualsPayload(t, h.tm)
+		h.tm.DiscardAutomaticDML()
+		assertReplayReservationEqualsPayload(t, h.tm)
+		if got := replayRetainedBytes(h.tm); got != marker {
+			t.Fatalf("repeat discard leaked reservation: %d", got)
+		}
+	}
+
+	h.tm.mu.Lock()
+	h.tm.tc.replay.retainedBytes = savepointJournalLimit - full
+	h.tm.mu.Unlock()
+	ok, err = h.tm.TryEnqueueAutomaticDML(stmt)
+	if err != nil || !ok {
+		t.Fatalf("exact-limit first enqueue: ok=%v err=%v", ok, err)
+	}
+	if got := replayRetainedBytes(h.tm); got != savepointJournalLimit {
+		t.Fatalf("exact-limit enqueue retained=%d, want limit", got)
+	}
+	h.tm.DiscardAutomaticDML()
+	if got := replayRetainedBytes(h.tm); got != savepointJournalLimit-full {
+		t.Fatalf("exact-limit discard retained=%d, want %d", got, savepointJournalLimit-full)
+	}
+
+	h.tm.mu.Lock()
+	h.tm.tc.replay.retainedBytes = savepointJournalLimit - full + 1
+	h.tm.mu.Unlock()
+	ok, err = h.tm.TryEnqueueAutomaticDML(stmt)
+	if ok || !errors.Is(err, errSavepointJournalFull) {
+		t.Fatalf("over-limit enqueue: ok=%v err=%v", ok, err)
+	}
+	if got := replayRetainedBytes(h.tm); got != savepointJournalLimit-full+1 {
+		t.Fatalf("failed enqueue mutated reservation: %d", got)
+	}
+
+	h.tm.mu.Lock()
+	h.tm.tc.replay.retainedBytes = marker
+	h.tm.tc.replay.queued = nil
+	h.tm.mu.Unlock()
+	assertReplayReservationEqualsPayload(t, h.tm)
+
+	ok, err = h.tm.TryEnqueueAutomaticDML(stmt)
+	if err != nil || !ok {
+		t.Fatalf("flush enqueue: ok=%v err=%v", ok, err)
+	}
+	assertReplayReservationEqualsPayload(t, h.tm)
+	h.tm.mu.Lock()
+	flushErr := h.tm.completeBatchDMLLocked(nil, errors.New("flush failed"))
+	h.tm.mu.Unlock()
+	if flushErr == nil {
+		t.Fatal("failed flush returned nil")
+	}
+	assertReplayReservationEqualsPayload(t, h.tm)
+	if got := replayRetainedBytes(h.tm); got != marker {
+		t.Fatalf("failed flush retained=%d, want marker %d", got, marker)
+	}
+	h.tm.DiscardAutomaticDML()
+	assertReplayReservationEqualsPayload(t, h.tm)
+
+	ok, err = h.tm.TryEnqueueAutomaticDML(stmt)
+	if err != nil || !ok {
+		t.Fatalf("successful flush enqueue: ok=%v err=%v", ok, err)
+	}
+	assertReplayReservationEqualsPayload(t, h.tm)
+	if _, err := h.tm.FlushAutomaticDML(ctx); err != nil {
+		t.Fatal(err)
+	}
+	assertReplayReservationEqualsPayload(t, h.tm)
+	entries := replayJournal(h.tm)
+	if len(entries) != 1 || entries[0].kind != replayKindBatchDML {
+		t.Fatalf("flush journal: %+v", entries)
+	}
+	if entries[0].payloadBytes != full {
+		t.Fatalf("flush payloadBytes=%d, want reserved %d", entries[0].payloadBytes, full)
+	}
+	if got := replayRetainedBytes(h.tm); got != marker+full {
+		t.Fatalf("successful flush retained=%d, want %d", got, marker+full)
+	}
+	if len(replayQueued(h.tm)) != 0 {
+		t.Fatal("queued automatic DML survived flush")
+	}
+}
+
+func replayRetainedBytes(tm *TransactionManager) int64 {
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+	if tm.tc == nil || tm.tc.replay == nil {
+		return 0
+	}
+	return tm.tc.replay.retainedBytes
+}
+
+func assertReplayReservationEqualsPayload(t *testing.T, tm *TransactionManager) {
+	t.Helper()
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+	if tm.tc == nil || tm.tc.replay == nil {
+		t.Fatal("missing replay state")
+	}
+	rs := tm.tc.replay
+	var payload int64
+	for _, e := range rs.entries {
+		payload += e.payloadBytes
+	}
+	for _, sp := range rs.savepoints {
+		payload += sp.bytes
+	}
+	payload += queuedAccounted(rs.queued)
+	payload += rs.admittedBytes
+	if tm.tc.pending != nil {
+		payload += tm.tc.pending.reserved
+	}
+	if rs.retainedBytes != payload {
+		t.Fatalf("retainedBytes=%d, marker/journal/queue payload=%d", rs.retainedBytes, payload)
 	}
 }

@@ -51,6 +51,7 @@ type sqlObservation struct {
 	txnID     string
 	readOnly  bool
 	hadReadTs bool
+	queryMode sppb.ExecuteSqlRequest_QueryMode
 }
 
 type batchDMLObservation struct {
@@ -80,6 +81,10 @@ type heartbeatRPCServer struct {
 	heartbeatStarted     chan struct{}
 	heartbeatStartedOnce sync.Once
 	blockHeartbeat       <-chan struct{}
+
+	blockSQL   <-chan struct{}
+	skipSQL    int
+	sqlBlocked func()
 }
 
 func (s *heartbeatRPCServer) newTxnID() []byte {
@@ -205,6 +210,15 @@ func (s *heartbeatRPCServer) sqlObservations() []sqlObservation {
 	return slices.Clone(s.sqlObs)
 }
 
+func lastSQLObservation(obs []sqlObservation, sql string) (sqlObservation, bool) {
+	for i := len(obs) - 1; i >= 0; i-- {
+		if obs[i].sql == sql {
+			return obs[i], true
+		}
+	}
+	return sqlObservation{}, false
+}
+
 func (s *heartbeatRPCServer) noteSQL(r *sppb.ExecuteSqlRequest, txnID []byte) {
 	rec := heartbeatRecord{
 		txnID:    string(txnID),
@@ -277,11 +291,28 @@ func (s *heartbeatRPCServer) DeleteSession(context.Context, *sppb.DeleteSessionR
 	return &emptypb.Empty{}, nil
 }
 
+func (s *heartbeatRPCServer) setBlockSQL(ch <-chan struct{}) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.blockSQL = ch
+}
+
+func (s *heartbeatRPCServer) setSkipSQL(n int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.skipSQL = n
+}
+
+func (s *heartbeatRPCServer) setSQLBlocked(fn func()) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sqlBlocked = fn
+}
+
 func (s *heartbeatRPCServer) BeginTransaction(_ context.Context, r *sppb.BeginTransactionRequest) (*sppb.Transaction, error) {
 	id := s.newTxnID()
 	txn := &sppb.Transaction{Id: id}
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.ensureTxnMapsLocked()
 	if r.GetOptions().GetReadOnly() != nil {
 		s.roIDs[string(id)] = struct{}{}
@@ -289,6 +320,7 @@ func (s *heartbeatRPCServer) BeginTransaction(_ context.Context, r *sppb.BeginTr
 	} else {
 		s.rwIDs[string(id)] = struct{}{}
 	}
+	s.mu.Unlock()
 	return txn, nil
 }
 
@@ -361,6 +393,26 @@ func (s *heartbeatRPCServer) ExecuteStreamingSql(r *sppb.ExecuteSqlRequest, stre
 
 func (s *heartbeatRPCServer) prepareSQL(ctx context.Context, r *sppb.ExecuteSqlRequest) ([]byte, *timestamppb.Timestamp, error) {
 	txnID := s.txnIDFor(r)
+	s.mu.Lock()
+	block := s.blockSQL
+	if s.skipSQL > 0 && block != nil && r.GetRequestOptions().GetRequestTag() != "spanner_mycli_heartbeat" {
+		s.skipSQL--
+		block = nil
+	}
+	s.mu.Unlock()
+	if block != nil && r.GetRequestOptions().GetRequestTag() != "spanner_mycli_heartbeat" {
+		s.mu.Lock()
+		blocked := s.sqlBlocked
+		s.mu.Unlock()
+		if blocked != nil {
+			blocked()
+		}
+		select {
+		case <-block:
+		case <-ctx.Done():
+			return nil, nil, ctx.Err()
+		}
+	}
 	s.noteSQL(r, txnID)
 	if err := s.waitHeartbeatIfNeeded(ctx, r); err != nil {
 		return nil, nil, err
@@ -384,6 +436,7 @@ func (s *heartbeatRPCServer) prepareSQL(ctx context.Context, r *sppb.ExecuteSqlR
 		txnID:     string(txnID),
 		readOnly:  ro,
 		hadReadTs: readTs != nil,
+		queryMode: r.GetQueryMode(),
 	})
 	return txnID, readTs, nil
 }

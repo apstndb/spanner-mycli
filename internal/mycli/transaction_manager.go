@@ -691,8 +691,8 @@ func (tm *TransactionManager) BeginReadWriteTransactionLocked(ctx context.Contex
 		isolationLevel: resolvedIsolationLevel,
 	}, txn)
 	owner.ctorOpts = freezeTxnCtor(opts)
-	owner.heartbeatFunc = func(ctx context.Context) {
-		tm.startHeartbeat(ctx, owner)
+	owner.heartbeatFunc = func(ctx context.Context, startedAttempt uint64) {
+		tm.startHeartbeat(ctx, owner, startedAttempt)
 	}
 
 	// Heartbeat will be started by EnableHeartbeat() after the first operation.
@@ -952,6 +952,10 @@ func (tm *TransactionManager) runAnalyzeQueryOnTransaction(ctx context.Context, 
 }
 
 // runUpdateOnTransaction executes an update statement on a transaction.
+// mode is the ExecuteSql QueryMode sent on the wire and frozen for replay:
+// ordinary DML passes effectiveQueryMode(CLI_QUERY_MODE); EXPLAIN ANALYZE
+// DML passes PROFILE so the query plan is requested even when CLI_QUERY_MODE
+// is WITH_STATS.
 // NOTE: This method is always called from within withReadWriteTransactionContext,
 // so the mu is already held. We must use the locked versions of methods
 // to avoid deadlock.
@@ -962,10 +966,8 @@ func (tm *TransactionManager) runAnalyzeQueryOnTransaction(ctx context.Context, 
 //
 // Using non-locked versions of methods like TransactionAttrsWithLock() or currentPriorityWithLock()
 // here will cause a deadlock. Always use the *Locked variants.
-func (tm *TransactionManager) runUpdateOnTransaction(ctx context.Context, tx *spanner.ReadWriteStmtBasedTransaction, stmt spanner.Statement, implicit bool) (*UpdateResult, error) {
-	// Respect a user-specified CLI_QUERY_MODE (WITH_STATS / WITH_PLAN_AND_STATS);
-	// otherwise default to PROFILE to get execution statistics.
-	opts := tm.queryOptionsLocked(effectiveQueryMode(tm.sysVars.Query.QueryMode).Enum())
+func (tm *TransactionManager) runUpdateOnTransaction(ctx context.Context, tx *spanner.ReadWriteStmtBasedTransaction, stmt spanner.Statement, implicit bool, mode sppb.ExecuteSqlRequest_QueryMode) (*UpdateResult, error) {
+	opts := tm.queryOptionsLocked(mode.Enum())
 	opts.LastStatement = implicit
 
 	// Reset STATEMENT_TAG
@@ -1123,6 +1125,9 @@ func (tm *TransactionManager) tryQueryInTransaction(ctx context.Context, stmt sp
 	if tm.tc == nil || (tm.tc.attrs.mode != transactionModeReadWrite && tm.tc.attrs.mode != transactionModeReadOnly) {
 		return nil, nil, nil, nil
 	}
+	if err := tm.rejectIfRecoveringLocked(); err != nil {
+		return nil, nil, nil, err
+	}
 
 	// Validate transaction state
 	if tm.tc.txn == nil {
@@ -1248,13 +1253,9 @@ func (tm *TransactionManager) buildQueryOptions(mode *sppb.ExecuteSqlRequest_Que
 // We send an actual heartbeat only if the read-write transaction is active and
 // at least one user-initialized SQL query has been executed on the transaction.
 // Background: https://github.com/cloudspannerecosystem/spanner-cli/issues/100
-func (tm *TransactionManager) startHeartbeat(ctx context.Context, owner *transactionContext) {
+func (tm *TransactionManager) startHeartbeat(ctx context.Context, owner *transactionContext, startedAttempt uint64) {
 	ticks, stop := tm.heartbeatTickSource()
 	defer stop()
-
-	tm.mu.RLock()
-	startedAttempt := owner.attempt
-	tm.mu.RUnlock()
 
 	for {
 		select {
@@ -1280,8 +1281,10 @@ func (tm *TransactionManager) startHeartbeat(ctx context.Context, owner *transac
 				// Compare the originating owner with tm.tc under the same lock
 				// used to access the transaction. A delayed tick after A ends
 				// must exit rather than issue SELECT 1 on replacement owner B.
+				// startedAttempt is captured in EnableHeartbeat before go so a
+				// delayed startup cannot observe a later ROLLBACK TO attempt.
 				err := tm.withReadWriteTransactionContext(func(txn *spanner.ReadWriteStmtBasedTransaction, tc *transactionContext) error {
-					if tc != owner || tc.replacing || tc.attempt != startedAttempt {
+					if ctx.Err() != nil || tc != owner || tc.replacing || tc.attempt != startedAttempt {
 						return errHeartbeatOwnerReplaced
 					}
 					// Always use LOW priority for heartbeat to avoid interfering with real work
