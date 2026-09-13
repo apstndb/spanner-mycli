@@ -246,6 +246,7 @@ func runSpanvalueRowIterator(qe *queryExecution, w writer.RowIteratorWriter) (*w
 			},
 		},
 		withRowIteratorMetrics(qe.Metrics),
+		withRowIteratorReceipt(qe.Receipt),
 	)
 }
 
@@ -290,6 +291,7 @@ func runSpanvalueRowIteratorWithProcessor(
 		},
 		withRowIteratorMetrics(qe.Metrics),
 		withRowIteratorErrorLabels("failed to transform row", "failed to process row", ""),
+		withRowIteratorReceipt(qe.Receipt),
 	)
 }
 

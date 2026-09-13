@@ -939,9 +939,10 @@ func (tm *TransactionManager) runUpdateOnTransaction(ctx context.Context, tx *sp
 	// Capture the raw typed THEN RETURN rows (identity transform); display
 	// formatting is deferred to renderDMLReturnedRows so the value types are
 	// preserved for the active CLI_FORMAT (issue #738 PR2).
-	rows, stats, count, metadata, plan, err := consumeRowIterCollect(
+	rows, stats, count, metadata, plan, err := consumeRowIterCollectObserving(
 		tx.QueryWithOptions(ctx, stmt, opts),
 		func(r *spanner.Row) (*spanner.Row, error) { return r, nil },
+		nil,
 	)
 	if err != nil {
 		return nil, err

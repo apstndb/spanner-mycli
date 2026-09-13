@@ -35,6 +35,7 @@ type rowIteratorRunConfig struct {
 	transformErrorLabel string
 	writeErrorLabel     string
 	finishErrorLabel    string
+	receipt             *operationReceipt
 }
 
 type rowIteratorRunOption func(*rowIteratorRunConfig)
@@ -42,6 +43,12 @@ type rowIteratorRunOption func(*rowIteratorRunConfig)
 func withRowIteratorMetrics(m *metrics.ExecutionMetrics) rowIteratorRunOption {
 	return func(c *rowIteratorRunConfig) {
 		c.metrics = m
+	}
+}
+
+func withRowIteratorReceipt(rec *operationReceipt) rowIteratorRunOption {
+	return func(c *rowIteratorRunConfig) {
+		c.receipt = rec
 	}
 }
 
@@ -66,8 +73,19 @@ func runRowIteratorTransform[T any](
 
 	var rowCount int64
 	hooks := writer.RowIteratorHooks{
-		PrepareMetadata: sink.PrepareMetadata,
+		PrepareMetadata: func(md *sppb.ResultSetMetadata) error {
+			if err := cfg.receipt.ObserveMetadata(md); err != nil {
+				return err
+			}
+			if sink.PrepareMetadata == nil {
+				return nil
+			}
+			return sink.PrepareMetadata(md)
+		},
 		WriteRow: func(row *spanner.Row) error {
+			if err := cfg.receipt.ObserveRow(row); err != nil {
+				return err
+			}
 			transformedRow, err := transform(row)
 			if err != nil {
 				return wrapRowIteratorError(cfg.transformErrorLabel, err)
@@ -95,17 +113,24 @@ func runRowIteratorTransform[T any](
 			return nil
 		},
 		Finish: func(result *writer.RowIteratorResult) error {
-			if sink.Finish == nil {
-				return nil
+			var finishErr error
+			if sink.Finish != nil {
+				finishErr = sink.Finish(result, rowCount)
+				if finishErr != nil {
+					finishErr = wrapRowIteratorError(cfg.finishErrorLabel, finishErr)
+				}
 			}
-			if err := sink.Finish(result, rowCount); err != nil {
-				return wrapRowIteratorError(cfg.finishErrorLabel, err)
+			if _, recErr := cfg.receipt.Finish(finishErr); recErr != nil && finishErr == nil {
+				return recErr
 			}
-			return nil
+			return finishErr
 		},
 	}
 
 	result, err := writer.RunRowIterator(iter, hooks)
+	if err != nil {
+		_, _ = cfg.receipt.Finish(err)
+	}
 	return result, rowCount, err
 }
 
