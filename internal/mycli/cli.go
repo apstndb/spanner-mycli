@@ -646,6 +646,7 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 		if err := c.displayResult(sink, result, interactive, w); err != nil {
 			if c.SessionHandler != nil && c.SessionHandler.txn != nil {
 				err = c.SessionHandler.txn.handleBufferedOutputFailure(ctx, result.capture, err)
+				c.SessionHandler.txn.restoreLocalVarsIfIdle()
 			}
 			return "", fmt.Errorf("failed to display result: %w", err)
 		}

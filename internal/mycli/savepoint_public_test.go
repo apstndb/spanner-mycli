@@ -753,6 +753,118 @@ func TestSavepointPublicBufferedOutputFailureRetractsMutateAndBatch(t *testing.T
 	}
 }
 
+func TestSavepointPublicBufferedOutputFailureWithoutMarkerEndsTransaction(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	for _, tc := range []struct {
+		name string
+		sql  string
+		prep func(*testing.T, context.Context, *Session)
+	}{
+		{name: "insert", sql: "INSERT INTO T (id) VALUES (1)"},
+		{name: "mutate", sql: "MUTATE T INSERT STRUCT(1 AS id)"},
+		{
+			name: "run_batch",
+			sql:  "RUN BATCH",
+			prep: func(t *testing.T, ctx context.Context, session *Session) {
+				mustExec(t, ctx, session, "START BATCH DML")
+				mustExec(t, ctx, session, "INSERT INTO T (id) VALUES (1)")
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			h := newHeartbeatHarness(t)
+			session := sessionForTM(t, h.tm)
+			enableBufferedMarkdownOutput(session)
+			cli := &Cli{SessionHandler: NewSessionHandler(session), SystemVariables: session.systemVariables}
+
+			mustExec(t, ctx, session, "SET CLI_SAVEPOINT_SUPPORT = 'ENABLED'")
+			mustExec(t, ctx, session, "BEGIN RW")
+			mustExec(t, ctx, session, "SET LOCAL OPTIMIZER_VERSION = '9'")
+			if tc.prep != nil {
+				tc.prep(t, ctx, session)
+			}
+			stmt, err := BuildStatement(tc.sql)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cause := errors.New(tc.name + " markdown fence failed")
+			_, err = cli.executeStatement(ctx, stmt, false, tc.sql, &resultFailureWriter{err: cause})
+			if !errors.Is(err, cause) {
+				t.Fatalf("%s display error = %v", tc.name, err)
+			}
+			if txnContext(h.tm) != nil {
+				t.Fatal("no-marker buffered output failure left the logical owner")
+			}
+			if h.tm.NeedsRecovery() {
+				t.Fatal("no-marker buffered output failure entered recovery-required")
+			}
+			if h.tm.InTransaction() {
+				t.Fatal("no-marker buffered output failure left a transaction")
+			}
+			if got := mustGetVar(t, session, "OPTIMIZER_VERSION"); got == "9" {
+				t.Fatal("SET LOCAL survived no-marker output failure")
+			}
+			if _, err := execSQL(t, ctx, session, "SAVEPOINT keep"); !errors.Is(err, errSavepointNotInTransaction) {
+				t.Fatalf("SAVEPOINT after no-marker output failure: %v", err)
+			}
+		})
+	}
+}
+
+func TestSavepointPublicBufferedOutputFailureInvalidatesOnlyMarkerEndsTransaction(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	h := newHeartbeatHarness(t)
+	session := sessionForTM(t, h.tm)
+	enableBufferedMarkdownOutput(session)
+	cli := &Cli{SessionHandler: NewSessionHandler(session), SystemVariables: session.systemVariables}
+
+	mustExec(t, ctx, session, "SET CLI_SAVEPOINT_SUPPORT = 'ENABLED'")
+	mustExec(t, ctx, session, "BEGIN RW")
+	stmt, err := BuildStatement("INSERT INTO T (id) VALUES (1)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cause := errors.New("only-marker markdown fence failed")
+	w := &barrierFailWriter{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+		err:     cause,
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := cli.executeStatement(ctx, stmt, false, "INSERT INTO T (id) VALUES (1)", w)
+		done <- err
+	}()
+	select {
+	case <-w.started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("buffered writer did not start")
+	}
+
+	mustExec(t, ctx, session, "SAVEPOINT later")
+	close(w.release)
+	select {
+	case err := <-done:
+		if !errors.Is(err, cause) {
+			t.Fatalf("only-marker buffered error = %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("only-marker buffered display did not return")
+	}
+	if txnContext(h.tm) != nil {
+		t.Fatal("only-marker invalidation left the logical owner")
+	}
+	if h.tm.NeedsRecovery() {
+		t.Fatal("only-marker invalidation entered recovery-required")
+	}
+	if _, err := execSQL(t, ctx, session, "ROLLBACK TO SAVEPOINT later"); !errors.Is(err, errSavepointNotInTransaction) && !errors.Is(err, errSavepointUnknown) {
+		t.Fatalf("ROLLBACK TO later after only-marker invalidation: %v", err)
+	}
+}
+
 func TestSavepointPublicFailedUseCandidatePreservesManualBatchCallback(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()

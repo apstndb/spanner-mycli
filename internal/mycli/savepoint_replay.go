@@ -90,10 +90,10 @@ func (tm *TransactionManager) handleBufferedOutputFailure(ctx context.Context, t
 	if !tok.belongsToLocked(tm) {
 		return err
 	}
-	if tm.shouldEnterRecoveryLocked() {
-		return tm.enterRecoveryLocked(ctx, err)
-	}
-	return tm.rollbackReadWriteIfAbortedLocked(ctx, err)
+	// After retract, an earlier surviving marker stays recoverable. If the
+	// failed write had no prior checkpoint, or suffix invalidation removed the
+	// only marker, reuse the owner-failure path so the physical attempt ends.
+	return tm.handleOwnerFailureLocked(ctx, err)
 }
 
 func savepointCleanupContext() (context.Context, context.CancelFunc) {
