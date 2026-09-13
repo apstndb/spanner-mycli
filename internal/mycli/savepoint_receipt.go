@@ -21,16 +21,27 @@ import (
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 )
 
+type receiptCompletion uint8
+
+const (
+	receiptCompleteNone receiptCompletion = iota
+	receiptCompleteQuery
+	receiptCompleteDML
+	receiptCompleteBatch
+)
+
 // operationReceipt observes raw rows and terminal status for one user
 // operation. A nil receipt is a no-op. Success can be finalized only once and
-// only when every observed row completed and Finish is called with a nil
-// error. Formatter/pager errors and truncated iteration must not become a
-// checkpointable success.
+// only when every observed row completed and Finish/FinishDML/FinishBatch is
+// called with a nil error. Formatter/pager errors and truncated iteration must
+// not become a checkpointable success. Query and DML completion are distinct:
+// a query fingerprint must not be reused as a DML fingerprint.
 type operationReceipt struct {
 	fp          *resultFingerprinter
 	observed    int64
 	failed      error
 	finalized   bool
+	complete    receiptCompletion
 	fingerprint []byte
 }
 
@@ -92,24 +103,24 @@ func (r *operationReceipt) ObserveRow(row *spanner.Row) error {
 }
 
 func (r *operationReceipt) Finish(err error) ([]byte, error) {
-	return r.finishWith(err, func(fp *resultFingerprinter) ([]byte, error) {
+	return r.finishWith(err, receiptCompleteQuery, func(fp *resultFingerprinter) ([]byte, error) {
 		return fp.FinishQuery()
 	})
 }
 
 func (r *operationReceipt) FinishDML(affected int64, err error) ([]byte, error) {
-	return r.finishWith(err, func(fp *resultFingerprinter) ([]byte, error) {
+	return r.finishWith(err, receiptCompleteDML, func(fp *resultFingerprinter) ([]byte, error) {
 		return fp.FinishDML(affected)
 	})
 }
 
 func (r *operationReceipt) FinishBatch(counts []int64, err error) ([]byte, error) {
-	return r.finishWith(err, func(fp *resultFingerprinter) ([]byte, error) {
+	return r.finishWith(err, receiptCompleteBatch, func(fp *resultFingerprinter) ([]byte, error) {
 		return fp.FinishBatch(counts)
 	})
 }
 
-func (r *operationReceipt) finishWith(err error, done func(*resultFingerprinter) ([]byte, error)) ([]byte, error) {
+func (r *operationReceipt) finishWith(err error, kind receiptCompletion, done func(*resultFingerprinter) ([]byte, error)) ([]byte, error) {
 	if r == nil {
 		return nil, err
 	}
@@ -120,12 +131,16 @@ func (r *operationReceipt) finishWith(err error, done func(*resultFingerprinter)
 		if r.failed != nil {
 			return nil, r.failed
 		}
+		if r.complete != kind {
+			return nil, fmt.Errorf("savepoint receipt completed as %s, not %s", r.complete, kind)
+		}
 		if r.fingerprint == nil {
 			return nil, fmt.Errorf("savepoint receipt was not a successful observation")
 		}
 		return r.fingerprint, nil
 	}
 	r.finalized = true
+	r.complete = kind
 	if err != nil {
 		r.failed = err
 		return nil, err
@@ -148,6 +163,19 @@ func (r *operationReceipt) finishWith(err error, done func(*resultFingerprinter)
 	}
 	r.fingerprint = sum
 	return sum, nil
+}
+
+func (c receiptCompletion) String() string {
+	switch c {
+	case receiptCompleteQuery:
+		return "query"
+	case receiptCompleteDML:
+		return "dml"
+	case receiptCompleteBatch:
+		return "batch"
+	default:
+		return "none"
+	}
 }
 
 func (r *operationReceipt) Succeeded() bool {

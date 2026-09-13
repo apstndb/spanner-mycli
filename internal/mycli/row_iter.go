@@ -61,11 +61,11 @@ func consumeRowIterObserving(iter *spanner.RowIterator, f func(*spanner.Row) err
 	}
 
 	if err := rec.ObserveMetadata(result.Metadata); err != nil {
+		_, _ = rec.Finish(err)
 		return nil, 0, nil, nil, err
 	}
-	if _, err := rec.Finish(nil); err != nil {
-		return nil, 0, nil, nil, err
-	}
+	// Observation only. Query callers Finish after this; DML callers must
+	// FinishDML so affected-row counts are part of the fingerprint.
 	return result.Stats.QueryStats, result.Stats.RowCount, result.Metadata, result.Stats.QueryPlan, nil
 }
 
@@ -112,8 +112,13 @@ func consumeRowIterCollectObservingWithMetrics[T any](iter *spanner.RowIterator,
 
 		return nil
 	}, rec)
-
-	return results, stats, count, metadata, plan, err
+	if err != nil {
+		return results, stats, count, metadata, plan, err
+	}
+	if _, err := rec.Finish(nil); err != nil {
+		return results, stats, count, metadata, plan, err
+	}
+	return results, stats, count, metadata, plan, nil
 }
 
 // spannerRowToRow converts a Spanner row to a format.Row with appropriate Cell types.
