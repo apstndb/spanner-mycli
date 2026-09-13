@@ -448,65 +448,100 @@ func enableBufferedMarkdownOutput(session *Session) {
 
 func TestSavepointPublicBufferedOutputFailureIgnoresStaleCommand(t *testing.T) {
 	t.Parallel()
-	ctx := t.Context()
-	h := newHeartbeatHarness(t)
-	session := sessionForTM(t, h.tm)
-	enableBufferedMarkdownOutput(session)
-	cli := &Cli{SessionHandler: NewSessionHandler(session), SystemVariables: session.systemVariables}
+	for _, tc := range []struct {
+		name      string
+		sameOwner bool
+		next      func(*testing.T, context.Context, *Session)
+	}{
+		{
+			name: "replacement_owner",
+			next: func(t *testing.T, ctx context.Context, session *Session) {
+				mustExec(t, ctx, session, "ROLLBACK")
+				mustExec(t, ctx, session, "BEGIN RW")
+				mustExec(t, ctx, session, "SAVEPOINT next")
+			},
+		},
+		{
+			name:      "rollback_to_new_attempt",
+			sameOwner: true,
+			next: func(t *testing.T, ctx context.Context, session *Session) {
+				mustExec(t, ctx, session, "ROLLBACK TO SAVEPOINT keep")
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := t.Context()
+			h := newHeartbeatHarness(t)
+			session := sessionForTM(t, h.tm)
+			enableBufferedMarkdownOutput(session)
+			cli := &Cli{SessionHandler: NewSessionHandler(session), SystemVariables: session.systemVariables}
 
-	mustExec(t, ctx, session, "SET CLI_SAVEPOINT_SUPPORT = 'ENABLED'")
-	mustExec(t, ctx, session, "BEGIN RW")
-	mustExec(t, ctx, session, "SAVEPOINT keep")
+			mustExec(t, ctx, session, "SET CLI_SAVEPOINT_SUPPORT = 'ENABLED'")
+			mustExec(t, ctx, session, "BEGIN RW")
+			mustExec(t, ctx, session, "SAVEPOINT keep")
+			owner := txnContext(h.tm)
+			attempt := owner.attempt
 
-	stmt, err := BuildStatement("SELECT 1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	cause := errors.New("stale buffered display failed")
-	w := &barrierFailWriter{
-		started: make(chan struct{}),
-		release: make(chan struct{}),
-		err:     cause,
-	}
-	done := make(chan error, 1)
-	go func() {
-		_, err := cli.executeStatement(ctx, stmt, false, "SELECT 1", w)
-		done <- err
-	}()
-	select {
-	case <-w.started:
-	case <-time.After(5 * time.Second):
-		t.Fatal("buffered writer did not start")
-	}
+			stmt, err := BuildStatement("SELECT 1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			cause := errors.New("stale buffered display failed")
+			w := &barrierFailWriter{
+				started: make(chan struct{}),
+				release: make(chan struct{}),
+				err:     cause,
+			}
+			done := make(chan error, 1)
+			go func() {
+				_, err := cli.executeStatement(ctx, stmt, false, "SELECT 1", w)
+				done <- err
+			}()
+			select {
+			case <-w.started:
+			case <-time.After(5 * time.Second):
+				t.Fatal("buffered writer did not start")
+			}
 
-	mustExec(t, ctx, session, "ROLLBACK")
-	mustExec(t, ctx, session, "BEGIN RW")
-	mustExec(t, ctx, session, "SAVEPOINT next")
-	mustExec(t, ctx, session, "SELECT 2")
-	replacement := txnContext(h.tm)
-	afterSelect2 := replayJournal(h.tm)
-	if len(afterSelect2) != 1 || afterSelect2[0].stmt.SQL != "SELECT 2" {
-		t.Fatalf("replacement journal before stale error: %+v", afterSelect2)
-	}
+			tc.next(t, ctx, session)
+			mustExec(t, ctx, session, "SELECT 2")
+			live := txnContext(h.tm)
+			afterSelect2 := replayJournal(h.tm)
+			if len(afterSelect2) != 1 || afterSelect2[0].stmt.SQL != "SELECT 2" {
+				t.Fatalf("journal before stale error: %+v", afterSelect2)
+			}
 
-	close(w.release)
-	select {
-	case err := <-done:
-		if !errors.Is(err, cause) {
-			t.Fatalf("stale buffered error = %v", err)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("stale buffered display did not return")
-	}
-	if txnContext(h.tm) != replacement {
-		t.Fatal("stale display error replaced the new logical owner")
-	}
-	if h.tm.NeedsRecovery() {
-		t.Fatal("stale display error entered recovery on the replacement owner")
-	}
-	after := replayJournal(h.tm)
-	if len(after) != 1 || after[0].stmt.SQL != "SELECT 2" {
-		t.Fatalf("stale display error retracted the replacement journal: %+v", after)
+			close(w.release)
+			select {
+			case err := <-done:
+				if !errors.Is(err, cause) {
+					t.Fatalf("stale buffered error = %v", err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("stale buffered display did not return")
+			}
+			if txnContext(h.tm) != live {
+				t.Fatal("stale display error replaced the live logical owner")
+			}
+			if h.tm.NeedsRecovery() {
+				t.Fatal("stale display error entered recovery on the live owner")
+			}
+			after := replayJournal(h.tm)
+			if len(after) != 1 || after[0].stmt.SQL != "SELECT 2" {
+				t.Fatalf("stale display error retracted the live journal: %+v", after)
+			}
+			if tc.sameOwner {
+				if live != owner {
+					t.Fatal("ROLLBACK TO retired the logical owner")
+				}
+				if live.attempt == attempt {
+					t.Fatal("ROLLBACK TO did not replace the physical attempt")
+				}
+			} else if live == owner {
+				t.Fatal("replacement owner reused the original transactionContext")
+			}
+		})
 	}
 }
 
