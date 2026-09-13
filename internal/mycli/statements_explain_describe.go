@@ -594,7 +594,7 @@ func executeExplainAnalyzeDML(ctx context.Context, session *Session, sql string,
 
 	var queryStats map[string]any
 	dmlResult, err := session.txn.RunInNewOrExistRwTx(ctx, func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (int64, *sppb.QueryPlan, *sppb.ResultSetMetadata, error) {
-		updateResult, err := session.txn.runUpdateOnTransaction(ctx, tx, stmt, implicit)
+		updateResult, err := session.txn.runUpdateOnTransaction(ctx, tx, stmt, implicit, sppb.ExecuteSqlRequest_PROFILE)
 		if err != nil {
 			return 0, nil, nil, err
 		}

@@ -952,6 +952,10 @@ func (tm *TransactionManager) runAnalyzeQueryOnTransaction(ctx context.Context, 
 }
 
 // runUpdateOnTransaction executes an update statement on a transaction.
+// mode is the ExecuteSql QueryMode sent on the wire and frozen for replay:
+// ordinary DML passes effectiveQueryMode(CLI_QUERY_MODE); EXPLAIN ANALYZE
+// DML passes PROFILE so the query plan is requested even when CLI_QUERY_MODE
+// is WITH_STATS.
 // NOTE: This method is always called from within withReadWriteTransactionContext,
 // so the mu is already held. We must use the locked versions of methods
 // to avoid deadlock.
@@ -962,10 +966,8 @@ func (tm *TransactionManager) runAnalyzeQueryOnTransaction(ctx context.Context, 
 //
 // Using non-locked versions of methods like TransactionAttrsWithLock() or currentPriorityWithLock()
 // here will cause a deadlock. Always use the *Locked variants.
-func (tm *TransactionManager) runUpdateOnTransaction(ctx context.Context, tx *spanner.ReadWriteStmtBasedTransaction, stmt spanner.Statement, implicit bool) (*UpdateResult, error) {
-	// Respect a user-specified CLI_QUERY_MODE (WITH_STATS / WITH_PLAN_AND_STATS);
-	// otherwise default to PROFILE to get execution statistics.
-	opts := tm.queryOptionsLocked(effectiveQueryMode(tm.sysVars.Query.QueryMode).Enum())
+func (tm *TransactionManager) runUpdateOnTransaction(ctx context.Context, tx *spanner.ReadWriteStmtBasedTransaction, stmt spanner.Statement, implicit bool, mode sppb.ExecuteSqlRequest_QueryMode) (*UpdateResult, error) {
+	opts := tm.queryOptionsLocked(mode.Enum())
 	opts.LastStatement = implicit
 
 	// Reset STATEMENT_TAG
