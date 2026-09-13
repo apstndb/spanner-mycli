@@ -68,7 +68,7 @@ says otherwise; `java-spanner` versions are given where known.
 | `SET LOCAL <name> = <value>` | statement-scoped state (v1.22.0) | JDBC `SET LOCAL` | implemented (#691) |
 | `RESET ALL` | `RESET <property>` exists | JDBC `RESET ALL` | not implemented, tracked #484 (varDef series #725 PR5) |
 | `RESET <single property>` | yes | yes | not implemented (candidate gap) |
-| `SAVEPOINT` / `RELEASE` / `ROLLBACK TO` | not in the go driver | java-spanner Connection API since 2023 | not implemented, tracked #404 |
+| `SAVEPOINT` / `RELEASE` / `ROLLBACK TO` | not in the go driver | java-spanner Connection API since 2023 | `CLI_SAVEPOINT_SUPPORT` (`DISABLED` default, `ENABLED`). Client-emulated replay with result validation; not native Spanner savepoints. Deltas vs Java: disabled by default, synchronous reconstruction, no `FAIL_AFTER_ROLLBACK`, exact-case identifier names, 128 code-point CLI limit. See [docs/savepoint.md](savepoint.md). |
 | `SHOW TRANSACTION ISOLATION LEVEL` / `SHOW TRANSACTION <var>` | yes (v1.26.0) | `SHOW DEFAULT_TRANSACTION_ISOLATION` v6.106.0 | not implemented (candidate gap; both drivers converged) |
 | `RUN PARTITIONED QUERY <select>` | yes (v1.24.0) | — | `RUN PARTITIONED QUERY` implemented |
 | `RUN PARTITION '<token>'` | not at SQL level in the go driver | JDBC `RUN PARTITION '<token>'` | token form tracked #45 (see note below) |

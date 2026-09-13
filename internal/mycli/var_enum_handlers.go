@@ -240,6 +240,10 @@ func DumpCyclicModeVar(ptr *enums.DumpCyclicMode) *EnumVar[enums.DumpCyclicMode]
 	return &EnumVar[enums.DumpCyclicMode]{ptr: ptr, values: enumerValues(enums.DumpCyclicModeValues())}
 }
 
+func SavepointSupportVar(ptr *enums.SavepointSupport) *EnumVar[enums.SavepointSupport] {
+	return &EnumVar[enums.SavepointSupport]{ptr: ptr, values: enumerValues(enums.SavepointSupportValues())}
+}
+
 func StyledModeVar(ptr *enums.StyledMode) *EnumVar[enums.StyledMode] {
 	return &EnumVar[enums.StyledMode]{
 		ptr:    ptr,

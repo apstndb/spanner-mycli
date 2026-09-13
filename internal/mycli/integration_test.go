@@ -344,6 +344,7 @@ func compareResult[T any](t *testing.T, got T, expected T, customCmpOptions ...c
 		cmpopts.IgnoreFields(Result{}, "CommitStats"),
 		// Metrics are collected but not part of test expectations
 		cmpopts.IgnoreFields(Result{}, "Metrics"),
+		cmpopts.IgnoreUnexported(Result{}),
 		// Prepared bytes are a display artifact whose exact content depends on
 		// the active CLI_FORMAT; the byte content is pinned by dedicated
 		// rendering tests. A THEN RETURN / DUMP result is still distinguishable

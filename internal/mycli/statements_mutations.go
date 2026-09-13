@@ -35,13 +35,18 @@ func (s *MutateStatement) Execute(ctx context.Context, session *Session, out Ope
 	if err != nil {
 		return nil, err
 	}
+	var capture *captureToken
 	result, err := session.txn.RunInNewOrExistRwTx(ctx, func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
 		if admitErr := session.txn.admitMutationsLocked(frozen); admitErr != nil {
 			return 0, nil, nil, admitError(admitErr)
 		}
 		err = tx.BufferWrite(mutations)
-		if recErr := session.txn.completeMutationsLocked(err); err == nil {
+		tok, recErr := session.txn.completeMutationsLocked(err)
+		if err == nil {
 			err = recErr
+			if recErr == nil {
+				capture = tok
+			}
 		}
 		return 0, nil, nil, err
 	})
@@ -51,6 +56,7 @@ func (s *MutateStatement) Execute(ctx context.Context, session *Session, out Ope
 	return &Result{
 		CommitStats:     result.CommitResponse.CommitStats,
 		CommitTimestamp: result.CommitResponse.CommitTs,
+		capture:         capture,
 	}, nil
 }
 

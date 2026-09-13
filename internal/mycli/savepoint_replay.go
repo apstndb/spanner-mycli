@@ -41,6 +41,8 @@ var (
 	errSavepointRecovery             = errors.New("transaction requires ROLLBACK TO SAVEPOINT")
 	errSavepointReconstructionFailed = errors.New("savepoint reconstruction failed; transaction ended")
 	errSavepointFingerprintMismatch  = errors.New("savepoint replay fingerprint mismatch")
+	errSavepointDisabled             = errors.New("SAVEPOINT requires CLI_SAVEPOINT_SUPPORT=ENABLED")
+	errSavepointInManualBatch        = errors.New("savepoint commands are not allowed while a manual batch is open")
 )
 
 func validateSavepointName(name string) error {
@@ -60,15 +62,58 @@ func (tm *TransactionManager) rejectIfRecoveringLocked() error {
 	return nil
 }
 
+func (tm *TransactionManager) rejectIfRecovering() error {
+	if tm == nil {
+		return nil
+	}
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+	return tm.rejectIfRecoveringLocked()
+}
+
+// handleBufferedOutputFailure retracts the identified command's journal
+// entry and any dependent suffix/markers when that command still belongs to
+// the current owner/attempt, then applies the output-completion failure
+// boundary. A stale, independent, or replaced command is left unchanged. A
+// surviving marker keeps the recovery owner even if recovery already
+// started. Called after display returns, so it does not hold the writer
+// under this lock.
+func (tm *TransactionManager) handleBufferedOutputFailure(ctx context.Context, tok *captureToken, err error) error {
+	if tm == nil || err == nil {
+		return err
+	}
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+	if tok.belongsToLocked(tm) && tm.tc.replay != nil {
+		tm.tc.replay.retract(tok)
+	}
+	if !tok.belongsToLocked(tm) {
+		return err
+	}
+	// A surviving marker is a valid checkpoint even if recovery already
+	// started. shouldEnterRecoveryLocked is only the first transition, so
+	// overlapping display failures must not fall through to retirement.
+	if tm.hasValidRecoveryMarkerLocked() {
+		if tm.tc.replay.needsRecovery() {
+			return err
+		}
+		return tm.enterRecoveryLocked(ctx, err)
+	}
+	return tm.handleOwnerFailureLocked(ctx, err)
+}
+
 func savepointCleanupContext() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), savepointCleanupTimeout)
 }
 
-func (tm *TransactionManager) shouldEnterRecoveryLocked() bool {
+func (tm *TransactionManager) hasValidRecoveryMarkerLocked() bool {
 	return tm.capturingLocked() &&
 		tm.tc.attrs.mode == transactionModeReadWrite &&
-		tm.tc.replay.hasMarkers() &&
-		!tm.tc.replay.needsRecovery()
+		tm.tc.replay.hasMarkers()
+}
+
+func (tm *TransactionManager) shouldEnterRecoveryLocked() bool {
+	return tm.hasValidRecoveryMarkerLocked() && !tm.tc.replay.needsRecovery()
 }
 
 func (tm *TransactionManager) discardPhysicalLocked(context.Context) {
@@ -180,7 +225,7 @@ func (tm *TransactionManager) CreateSavepoint(ctx context.Context, name string) 
 			return err
 		}
 		if !tm.capturingLocked() {
-			return errSavepointNotInTransaction
+			return errSavepointDisabled
 		}
 		if _, _, ok := tm.tc.replay.lookup(name); ok {
 			return errSavepointDuplicate
@@ -215,7 +260,7 @@ func (tm *TransactionManager) ReleaseSavepoint(name string) error {
 			return err
 		}
 		if !tm.capturingLocked() {
-			return errSavepointNotInTransaction
+			return errSavepointDisabled
 		}
 		return tm.tc.replay.releaseNamed(name)
 	})
@@ -238,7 +283,7 @@ func (tm *TransactionManager) rollbackToSavepointLocked(ctx context.Context, nam
 		return errSavepointInFlight
 	}
 	if !tm.capturingLocked() {
-		return errSavepointNotInTransaction
+		return errSavepointDisabled
 	}
 	idx, _, ok := tm.tc.replay.lookup(name)
 	if !ok {

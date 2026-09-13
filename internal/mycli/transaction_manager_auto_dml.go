@@ -127,7 +127,7 @@ func (tm *TransactionManager) flushAutomaticDMLLocked(ctx context.Context) ([]sp
 	}
 
 	counts, err := rwTxn.BatchUpdateWithOptions(ctx, dmls, spanner.QueryOptions{LastStatement: false})
-	if recErr := tm.completeBatchDMLLocked(counts, err); err == nil {
+	if _, recErr := tm.completeBatchDMLLocked(counts, err); err == nil {
 		err = recErr
 	}
 	if tm.tc != nil {

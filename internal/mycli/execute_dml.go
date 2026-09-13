@@ -128,14 +128,17 @@ func tokenKeywordLike(tok token.Token, keyword string) bool {
 
 func executeBatchDML(ctx context.Context, session *Session, dmls []spanner.Statement) (*Result, error) {
 	var affectedRowSlice []int64
+	var capture *captureToken
 	result, err := session.txn.RunInNewOrExistRwTx(ctx, func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
 		opts := spanner.QueryOptions{LastStatement: implicit}
 		if admitErr := session.txn.admitBatchDMLLocked(dmls, opts); admitErr != nil {
 			return 0, nil, nil, admitError(admitErr)
 		}
 		affectedRowSlice, err = tx.BatchUpdateWithOptions(ctx, dmls, opts)
-		if recErr := session.txn.completeBatchDMLLocked(affectedRowSlice, err); err == nil {
+		tok, recErr := session.txn.completeBatchDMLLocked(affectedRowSlice, err)
+		if err == nil {
 			err = recErr
+			capture = tok
 		}
 		return lo.Sum(affectedRowSlice), nil, nil, err
 	})
@@ -143,7 +146,9 @@ func executeBatchDML(ctx context.Context, session *Session, dmls []spanner.State
 		return nil, err
 	}
 
-	return newBatchDMLResult(dmls, affectedRowSlice, result), nil
+	out := newBatchDMLResult(dmls, affectedRowSlice, result)
+	out.capture = capture
+	return out, nil
 }
 
 func newBatchDMLResult(dmls []spanner.Statement, affectedRowSlice []int64, result *DMLResult) *Result {
@@ -173,12 +178,14 @@ func executeDML(ctx context.Context, session *Session, sql string) (*Result, err
 	var renderedOutput []byte
 	var queryStats map[string]any
 	var tableHeader TableHeader
+	var capture *captureToken
 	mode := effectiveQueryMode(session.systemVariables.Query.QueryMode)
 	result, err := session.txn.RunInNewOrExistRwTx(ctx, func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
 		updateResult, err := session.txn.runUpdateOnTransaction(ctx, tx, stmt, implicit, mode)
 		if err != nil {
 			return 0, nil, nil, err
 		}
+		capture = updateResult.capture
 		queryStats = updateResult.Stats
 		tableHeader = toTableHeader(updateResult.Metadata.GetRowType().GetFields())
 		if tableHeader != nil {
@@ -208,7 +215,11 @@ func executeDML(ctx context.Context, session *Session, sql string) (*Result, err
 		CommitTimestamp: result.CommitResponse.CommitTs,
 	}
 
-	return buildDMLResult(result, stats, tableHeader, renderedOutput, session.systemVariables)
+	out, err := buildDMLResult(result, stats, tableHeader, renderedOutput, session.systemVariables)
+	if out != nil {
+		out.capture = capture
+	}
+	return out, err
 }
 
 // buildDMLResult assembles the final Result for a regular (non-batch) DML

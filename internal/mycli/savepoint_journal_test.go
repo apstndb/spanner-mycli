@@ -560,3 +560,114 @@ func TestFreezeStatementRejectsNonGenericParams(t *testing.T) {
 		t.Fatal("expected error for non-GenericColumnValue param")
 	}
 }
+
+func TestReplayStateRetractClearsBackingSlot(t *testing.T) {
+	t.Parallel()
+	fp, err := newResultFingerprinter(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum, err := fp.FinishQuery()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("sql", func(t *testing.T) {
+		t.Parallel()
+		rs := &replayState{}
+		stmt, err := freezeStatement("SELECT @p", map[string]any{
+			"p": spanner.GenericColumnValue{Type: &sppb.Type{Code: sppb.TypeCode_STRING}, Value: structpb.NewStringValue("secret")},
+		}, spanner.QueryOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := rs.appendEntry(replayEntry{kind: replayKindSQL, stmt: stmt, fingerprint: slices.Clone(sum)}); err != nil {
+			t.Fatal(err)
+		}
+		tok := &captureToken{id: rs.entries[0].id}
+		backing := rs.entries
+		if !rs.retract(tok) {
+			t.Fatal("retract SQL")
+		}
+		if len(rs.entries) != 0 || rs.retainedBytes != 0 {
+			t.Fatalf("after retract: entries=%d bytes=%d", len(rs.entries), rs.retainedBytes)
+		}
+		for _, e := range backing[:cap(backing)] {
+			if e.stmt.SQL != "" || e.stmt.Params != nil || e.fingerprint != nil {
+				t.Fatal("retracted SQL entry still reachable in backing array")
+			}
+		}
+	})
+
+	t.Run("batch", func(t *testing.T) {
+		t.Parallel()
+		rs := &replayState{}
+		stmt, err := freezeStatement("INSERT INTO T (id) VALUES (1)", nil, spanner.QueryOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := rs.appendEntry(replayEntry{kind: replayKindBatchDML, batch: []frozenStatement{stmt}, fingerprint: slices.Clone(sum), counts: []int64{1}}); err != nil {
+			t.Fatal(err)
+		}
+		tok := &captureToken{id: rs.entries[0].id}
+		backing := rs.entries
+		if !rs.retract(tok) {
+			t.Fatal("retract batch")
+		}
+		for _, e := range backing[:cap(backing)] {
+			if e.batch != nil || e.fingerprint != nil {
+				t.Fatal("retracted batch entry still reachable in backing array")
+			}
+		}
+	})
+
+	t.Run("mutate", func(t *testing.T) {
+		t.Parallel()
+		rs := &replayState{}
+		mut := frozenMutation{Table: "T", Op: "INSERT", Columns: []string{"id"}}
+		if err := rs.appendEntry(replayEntry{kind: replayKindMutate, mutations: []frozenMutation{mut}, fingerprint: slices.Clone(sum)}); err != nil {
+			t.Fatal(err)
+		}
+		tok := &captureToken{id: rs.entries[0].id}
+		backing := rs.entries
+		if !rs.retract(tok) {
+			t.Fatal("retract mutate")
+		}
+		for _, e := range backing[:cap(backing)] {
+			if e.mutations != nil || e.fingerprint != nil {
+				t.Fatal("retracted mutate entry still reachable in backing array")
+			}
+		}
+	})
+
+	t.Run("identical_sql_suffix", func(t *testing.T) {
+		t.Parallel()
+		rs := &replayState{}
+		stmt, err := freezeStatement("SELECT 1", nil, spanner.QueryOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := rs.appendEntry(replayEntry{kind: replayKindSQL, stmt: stmt, fingerprint: slices.Clone(sum)}); err != nil {
+			t.Fatal(err)
+		}
+		first := rs.entries[0].id
+		if err := rs.appendEntry(replayEntry{kind: replayKindSQL, stmt: stmt, fingerprint: slices.Clone(sum)}); err != nil {
+			t.Fatal(err)
+		}
+		if err := rs.addSavepoint("later"); err != nil {
+			t.Fatal(err)
+		}
+		if !rs.retract(&captureToken{id: first}) {
+			t.Fatal("retract first identical SQL")
+		}
+		if len(rs.entries) != 0 {
+			t.Fatalf("suffix remained: %+v", rs.entries)
+		}
+		if _, _, ok := rs.lookup("later"); ok {
+			t.Fatal("dependent marker survived retract")
+		}
+		if rs.retainedBytes != 0 {
+			t.Fatalf("retainedBytes=%d after suffix retract", rs.retainedBytes)
+		}
+	})
+}

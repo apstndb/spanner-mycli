@@ -106,6 +106,23 @@ type DetachedCompatible interface {
 	isDetachedCompatible()
 }
 
+// savepointRecoverySafeStatement may run while a captured owner is
+// recovery-required. Everything else is denied before side effects: SET,
+// SET LOCAL, SET PARAM, START/ABORT BATCH, SQL, and SAVEPOINT/RELEASE.
+type savepointRecoverySafeStatement interface {
+	allowedDuringSavepointRecovery()
+}
+
+var (
+	_ savepointRecoverySafeStatement = (*RollbackToSavepointStatement)(nil)
+	_ savepointRecoverySafeStatement = (*RollbackStatement)(nil)
+	_ savepointRecoverySafeStatement = (*HelpStatement)(nil)
+	_ savepointRecoverySafeStatement = (*HelpVariablesStatement)(nil)
+	_ savepointRecoverySafeStatement = (*ShowVariableStatement)(nil)
+	_ savepointRecoverySafeStatement = (*ShowVariablesStatement)(nil)
+	_ savepointRecoverySafeStatement = (*ShowParamsStatement)(nil)
+)
+
 // rowCountType is type of modified rows count by DML.
 type rowCountType int
 
@@ -295,6 +312,11 @@ type Result struct {
 	BatchInfo      *BatchInfo
 	PartitionCount int
 	Metrics        *metrics.ExecutionMetrics // Performance metrics for query execution
+
+	// capture is the owner/attempt identity of this command's journaled
+	// operation. Buffered CLI display failure uses this receipt rather than
+	// the current owner's latest-operation slot.
+	capture *captureToken
 }
 
 // Row is a type alias for format.Row (= []Cell).

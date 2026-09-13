@@ -105,8 +105,8 @@ func newDirectedReadProductSession(t *testing.T, opts []option.ClientOption, var
 	}
 	// newSessionWithFactories intentionally leaves candidate sessions unbound
 	// for USE/DETACH validation. This helper returns a live session, matching
-	// NewSession after it publishes its transaction callbacks.
-	bindTransactionManagerCallbacks(vars, session.txn)
+	// NewSession after it publishes its live session callbacks.
+	bindLiveSessionCallbacks(vars, session)
 	t.Cleanup(session.Close)
 	return session, gotCfg
 }

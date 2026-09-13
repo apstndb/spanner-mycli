@@ -67,6 +67,7 @@ type UpdateResult struct {
 	Count    int64                   // Number of rows affected by the update
 	Metadata *sppb.ResultSetMetadata // Metadata about the result set
 	Plan     *sppb.QueryPlan         // Query execution plan (when requested)
+	capture  *captureToken           // journal identity for buffered display completion
 }
 
 // DMLResult holds the results of a DML operation execution including commit information.
@@ -153,7 +154,7 @@ type TransactionManager struct {
 	heartbeatAfterAttempt  func()
 
 	// savepointEnabled is a private capture switch for owner-journal
-	// integration tests. Public CLI_SAVEPOINT_SUPPORT arrives in a later PR.
+	// integration tests. Public CLI_SAVEPOINT_SUPPORT also enables capture.
 	savepointEnabled bool
 }
 
@@ -193,12 +194,25 @@ func bindTransactionManagerCallbacks(sv *systemVariables, tm *TransactionManager
 	sv.setTransactionTagSlot = tm.setTransactionTagSlot
 }
 
+// bindLiveSessionCallbacks publishes the live inTransaction / TRANSACTION_TAG
+// and inManualBatch callbacks after a session is successfully constructed or
+// adopted. Candidate USE/DETACH sessions must not call this; they share
+// systemVariables with the live session.
+func bindLiveSessionCallbacks(sv *systemVariables, session *Session) {
+	if sv == nil || session == nil {
+		return
+	}
+	bindTransactionManagerCallbacks(sv, session.txn)
+	sv.inManualBatch = session.batch.IsActive
+}
+
 // SetClient replaces the Spanner client under tm.mu. It refuses to replace
 // the client while any transaction context exists: the old client is closed
 // by the caller, so a live tc (and its heartbeat goroutine) would be left
-// using a closed client. All Aborted paths that trigger RecreateClient roll
-// back or clear the transaction first; this guard turns that ordering from
-// an emergent property into an enforced invariant.
+// using a closed client. Aborted paths that trigger RecreateClient roll back
+// or clear the transaction first; recoverable SAVEPOINT abort skips recreation
+// while the owner is still attached. This guard turns that ordering from an
+// emergent property into an enforced invariant.
 func (tm *TransactionManager) SetClient(client *spanner.Client) error {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
@@ -411,6 +425,19 @@ func (tm *TransactionManager) clearTransactionContext() {
 		tm.retireTransactionContextLocked()
 		return nil
 	})
+}
+
+// hasLiveLogicalOwner reports whether a logical transaction owner is still
+// attached. Recoverable SAVEPOINT abort keeps the owner for ROLLBACK TO;
+// terminal abort paths retire it before Cli.executeStatement recreates the
+// client (capture off, no checkpoint, or reconstruction/commit ended it).
+func (tm *TransactionManager) hasLiveLogicalOwner() bool {
+	if tm == nil {
+		return false
+	}
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+	return tm.tc != nil
 }
 
 // TransactionState returns the current transaction mode and whether a transaction is active.
@@ -999,6 +1026,7 @@ func (tm *TransactionManager) runUpdateOnTransaction(ctx context.Context, tx *sp
 		Count:    count,
 		Metadata: metadata,
 		Plan:     plan,
+		capture:  capture,
 	}, nil
 }
 

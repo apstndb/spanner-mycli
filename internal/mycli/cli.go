@@ -616,9 +616,15 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 			// Once the transaction is aborted, the underlying session gains higher lock priority for the next transaction.
 			// This makes the result of subsequent transaction in spanner-cli inconsistent, so we recreate the client to replace
 			// the Cloud Spanner's session with new one to revert the lock priority of the session.
-			innerErr := c.SessionHandler.RecreateClient(ctx)
-			if innerErr != nil {
-				err = errors.Join(err, innerErr)
+			// Recoverable SAVEPOINT abort keeps the logical owner attached; RecreateClient
+			// would construct a replacement and then SetClient would reject it. Skip that
+			// extra connection attempt and preserve the original Aborted error. Terminal
+			// abort paths retire the owner first.
+			if !c.SessionHandler.txn.hasLiveLogicalOwner() {
+				innerErr := c.SessionHandler.RecreateClient(ctx)
+				if innerErr != nil {
+					err = errors.Join(err, innerErr)
+				}
 			}
 		}
 		return "", err
@@ -638,6 +644,10 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 	// Display the result (skip for meta commands)
 	if !isMetaCommand {
 		if err := c.displayResult(sink, result, interactive, w); err != nil {
+			if c.SessionHandler != nil && c.SessionHandler.txn != nil {
+				err = c.SessionHandler.txn.handleBufferedOutputFailure(ctx, result.capture, err)
+				c.SessionHandler.txn.restoreLocalVarsIfIdle()
+			}
 			return "", fmt.Errorf("failed to display result: %w", err)
 		}
 	}

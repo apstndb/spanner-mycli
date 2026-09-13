@@ -83,6 +83,7 @@ type frozenMutation struct {
 }
 
 type replayEntry struct {
+	id           uint64
 	kind         replayKind
 	stmt         frozenStatement
 	batch        []frozenStatement
@@ -98,6 +99,7 @@ type replayState struct {
 	entries          []replayEntry
 	savepoints       []savepoint
 	retainedBytes    int64
+	nextID           uint64
 	recoveryRequired error
 	// queued holds frozen automatic DML reserved at enqueue. It is not a
 	// replay entry until BatchUpdate succeeds.
@@ -133,11 +135,38 @@ func (rs *replayState) release(n int64) {
 	}
 }
 
-func (rs *replayState) commitPrepared(e replayEntry) {
+func (rs *replayState) commitPrepared(e replayEntry) uint64 {
 	if e.payloadBytes == 0 {
 		e.payloadBytes = e.accountedBytes()
 	}
+	rs.assignID(&e)
 	rs.entries = append(rs.entries, e)
+	return e.id
+}
+
+func (rs *replayState) assignID(e *replayEntry) {
+	if rs == nil || e == nil {
+		return
+	}
+	rs.nextID++
+	e.id = rs.nextID
+}
+
+// retract drops the journaled capture identified by tok.id and every later
+// entry and marker. Identity is the capture sequence, not SQL text, payload
+// size, or batch length. Used when buffered CLI output fails after collection
+// already committed the operation. Backing slots are cleared.
+func (rs *replayState) retract(tok *captureToken) bool {
+	if rs == nil || tok == nil || tok.planOnly || tok.id == 0 {
+		return false
+	}
+	for i, e := range rs.entries {
+		if e.id == tok.id {
+			rs.truncateAfter(i)
+			return true
+		}
+	}
+	return false
 }
 
 func (rs *replayState) dropQueued() {
@@ -159,6 +188,7 @@ func (rs *replayState) appendEntry(e replayEntry) error {
 	if err := rs.reserve(e.payloadBytes); err != nil {
 		return err
 	}
+	rs.assignID(&e)
 	rs.entries = append(rs.entries, e)
 	return nil
 }

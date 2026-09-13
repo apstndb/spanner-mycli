@@ -19,6 +19,8 @@ type ShowVariableStatement struct {
 
 func (s *ShowVariableStatement) isDetachedCompatible() {}
 
+func (s *ShowVariableStatement) allowedDuringSavepointRecovery() {}
+
 func (s *ShowVariableStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	value, err := session.systemVariables.Get(s.VarName)
 	if err != nil {
@@ -40,6 +42,8 @@ func (s *ShowVariableStatement) Execute(ctx context.Context, session *Session, o
 type ShowVariablesStatement struct{}
 
 func (s *ShowVariablesStatement) isDetachedCompatible() {}
+
+func (s *ShowVariablesStatement) allowedDuringSavepointRecovery() {}
 
 func (s *ShowVariablesStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	// Get all single-valued variables from the registry.
@@ -170,6 +174,8 @@ func (s *SetAddStatement) Execute(ctx context.Context, session *Session, out Ope
 type HelpVariablesStatement struct{}
 
 func (s *HelpVariablesStatement) isDetachedCompatible() {}
+
+func (s *HelpVariablesStatement) allowedDuringSavepointRecovery() {}
 
 // helpVariableRows returns sorted rows describing every system variable known
 // to the registry. It is shared by HELP VARIABLES and the documentation

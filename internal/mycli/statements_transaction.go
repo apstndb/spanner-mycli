@@ -169,6 +169,8 @@ func (s *CommitStatement) Execute(ctx context.Context, session *Session, out Ope
 
 type RollbackStatement struct{}
 
+func (s *RollbackStatement) allowedDuringSavepointRecovery() {}
+
 func (s *RollbackStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	mode, isActive := session.txn.TransactionState()
 	if result, handled, err := closeNonRWTransaction(session, mode, isActive); handled || err != nil {

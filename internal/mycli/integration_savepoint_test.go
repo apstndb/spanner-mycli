@@ -1,0 +1,191 @@
+// Copyright 2026 apstndb
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package mycli
+
+import (
+	"context"
+	"testing"
+	"time"
+)
+
+func TestSavepointEmulatorCommitContents(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
+	defer cancel()
+
+	_, session := initializeWithRandomDB(t, testTableDDLs, nil)
+
+	for _, sql := range []string{
+		"SET CLI_SAVEPOINT_SUPPORT = 'ENABLED'",
+		"BEGIN",
+		"INSERT INTO tbl (id, active) VALUES (1, true)",
+		"SAVEPOINT before_second_row",
+		"INSERT INTO tbl (id, active) VALUES (2, false)",
+		"ROLLBACK TO SAVEPOINT before_second_row",
+		"COMMIT",
+	} {
+		stmt, err := BuildStatement(sql)
+		if err != nil {
+			t.Fatalf("BuildStatement(%q): %v", sql, err)
+		}
+		if _, err := stmt.Execute(ctx, session, OperationOutput{}); err != nil {
+			t.Fatalf("%s: %v", sql, err)
+		}
+	}
+
+	stmt, err := BuildStatement("SELECT id, active FROM tbl ORDER BY id ASC")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := stmt.Execute(ctx, session, OperationOutput{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	compareResult(t, result, &Result{
+		AffectedRows: 1,
+		TableHeader:  toTableHeader(testTableRowType),
+		Body: PresentationBody(sliceOf(
+			toRow("1", "true"),
+		)),
+	})
+}
+
+func TestSavepointEmulatorNestedReleaseAndPending(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
+	defer cancel()
+
+	_, session := initializeWithRandomDB(t, testTableDDLs, nil)
+
+	for _, sql := range []string{
+		"SET CLI_SAVEPOINT_SUPPORT = 'ENABLED'",
+		"BEGIN",
+		"SAVEPOINT pending_keep",
+		"INSERT INTO tbl (id, active) VALUES (1, true)",
+		"SAVEPOINT nested",
+		"INSERT INTO tbl (id, active) VALUES (2, false)",
+		"RELEASE nested",
+		"ROLLBACK TO SAVEPOINT pending_keep",
+		"INSERT INTO tbl (id, active) VALUES (3, true)",
+		"COMMIT",
+	} {
+		stmt, err := BuildStatement(sql)
+		if err != nil {
+			t.Fatalf("BuildStatement(%q): %v", sql, err)
+		}
+		if _, err := stmt.Execute(ctx, session, OperationOutput{}); err != nil {
+			t.Fatalf("%s: %v", sql, err)
+		}
+	}
+
+	stmt, err := BuildStatement("SELECT id, active FROM tbl ORDER BY id ASC")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := stmt.Execute(ctx, session, OperationOutput{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	compareResult(t, result, &Result{
+		AffectedRows: 1,
+		TableHeader:  toTableHeader(testTableRowType),
+		Body: PresentationBody(sliceOf(
+			toRow("3", "true"),
+		)),
+	})
+}
+
+func TestSavepointEmulatorMixedWritesAndConstraintRecovery(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
+	defer cancel()
+
+	_, session := initializeWithRandomDB(t, testTableDDLs, nil)
+
+	for _, sql := range []string{
+		"SET CLI_SAVEPOINT_SUPPORT = 'ENABLED'",
+		"BEGIN",
+		"MUTATE tbl INSERT STRUCT(1 AS id, TRUE AS active)",
+		"MUTATE tbl INSERT STRUCT(2 AS id, TRUE AS active)",
+		"MUTATE tbl DELETE KEY_RANGE(start_closed=>(2), end_open=>(3))",
+		"START BATCH DML",
+		"INSERT INTO tbl (id, active) VALUES (3, true)",
+		"RUN BATCH",
+		"INSERT INTO tbl (id, active) VALUES (4, false) THEN RETURN id",
+		"SAVEPOINT keep",
+		"INSERT INTO tbl (id, active) VALUES (5, true)",
+	} {
+		stmt, err := BuildStatement(sql)
+		if err != nil {
+			t.Fatalf("BuildStatement(%q): %v", sql, err)
+		}
+		if _, err := stmt.Execute(ctx, session, OperationOutput{}); err != nil {
+			t.Fatalf("%s: %v", sql, err)
+		}
+	}
+
+	dup, err := BuildStatement("INSERT INTO tbl (id, active) VALUES (3, true)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := dup.Execute(ctx, session, OperationOutput{}); err == nil {
+		t.Fatal("duplicate insert succeeded")
+	}
+	if !session.txn.NeedsRecovery() {
+		t.Fatal("constraint failure did not enter recovery-required")
+	}
+
+	for _, sql := range []string{
+		"ROLLBACK TO SAVEPOINT keep",
+		"INSERT INTO tbl (id, active) VALUES (6, true)",
+		"COMMIT",
+	} {
+		stmt, err := BuildStatement(sql)
+		if err != nil {
+			t.Fatalf("BuildStatement(%q): %v", sql, err)
+		}
+		if _, err := stmt.Execute(ctx, session, OperationOutput{}); err != nil {
+			t.Fatalf("%s: %v", sql, err)
+		}
+	}
+
+	stmt, err := BuildStatement("SELECT id, active FROM tbl ORDER BY id ASC")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := stmt.Execute(ctx, session, OperationOutput{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	compareResult(t, result, &Result{
+		AffectedRows: 4,
+		TableHeader:  toTableHeader(testTableRowType),
+		Body: PresentationBody(sliceOf(
+			toRow("1", "true"),
+			toRow("3", "true"),
+			toRow("4", "false"),
+			toRow("6", "true"),
+		)),
+	})
+}

@@ -22,6 +22,7 @@ import (
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"google.golang.org/protobuf/proto"
 )
@@ -32,10 +33,13 @@ import (
 type captureToken struct {
 	owner    *transactionContext
 	attempt  uint64
+	id       uint64
 	frozen   frozenStatement
 	rec      *operationReceipt
 	reserved int64
 	dml      bool
+	kind     replayKind
+	n        int
 	// planOnly is set for PLAN-mode EXPLAIN/DESCRIBE SELECT (and
 	// CLI_QUERY_MODE=PLAN). The token still carries owner/attempt identity and
 	// occupies inFlight through collection, but a successful plan is not
@@ -99,8 +103,18 @@ func (tm *TransactionManager) enableSavepointCaptureForTest() {
 	tm.savepointEnabled = true
 }
 
+func (tm *TransactionManager) savepointCaptureEnabledLocked() bool {
+	if tm == nil {
+		return false
+	}
+	if tm.savepointEnabled {
+		return true
+	}
+	return tm.sysVars != nil && tm.sysVars.Transaction.SavepointSupport == enums.SavepointSupportEnabled
+}
+
 func (tm *TransactionManager) ensureReplayLocked() {
-	if tm == nil || !tm.savepointEnabled || tm.tc == nil {
+	if tm == nil || tm.tc == nil || !tm.savepointCaptureEnabledLocked() {
 		return
 	}
 	if tm.tc.replay == nil {
@@ -148,6 +162,7 @@ func (tm *TransactionManager) startOwnerSQLCaptureLocked(stmt spanner.Statement,
 			owner:    tm.tc,
 			attempt:  tm.tc.attempt,
 			rec:      &operationReceipt{},
+			kind:     replayKindSQL,
 			planOnly: true,
 		}
 		tm.tc.pending = tok
@@ -170,6 +185,7 @@ func (tm *TransactionManager) startOwnerSQLCaptureLocked(stmt spanner.Statement,
 		rec:      &operationReceipt{},
 		reserved: n,
 		dml:      dml,
+		kind:     replayKindSQL,
 	}
 	tm.tc.pending = tok
 	tm.tc.inFlight++
@@ -212,7 +228,7 @@ func (tm *TransactionManager) finishQueryCaptureLocked(tok *captureToken, consum
 		fingerprint:  pending.rec.fingerprint,
 		payloadBytes: pending.reserved,
 	}
-	tm.tc.replay.commitPrepared(e)
+	pending.id = tm.tc.replay.commitPrepared(e)
 	return nil
 }
 
@@ -250,7 +266,7 @@ func (tm *TransactionManager) finishDMLCaptureLocked(tok *captureToken, count in
 		payloadBytes: pending.reserved,
 		dml:          true,
 	}
-	tm.tc.replay.commitPrepared(e)
+	pending.id = tm.tc.replay.commitPrepared(e)
 	return nil
 }
 
@@ -301,9 +317,9 @@ func (tm *TransactionManager) admitBatchDMLLocked(dmls []spanner.Statement, opts
 	return nil
 }
 
-func (tm *TransactionManager) completeBatchDMLLocked(counts []int64, rpcErr error) error {
+func (tm *TransactionManager) completeBatchDMLLocked(counts []int64, rpcErr error) (*captureToken, error) {
 	if !tm.capturingLocked() {
-		return rpcErr
+		return nil, rpcErr
 	}
 	rs := tm.tc.replay
 	batch := rs.queued
@@ -319,13 +335,13 @@ func (tm *TransactionManager) completeBatchDMLLocked(counts []int64, rpcErr erro
 	}
 	if rpcErr != nil {
 		rs.release(reserved)
-		return rpcErr
+		return nil, rpcErr
 	}
 	rec := &operationReceipt{}
 	fp, err := rec.FinishBatch(counts, nil)
 	if err != nil {
 		rs.release(reserved)
-		return err
+		return nil, err
 	}
 	e := replayEntry{
 		kind:         replayKindBatchDML,
@@ -334,8 +350,15 @@ func (tm *TransactionManager) completeBatchDMLLocked(counts []int64, rpcErr erro
 		counts:       append([]int64(nil), counts...),
 		payloadBytes: reserved,
 	}
-	rs.commitPrepared(e)
-	return nil
+	id := rs.commitPrepared(e)
+	return &captureToken{
+		owner:    tm.tc,
+		attempt:  tm.tc.attempt,
+		id:       id,
+		reserved: reserved,
+		kind:     replayKindBatchDML,
+		n:        len(batch),
+	}, nil
 }
 
 func (tm *TransactionManager) admitMutationsLocked(frozen []frozenMutation) error {
@@ -351,9 +374,9 @@ func (tm *TransactionManager) admitMutationsLocked(frozen []frozenMutation) erro
 	return nil
 }
 
-func (tm *TransactionManager) completeMutationsLocked(rpcErr error) error {
+func (tm *TransactionManager) completeMutationsLocked(rpcErr error) (*captureToken, error) {
 	if !tm.capturingLocked() {
-		return rpcErr
+		return nil, rpcErr
 	}
 	rs := tm.tc.replay
 	frozen := rs.admittedMut
@@ -362,13 +385,13 @@ func (tm *TransactionManager) completeMutationsLocked(rpcErr error) error {
 	rs.admittedBytes = 0
 	if rpcErr != nil {
 		rs.release(reserved)
-		return rpcErr
+		return nil, rpcErr
 	}
 	rec := &operationReceipt{}
 	fp, err := rec.Finish(nil)
 	if err != nil {
 		rs.release(reserved)
-		return err
+		return nil, err
 	}
 	e := replayEntry{
 		kind:         replayKindMutate,
@@ -376,8 +399,15 @@ func (tm *TransactionManager) completeMutationsLocked(rpcErr error) error {
 		fingerprint:  fp,
 		payloadBytes: reserved,
 	}
-	rs.commitPrepared(e)
-	return nil
+	id := rs.commitPrepared(e)
+	return &captureToken{
+		owner:    tm.tc,
+		attempt:  tm.tc.attempt,
+		id:       id,
+		reserved: reserved,
+		kind:     replayKindMutate,
+		n:        len(frozen),
+	}, nil
 }
 
 func freezeStatements(dmls []spanner.Statement, opts spanner.QueryOptions) ([]frozenStatement, error) {

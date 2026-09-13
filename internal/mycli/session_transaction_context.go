@@ -50,8 +50,8 @@ type transactionContext struct {
 	// tm.mu. Manual START/RUN/ABORT BATCH state stays on Session.batch.
 	autoDML []spanner.Statement
 	// replay is the optional SAVEPOINT journal. Nil unless capture was
-	// enabled at explicit BEGIN. Public CLI_SAVEPOINT_SUPPORT is not
-	// registered yet.
+	// enabled at explicit BEGIN via CLI_SAVEPOINT_SUPPORT=ENABLED or the
+	// private test hook.
 	replay *replayState
 	// ctorOpts is the frozen NewReadWriteStmtBasedTransactionWithOptions input.
 	ctorOpts spanner.TransactionOptions

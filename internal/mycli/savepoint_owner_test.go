@@ -578,7 +578,7 @@ func TestSavepointOwnerAutomaticQueueReservationAccounting(t *testing.T) {
 	}
 	assertReplayReservationEqualsPayload(t, h.tm)
 	h.tm.mu.Lock()
-	flushErr := h.tm.completeBatchDMLLocked(nil, errors.New("flush failed"))
+	_, flushErr := h.tm.completeBatchDMLLocked(nil, errors.New("flush failed"))
 	h.tm.mu.Unlock()
 	if flushErr == nil {
 		t.Fatal("failed flush returned nil")

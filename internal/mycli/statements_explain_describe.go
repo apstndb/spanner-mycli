@@ -510,6 +510,7 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string, fo
 		ReadTimestamp: result.ReadTimestamp,
 	}
 
+	result.capture = tok
 	return result, nil
 }
 
