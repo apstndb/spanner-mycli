@@ -485,6 +485,180 @@ func TestSavepointReplayCancellationCleansUpWithoutCommit(t *testing.T) {
 	}
 }
 
+func TestSavepointStaleIteratorDoesNotPoisonReplacementOwner(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	h := newHeartbeatHarness(t)
+	h.tm.enableSavepointCaptureForTest()
+	session := sessionForTM(t, h.tm)
+	if err := h.tm.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+		t.Fatal(err)
+	}
+	const staleSQL = "SELECT 1 AS stale"
+	iterA, _, tokA, err := h.tm.runQueryWithStatsAndCapture(ctx, spanner.NewStatement(staleSQL), false, sppb.ExecuteSqlRequest_PROFILE)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tokA == nil {
+		t.Fatal("query A was not admitted")
+	}
+	if err := h.tm.RollbackReadWriteTransaction(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := h.tm.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := executeSQLImplWithVars(ctx, session, "SELECT 2", session.systemVariables, OperationOutput{w: io.Discard}); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.tm.CreateSavepoint(ctx, "keep"); err != nil {
+		t.Fatal(err)
+	}
+	ownerB := txnContext(h.tm)
+	h.tm.mu.RLock()
+	handleB := h.tm.tc.txn
+	attemptB := h.tm.tc.attempt
+	h.tm.mu.RUnlock()
+	if handleB == nil {
+		t.Fatal("replacement owner has no physical handle")
+	}
+	journalB := replayJournal(h.tm)
+	obs, ok := lastSQLObservation(h.server.sqlObservations(), "SELECT 2")
+	if !ok {
+		t.Fatal("replacement SELECT 2 was not observed")
+	}
+	idB := obs.txnID
+	rollbacksBefore := h.server.rollbackIDs()
+
+	run := func(context.Context, spanner.Statement, bool, sppb.ExecuteSqlRequest_QueryMode) (*spanner.RowIterator, *spanner.ReadOnlyTransaction, *captureToken, error) {
+		return iterA, nil, tokA, nil
+	}
+	_, err = executeSQLImplWithQueryRunner(ctx, session, staleSQL, session.systemVariables, run, true, OperationOutput{w: io.Discard})
+	if err == nil {
+		t.Fatal("retired iterator A succeeded")
+	}
+	if spanner.ErrCode(err) != codes.FailedPrecondition {
+		t.Fatalf("old iterator error = %v (%v), want FailedPrecondition", err, spanner.ErrCode(err))
+	}
+
+	if txnContext(h.tm) != ownerB {
+		t.Fatal("stale iterator error replaced owner B")
+	}
+	h.tm.mu.RLock()
+	still := h.tm.tc.txn
+	attempt := h.tm.tc.attempt
+	h.tm.mu.RUnlock()
+	if still != handleB {
+		t.Fatal("stale iterator error discarded owner B's handle")
+	}
+	if attempt != attemptB {
+		t.Fatalf("stale iterator error changed B attempt %d -> %d", attemptB, attempt)
+	}
+	if h.tm.NeedsRecovery() {
+		t.Fatal("stale iterator error set B to recovery-required")
+	}
+	if got := replayMarkerNames(h.tm); !slices.Equal(got, []string{"keep"}) {
+		t.Fatalf("B markers = %v, want [keep]", got)
+	}
+	after := replayJournal(h.tm)
+	if len(after) != len(journalB) {
+		t.Fatalf("B journal changed: before=%+v after=%+v", journalB, after)
+	}
+	for _, id := range h.server.rollbackIDs()[len(rollbacksBefore):] {
+		if id == idB {
+			t.Fatal("cleanup RPC targeted replacement owner B")
+		}
+	}
+}
+
+func TestSavepointSingleUseFailureDoesNotPoisonExplicitOwner(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	h := newHeartbeatHarness(t)
+	h.tm.enableSavepointCaptureForTest()
+	session := sessionForTM(t, h.tm)
+	if err := h.tm.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := executeSQLImplWithVars(ctx, session, "SELECT 2", session.systemVariables, OperationOutput{w: io.Discard}); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.tm.CreateSavepoint(ctx, "keep"); err != nil {
+		t.Fatal(err)
+	}
+	owner := txnContext(h.tm)
+	h.tm.mu.RLock()
+	handle := h.tm.tc.txn
+	h.tm.mu.RUnlock()
+	obs, ok := lastSQLObservation(h.server.sqlObservations(), "SELECT 2")
+	if !ok {
+		t.Fatal("explicit SELECT 2 was not observed")
+	}
+	idB := obs.txnID
+	rollbacksBefore := h.server.rollbackIDs()
+
+	h.server.setFailSQL(status.Error(codes.PermissionDenied, "injected single-use failure"))
+	_, err := executeSQLImplSingleUse(ctx, session, "SELECT 9", session.systemVariables, OperationOutput{w: io.Discard})
+	if err == nil {
+		t.Fatal("single-use failure succeeded")
+	}
+	if txnContext(h.tm) != owner {
+		t.Fatal("single-use failure replaced the explicit owner")
+	}
+	h.tm.mu.RLock()
+	still := h.tm.tc.txn
+	h.tm.mu.RUnlock()
+	if still != handle {
+		t.Fatal("single-use failure discarded the explicit handle")
+	}
+	if h.tm.NeedsRecovery() {
+		t.Fatal("single-use failure set recovery-required")
+	}
+	if got := replayMarkerNames(h.tm); !slices.Equal(got, []string{"keep"}) {
+		t.Fatalf("markers = %v, want [keep]", got)
+	}
+	for _, id := range h.server.rollbackIDs()[len(rollbacksBefore):] {
+		if id == idB {
+			t.Fatal("single-use failure rolled back the explicit owner")
+		}
+	}
+}
+
+func TestSavepointOwnerQueryFailureStillEntersRecovery(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	h := newHeartbeatHarness(t)
+	h.tm.enableSavepointCaptureForTest()
+	session := sessionForTM(t, h.tm)
+	if err := h.tm.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := executeSQLImplWithVars(ctx, session, "SELECT 1", session.systemVariables, OperationOutput{w: io.Discard}); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.tm.CreateSavepoint(ctx, "keep"); err != nil {
+		t.Fatal(err)
+	}
+	owner := txnContext(h.tm)
+	h.server.setFailSQL(status.Error(codes.AlreadyExists, "injected owner query failure"))
+	if _, err := executeSQLImplWithVars(ctx, session, "SELECT 3", session.systemVariables, OperationOutput{w: io.Discard}); err == nil {
+		t.Fatal("owner query succeeded")
+	}
+	if txnContext(h.tm) != owner {
+		t.Fatal("owner query failure retired the logical owner")
+	}
+	if !h.tm.NeedsRecovery() {
+		t.Fatal("same-owner query failure did not enter recovery-required")
+	}
+	h.tm.mu.RLock()
+	handle := h.tm.tc.txn
+	h.tm.mu.RUnlock()
+	if handle != nil {
+		t.Fatal("recovery left the failed physical handle")
+	}
+}
+
 func isCanceledCause(err error) bool {
 	if err == nil {
 		return false

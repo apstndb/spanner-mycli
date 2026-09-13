@@ -114,8 +114,21 @@ func (tok *captureToken) receipt() *operationReceipt {
 	return tok.rec
 }
 
+func (tok *captureToken) belongsToLocked(tm *TransactionManager) bool {
+	return tok != nil && tm != nil && tm.tc != nil && tok.owner == tm.tc && tok.attempt == tm.tc.attempt
+}
+
+func (tm *TransactionManager) tokenBelongsToCurrentOwner(tok *captureToken) bool {
+	if tm == nil {
+		return false
+	}
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+	return tok.belongsToLocked(tm)
+}
+
 func (tok *captureToken) matchesLocked(tm *TransactionManager) bool {
-	return tok != nil && tm != nil && tm.tc != nil && tok.owner == tm.tc && tok.attempt == tm.tc.attempt && tm.tc.pending == tok
+	return tok.belongsToLocked(tm) && tm.tc.pending == tok
 }
 
 func (tm *TransactionManager) startOwnerSQLCaptureLocked(stmt spanner.Statement, opts spanner.QueryOptions, dml bool) (*captureToken, error) {

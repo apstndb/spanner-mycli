@@ -290,8 +290,15 @@ func executeSQLImplWithVars(ctx context.Context, session *Session, sql string, s
 // RecreateClient can replace the session. The initiating error is preserved.
 // Rollback emits no statement output, so this calls the transaction manager
 // directly instead of manufacturing a nested Statement.Execute destination.
-func rollbackReadWriteIfAborted(ctx context.Context, session *Session, err error) error {
+// tok is the captured owner/attempt of the failed operation. A non-nil token
+// that does not belong to the current owner/attempt must not roll back a
+// replacement owner. A nil token is an uncaptured path on the current owner
+// (capture disabled); single-use callers pass rollbackActiveTransactionOnAbort=false.
+func rollbackReadWriteIfAborted(ctx context.Context, session *Session, tok *captureToken, err error) error {
 	if err == nil || session == nil || session.txn == nil {
+		return err
+	}
+	if tok != nil && !session.txn.tokenBelongsToCurrentOwner(tok) {
 		return err
 	}
 	if !session.txn.InReadWriteTransaction() || spanner.ErrCode(err) != codes.Aborted {
@@ -367,13 +374,13 @@ func executeSQLImplWithQueryRunner(ctx context.Context, session *Session, sql st
 	}
 	if err != nil {
 		if session != nil && session.txn != nil {
-			err = session.txn.HandleOwnerFailure(ctx, err)
+			err = session.txn.HandleOwnerFailure(ctx, tok, err)
 			if session.txn.NeedsRecovery() {
 				return nil, err
 			}
 		}
 		if rollbackActiveTransactionOnAbort {
-			return nil, rollbackReadWriteIfAborted(ctx, session, err)
+			return nil, rollbackReadWriteIfAborted(ctx, session, tok, err)
 		}
 		return nil, err
 	}

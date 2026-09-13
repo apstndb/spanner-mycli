@@ -454,8 +454,12 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string, fo
 	if err != nil {
 		if session.txn != nil {
 			_ = session.txn.finishQueryCapture(tok, err)
+			err = session.txn.HandleOwnerFailure(ctx, tok, err)
+			if session.txn.NeedsRecovery() {
+				return nil, err
+			}
 		}
-		return nil, rollbackReadWriteIfAborted(ctx, session, err)
+		return nil, rollbackReadWriteIfAborted(ctx, session, tok, err)
 	}
 
 	// Count the actual data rows while draining the iterator;
@@ -476,7 +480,13 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string, fo
 		err = session.txn.invokeQueryAfterCollectHook()
 	}
 	if err != nil {
-		return nil, rollbackReadWriteIfAborted(ctx, session, err)
+		if session.txn != nil {
+			err = session.txn.HandleOwnerFailure(ctx, tok, err)
+			if session.txn.NeedsRecovery() {
+				return nil, err
+			}
+		}
+		return nil, rollbackReadWriteIfAborted(ctx, session, tok, err)
 	}
 
 	// Cloud Spanner Emulator doesn't set query plan nodes to the result.

@@ -113,12 +113,17 @@ func (tm *TransactionManager) handleOwnerFailureLocked(ctx context.Context, err 
 	return err
 }
 
-func (tm *TransactionManager) HandleOwnerFailure(ctx context.Context, err error) error {
+func (tm *TransactionManager) HandleOwnerFailure(ctx context.Context, tok *captureToken, err error) error {
 	if tm == nil || err == nil || isAdmissionError(err) {
 		return err
 	}
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
+	// finishQueryCapture clears pending, so this must not require a still-matching
+	// pending token. Unadmitted and single-use operations pass a nil token.
+	if !tok.belongsToLocked(tm) {
+		return err
+	}
 	if tm.shouldEnterRecoveryLocked() {
 		return tm.enterRecoveryLocked(ctx, err)
 	}
