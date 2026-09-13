@@ -1125,6 +1125,9 @@ func (tm *TransactionManager) tryQueryInTransaction(ctx context.Context, stmt sp
 	if tm.tc == nil || (tm.tc.attrs.mode != transactionModeReadWrite && tm.tc.attrs.mode != transactionModeReadOnly) {
 		return nil, nil, nil, nil
 	}
+	if err := tm.rejectIfRecoveringLocked(); err != nil {
+		return nil, nil, nil, err
+	}
 
 	// Validate transaction state
 	if tm.tc.txn == nil {

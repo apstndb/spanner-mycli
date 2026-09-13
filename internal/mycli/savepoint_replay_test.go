@@ -25,6 +25,7 @@ import (
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/apstndb/spanner-mycli/enums"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -656,6 +657,108 @@ func TestSavepointOwnerQueryFailureStillEntersRecovery(t *testing.T) {
 	h.tm.mu.RUnlock()
 	if handle != nil {
 		t.Fatal("recovery left the failed physical handle")
+	}
+}
+
+func TestSavepointExplainAnalyzeFailureEntersRecovery(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		code codes.Code
+		run  func(context.Context, *testing.T, *Session) error
+	}{
+		{
+			name: "explain_analyze_permission_denied",
+			code: codes.PermissionDenied,
+			run: func(ctx context.Context, t *testing.T, session *Session) error {
+				t.Helper()
+				_, err := executeExplainAnalyze(ctx, session, "SELECT 9", enums.ExplainFormatUnspecified, 0, nil)
+				return err
+			},
+		},
+		{
+			name: "cli_query_mode_profile_permission_denied",
+			code: codes.PermissionDenied,
+			run: func(ctx context.Context, t *testing.T, session *Session) error {
+				t.Helper()
+				session.systemVariables.Query.QueryMode = sppb.ExecuteSqlRequest_PROFILE.Enum()
+				_, err := (&SelectStatement{Query: "SELECT 9"}).Execute(ctx, session, OperationOutput{w: io.Discard})
+				return err
+			},
+		},
+		{
+			name: "explain_analyze_aborted",
+			code: codes.Aborted,
+			run: func(ctx context.Context, t *testing.T, session *Session) error {
+				t.Helper()
+				_, err := executeExplainAnalyze(ctx, session, "SELECT 9", enums.ExplainFormatUnspecified, 0, nil)
+				return err
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := t.Context()
+			h := newHeartbeatHarness(t)
+			h.tm.enableSavepointCaptureForTest()
+			session := sessionForTM(t, h.tm)
+			if err := h.tm.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := executeSQLImplWithVars(ctx, session, "SELECT 1", session.systemVariables, OperationOutput{w: io.Discard}); err != nil {
+				t.Fatal(err)
+			}
+			if err := h.tm.CreateSavepoint(ctx, "keep"); err != nil {
+				t.Fatal(err)
+			}
+			owner := txnContext(h.tm)
+			prefix := replayJournal(h.tm)
+
+			h.server.setFailSQL(status.Error(tc.code, "injected explain analyze failure"))
+			err := tc.run(ctx, t, session)
+			if err == nil {
+				t.Fatal("EXPLAIN ANALYZE succeeded")
+			}
+			if spanner.ErrCode(err) != tc.code {
+				t.Fatalf("error = %v (%v), want %v", err, spanner.ErrCode(err), tc.code)
+			}
+			if txnContext(h.tm) != owner {
+				t.Fatal("EXPLAIN ANALYZE failure retired the logical owner")
+			}
+			if !h.tm.NeedsRecovery() {
+				t.Fatal("EXPLAIN ANALYZE failure did not enter recovery-required")
+			}
+			h.tm.mu.RLock()
+			handle := h.tm.tc.txn
+			h.tm.mu.RUnlock()
+			if handle != nil {
+				t.Fatal("recovery left the failed physical handle")
+			}
+			if _, err := h.tm.CommitReadWriteTransaction(ctx); !errors.Is(err, errSavepointRecovery) {
+				t.Fatalf("COMMIT during recovery: %v", err)
+			}
+			if err := h.tm.CreateSavepoint(ctx, "later"); !errors.Is(err, errSavepointRecovery) {
+				t.Fatalf("SAVEPOINT during recovery: %v", err)
+			}
+			if _, err := executeSQLImplWithVars(ctx, session, "SELECT 2", session.systemVariables, OperationOutput{w: io.Discard}); !errors.Is(err, errSavepointRecovery) {
+				t.Fatalf("SELECT during recovery: %v", err)
+			}
+
+			h.server.setFailSQL(nil)
+			if err := h.tm.RollbackToSavepoint(ctx, "keep"); err != nil {
+				t.Fatal(err)
+			}
+			if h.tm.NeedsRecovery() {
+				t.Fatal("ROLLBACK TO did not clear recovery-required")
+			}
+			after := replayJournal(h.tm)
+			if len(after) != len(prefix) {
+				t.Fatalf("recovered journal = %+v, want prefix %+v", after, prefix)
+			}
+			if _, err := executeSQLImplWithVars(ctx, session, "SELECT 1", session.systemVariables, OperationOutput{w: io.Discard}); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
 

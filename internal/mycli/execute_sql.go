@@ -310,6 +310,27 @@ func rollbackReadWriteIfAborted(ctx context.Context, session *Session, tok *capt
 	return err
 }
 
+// applyOwnerQueryFailure is the owner/attempt-bound failure contract for
+// ordinary SELECT and EXPLAIN ANALYZE SELECT (including CLI_QUERY_MODE=PROFILE).
+// Recovery-required is entered when the captured token still belongs to the
+// current explicit RW owner with a completed marker. Aborted cleanup of a
+// live owner happens only when that recovery transition does not apply.
+func applyOwnerQueryFailure(ctx context.Context, session *Session, tok *captureToken, err error, rollbackOnAbort bool) error {
+	if err == nil {
+		return nil
+	}
+	if session != nil && session.txn != nil {
+		err = session.txn.HandleOwnerFailure(ctx, tok, err)
+		if session.txn.NeedsRecovery() {
+			return err
+		}
+	}
+	if rollbackOnAbort {
+		return rollbackReadWriteIfAborted(ctx, session, tok, err)
+	}
+	return err
+}
+
 // executeSQLImplSingleUse executes SQL outside the session's explicit
 // transaction while preserving normal query options and one-shot request-tag
 // consumption.
@@ -373,16 +394,7 @@ func executeSQLImplWithQueryRunner(ctx context.Context, session *Session, sql st
 		}
 	}
 	if err != nil {
-		if session != nil && session.txn != nil {
-			err = session.txn.HandleOwnerFailure(ctx, tok, err)
-			if session.txn.NeedsRecovery() {
-				return nil, err
-			}
-		}
-		if rollbackActiveTransactionOnAbort {
-			return nil, rollbackReadWriteIfAborted(ctx, session, tok, err)
-		}
-		return nil, err
+		return nil, applyOwnerQueryFailure(ctx, session, tok, err, rollbackActiveTransactionOnAbort)
 	}
 
 	if render.ValueFmtMode == format.SQLLiteralValues && render.Export.SQLTableName != "" {
