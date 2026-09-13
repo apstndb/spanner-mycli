@@ -51,6 +51,7 @@ type sqlObservation struct {
 	txnID     string
 	readOnly  bool
 	hadReadTs bool
+	queryMode sppb.ExecuteSqlRequest_QueryMode
 }
 
 type batchDMLObservation struct {
@@ -162,6 +163,15 @@ func (s *heartbeatRPCServer) sqlObservations() []sqlObservation {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return slices.Clone(s.sqlObs)
+}
+
+func lastSQLObservation(obs []sqlObservation, sql string) (sqlObservation, bool) {
+	for i := len(obs) - 1; i >= 0; i-- {
+		if obs[i].sql == sql {
+			return obs[i], true
+		}
+	}
+	return sqlObservation{}, false
 }
 
 func (s *heartbeatRPCServer) noteSQL(r *sppb.ExecuteSqlRequest, txnID []byte) {
@@ -332,6 +342,7 @@ func (s *heartbeatRPCServer) prepareSQL(ctx context.Context, r *sppb.ExecuteSqlR
 		txnID:     string(txnID),
 		readOnly:  ro,
 		hadReadTs: readTs != nil,
+		queryMode: r.GetQueryMode(),
 	})
 	return txnID, readTs, nil
 }

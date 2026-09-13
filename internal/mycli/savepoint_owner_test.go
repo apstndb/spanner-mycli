@@ -23,6 +23,7 @@ import (
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/testing/protocmp"
 )
@@ -404,4 +405,78 @@ func TestSavepointOwnerLocalAdmissionPreservesOwnerWithoutRPC(t *testing.T) {
 	if diff := cmp.Diff(parsed, muts, cmp.AllowUnexported(spanner.Mutation{}), protocmp.Transform()); diff != "" {
 		t.Fatalf("KEY_RANGE parse/freeze mismatch (-want +got):\n%s", diff)
 	}
+}
+
+func TestDMLQueryModeMatchesCallerEffectiveMode(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		capture bool
+	}{
+		{name: "capture_enabled", capture: true},
+		{name: "capture_disabled", capture: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := t.Context()
+			h := newHeartbeatHarness(t)
+			if tc.capture {
+				h.tm.enableSavepointCaptureForTest()
+			}
+			h.tm.sysVars.Query.QueryMode = sppb.ExecuteSqlRequest_WITH_STATS.Enum()
+			session := sessionForTM(t, h.tm)
+			if err := h.tm.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+				t.Fatal(err)
+			}
+
+			const dmlSQL = "UPDATE T SET v = 1 WHERE id = 1"
+			if _, err := executeDML(ctx, session, dmlSQL); err != nil {
+				t.Fatal(err)
+			}
+			obs, ok := lastSQLObservation(h.server.sqlObservations(), dmlSQL)
+			if !ok {
+				t.Fatal("ordinary DML was not observed on the wire")
+			}
+			if obs.queryMode != sppb.ExecuteSqlRequest_WITH_STATS {
+				t.Fatalf("ordinary DML QueryMode = %v, want WITH_STATS", obs.queryMode)
+			}
+			assertFrozenSQLMode(t, h.tm, tc.capture, dmlSQL, sppb.ExecuteSqlRequest_WITH_STATS)
+
+			const explainSQL = "UPDATE T SET v = 2 WHERE id = 1"
+			_, err := executeExplainAnalyzeDML(ctx, session, explainSQL, enums.ExplainFormatUnspecified, 0, nil)
+			if err != nil && !errors.Is(err, errExplainAnalyzeUnsupportedOnEmulator) {
+				t.Fatalf("EXPLAIN ANALYZE DML: %v", err)
+			}
+			obs, ok = lastSQLObservation(h.server.sqlObservations(), explainSQL)
+			if !ok {
+				t.Fatal("EXPLAIN ANALYZE DML was not observed on the wire")
+			}
+			if obs.queryMode != sppb.ExecuteSqlRequest_PROFILE {
+				t.Fatalf("EXPLAIN ANALYZE DML QueryMode = %v, want PROFILE", obs.queryMode)
+			}
+			assertFrozenSQLMode(t, h.tm, tc.capture, explainSQL, sppb.ExecuteSqlRequest_PROFILE)
+		})
+	}
+}
+
+func assertFrozenSQLMode(t *testing.T, tm *TransactionManager, capture bool, sql string, want sppb.ExecuteSqlRequest_QueryMode) {
+	t.Helper()
+	entries := replayJournal(tm)
+	if !capture {
+		if len(entries) != 0 {
+			t.Fatalf("capture disabled journaled: %+v", entries)
+		}
+		return
+	}
+	for i := len(entries) - 1; i >= 0; i-- {
+		e := entries[i]
+		if e.kind != replayKindSQL || e.stmt.SQL != sql {
+			continue
+		}
+		if e.stmt.Opts.Mode == nil || *e.stmt.Opts.Mode != want {
+			t.Fatalf("frozen %q mode = %v, want %v", sql, e.stmt.Opts.Mode, want)
+		}
+		return
+	}
+	t.Fatalf("frozen journal missing %q: %+v", sql, entries)
 }

@@ -173,8 +173,9 @@ func executeDML(ctx context.Context, session *Session, sql string) (*Result, err
 	var renderedOutput []byte
 	var queryStats map[string]any
 	var tableHeader TableHeader
+	mode := effectiveQueryMode(session.systemVariables.Query.QueryMode)
 	result, err := session.txn.RunInNewOrExistRwTx(ctx, func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
-		updateResult, err := session.txn.runUpdateOnTransaction(ctx, tx, stmt, implicit)
+		updateResult, err := session.txn.runUpdateOnTransaction(ctx, tx, stmt, implicit, mode)
 		if err != nil {
 			return 0, nil, nil, err
 		}
