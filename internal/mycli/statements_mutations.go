@@ -3,7 +3,6 @@ package mycli
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"math/big"
 	"slices"
 	"strings"
@@ -32,20 +31,16 @@ type MutateStatement struct {
 func (MutateStatement) isMutationStatement() {}
 
 func (s *MutateStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
-	mutations, err := parseMutation(s.Table, s.Operation, s.Body)
+	frozen, mutations, err := freezeMutate(s.Table, s.Operation, s.Body)
 	if err != nil {
 		return nil, err
 	}
 	result, err := session.txn.RunInNewOrExistRwTx(ctx, func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
-		var frozen []frozenMutation
-		if session.txn.capturingLocked() {
-			frozen, mutations, err = freezeMutate(s.Table, s.Operation, s.Body)
-			if err != nil {
-				return 0, nil, nil, err
-			}
+		if admitErr := session.txn.admitMutationsLocked(frozen); admitErr != nil {
+			return 0, nil, nil, admitError(admitErr)
 		}
 		err = tx.BufferWrite(mutations)
-		if recErr := session.txn.recordMutationsLocked(frozen, err); err == nil {
+		if recErr := session.txn.completeMutationsLocked(err); err == nil {
 			err = recErr
 		}
 		return 0, nil, nil, err
@@ -103,12 +98,12 @@ func gcvToKeyable(gcv spanner.GenericColumnValue) (any, error) {
 	}
 }
 
-func parseCallExpr(e *ast.CallExpr) (spanner.KeyRange, error) {
+func freezeKeyRangeCall(e *ast.CallExpr) (*frozenKeyRange, error) {
 	if len(e.Func.Idents) != 1 || !char.EqualFold(e.Func.Idents[0].Name, "KEY_RANGE") {
-		return spanner.KeyRange{}, fmt.Errorf("func name is not KEY_RANGE: %v", e.SQL())
+		return nil, fmt.Errorf("func name is not KEY_RANGE: %v", e.SQL())
 	}
 	if len(e.Args) > 0 {
-		return spanner.KeyRange{}, fmt.Errorf("unknown args: %v", e.SQL())
+		return nil, fmt.Errorf("unknown args: %v", e.SQL())
 	}
 	namedArgMap := lo.Associate(e.NamedArgs, func(u *ast.NamedArg) (string, ast.Expr) {
 		return strings.ToLower(u.Name.Name), u.Value
@@ -121,9 +116,9 @@ func parseCallExpr(e *ast.CallExpr) (spanner.KeyRange, error) {
 	var start, end ast.Expr
 	switch {
 	case hasStartOpen && hasStartClosed:
-		return spanner.KeyRange{}, fmt.Errorf("start_open and start_closed are mutually exclusive")
+		return nil, fmt.Errorf("start_open and start_closed are mutually exclusive")
 	case hasEndOpen && hasEndClosed:
-		return spanner.KeyRange{}, fmt.Errorf("end_open and end_closed are mutually exclusive")
+		return nil, fmt.Errorf("end_open and end_closed are mutually exclusive")
 	case hasStartClosed && hasEndOpen:
 		kind = spanner.ClosedOpen
 		start, end = startClosed, endOpen
@@ -137,76 +132,33 @@ func parseCallExpr(e *ast.CallExpr) (spanner.KeyRange, error) {
 		kind = spanner.OpenOpen
 		start, end = startOpen, endOpen
 	default:
-		return spanner.KeyRange{}, fmt.Errorf("unknown status: %v", e.SQL())
+		return nil, fmt.Errorf("unknown status: %v", e.SQL())
 	}
 
-	var startKey spanner.Key
-	if _, values, err := parseLiteralExpr(start); err != nil {
-		return spanner.KeyRange{}, err
-	} else if len(values) != 1 {
-		return spanner.KeyRange{}, fmt.Errorf("unknown start: %v", start.SQL())
-	} else {
-		startKey, err = toKeys(values[0])
-		if err != nil {
-			return spanner.KeyRange{}, err
-		}
+	startRow, err := keyRangeBound(start)
+	if err != nil {
+		return nil, err
 	}
-
-	var endKey spanner.Key
-	if _, values, err := parseLiteralExpr(end); err != nil {
-		return spanner.KeyRange{}, err
-	} else if len(values) != 1 {
-		return spanner.KeyRange{}, fmt.Errorf("unknown end: %v", end.SQL())
-	} else {
-		endKey, err = toKeys(values[0])
-		if err != nil {
-			return spanner.KeyRange{}, err
-		}
+	endRow, err := keyRangeBound(end)
+	if err != nil {
+		return nil, err
 	}
-
-	return spanner.KeyRange{
-		Start: startKey,
-		End:   endKey,
+	return &frozenKeyRange{
+		Start: cloneGCVRow(startRow),
+		End:   cloneGCVRow(endRow),
 		Kind:  kind,
 	}, nil
 }
 
-func parseDeleteMutation(table, s string) ([]*spanner.Mutation, error) {
-	if strings.ToUpper(strings.TrimSpace(s)) == "ALL" {
-		return sliceOf(spanner.Delete(table, spanner.AllKeys())), nil
-	}
-	expr, err := parseMemefishExpr("", s)
+func keyRangeBound(expr ast.Expr) ([]spanner.GenericColumnValue, error) {
+	_, values, err := parseLiteralExpr(expr)
 	if err != nil {
 		return nil, err
 	}
-	switch e := expr.(type) {
-	case *ast.CallExpr:
-		keyrange, err := parseCallExpr(e)
-		if err != nil {
-			return nil, err
-		}
-		return sliceOf(spanner.Delete(table, keyrange)), nil
-	default:
-		columns, valuesList, err := parseLiteralExpr(e)
-		if err != nil {
-			return nil, err
-		}
-		if len(columns) > 0 {
-			slog.Warn("delete mutation ignores column names", "columns", columns)
-		}
-
-		keys, err := lo.MapErr(valuesList, func(values []spanner.GenericColumnValue, _ int) (spanner.Key, error) {
-			return toKeys(values)
-		})
-		if err != nil {
-			return nil, err
-		}
-
-		if len(keys) == 1 {
-			return sliceOf(spanner.Delete(table, keys[0])), nil
-		}
-		return sliceOf(spanner.Delete(table, spanner.KeySetFromKeys(keys...))), nil
+	if len(values) != 1 {
+		return nil, fmt.Errorf("unknown start: %v", expr.SQL())
 	}
+	return values[0], nil
 }
 
 func toKeys(values []spanner.GenericColumnValue) (spanner.Key, error) {
@@ -283,37 +235,6 @@ func extractStructValues(structTypefields []*sppb.StructType_Field, structValues
 }
 
 func parseMutation(table, op, s string) ([]*spanner.Mutation, error) {
-	op = canonicalMutateOperation(op)
-	if op == "DELETE" {
-		return parseDeleteMutation(table, s)
-	}
-
-	columns, values, err := parseLiteralString(s)
-	if err != nil {
-		return nil, fmt.Errorf("invalid write mutations: %w", err)
-	}
-	if len(columns) == 0 {
-		return nil, fmt.Errorf("column names can't be inferenced")
-	}
-
-	// The common signature of Mutation functions
-	type mutationFunc func(string, []string, []any) *spanner.Mutation
-
-	var mutationF mutationFunc
-	switch strings.ToUpper(op) {
-	case "INSERT":
-		mutationF = spanner.Insert
-	case "UPDATE":
-		mutationF = spanner.Update
-	case "INSERT_OR_UPDATE":
-		mutationF = spanner.InsertOrUpdate
-	case "REPLACE":
-		mutationF = spanner.Replace
-	default:
-		return nil, fmt.Errorf("unsupported operation: %q", op)
-	}
-
-	return lo.Map(values, func(v []spanner.GenericColumnValue, _ int) *spanner.Mutation {
-		return mutationF(table, columns, lo.ToAnySlice(v))
-	}), nil
+	_, mutations, err := freezeMutate(table, op, s)
+	return mutations, err
 }

@@ -55,8 +55,9 @@ type transactionContext struct {
 	replay *replayState
 	// ctorOpts is the frozen NewReadWriteStmtBasedTransactionWithOptions input.
 	ctorOpts spanner.TransactionOptions
+	attempt  uint64
 	inFlight int
-	pending  *sqlCapture
+	pending  *captureToken
 }
 
 // EnableHeartbeat enables sending periodic heartbeats for this transaction.

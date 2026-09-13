@@ -450,10 +450,10 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string, fo
 
 	// EXPLAIN ANALYZE requires the query plan, so PROFILE is forced here
 	// regardless of CLI_QUERY_MODE.
-	iter, roTxn, err := session.txn.RunQueryWithStats(ctx, stmt, false, sppb.ExecuteSqlRequest_PROFILE)
+	iter, roTxn, tok, err := session.txn.runQueryWithStatsAndCapture(ctx, stmt, false, sppb.ExecuteSqlRequest_PROFILE)
 	if err != nil {
 		if session.txn != nil {
-			_ = session.txn.finishQueryCapture(err)
+			_ = session.txn.finishQueryCapture(tok, err)
 		}
 		return nil, rollbackReadWriteIfAborted(ctx, session, err)
 	}
@@ -461,7 +461,7 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string, fo
 	// Count the actual data rows while draining the iterator;
 	// RowIterator.RowCount is only populated for DML.
 	var actualRows int64
-	rec := session.txn.queryReceipt()
+	rec := tok.receipt()
 	stats, _, _, plan, err := consumeRowIterObserving(iter, func(*spanner.Row) error {
 		actualRows++
 		return nil
@@ -469,7 +469,7 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string, fo
 	if err == nil {
 		_, err = rec.Finish(nil)
 	}
-	if capErr := session.txn.finishQueryCapture(err); err == nil {
+	if capErr := session.txn.finishQueryCapture(tok, err); err == nil {
 		err = capErr
 	}
 	if err == nil {

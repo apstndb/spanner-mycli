@@ -356,6 +356,49 @@ func TestFreezeMutationValuesAreImmutable(t *testing.T) {
 	}
 }
 
+func TestFreezeKeyRangeValuesAreImmutable(t *testing.T) {
+	t.Parallel()
+	start := spanner.GenericColumnValue{
+		Type:  &sppb.Type{Code: sppb.TypeCode_INT64},
+		Value: structpb.NewStringValue("1"),
+	}
+	end := spanner.GenericColumnValue{
+		Type:  &sppb.Type{Code: sppb.TypeCode_INT64},
+		Value: structpb.NewStringValue("10"),
+	}
+	kr := &frozenKeyRange{
+		Start: cloneGCVRow([]spanner.GenericColumnValue{start}),
+		End:   cloneGCVRow([]spanner.GenericColumnValue{end}),
+		Kind:  spanner.ClosedOpen,
+	}
+	start.Type.Code = sppb.TypeCode_BYTES
+	start.Value.Kind.(*structpb.Value_StringValue).StringValue = "mutated"
+	end.Type.Code = sppb.TypeCode_STRING
+	if kr.Start[0].Type.GetCode() != sppb.TypeCode_INT64 || kr.Start[0].Value.GetStringValue() != "1" {
+		t.Fatal("frozen key-range start aliased caller Type/Value graphs")
+	}
+	if kr.End[0].Type.GetCode() != sppb.TypeCode_INT64 || kr.End[0].Value.GetStringValue() != "10" {
+		t.Fatal("frozen key-range end aliased caller Type/Value graphs")
+	}
+	fm := frozenMutation{Table: "T", Op: "DELETE", KeyRange: kr}
+	got, err := fm.Mutation()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := spanner.Delete("T", spanner.KeyRange{Start: spanner.Key{int64(1)}, End: spanner.Key{int64(10)}, Kind: spanner.ClosedOpen})
+	if diff := cmp.Diff(want, got, cmp.AllowUnexported(spanner.Mutation{}), protocmp.Transform()); diff != "" {
+		t.Fatalf("key-range mutation mismatch (-want +got):\n%s", diff)
+	}
+
+	parsed, err := parseMutation("T", "DELETE", "KEY_RANGE(start_closed=>(1), end_open=>(10))")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff(parsed, []*spanner.Mutation{got}, cmp.AllowUnexported(spanner.Mutation{}), protocmp.Transform()); diff != "" {
+		t.Fatalf("parseMutation/freeze KEY_RANGE mismatch (-want +got):\n%s", diff)
+	}
+}
+
 func TestReplayStateByteAccountingAndTruncate(t *testing.T) {
 	t.Parallel()
 	rs := &replayState{}

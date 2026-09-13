@@ -66,6 +66,12 @@ type frozenStatement struct {
 	Opts   frozenQueryOptions
 }
 
+type frozenKeyRange struct {
+	Start []spanner.GenericColumnValue
+	End   []spanner.GenericColumnValue
+	Kind  spanner.KeyRangeKind
+}
+
 type frozenMutation struct {
 	Table     string
 	Op        string
@@ -73,6 +79,7 @@ type frozenMutation struct {
 	Values    []spanner.GenericColumnValue
 	DeleteAll bool
 	Keys      [][]spanner.GenericColumnValue
+	KeyRange  *frozenKeyRange
 }
 
 type replayEntry struct {
@@ -84,6 +91,7 @@ type replayEntry struct {
 	affected     int64
 	counts       []int64
 	payloadBytes int64
+	dml          bool
 }
 
 type replayState struct {
@@ -94,6 +102,11 @@ type replayState struct {
 	// queued holds frozen automatic DML reserved at enqueue. It is not a
 	// replay entry until BatchUpdate succeeds.
 	queued []frozenStatement
+	// admittedBatch/admittedMut hold payload reserved before BatchUpdate or
+	// BufferWrite. Local admission failure must not send those RPCs.
+	admittedBatch []frozenStatement
+	admittedMut   []frozenMutation
+	admittedBytes int64
 }
 
 func (rs *replayState) reserve(n int64) error {
@@ -317,6 +330,13 @@ func (m frozenMutation) Mutation() (*spanner.Mutation, error) {
 		if m.DeleteAll {
 			return spanner.Delete(m.Table, spanner.AllKeys()), nil
 		}
+		if m.KeyRange != nil {
+			kr, err := m.KeyRange.toKeyRange()
+			if err != nil {
+				return nil, err
+			}
+			return spanner.Delete(m.Table, kr), nil
+		}
 		keys := make([]spanner.Key, 0, len(m.Keys))
 		for _, row := range m.Keys {
 			key, err := toKeys(row)
@@ -375,7 +395,35 @@ func (m frozenMutation) payloadBytes() int64 {
 			n += gcvPayloadBytes(v)
 		}
 	}
+	if m.KeyRange != nil {
+		for _, v := range m.KeyRange.Start {
+			n += gcvPayloadBytes(v)
+		}
+		for _, v := range m.KeyRange.End {
+			n += gcvPayloadBytes(v)
+		}
+	}
 	return n
+}
+
+func cloneGCVRow(row []spanner.GenericColumnValue) []spanner.GenericColumnValue {
+	out := make([]spanner.GenericColumnValue, len(row))
+	for i, v := range row {
+		out[i] = cloneGenericColumnValue(v)
+	}
+	return out
+}
+
+func (kr frozenKeyRange) toKeyRange() (spanner.KeyRange, error) {
+	start, err := toKeys(kr.Start)
+	if err != nil {
+		return spanner.KeyRange{}, err
+	}
+	end, err := toKeys(kr.End)
+	if err != nil {
+		return spanner.KeyRange{}, err
+	}
+	return spanner.KeyRange{Start: start, End: end, Kind: kr.Kind}, nil
 }
 
 func gcvPayloadBytes(v spanner.GenericColumnValue) int64 {
