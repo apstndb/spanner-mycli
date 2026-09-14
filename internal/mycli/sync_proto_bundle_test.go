@@ -609,6 +609,28 @@ func TestSyncProtoBundleRecursiveFakeAdmin(t *testing.T) {
 			t.Fatalf("Admin leaked getDDL=%d updates=%d", server.getDDL, len(server.reqs))
 		}
 	})
+	t.Run("#402 FAIL pending owner skips Update", func(t *testing.T) {
+		t.Parallel()
+		session, server := newProtoBundleAdminSession(t, &databasepb.GetDatabaseDdlResponse{ProtoDescriptors: emptyRemote})
+		session.systemVariables.Internal.ProtoDescriptor = local
+		if _, err := session.ExecuteStatement(t.Context(), &BeginStatement{}); err != nil {
+			t.Fatal(err)
+		}
+		stmt, err := BuildStatement("SYNC PROTO BUNDLE RECURSIVE UPSERT (examples.shipping.Order)")
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = session.ExecuteStatement(t.Context(), stmt)
+		if !errors.Is(err, errDDLInTransaction) {
+			t.Fatalf("err=%v, want errDDLInTransaction", err)
+		}
+		if len(server.reqs) != 0 {
+			t.Fatalf("UpdateDatabaseDdl leaked: %d", len(server.reqs))
+		}
+		if !session.txn.InPendingTransaction() {
+			t.Fatal("FAIL must leave the pending owner")
+		}
+	})
 	t.Run("expanded DELETE conflict skips Admin", func(t *testing.T) {
 		t.Parallel()
 		session, server := newProtoBundleAdminSession(t, &databasepb.GetDatabaseDdlResponse{ProtoDescriptors: emptyRemote})

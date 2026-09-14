@@ -69,6 +69,7 @@ func TestDdlStatementsUseNonTransactionalMutationGuard(t *testing.T) {
 		&DdlStatement{Ddl: "CREATE TABLE t (id INT64) PRIMARY KEY (id)"},
 		&BulkDdlStatement{Ddls: []string{"CREATE TABLE t (id INT64) PRIMARY KEY (id)"}},
 		&SyncProtoStatement{UpsertPaths: []string{"examples.ProtoType"}},
+		mustBuildMutate(t, "SYNC PROTO BUNDLE RECURSIVE UPSERT (examples.shipping.Order)"),
 	} {
 		t.Run(fmt.Sprintf("%T", stmt), func(t *testing.T) {
 			t.Parallel()
