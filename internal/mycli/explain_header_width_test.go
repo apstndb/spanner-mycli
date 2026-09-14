@@ -74,7 +74,7 @@ func TestExplainAnalyzeHeaderPreservesCustomColumns(t *testing.T) {
 	t.Parallel()
 	def := []columnRenderDef{{Name: "Elapsed", Alignment: tw.AlignCenter}}
 	for _, width := range []int64{0, 20, operatorColumnNameLength} {
-		names, aligns := explainAnalyzeHeader(def, width)
+		names, aligns := explainAnalyzeHeader(def, "", width)
 		if len(names) != 3 || names[2] != "Elapsed" || !slices.Equal(aligns, []tw.Align{tw.AlignRight, tw.AlignLeft, tw.AlignCenter}) {
 			t.Errorf("width %d: names=%v aligns=%v", width, names, aligns)
 		}
