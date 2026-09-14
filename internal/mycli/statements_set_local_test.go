@@ -153,6 +153,7 @@ func TestSetLocalRejectsUnsupportedVariables(t *testing.T) {
 		{desc: "multi-valued read-only variable", varName: "COMMIT_RESPONSE", value: "1", wantErr: "does not support SET LOCAL"},
 		{desc: "transaction-guarded variable", varName: "DIRECTED_READ", value: "'us-east1'", wantErr: "cannot be changed within a transaction"},
 		{desc: "savepoint support", varName: "CLI_SAVEPOINT_SUPPORT", value: "'ENABLED'", wantErr: "does not support SET LOCAL"},
+		{desc: "commit priority", varName: "COMMIT_PRIORITY", value: "'HIGH'", wantErr: "does not support SET LOCAL"},
 	} {
 		t.Run(tt.desc, func(t *testing.T) {
 			t.Parallel()

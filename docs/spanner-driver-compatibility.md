@@ -56,6 +56,7 @@ says otherwise; `java-spanner` versions are given where known.
 | `max_partitions` | yes | yes | not implemented (candidate gap) |
 | `default_sequence_kind` + auto-set on DDL failure | yes (v1.26.0) | JDBC/PGAdapter auto-set v6.88.0; `CREATE SEQUENCE` v6.102.0 | not implemented (candidate gap; both reference drivers converged) |
 | `max_commit_delay` | yes | yes | `MAX_COMMIT_DELAY` implemented |
+| `commit_priority` (`HIGH`/`MEDIUM`/`LOW`/`UNSPECIFIED`) | yes | n/a | `COMMIT_PRIORITY` implemented. Default `UNSPECIFIED` inherits the resolved transaction RPC priority (existing mycli behavior). go-sql-spanner's default `UNSPECIFIED` is the Go driver's `CommitPriority` default and does not inherit `RPC_PRIORITY`. The effective value is frozen in the constructor snapshot reused across physical attempts, including SAVEPOINT reconstruction. `SET LOCAL` is not supported. Not applied to query, DML, heartbeat, partitioned DML, read-only, or Admin RPCs. |
 | `proto_descriptors` / `proto_descriptors_file_path` | via properties | java-spanner properties | `PROTO_DESCRIPTORS` (inline base64 graph) and `PROTO_DESCRIPTORS_FILE_PATH` (SET/SHOW plus ADD, source compilation and HTTP(S) extensions) implemented; session-persistent graph, not full Java lifecycle parity. Neither supports SET LOCAL. |
 | `ddlInTransactionMode` | — | java-spanner property | not implemented, tracked #402 |
 | Inactive-transaction action | — | java-spanner property | not implemented, tracked #403 |
