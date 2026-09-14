@@ -380,14 +380,24 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				Syntax: `DUMP TABLES <table1> [, <table2>, ...]`,
 				Note:   `Table names are [<schema>.]<table>. Data only; no constraint changes or implicit inclusion of other tables. Invalid names are rejected before GetDatabaseDdl. Requires spanner.databases.getDdl only when a selected interleaved child has another selected BASE TABLE whose name matches the catalog parent basename. CLI_DUMP_CYCLIC_MODE defaults to REJECT; opt-in MUTATE pre-encodes selected cyclic groups and emits one unsplit transaction per populated group. Omitted parents and prerequisite target rows remain caller responsibilities. No service-quota prediction; earlier restore work may remain committed.`,
 			},
+			{
+				Usage:  `Export tables matching GoogleSQL LIKE/EXCEPT patterns`,
+				Syntax: `DUMP TABLES LIKE <string> [, <string> ...] [EXCEPT <string> [, <string> ...]]`,
+				Note:   `STRING literals only (including raw and triple-quoted). SQL-literal escaping is applied first; then native case-sensitive LIKE treats % and _ as wildcards and \\ as the escape. Patterns match IF(TABLE_SCHEMA='', TABLE_NAME, CONCAT(TABLE_SCHEMA, '.', TABLE_NAME)), not a reconstructed identifier. LIKE patterns are unioned; EXCEPT subtracts from that set or from all base tables. Empty '' is a real pattern. Zero matches is an error. Data only; omitted INTERLEAVE/FK parents are not added. Quoted identifiers named LIKE or EXCEPT stay exact-list names.`,
+			},
+			{
+				Usage:  `Export all base tables except those matching GoogleSQL LIKE patterns`,
+				Syntax: `DUMP TABLES EXCEPT <string> [, <string> ...]`,
+				Note:   `Same matching and safety rules as DUMP TABLES LIKE. DUMP DATABASE remains the no-selector all-tables command.`,
+			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^DUMP\s+TABLES\s+(?P<tables>.+)$`),
 		HandleGroups: func(groups map[string]string) (Statement, error) {
-			tables, err := parseDumpTableIDList(groups["tables"])
+			stmt, err := parseDumpTablesTail(groups["tables"])
 			if err != nil {
-				return nil, fmt.Errorf("invalid table list in DUMP TABLES: %w", err)
+				return nil, fmt.Errorf("invalid DUMP TABLES selector: %w", err)
 			}
-			return &DumpTablesStatement{Tables: tables}, nil
+			return stmt, nil
 		},
 		Completion: []fuzzyArgCompletion{{
 			PrefixPattern:  regexp.MustCompile(`(?i)^\s*DUMP\s+TABLES\s+(?:.*,\s*)?(\S*)$`),
