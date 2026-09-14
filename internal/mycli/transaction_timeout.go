@@ -149,7 +149,8 @@ func (tm *TransactionManager) batchUpdateWithRemainingDeadline(ctx context.Conte
 // deadline context (no lifecycle lock, no tm.mu) and then retires only
 // the matching logical owner under tm.mu. It never calls Registry.Set;
 // SET LOCAL undo is detached for the session/CLI safe point, which
-// restores under lifeMu before the next statement reads defaults.
+// restores before the next statement reads defaults or installs a
+// replacement owner.
 func (tm *TransactionManager) watchTransactionDeadline(owner *transactionContext, ctx context.Context) {
 	<-ctx.Done()
 	if !errors.Is(ctx.Err(), context.DeadlineExceeded) {
@@ -159,7 +160,7 @@ func (tm *TransactionManager) watchTransactionDeadline(owner *transactionContext
 }
 
 // retireMatchingOwner retires only the matching logical owner under tm.mu
-// and detaches SET LOCAL undo. It does not take lifeMu or call Registry.Set.
+// and detaches SET LOCAL undo. It does not call Registry.Set.
 // ExecuteStatement / withOwnerInstallAfterRestore restore that undo before
 // another statement reads defaults or installs a replacement owner.
 func (tm *TransactionManager) retireMatchingOwner(owner *transactionContext) {

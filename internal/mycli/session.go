@@ -163,11 +163,6 @@ type Session struct {
 	// through the Feature seam (issue #778). Values implementing io.Closer are
 	// closed at the end of Close in reverse creation order.
 	featureState featureStore
-
-	// execLifeDepth counts nested ExecuteStatement on this session so only
-	// the outermost acquire holds TransactionManager.lifeMu. Same-goroutine
-	// reentry (RUN BATCH) must not deadlock.
-	execLifeDepth int
 }
 
 // SchemaGeneration returns the current schema generation counter.
@@ -612,31 +607,11 @@ func (s *Session) GetDatabaseSchema(ctx context.Context) ([]string, *descriptorp
 	return resp.GetStatements(), &fds, nil
 }
 
-func (s *Session) enterStatementLifecycle() bool {
-	s.execLifeDepth++
-	if s.execLifeDepth != 1 {
-		return false
-	}
-	if s.txn != nil {
-		s.txn.lifeMu.Lock()
-	}
-	return true
-}
-
-func (s *Session) exitStatementLifecycle() {
-	if s.execLifeDepth == 1 && s.txn != nil {
-		s.txn.lifeMu.Unlock()
-	}
-	s.execLifeDepth--
-}
-
 func (s *Session) Close() {
 	// Close any active transaction context (which stops heartbeat)
 	if s.txn != nil {
-		s.txn.lifeMu.Lock()
 		s.txn.clearTransactionContext()
 		s.txn.restoreLocalVarsIfIdle()
-		s.txn.lifeMu.Unlock()
 	}
 
 	if s.client != nil {
@@ -882,18 +857,14 @@ func (s *Session) ExecuteStatement(ctx context.Context, stmt Statement) (*Result
 }
 
 func (s *Session) executeStatement(ctx context.Context, stmt Statement, out OperationOutput) (result *Result, err error) {
-	// Hold the statement-lifecycle lock from entry restore through exit
-	// restore so an expired owner's LOCAL undo is applied before this
-	// statement reads defaults or installs a new owner. Timer goroutines
-	// never take this lock and never call Registry.Set.
-	outermost := s.enterStatementLifecycle()
-	if outermost {
-		defer s.exitStatementLifecycle()
-	}
-
+	// Drain expired-owner SET LOCAL undo at the serialized session safe
+	// point before this statement reads execution defaults or creates a
+	// new owner. Timer goroutines never call Registry.Set. Owner install
+	// also restores under tm.mu via withOwnerInstallAfterRestore so a
+	// retirement that lands after this drain cannot leak LOCAL into B.
 	if s.txn != nil {
 		s.txn.restoreLocalVarsIfIdle()
-		if outermost && s.txn.afterEntryRestore != nil {
+		if s.txn.afterEntryRestore != nil {
 			s.txn.afterEntryRestore()
 		}
 	}

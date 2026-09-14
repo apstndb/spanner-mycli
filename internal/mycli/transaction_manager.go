@@ -164,12 +164,6 @@ type TransactionManager struct {
 	// Production remains nil. The hook must not call Registry.Set.
 	afterEntryRestore func()
 
-	// lifeMu is the statement-lifecycle lock. Outermost ExecuteStatement
-	// holds it from entry restore through exit restore so expiry retirement
-	// cannot hand a new owner the previous owner's unrestored LOCAL values.
-	// Timer goroutines do not take this lock and never call Registry.Set.
-	lifeMu sync.Mutex
-
 	// savepointEnabled is a private capture switch for owner-journal
 	// integration tests. Public CLI_SAVEPOINT_SUPPORT also enables capture.
 	savepointEnabled bool
@@ -399,15 +393,16 @@ func (tm *TransactionManager) withOwnerInstallAfterRestore(fn func() error) erro
 
 // restoreLocalVarsIfIdle replays detached SET LOCAL undo once no transaction
 // context remains. This is the serialized session/CLI safe point: timer
-// goroutines never call Registry.Set. Session.ExecuteStatement holds lifeMu
-// and drains pending undo here before reading execution defaults or creating
-// a new owner, and again after the statement (including an in-flight
-// operation that returns after cancellation). Owner-install paths also
-// drain via withOwnerInstallAfterRestore. Session.Close also drains. Direct
-// manager calls do not acquire a new automatic restoration contract. Replay
-// happens outside tm.mu because variable setters may themselves inspect
-// transaction state. Nested ExecuteStatement does not restore while a
-// transaction is still active.
+// goroutines never call Registry.Set. Session.ExecuteStatement drains
+// pending undo here before reading execution defaults or creating a new
+// owner, and again after the statement (including an in-flight operation
+// that returns after cancellation). Owner-install paths also drain via
+// withOwnerInstallAfterRestore so retirement and the next owner snapshot
+// share tm.mu. Session.Close also drains. Direct manager calls do not
+// acquire a new automatic restoration contract. Replay happens outside
+// tm.mu because variable setters may themselves inspect transaction state.
+// Nested ExecuteStatement does not restore while a transaction is still
+// active.
 func (tm *TransactionManager) restoreLocalVarsIfIdle() {
 	var entries []savedLocalVar
 	_ = tm.withTransactionContextWithLock(func(tcPtr **transactionContext) error {
