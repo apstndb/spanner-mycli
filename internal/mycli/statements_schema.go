@@ -156,7 +156,7 @@ func executeInformationSchemaBasedStatementImpl(ctx context.Context, session *Se
 	if err != nil {
 		return nil, err
 	}
-	fc, err = applyShowNullsDisplay(fc, session.systemVariables.Display.ShowNulls, session.systemVariables.Display.CLIFormat)
+	fc, err = applyStringQuoteDisplay(fc, session.systemVariables.Display.StringQuoteMode, session.systemVariables.Display.CLIFormat)
 	if err != nil {
 		return nil, err
 	}

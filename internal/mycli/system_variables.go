@@ -147,29 +147,29 @@ type LastResult struct {
 
 // DisplayVars holds display and output formatting configuration.
 type DisplayVars struct {
-	DumpCyclicMode             enums.DumpCyclicMode // CLI_DUMP_CYCLIC_MODE
-	DumpCyclicMaxBytes         int64                // CLI_DUMP_CYCLIC_MAX_BYTES
-	CLIFormat                  enums.DisplayMode    // CLI_FORMAT
-	Verbose                    bool                 // CLI_VERBOSE
-	Prompt                     string               // CLI_PROMPT
-	Prompt2                    string               // CLI_PROMPT2
-	HistoryFile                string               // CLI_HISTORY_FILE
-	TabWidth                   int64                // CLI_TAB_WIDTH
-	TabVisualize               bool                 // CLI_TAB_VISUALIZE
-	EnableHighlight            bool                 // CLI_ENABLE_HIGHLIGHT
-	UsePager                   bool                 // CLI_USE_PAGER
-	AutoWrap                   bool                 // CLI_AUTOWRAP
-	FixedWidth                 *int64               // CLI_FIXED_WIDTH
-	MultilineProtoText         bool                 // CLI_PROTOTEXT_MULTILINE
-	MarkdownCodeblock          bool                 // CLI_MARKDOWN_CODEBLOCK
-	SkipColumnNames            bool                 // CLI_SKIP_COLUMN_NAMES
-	ShowNulls                  bool                 // CLI_SHOW_NULLS
-	SuppressResultLines        bool                 // CLI_SUPPRESS_RESULT_LINES
-	ExplainFormat              enums.ExplainFormat  // CLI_EXPLAIN_FORMAT
-	ExplainWrapWidth           int64                // CLI_EXPLAIN_WRAP_WIDTH
-	ExplainOperatorHeader      string               // CLI_EXPLAIN_OPERATOR_HEADER
-	ExplainHangingIndent       bool                 // CLI_EXPLAIN_HANGING_INDENT
-	ExplainPrintSections       string               // CLI_EXPLAIN_PRINT_SECTIONS
+	DumpCyclicMode             enums.DumpCyclicMode  // CLI_DUMP_CYCLIC_MODE
+	DumpCyclicMaxBytes         int64                 // CLI_DUMP_CYCLIC_MAX_BYTES
+	CLIFormat                  enums.DisplayMode     // CLI_FORMAT
+	Verbose                    bool                  // CLI_VERBOSE
+	Prompt                     string                // CLI_PROMPT
+	Prompt2                    string                // CLI_PROMPT2
+	HistoryFile                string                // CLI_HISTORY_FILE
+	TabWidth                   int64                 // CLI_TAB_WIDTH
+	TabVisualize               bool                  // CLI_TAB_VISUALIZE
+	EnableHighlight            bool                  // CLI_ENABLE_HIGHLIGHT
+	UsePager                   bool                  // CLI_USE_PAGER
+	AutoWrap                   bool                  // CLI_AUTOWRAP
+	FixedWidth                 *int64                // CLI_FIXED_WIDTH
+	MultilineProtoText         bool                  // CLI_PROTOTEXT_MULTILINE
+	MarkdownCodeblock          bool                  // CLI_MARKDOWN_CODEBLOCK
+	SkipColumnNames            bool                  // CLI_SKIP_COLUMN_NAMES
+	StringQuoteMode            enums.StringQuoteMode // CLI_STRING_QUOTE_MODE
+	SuppressResultLines        bool                  // CLI_SUPPRESS_RESULT_LINES
+	ExplainFormat              enums.ExplainFormat   // CLI_EXPLAIN_FORMAT
+	ExplainWrapWidth           int64                 // CLI_EXPLAIN_WRAP_WIDTH
+	ExplainOperatorHeader      string                // CLI_EXPLAIN_OPERATOR_HEADER
+	ExplainHangingIndent       bool                  // CLI_EXPLAIN_HANGING_INDENT
+	ExplainPrintSections       string                // CLI_EXPLAIN_PRINT_SECTIONS
 	ParsedExplainPrintSections planref.PrintSections
 	OutputTemplateFile         string // CLI_OUTPUT_TEMPLATE_FILE (computed getter/setter)
 	OutputTemplate             *template.Template

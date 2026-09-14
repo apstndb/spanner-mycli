@@ -1107,7 +1107,7 @@ For how these and other connection properties map to the official Spanner driver
 | CLI_FUZZY_FINDER_KEY       | READ_WRITE | `"C_T"`                                        |
 | CLI_FUZZY_FINDER_OPTIONS   | READ_WRITE | `""`                                           |
 | CLI_TYPE_STYLES            | READ_WRITE | `"NULL=dim"`                                   |
-| CLI_SHOW_NULLS             | READ_WRITE | `FALSE`                                        |
+| CLI_STRING_QUOTE_MODE      | READ_WRITE | `"NONE"`                                       |
 | CLI_BIGQUERY_PROJECT       | READ_WRITE | `"my-gcp-project"`                             |
 | CLI_BIGQUERY_LOCATION      | READ_WRITE | `"US"`                                         |
 | CLI_BIGQUERY_MAX_BYTES_BILLED | READ_WRITE | `1000000000`                                |
@@ -1160,7 +1160,7 @@ is unchanged. It does not change when plans are cached or cleared (plain
 > - Set to empty string to disable all type styling.
 > - See [docs/system_variables.md](docs/system_variables.md) for full reference.
 
-> **Note**: `CLI_SHOW_NULLS` (default `FALSE`) is an opt-in TABLE/VERTICAL distinction between SQL NULL and a STRING that spells `NULL`. When `TRUE`, SQL NULL stays `NULL`. A non-NULL STRING is quoted with `strconv.Quote` only when its value is exactly `NULL` or starts with `"`. STRING `<NULL>` and other strings stay unchanged. CSV, TSV, JSONL, SQL export, TAB, HTML, and XML are unchanged. See [docs/system_variables.md](docs/system_variables.md#cli_show_nulls).
+> **Note**: `CLI_STRING_QUOTE_MODE` (default `NONE`) is an opt-in TABLE/VERTICAL STRING quoting policy: `NONE` keeps current bytes, `AUTO` quotes ambiguous strings, `ALWAYS` quotes every non-NULL STRING. AUTO and ALWAYS share `strconv.Quote` (Go-style display escaping, not JSON or SQL encoding). SQL NULL stays `NULL`. CSV, TSV, JSONL, SQL export, TAB, HTML, and XML are unchanged. See [docs/system_variables.md](docs/system_variables.md#cli_string_quote_mode).
 
 Table width calculation and wrapping account for 7-bit ANSI escape sequences
 already present in values or headers, independently of CLI-added type styling.

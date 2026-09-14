@@ -62,7 +62,7 @@ func clientSideFormatContext(sysVars *systemVariables) (*spanvalue.FormatConfig,
 	if err != nil {
 		return fc, format.DisplayValues, err
 	}
-	fc, err = applyShowNullsDisplay(fc, sysVars.Display.ShowNulls, sysVars.Display.CLIFormat)
+	fc, err = applyStringQuoteDisplay(fc, sysVars.Display.StringQuoteMode, sysVars.Display.CLIFormat)
 	return fc, format.DisplayValues, err
 }
 

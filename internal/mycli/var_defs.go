@@ -331,10 +331,10 @@ var varDefs = []varDef{
 		bind:  func(sv *systemVariables) Variable { return BoolVar(&sv.Display.SkipColumnNames) },
 	},
 	{
-		name:  "CLI_SHOW_NULLS",
-		desc:  "When TRUE, TABLE, TABLE_COMMENT, TABLE_DETAIL_COMMENT, and VERTICAL keep SQL NULL as NULL and quote a non-NULL STRING with strconv.Quote only when its value is exactly NULL or starts with a double quote. Other strings, including <NULL>, stay unchanged. Default FALSE leaves current bytes unchanged. CSV, TSV, JSONL, SQL export, TAB, HTML, and XML are unchanged.",
+		name:  "CLI_STRING_QUOTE_MODE",
+		desc:  "Human-table STRING quoting: NONE (default, current bytes), AUTO (quote empty, whitespace-bounded, NULL/null/true/false/NaN/+Inf/-Inf, number-like text, or strings containing quotes/backslashes/comma/brackets/braces/nonprintable runes), ALWAYS (quote every non-NULL STRING). AUTO and ALWAYS share strconv.Quote. SQL NULL stays NULL. A readability heuristic and Go-style display escaping, not JSON or SQL encoding. TABLE, TABLE_COMMENT, TABLE_DETAIL_COMMENT, and VERTICAL only. CSV, TSV, JSONL, SQL export, TAB, HTML, and XML are unchanged.",
 		scope: scopeSession,
-		bind:  func(sv *systemVariables) Variable { return BoolVar(&sv.Display.ShowNulls) },
+		bind:  func(sv *systemVariables) Variable { return StringQuoteModeVar(&sv.Display.StringQuoteMode) },
 	},
 	{
 		name:  "CLI_EXPLAIN_HANGING_INDENT",

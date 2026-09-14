@@ -137,7 +137,7 @@ func prepareFormatConfig(sql string, sysVars *systemVariables, render queryRende
 			render.Spanvalue = fc
 			return render, err
 		}
-		fc, err = applyShowNullsDisplay(fc, sysVars != nil && sysVars.Display.ShowNulls, render.CLIFormat)
+		fc, err = applyStringQuoteDisplay(fc, stringQuoteModeOf(sysVars), render.CLIFormat)
 		render.Spanvalue = fc
 		return render, err
 	}

@@ -988,7 +988,7 @@ func TestSystemVariables_SetGetOperations(t *testing.T) {
 			"CLI_AUTOWRAP", "CLI_ENABLE_HIGHLIGHT", "CLI_PROTOTEXT_MULTILINE",
 			"CLI_MARKDOWN_CODEBLOCK", "CLI_LINT_PLAN", "CLI_SKIP_COLUMN_NAMES",
 			"CLI_ENABLE_PROGRESS_BAR", "CLI_ENABLE_ADC_PLUS",
-			"CLI_TAB_VISUALIZE", "CLI_EXPLAIN_HANGING_INDENT", "CLI_SHOW_NULLS",
+			"CLI_TAB_VISUALIZE", "CLI_EXPLAIN_HANGING_INDENT",
 		}
 		for _, name := range boolVars {
 			t.Run(name, func(t *testing.T) {
@@ -1029,6 +1029,7 @@ func TestSystemVariables_SetGetOperations(t *testing.T) {
 			"CLI_EXPLAIN_OPERATOR_HEADER":  "Op",
 			"CLI_EXPLAIN_PRINT_SECTIONS":   "ordering,aggregate",
 			"CLI_WIDTH_STRATEGY":           "GREEDY_FREQUENCY",
+			"CLI_STRING_QUOTE_MODE":        "AUTO",
 			"DIRECTED_READ":                "us-east1:READ_ONLY",
 			"DDL_EXECUTION_MODE":           "ASYNC_WAIT",
 			"DDL_ASYNC_WAIT_TIMEOUT":       "5s",
