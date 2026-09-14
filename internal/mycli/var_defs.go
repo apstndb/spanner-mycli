@@ -14,8 +14,8 @@ import (
 type varScope int
 
 const (
-	// scopeSession is the SET-able surface. (Later: participates in RESET ALL
-	// and SET LOCAL.)
+	// scopeSession is the SET-able surface. Resettable session vars participate
+	// in RESET ALL when they have explicit prepare/commit support.
 	scopeSession varScope = iota
 	// scopeStartup is StartupConfig-backed: read-only via SET, written only by
 	// config.go/app.go before session creation.
@@ -67,8 +67,9 @@ func (d *varDef) localAllowed() bool {
 }
 
 // resettable reports whether RESET ALL should restore this variable to its
-// session-startup value. Session-init-only and explicitly opted-out (noReset)
-// variables are excluded. (Consumed by RESET ALL; see #484.)
+// captured startup snapshot. Session-init-only, read-only, and explicitly
+// opted-out (noReset) variables are excluded, including file-backed reloads,
+// opaque descriptor graphs, unimplemented placeholders, and connection identity.
 func (d *varDef) resettable() bool {
 	return d.settable() && !d.initOnly && !d.noReset
 }
@@ -131,6 +132,13 @@ var varDefs = []varDef{
 					}
 					sv.Query.DirectedRead = parsed
 					return nil
+				},
+				prepareReset: func(value string) error {
+					if strings.TrimSpace(value) == "" {
+						return nil
+					}
+					_, err := parseDirectedReadOption(value)
+					return err
 				},
 			}
 		},
@@ -370,6 +378,12 @@ var varDefs = []varDef{
 					sv.Display.Prompt2 = value
 					return nil
 				},
+				prepareReset: func(value string) error {
+					if value == "" {
+						return fmt.Errorf("CLI_PROMPT2 cannot be empty")
+					}
+					return nil
+				},
 			}
 		},
 	},
@@ -559,6 +573,13 @@ var varDefs = []varDef{
 					sv.Query.QueryMode = &mode
 					return nil
 				},
+				prepareReset: func(value string) error {
+					if strings.EqualFold(value, "NULL") {
+						return nil
+					}
+					var mode sppb.ExecuteSqlRequest_QueryMode
+					return QueryModeVar(&mode).Set(value)
+				},
 			}
 		},
 	},
@@ -604,6 +625,13 @@ var varDefs = []varDef{
 					}
 					return ExplainFormatVar(&sv.Display.ExplainFormat).Set(value)
 				},
+				prepareReset: func(value string) error {
+					if value == "" {
+						return nil
+					}
+					var tmp enums.ExplainFormat
+					return ExplainFormatVar(&tmp).Set(value)
+				},
 			}
 		},
 	},
@@ -622,6 +650,10 @@ var varDefs = []varDef{
 					sv.Display.ExplainPrintSections = value
 					sv.Display.ParsedExplainPrintSections = sections
 					return nil
+				},
+				prepareReset: func(value string) error {
+					_, err := parseExplainPrintSections(value)
+					return err
 				},
 			}
 		},
@@ -685,10 +717,10 @@ var varDefs = []varDef{
 		bind:  func(sv *systemVariables) Variable { return &TimestampBoundVar{ptr: &sv.Query.ReadOnlyStaleness} },
 	},
 	{
-		// noLocal: this setter reads files from disk as a side effect; restoring
-		// the old value at transaction end would re-read those files, so it opts
-		// out of SET LOCAL.
+		// noLocal/noReset: this setter reads files from disk as a side effect.
+		// RESET ALL does not turn a displayed path into a resource-loading reset.
 		name:    "PROTO_DESCRIPTORS_FILE_PATH",
+		noReset: true,
 		desc:    "Comma-separated list of proto descriptor files. Supports ADD to append files. HTTP(S) source vs binary is classified from the URL path, not query or fragment.",
 		scope:   scopeSession,
 		noLocal: true,
@@ -706,9 +738,10 @@ var varDefs = []varDef{
 		},
 	},
 	{
-		// noLocal: the displayed value is only the graph; undo cannot restore
-		// both the graph and file provenance together.
+		// noLocal/noReset: the displayed value is an opaque graph; RESET ALL
+		// does not serialize or reload descriptor state.
 		name:    protoDescriptorsVarName,
+		noReset: true,
 		desc:    "Base64 FileDescriptorSet for the session proto graph. DUMP SCHEMA/DATABASE emit SET PROTO_DESCRIPTORS so replay is self-contained. SET LOCAL is not supported. Cannot be changed while a manual batch is active.",
 		scope:   scopeSession,
 		noLocal: true,
@@ -746,6 +779,13 @@ var varDefs = []varDef{
 					sv.nullStyle = config.nullStyle
 					return nil
 				},
+				prepareReset: func(value string) error {
+					if strings.EqualFold(value, "NULL") {
+						value = ""
+					}
+					_, err := parseTypeStyles(value)
+					return err
+				},
 			}
 		},
 	},
@@ -761,13 +801,13 @@ var varDefs = []varDef{
 		},
 	},
 	{
-		// noLocal: this setter reads a template file from disk as a side effect;
-		// restoring the old value at transaction end would re-read it, so it opts
-		// out of SET LOCAL.
+		// noLocal/noReset: this setter reads a template file from disk. RESET ALL
+		// does not turn a displayed path into a resource-loading reset.
 		name:    "CLI_OUTPUT_TEMPLATE_FILE",
 		desc:    "Go text/template for formatting the output of the CLI.",
 		scope:   scopeSession,
 		noLocal: true,
+		noReset: true,
 		bind: func(sv *systemVariables) Variable {
 			return &CustomVar{
 				base: StringVar(&sv.Display.OutputTemplateFile),
@@ -779,7 +819,7 @@ var varDefs = []varDef{
 					// An empty value (or NULL) restores the built-in default template
 					// (defaultOutputFormat), matching the startup default when no
 					// --output-template flag is given. This keeps SET and startup in
-					// sync so Get/Set round-trips (relied on by RESET ALL) hold.
+					// sync so Get/Set empty-path round-trips hold.
 					if value == "" || strings.EqualFold(value, "NULL") {
 						sv.Display.OutputTemplateFile = ""
 						sv.Display.OutputTemplate = defaultOutputFormat
@@ -813,6 +853,10 @@ var varDefs = []varDef{
 					sv.Display.ParsedAnalyzeColumns = parsed
 					return nil
 				},
+				prepareFunc: func(value string) error {
+					_, err := parseAnalyzeColumns(value)
+					return err
+				},
 			}
 		},
 	},
@@ -839,6 +883,13 @@ var varDefs = []varDef{
 					}
 					sv.Display.ParsedInlineStats = parsed
 					return nil
+				},
+				prepareFunc: func(value string) error {
+					if value == "" {
+						return nil
+					}
+					_, err := parseInlineStats(value)
+					return err
 				},
 			}
 		},
@@ -874,15 +925,17 @@ var varDefs = []varDef{
 
 	// === Unimplemented variables ===
 	{
-		name:  "AUTOCOMMIT",
-		desc:  "A boolean indicating whether or not the connection is in autocommit mode. The default is true.",
-		scope: scopeSession,
-		bind:  func(sv *systemVariables) Variable { return &UnimplementedVar{name: "AUTOCOMMIT"} },
+		name:    "AUTOCOMMIT",
+		desc:    "A boolean indicating whether or not the connection is in autocommit mode. The default is true.",
+		scope:   scopeSession,
+		noReset: true,
+		bind:    func(sv *systemVariables) Variable { return &UnimplementedVar{name: "AUTOCOMMIT"} },
 	},
 	{
-		name:  "RETRY_ABORTS_INTERNALLY",
-		desc:  "A boolean indicating whether the connection automatically retries aborted transactions. The default is true.",
-		scope: scopeSession,
-		bind:  func(sv *systemVariables) Variable { return &UnimplementedVar{name: "RETRY_ABORTS_INTERNALLY"} },
+		name:    "RETRY_ABORTS_INTERNALLY",
+		desc:    "A boolean indicating whether the connection automatically retries aborted transactions. The default is true.",
+		scope:   scopeSession,
+		noReset: true,
+		bind:    func(sv *systemVariables) Variable { return &UnimplementedVar{name: "RETRY_ABORTS_INTERNALLY"} },
 	},
 }

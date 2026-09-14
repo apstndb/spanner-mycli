@@ -363,7 +363,7 @@ func NewSession(ctx context.Context, sysVars *systemVariables, opts ...option.Cl
 // createSessionWithIdentity constructs a Session for identity while sharing
 // sysVars for registry, query/transaction settings, runtime logging,
 // StreamManager and feature variables. It does not bind inTransaction,
-// transactionTagView, setTransactionTagSlot, or inManualBatch; public
+// transactionTagView, setTransactionTagSlot, transactionTagWritable, or inManualBatch; public
 // constructors and SessionHandler.adoptSession publish those callbacks after
 // the session is fully constructed and validated.
 func createSessionWithIdentity(ctx context.Context, sysVars *systemVariables, identity ConnectionVars, opts ...option.ClientOption) (*Session, error) {

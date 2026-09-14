@@ -1059,6 +1059,19 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 	},
 	// System Variable
 	{
+		Descriptions: []clientSideStatementDescription{
+			{
+				Usage:  `Reset all resettable session variables to their startup snapshots`,
+				Syntax: `RESET ALL`,
+				Note:   `Restores values captured after defaults, config, flags, and --set, before --init-command / --init-command-add. File-backed descriptors/templates, opaque graphs, connection identity, stream handles, and unimplemented placeholders are excluded. Ordinary RESET is persistent like SET: after success it retires only the targeted LOCAL undo entries.`,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^RESET\s+ALL$`),
+		HandleGroups: func(map[string]string) (Statement, error) {
+			return &ResetAllStatement{}, nil
+		},
+	},
+	{
 		// Must precede the generic `SET <name> = <value>` definition so that
 		// LOCAL is consumed as a keyword rather than as a variable name.
 		Descriptions: []clientSideStatementDescription{

@@ -155,6 +155,26 @@ func (s *SetLocalStatement) Execute(ctx context.Context, session *Session, out O
 	return &Result{KeepVariables: true}, nil
 }
 
+// ResetAllStatement implements `RESET ALL`: restore captured startup snapshots
+// for every supported resettable variable. Init-command values are included
+// because capture happens before both init-command forms.
+type ResetAllStatement struct{}
+
+func (s *ResetAllStatement) isDetachedCompatible() {}
+
+func (s *ResetAllStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
+	sysVars := session.systemVariables
+	sysVars.ensureRegistry()
+	prep, err := sysVars.Registry.prepareResetAll()
+	if err != nil {
+		return nil, err
+	}
+	if err := commitPersistentReset(session, prep); err != nil {
+		return nil, err
+	}
+	return &Result{KeepVariables: true}, nil
+}
+
 type SetAddStatement struct {
 	VarName string
 	Value   string

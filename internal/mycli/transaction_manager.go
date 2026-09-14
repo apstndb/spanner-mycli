@@ -192,6 +192,7 @@ func bindTransactionManagerCallbacks(sv *systemVariables, tm *TransactionManager
 	sv.inTransaction = tm.InTransaction
 	sv.transactionTagView = tm.transactionTagView
 	sv.setTransactionTagSlot = tm.setTransactionTagSlot
+	sv.transactionTagWritable = tm.checkTransactionTagSlot
 }
 
 // bindLiveSessionCallbacks publishes the live inTransaction / TRANSACTION_TAG
@@ -535,6 +536,17 @@ func (tm *TransactionManager) transactionTagView() string {
 		return ""
 	}
 	return tm.sysVars.Transaction.TransactionTag
+}
+
+// checkTransactionTagSlot reports whether the next-owner slot can be written
+// without mutating it. Used by RESET prepare.
+func (tm *TransactionManager) checkTransactionTagSlot() error {
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+	if tm.tc != nil && tm.tc.attrs.mode == transactionModeReadWrite {
+		return errTransactionTagInReadWrite
+	}
+	return nil
 }
 
 // setTransactionTagSlot writes the next-owner slot, or rejects the write while

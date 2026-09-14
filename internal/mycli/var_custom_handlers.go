@@ -48,6 +48,17 @@ func (v *transactionTagVar) Set(value string) error {
 	return nil
 }
 
+// PrepareReset checks the TRANSACTION_TAG slot can be written without mutating it.
+func (v *transactionTagVar) PrepareReset(string) error {
+	if v.sv == nil {
+		return fmt.Errorf("variable not initialized")
+	}
+	if v.sv.transactionTagWritable != nil {
+		return v.sv.transactionTagWritable()
+	}
+	return nil
+}
+
 // formatTimestampBound formats a TimestampBound for display
 func formatTimestampBound(tb *spanner.TimestampBound) string {
 	if tb == nil {
@@ -108,6 +119,15 @@ func (t *TimestampBoundVar) Set(value string) error {
 	}
 	*t.ptr = &staleness
 	return nil
+}
+
+// PrepareReset parses a timestamp bound without assigning it.
+func (t *TimestampBoundVar) PrepareReset(value string) error {
+	if value == "" {
+		return nil
+	}
+	_, err := parseTimestampBound(value)
+	return err
 }
 
 // ProtoDescriptorVar handles PROTO_DESCRIPTORS_FILE_PATH with ADD support
@@ -250,9 +270,10 @@ func parseInlineStats(value string) ([]inlineStatsDef, error) {
 
 // TemplateVar handles template variables like CLI_ANALYZE_COLUMNS
 type TemplateVar struct {
-	stringPtr *string
-	parsedPtr interface{} // Will be type-asserted based on usage
-	parseFunc func(string) error
+	stringPtr   *string
+	parsedPtr   interface{} // Will be type-asserted based on usage
+	parseFunc   func(string) error
+	prepareFunc func(string) error
 }
 
 func (t *TemplateVar) Get() (string, error) {
@@ -267,6 +288,14 @@ func (t *TemplateVar) Set(value string) error {
 	}
 	*t.stringPtr = value
 	return nil
+}
+
+// PrepareReset validates the template string without writing parsed state.
+func (t *TemplateVar) PrepareReset(value string) error {
+	if t.prepareFunc != nil {
+		return t.prepareFunc(value)
+	}
+	return errResetUnsupported
 }
 
 // AutocommitDMLModeVar handles AUTOCOMMIT_DML_MODE using enumer-generated methods
@@ -310,6 +339,12 @@ func (l *LogLevelVar) Set(value string) error {
 		l.runtime.Set(level)
 	}
 	return nil
+}
+
+// PrepareReset parses a log level without changing the process threshold.
+func (l *LogLevelVar) PrepareReset(value string) error {
+	_, err := parseLogLevel(value)
+	return err
 }
 
 // ValidValues returns the standard log level names as GoogleSQL string literals.

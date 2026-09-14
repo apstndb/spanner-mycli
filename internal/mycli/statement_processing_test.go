@@ -1144,6 +1144,11 @@ TABLE Singers (42)
 			want:  &SetAddStatement{VarName: "PROTO_DESCRIPTORS_FILE_PATH", Value: `"./message_descriptors.pb"`},
 		},
 		{
+			desc:  "RESET ALL statement",
+			input: `RESET ALL`,
+			want:  &ResetAllStatement{},
+		},
+		{
 			desc:  "SET LOCAL statement",
 			input: `SET LOCAL OPTIMIZER_VERSION = "3"`,
 			want:  &SetLocalStatement{VarName: "OPTIMIZER_VERSION", Value: `"3"`},

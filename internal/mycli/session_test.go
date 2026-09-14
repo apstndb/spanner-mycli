@@ -690,7 +690,7 @@ func TestNewAdminSessionWithFactoriesClosesNothingWhenAdminCreationFails(t *test
 
 func assertCallbacksUnbound(t *testing.T, sv *systemVariables) {
 	t.Helper()
-	if sv.inTransaction != nil || sv.transactionTagView != nil || sv.setTransactionTagSlot != nil {
+	if sv.inTransaction != nil || sv.transactionTagView != nil || sv.setTransactionTagSlot != nil || sv.transactionTagWritable != nil {
 		t.Fatal("constructor bound live callbacks")
 	}
 }
@@ -703,7 +703,7 @@ func TestNewTransactionManagerPublishesCallbacks(t *testing.T) {
 	if tm == nil {
 		t.Fatal("NewTransactionManager returned nil")
 	}
-	if sv.inTransaction == nil || sv.transactionTagView == nil || sv.setTransactionTagSlot == nil {
+	if sv.inTransaction == nil || sv.transactionTagView == nil || sv.setTransactionTagSlot == nil || sv.transactionTagWritable == nil {
 		t.Fatal("NewTransactionManager did not bind callbacks")
 	}
 	if sv.inTransaction() {
@@ -841,7 +841,7 @@ func TestSwitchSessionValidatesBeforePublishing(t *testing.T) {
 		if handler.Session != session {
 			t.Fatal("live session pointer changed")
 		}
-		if sv.inTransaction == nil || sv.transactionTagView == nil || sv.setTransactionTagSlot == nil {
+		if sv.inTransaction == nil || sv.transactionTagView == nil || sv.setTransactionTagSlot == nil || sv.transactionTagWritable == nil {
 			t.Fatal("live callbacks were cleared")
 		}
 	}
@@ -1100,7 +1100,7 @@ func TestSwitchSessionValidatesBeforePublishing(t *testing.T) {
 		if !sv.Feature.EchoInput {
 			t.Fatal("USE dropped feature configuration")
 		}
-		if sv.inTransaction == nil || sv.transactionTagView == nil || sv.setTransactionTagSlot == nil {
+		if sv.inTransaction == nil || sv.transactionTagView == nil || sv.setTransactionTagSlot == nil || sv.transactionTagWritable == nil {
 			t.Fatal("successful USE left callbacks unbound")
 		}
 		if sv.inTransaction() {
@@ -1176,7 +1176,7 @@ func TestSwitchSessionValidatesBeforePublishing(t *testing.T) {
 		if sv.Connection.Project != live.Project || sv.Connection.Instance != live.Instance {
 			t.Fatalf("DETACH changed project/instance: %+v", sv.Connection)
 		}
-		if sv.inTransaction == nil || sv.transactionTagView == nil || sv.setTransactionTagSlot == nil {
+		if sv.inTransaction == nil || sv.transactionTagView == nil || sv.setTransactionTagSlot == nil || sv.transactionTagWritable == nil {
 			t.Fatal("DETACH reset callbacks to nil")
 		}
 		if sv.Registry != registry {

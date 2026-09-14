@@ -103,10 +103,17 @@ func TestSlimEntrypointKeepsCoreFlagAndStatements(t *testing.T) {
 	}
 
 	defs := mycli.MergedStatementDefs()
-	for _, input := range []string{"HELP", "SHOW VARIABLES", "SHOW TRANSACTION ISOLATION LEVEL", "SHOW TRANSACTION READ ONLY"} {
+	for _, input := range []string{"HELP", "SHOW VARIABLES", "RESET ALL", "SHOW TRANSACTION ISOLATION LEVEL", "SHOW TRANSACTION READ ONLY"} {
 		if _, err := mycli.BuildStatementWithDefs(defs, input); err != nil {
 			t.Errorf("slim core statement %q: %v", input, err)
 		}
+	}
+}
+
+func TestInitializeSystemVariablesCapturesFeatureVars(t *testing.T) {
+	t.Parallel()
+	if err := mycli.InitializeSystemVariablesForTest(all.All()...); err != nil {
+		t.Fatalf("initializeSystemVariables with features: %v", err)
 	}
 }
 
