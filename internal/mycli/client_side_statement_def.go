@@ -511,7 +511,8 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Manipulate PROTO BUNDLE`,
-				Syntax: `SYNC PROTO BUNDLE [{UPSERT|DELETE} (<type> ...)]...`,
+				Syntax: `SYNC PROTO BUNDLE [{[RECURSIVE] UPSERT|DELETE} (<type> ...)]...`,
+				Note:   `RECURSIVE modifies only the following UPSERT and expands lexically nested local messages/enums. It is not native Spanner syntax and does not follow references or imports.`,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^SYNC\s+PROTO\s+BUNDLE(?:\s+(?P<args>.*))?$`),
@@ -1412,26 +1413,50 @@ func parseSyncProtoBundle(s string) (Statement, error) {
 		return nil, err
 	}
 
-	var upsertPaths, deletePaths []string
+	var (
+		upsertPaths, deletePaths []string
+		clauses                  []syncProtoClause
+		pendingRecursive         bool
+	)
 loop:
 	for {
 		switch {
 		case p.Token.Kind == token.TokenEOF:
+			if pendingRecursive {
+				return nil, errors.New("dangling RECURSIVE; expected UPSERT")
+			}
 			break loop
-		case p.Token.IsKeywordLike("UPSERT"):
+		case syncProtoTokenIs(p.Token, "RECURSIVE"):
+			if pendingRecursive {
+				return nil, errors.New("dangling RECURSIVE; expected UPSERT")
+			}
+			pendingRecursive = true
+			if err := p.NextToken(); err != nil {
+				return nil, err
+			}
+		case syncProtoTokenIs(p.Token, "UPSERT"):
 			paths, err := parsePaths(p)
 			if err != nil {
 				return nil, fmt.Errorf("failed to parsePaths: %w", err)
 			}
+			clauses = append(clauses, syncProtoClause{recursive: pendingRecursive, paths: paths})
 			upsertPaths = append(upsertPaths, paths...)
-		case p.Token.IsKeywordLike("DELETE"):
+			pendingRecursive = false
+		case syncProtoTokenIs(p.Token, "DELETE"):
+			if pendingRecursive {
+				return nil, errors.New("RECURSIVE DELETE is not supported")
+			}
 			paths, err := parsePaths(p)
 			if err != nil {
 				return nil, err
 			}
+			clauses = append(clauses, syncProtoClause{delete: true, paths: paths})
 			deletePaths = append(deletePaths, paths...)
 		default:
-			return nil, fmt.Errorf("expected UPSERT or DELETE, but: %q", p.Token.AsString)
+			if pendingRecursive {
+				return nil, fmt.Errorf("dangling RECURSIVE; expected UPSERT, but: %q", syncProtoTokenText(p.Token))
+			}
+			return nil, fmt.Errorf("expected UPSERT or DELETE, but: %q", syncProtoTokenText(p.Token))
 		}
 	}
 	upsertPaths = uniqFullNames(upsertPaths)
@@ -1439,7 +1464,27 @@ loop:
 	if name, ok := firstSharedFullName(upsertPaths, deletePaths); ok {
 		return nil, fmt.Errorf("SYNC PROTO BUNDLE conflict: %q appears in both UPSERT and DELETE", name)
 	}
-	return &SyncProtoStatement{UpsertPaths: upsertPaths, DeletePaths: deletePaths}, nil
+	return &SyncProtoStatement{UpsertPaths: upsertPaths, DeletePaths: deletePaths, clauses: clauses}, nil
+}
+
+// syncProtoTokenIs reports whether tok is word as a keyword or keyword-like ident.
+// memefish lexes RECURSIVE as a reserved keyword (Kind == "RECURSIVE"), while
+// UPSERT/DELETE remain identifiers.
+func syncProtoTokenIs(tok token.Token, word string) bool {
+	if tok.IsKeywordLike(word) {
+		return true
+	}
+	return strings.EqualFold(string(tok.Kind), word)
+}
+
+func syncProtoTokenText(tok token.Token) string {
+	if tok.Raw != "" {
+		return tok.Raw
+	}
+	if tok.AsString != "" {
+		return tok.AsString
+	}
+	return string(tok.Kind)
 }
 
 // parsePaths reads one parenthesized proto-name list after UPSERT or DELETE.
