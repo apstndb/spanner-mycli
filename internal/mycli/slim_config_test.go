@@ -15,6 +15,7 @@
 package mycli_test
 
 import (
+	"bytes"
 	"io"
 	"os"
 	"path/filepath"
@@ -86,6 +87,50 @@ func TestSlimEntrypointRejectsOptionalFlagAndConfig(t *testing.T) {
 	)
 	if err == nil || !strings.Contains(err.Error(), "unknown configuration keys") {
 		t.Fatalf("slim vertexai-model TOML error = %v, want unknown configuration keys", err)
+	}
+}
+
+func TestSlimAndFullAcceptCustomTLSFlags(t *testing.T) {
+	t.Parallel()
+	cfg := writeTempConfig(t, "")
+	args := []string{
+		"--endpoint=omni.example:443",
+		"--ca-cert-file=/tmp/ca.pem",
+		"--client-cert-file=/tmp/client.pem",
+		"--client-cert-key=/tmp/client.key",
+		"--without-authentication",
+	}
+	if err := mycli.ParseFlagsArgsForTest(args, "test", []string{cfg}, io.Discard, io.Discard); err != nil {
+		t.Fatalf("slim custom TLS flags: %v", err)
+	}
+	if err := mycli.ParseFlagsArgsForTest(args, "test", []string{cfg}, io.Discard, io.Discard, all.All()...); err != nil {
+		t.Fatalf("full custom TLS flags: %v", err)
+	}
+
+	cfgTOML := writeTempConfig(t, "endpoint = \"omni.example:443\"\nca-cert-file = \"/tmp/ca.pem\"\nclient-cert-file = \"/tmp/client.pem\"\nclient-cert-key = \"/tmp/client.key\"\nwithout-authentication = true\n")
+	if err := mycli.ParseFlagsArgsForTest(nil, "test", []string{cfgTOML}, io.Discard, io.Discard); err != nil {
+		t.Fatalf("slim custom TLS TOML: %v", err)
+	}
+	if err := mycli.ParseFlagsArgsForTest(nil, "test", []string{cfgTOML}, io.Discard, io.Discard, all.All()...); err != nil {
+		t.Fatalf("full custom TLS TOML: %v", err)
+	}
+
+	for _, name := range []string{"slim", "full"} {
+		var stdout bytes.Buffer
+		var features []mycli.Feature
+		if name == "full" {
+			features = all.All()
+		}
+		err := mycli.ParseFlagsArgsForTest([]string{"--help"}, "test", []string{cfg}, &stdout, io.Discard, features...)
+		if stdout.Len() == 0 {
+			t.Fatalf("%s help produced no output: %v", name, err)
+		}
+		help := stdout.String()
+		for _, want := range []string{"--ca-cert-file", "--client-cert-file", "--client-cert-key", "--without-authentication", "Permit plaintext gRPC"} {
+			if !strings.Contains(help, want) {
+				t.Errorf("%s help missing %q", name, want)
+			}
+		}
 	}
 }
 

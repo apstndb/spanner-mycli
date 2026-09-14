@@ -174,8 +174,17 @@ Flags:
                                                --param=p2=FLOAT64
       --proto-descriptor-file=STRING           Path of a file that contains a protobuf-serialized
                                                google.protobuf.FileDescriptorSet message.
-      --insecure                               Skip TLS verification and permit plaintext gRPC. --skip-tls-verify is an
-                                               alias.
+      --insecure                               Permit plaintext gRPC (no TLS). --skip-tls-verify is an alias. Cannot be
+                                               combined with custom CA or client certificates.
+      --ca-cert-file=STRING                    PEM CA certificate file used as the TLS trust bundle (replaces system
+                                               roots). Requires an explicit --endpoint or --host. Startup-only.
+      --client-cert-file=STRING                PEM client certificate for mTLS. Must be paired with --client-cert-key.
+                                               Requires an explicit --endpoint or --host. Startup-only.
+      --client-cert-key=STRING                 PEM client private key for mTLS. Must be paired with --client-cert-file.
+                                               Never shown by SHOW VARIABLES. Startup-only.
+      --without-authentication                 Do not send Google bearer credentials to the Spanner endpoint. Requires
+                                               an explicit --endpoint or --host and at least one custom TLS file. Does
+                                               not enable plaintext or skip certificate verification. Default: false.
       --embedded-emulator                      Use embedded Cloud Spanner Emulator. --project, --instance, --database,
                                                --endpoint, --insecure will be automatically configured.
       --embedded-omni                          Use embedded experimental Spanner Omni. --project, --instance,
@@ -1052,6 +1061,10 @@ For how these and other connection properties map to the official Spanner driver
 | CLI_PARSE_MODE             | READ_WRITE | `"FALLBACK"`                                   |
 | CLI_SAVEPOINT_SUPPORT      | READ_WRITE | `"ENABLED"`                                    |
 | CLI_INSECURE               | READ_ONLY  | `"FALSE"`                                      |
+| CLI_CA_CERT_FILE           | READ_ONLY  | `"/path/to/ca.pem"`                            |
+| CLI_CLIENT_CERT_FILE       | READ_ONLY  | `"/path/to/client.pem"`                        |
+| CLI_CLIENT_CERT_KEY        | READ_ONLY  | `"/path/to/client.key"`                        |
+| CLI_WITHOUT_AUTHENTICATION | READ_ONLY  | `"FALSE"`                                      |
 | CLI_QUERY_MODE             | READ_WRITE | `"PROFILE"`                                    |
 | CLI_LINT_PLAN              | READ_WRITE | `"TRUE"`                                       |
 | CLI_EXPLAIN_HANGING_INDENT | READ_WRITE | `"TRUE"`                                       |
@@ -1287,6 +1300,30 @@ default:default:emulator-database
 ```
 
 `--embedded-omni` automatically configures the fixed single-server Omni project and instance defaults, reuses the backend-provided client options needed for the experimental host, and can load the same sample databases as the embedded emulator path. In Spanner Omni terminology, this embedded single-server setup corresponds to a deployment, which is the Omni equivalent of a Google Cloud Spanner instance; see [Spanner Omni key terms](https://docs.cloud.google.com/spanner-omni/key-terms). Before relying on embedded Omni locally, also check the official [Spanner Omni system requirements](https://docs.cloud.google.com/spanner-omni/system-requirements).
+
+### Remote Spanner Omni TLS
+
+Remote Omni endpoints that use a private CA or require a client certificate are configured at startup. An explicit `--endpoint` or `--host` is required; port-only and default Cloud routing are not enough. Custom TLS does not change Google authentication unless you also pass `--without-authentication`.
+
+```bash
+# Verified TLS to a named Omni endpoint. Google ADC/--credential stay in use
+# unless --without-authentication is set.
+spanner-mycli -p PROJECT -i INSTANCE -d DATABASE \
+  --endpoint=omni.example:443 \
+  --ca-cert-file=/path/to/ca.pem
+
+# mTLS without Google bearer credentials for this Spanner endpoint.
+# --without-authentication is not plaintext and does not skip certificate
+# verification. It does not apply to BigQuery or Gemini clients.
+spanner-mycli -p PROJECT -i INSTANCE -d DATABASE \
+  --endpoint=omni.example:443 \
+  --ca-cert-file=/path/to/ca.pem \
+  --client-cert-file=/path/to/client.pem \
+  --client-cert-key=/path/to/client.key \
+  --without-authentication
+```
+
+`--insecure` remains plaintext gRPC and cannot be combined with these certificate files. SHOW VARIABLES reports the certificate **paths** only; private-key bytes are never displayed.
 
 ### Protocol Buffers support
 

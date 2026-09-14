@@ -950,9 +950,33 @@ var varDefs = []varDef{
 	},
 	{
 		name:  "CLI_INSECURE",
-		desc:  "Skip TLS certificate verification (insecure).",
+		desc:  "Permit plaintext gRPC (no TLS). Set by --insecure or --skip-tls-verify.",
 		scope: scopeStartup,
 		bind:  func(sv *systemVariables) Variable { return BoolVar(&sv.Config.Insecure) },
+	},
+	{
+		name:  "CLI_CA_CERT_FILE",
+		desc:  "Path to the PEM CA certificate file used as the TLS trust bundle. Empty when unset. Replaces system roots when set. Startup-only.",
+		scope: scopeStartup,
+		bind:  func(sv *systemVariables) Variable { return StringVar(&sv.Config.CaCertFile) },
+	},
+	{
+		name:  "CLI_CLIENT_CERT_FILE",
+		desc:  "Path to the PEM client certificate file for mTLS. Empty when unset. Startup-only.",
+		scope: scopeStartup,
+		bind:  func(sv *systemVariables) Variable { return StringVar(&sv.Config.ClientCertFile) },
+	},
+	{
+		name:  "CLI_CLIENT_CERT_KEY",
+		desc:  "Path to the PEM client private-key file for mTLS. SHOW reports the path only and never the key bytes. Empty when unset. Startup-only.",
+		scope: scopeStartup,
+		bind:  func(sv *systemVariables) Variable { return StringVar(&sv.Config.ClientCertKey) },
+	},
+	{
+		name:  "CLI_WITHOUT_AUTHENTICATION",
+		desc:  "Do not send Google bearer credentials to the Spanner endpoint. Requires an explicit endpoint and at least one custom TLS file. Does not enable plaintext or skip certificate verification.",
+		scope: scopeStartup,
+		bind:  func(sv *systemVariables) Variable { return BoolVar(&sv.Config.WithoutAuthentication) },
 	},
 	{
 		name:  "CLI_LOG_GRPC",

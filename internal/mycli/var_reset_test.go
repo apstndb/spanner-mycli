@@ -48,6 +48,10 @@ func TestCaptureStartupSnapshotsRequiresPrepareSupport(t *testing.T) {
 		"RETRY_ABORTS_INTERNALLY",
 		"CLI_PROJECT",
 		"CLI_ENABLE_ADC_PLUS",
+		"CLI_CA_CERT_FILE",
+		"CLI_CLIENT_CERT_FILE",
+		"CLI_CLIENT_CERT_KEY",
+		"CLI_WITHOUT_AUTHENTICATION",
 	} {
 		if _, ok := sv.startupSnapshots[excluded]; ok {
 			t.Errorf("%s should not be captured", excluded)
