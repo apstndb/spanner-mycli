@@ -128,7 +128,7 @@ type showTransactionIsolationRow struct {
 }
 
 type showTransactionReadOnlyRow struct {
-	ReadOnly string `spanner:"transaction_read_only"`
+	ReadOnly bool `spanner:"transaction_read_only"`
 }
 
 var (
@@ -164,7 +164,7 @@ func (s *ShowTransactionStatement) Execute(ctx context.Context, session *Session
 		}
 		result, err = executeStructRows(showTransactionIsolationEncoder, []showTransactionIsolationRow{{IsolationLevel: value}}, session, out)
 	case showTransactionReadOnly:
-		result, err = executeStructRows(showTransactionReadOnlyEncoder, []showTransactionReadOnlyRow{{ReadOnly: formatBool(readOnly)}}, session, out)
+		result, err = executeStructRows(showTransactionReadOnlyEncoder, []showTransactionReadOnlyRow{{ReadOnly: readOnly}}, session, out)
 	default:
 		return nil, fmt.Errorf("invalid SHOW TRANSACTION kind")
 	}

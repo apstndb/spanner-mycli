@@ -59,11 +59,11 @@ func TestShowTransactionActiveRWNoRPC(t *testing.T) {
 	autoBefore := autoDMLLen(h.tm)
 	owner := txnContext(h.tm)
 
-	if got := mustShowTransaction(t, session, "SHOW TRANSACTION ISOLATION LEVEL"); got != "REPEATABLE_READ" {
+	if got := mustShowTransactionIsolationLevel(t, session); got != "REPEATABLE_READ" {
 		t.Fatalf("active RW isolation = %q", got)
 	}
-	if got := mustShowTransaction(t, session, "SHOW TRANSACTION READ ONLY"); got != "FALSE" {
-		t.Fatalf("active RW read only = %q", got)
+	if got := mustShowTransactionReadOnly(t, session); got {
+		t.Fatalf("active RW read only = %v, want false", got)
 	}
 	requireNoShowTransactionRPCs(t, h.server, before)
 	if txnContext(h.tm) != owner {
@@ -87,10 +87,10 @@ func TestShowTransactionActiveRONoRPC(t *testing.T) {
 	mustExec(t, ctx, session, "BEGIN RO")
 	before := snapshotShowTransactionRPCs(h.server)
 	owner := txnContext(h.tm)
-	if got := mustShowTransaction(t, session, "SHOW TRANSACTION READ ONLY"); got != "TRUE" {
-		t.Fatalf("active RO read only = %q", got)
+	if got := mustShowTransactionReadOnly(t, session); !got {
+		t.Fatalf("active RO read only = %v, want true", got)
 	}
-	if got := mustShowTransaction(t, session, "SHOW TRANSACTION ISOLATION LEVEL"); got != "UNSPECIFIED" {
+	if got := mustShowTransactionIsolationLevel(t, session); got != "UNSPECIFIED" {
 		t.Fatalf("active RO isolation = %q, want stored owner value UNSPECIFIED", got)
 	}
 	requireNoShowTransactionRPCs(t, h.server, before)
@@ -115,11 +115,11 @@ func TestShowTransactionRecoveryRequiredNoRPC(t *testing.T) {
 
 	before := snapshotShowTransactionRPCs(h.server)
 	journalBefore := replayJournal(h.tm)
-	if got := mustShowTransaction(t, session, "SHOW TRANSACTION ISOLATION LEVEL"); got != "UNSPECIFIED" {
+	if got := mustShowTransactionIsolationLevel(t, session); got != "UNSPECIFIED" {
 		t.Fatalf("recovery isolation = %q", got)
 	}
-	if got := mustShowTransaction(t, session, "SHOW TRANSACTION READ ONLY"); got != "FALSE" {
-		t.Fatalf("recovery read only = %q", got)
+	if got := mustShowTransactionReadOnly(t, session); got {
+		t.Fatalf("recovery read only = %v, want false", got)
 	}
 	requireNoShowTransactionRPCs(t, h.server, before)
 	if txnContext(h.tm) != owner {
@@ -147,11 +147,11 @@ func TestShowTransactionPostCommitActiveRW(t *testing.T) {
 		t.Fatal("expected idle after COMMIT")
 	}
 	before := snapshotShowTransactionRPCs(h.server)
-	if got := mustShowTransaction(t, session, "SHOW TRANSACTION ISOLATION LEVEL"); got != "SERIALIZABLE" {
+	if got := mustShowTransactionIsolationLevel(t, session); got != "SERIALIZABLE" {
 		t.Fatalf("post-COMMIT isolation = %q, want next-transaction default", got)
 	}
-	if got := mustShowTransaction(t, session, "SHOW TRANSACTION READ ONLY"); got != "FALSE" {
-		t.Fatalf("post-COMMIT read only = %q", got)
+	if got := mustShowTransactionReadOnly(t, session); got {
+		t.Fatalf("post-COMMIT read only = %v, want false", got)
 	}
 	requireNoShowTransactionRPCs(t, h.server, before)
 }

@@ -15,22 +15,25 @@
 package mycli
 
 import (
+	"bytes"
 	"errors"
-	"strings"
+	"io"
 	"testing"
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/apstndb/spanner-mycli/enums"
+	"github.com/apstndb/spanner-mycli/internal/mycli/streamio"
 )
 
-func showTransactionCell(t *testing.T, res *Result, wantColumn string) string {
+func showTransactionIsolationCell(t *testing.T, res *Result) string {
 	t.Helper()
-	if names := extractTableColumnNames(res.TableHeader); len(names) != 1 || names[0] != wantColumn {
-		t.Fatalf("SHOW TRANSACTION columns=%v, want [%s]", names, wantColumn)
+	if names := extractTableColumnNames(res.TableHeader); len(names) != 1 || names[0] != "isolation_level" {
+		t.Fatalf("SHOW TRANSACTION ISOLATION LEVEL columns=%v, want [isolation_level]", names)
 	}
 	typed := res.typedPayload()
 	if typed == nil || len(typed.Rows) != 1 {
-		t.Fatalf("SHOW TRANSACTION typed rows=%v, want 1", typed)
+		t.Fatalf("SHOW TRANSACTION ISOLATION LEVEL typed rows=%v, want 1", typed)
 	}
 	var got string
 	if err := typed.Rows[0].Column(0, &got); err != nil {
@@ -39,17 +42,44 @@ func showTransactionCell(t *testing.T, res *Result, wantColumn string) string {
 	return got
 }
 
-func mustShowTransaction(t *testing.T, session *Session, sql string) string {
+func showTransactionReadOnlyCell(t *testing.T, res *Result) bool {
 	t.Helper()
-	wantColumn := "isolation_level"
-	if strings.Contains(strings.ToUpper(sql), "READ ONLY") {
-		wantColumn = "transaction_read_only"
+	if names := extractTableColumnNames(res.TableHeader); len(names) != 1 || names[0] != "transaction_read_only" {
+		t.Fatalf("SHOW TRANSACTION READ ONLY columns=%v, want [transaction_read_only]", names)
 	}
+	fields, ok := res.TableHeader.structFields()
+	if !ok || len(fields) != 1 || fields[0].GetType().GetCode() != sppb.TypeCode_BOOL {
+		t.Fatalf("SHOW TRANSACTION READ ONLY metadata=%v ok=%v, want BOOL", fields, ok)
+	}
+	typed := res.typedPayload()
+	if typed == nil || len(typed.Rows) != 1 {
+		t.Fatalf("SHOW TRANSACTION READ ONLY typed rows=%v, want 1", typed)
+	}
+	var got bool
+	if err := typed.Rows[0].Column(0, &got); err != nil {
+		t.Fatal(err)
+	}
+	return got
+}
+
+func mustShowTransactionIsolationLevel(t *testing.T, session *Session) string {
+	t.Helper()
+	const sql = "SHOW TRANSACTION ISOLATION LEVEL"
 	res := mustExec(t, t.Context(), session, sql)
 	if !res.KeepVariables {
 		t.Fatalf("%s KeepVariables=false", sql)
 	}
-	return showTransactionCell(t, res, wantColumn)
+	return showTransactionIsolationCell(t, res)
+}
+
+func mustShowTransactionReadOnly(t *testing.T, session *Session) bool {
+	t.Helper()
+	const sql = "SHOW TRANSACTION READ ONLY"
+	res := mustExec(t, t.Context(), session, sql)
+	if !res.KeepVariables {
+		t.Fatalf("%s KeepVariables=false", sql)
+	}
+	return showTransactionReadOnlyCell(t, res)
 }
 
 func plantOwner(t *testing.T, session *Session, attrs transactionAttributes, recovery error) *transactionContext {
@@ -133,20 +163,20 @@ func TestBuildStatementShowTransactionInvalid(t *testing.T) {
 func TestShowTransactionIdleDefaults(t *testing.T) {
 	t.Parallel()
 	session := newSessionForLocalVarTest(t)
-	if got := mustShowTransaction(t, session, "SHOW TRANSACTION ISOLATION LEVEL"); got != "UNSPECIFIED" {
+	if got := mustShowTransactionIsolationLevel(t, session); got != "UNSPECIFIED" {
 		t.Fatalf("idle isolation = %q, want UNSPECIFIED", got)
 	}
-	if got := mustShowTransaction(t, session, "SHOW TRANSACTION READ ONLY"); got != "FALSE" {
-		t.Fatalf("idle read only = %q, want FALSE", got)
+	if got := mustShowTransactionReadOnly(t, session); got {
+		t.Fatalf("idle read only = %v, want false", got)
 	}
 
 	mustExec(t, t.Context(), session, "SET DEFAULT_ISOLATION_LEVEL = 'SERIALIZABLE'")
 	mustExec(t, t.Context(), session, "SET READONLY = TRUE")
-	if got := mustShowTransaction(t, session, "SHOW TRANSACTION ISOLATION LEVEL"); got != "SERIALIZABLE" {
+	if got := mustShowTransactionIsolationLevel(t, session); got != "SERIALIZABLE" {
 		t.Fatalf("idle isolation after SET = %q, want SERIALIZABLE", got)
 	}
-	if got := mustShowTransaction(t, session, "SHOW TRANSACTION READ ONLY"); got != "TRUE" {
-		t.Fatalf("idle read only after SET = %q, want TRUE", got)
+	if got := mustShowTransactionReadOnly(t, session); !got {
+		t.Fatalf("idle read only after SET = %v, want true", got)
 	}
 }
 
@@ -161,11 +191,11 @@ func TestShowTransactionPendingOwnerIgnoresNextTransactionDefault(t *testing.T) 
 		t.Fatalf("mode = %q, want pending", mode)
 	}
 	mustExec(t, ctx, session, "SET DEFAULT_ISOLATION_LEVEL = 'REPEATABLE_READ'")
-	if got := mustShowTransaction(t, session, "SHOW TRANSACTION ISOLATION LEVEL"); got != "SERIALIZABLE" {
+	if got := mustShowTransactionIsolationLevel(t, session); got != "SERIALIZABLE" {
 		t.Fatalf("pending isolation = %q, want SERIALIZABLE owner snapshot", got)
 	}
-	if got := mustShowTransaction(t, session, "SHOW TRANSACTION READ ONLY"); got != "FALSE" {
-		t.Fatalf("pending read only = %q, want FALSE", got)
+	if got := mustShowTransactionReadOnly(t, session); got {
+		t.Fatalf("pending read only = %v, want false", got)
 	}
 	if mode, _ := session.txn.TransactionState(); mode != transactionModePending {
 		t.Fatalf("SHOW activated pending transaction: mode = %q", mode)
@@ -184,14 +214,14 @@ func TestShowTransactionBeginOverrideNotDefaultIsolation(t *testing.T) {
 	ctx := t.Context()
 	mustExec(t, ctx, session, "SET DEFAULT_ISOLATION_LEVEL = 'SERIALIZABLE'")
 	mustExec(t, ctx, session, "BEGIN ISOLATION LEVEL REPEATABLE READ")
-	if got := mustShowTransaction(t, session, "SHOW TRANSACTION ISOLATION LEVEL"); got != "REPEATABLE_READ" {
+	if got := mustShowTransactionIsolationLevel(t, session); got != "REPEATABLE_READ" {
 		t.Fatalf("BEGIN override isolation = %q, want REPEATABLE_READ", got)
 	}
 	mustExec(t, ctx, session, "SET DEFAULT_ISOLATION_LEVEL = 'SERIALIZABLE'")
 	if got := mustGetVar(t, session, "DEFAULT_ISOLATION_LEVEL"); got != "SERIALIZABLE" {
 		t.Fatalf("DEFAULT_ISOLATION_LEVEL = %q", got)
 	}
-	if got := mustShowTransaction(t, session, "SHOW TRANSACTION ISOLATION LEVEL"); got != "REPEATABLE_READ" {
+	if got := mustShowTransactionIsolationLevel(t, session); got != "REPEATABLE_READ" {
 		t.Fatalf("SHOW echoed DEFAULT_ISOLATION_LEVEL: %q", got)
 	}
 }
@@ -206,11 +236,11 @@ func TestShowTransactionPostCommitUsesNextTransactionDefault(t *testing.T) {
 	if _, active := session.txn.TransactionState(); active {
 		t.Fatal("expected idle after COMMIT of pending transaction")
 	}
-	if got := mustShowTransaction(t, session, "SHOW TRANSACTION ISOLATION LEVEL"); got != "SERIALIZABLE" {
+	if got := mustShowTransactionIsolationLevel(t, session); got != "SERIALIZABLE" {
 		t.Fatalf("post-COMMIT isolation = %q, want SERIALIZABLE next-transaction default", got)
 	}
-	if got := mustShowTransaction(t, session, "SHOW TRANSACTION READ ONLY"); got != "FALSE" {
-		t.Fatalf("post-COMMIT read only = %q, want FALSE", got)
+	if got := mustShowTransactionReadOnly(t, session); got {
+		t.Fatalf("post-COMMIT read only = %v, want false", got)
 	}
 }
 
@@ -225,11 +255,11 @@ func TestShowTransactionFakeOwners(t *testing.T) {
 			isolationLevel: sppb.TransactionOptions_REPEATABLE_READ,
 		}, nil)
 		mustExec(t, t.Context(), session, "SET DEFAULT_ISOLATION_LEVEL = 'SERIALIZABLE'")
-		if got := mustShowTransaction(t, session, "SHOW TRANSACTION ISOLATION LEVEL"); got != "REPEATABLE_READ" {
+		if got := mustShowTransactionIsolationLevel(t, session); got != "REPEATABLE_READ" {
 			t.Fatalf("RW isolation = %q", got)
 		}
-		if got := mustShowTransaction(t, session, "SHOW TRANSACTION READ ONLY"); got != "FALSE" {
-			t.Fatalf("RW read only = %q", got)
+		if got := mustShowTransactionReadOnly(t, session); got {
+			t.Fatalf("RW read only = %v, want false", got)
 		}
 		if txnContext(session.txn) != owner {
 			t.Fatal("SHOW replaced the RW owner")
@@ -241,11 +271,11 @@ func TestShowTransactionFakeOwners(t *testing.T) {
 			mode:           transactionModeReadOnly,
 			isolationLevel: sppb.TransactionOptions_SERIALIZABLE,
 		}, nil)
-		if got := mustShowTransaction(t, session, "SHOW TRANSACTION ISOLATION LEVEL"); got != "SERIALIZABLE" {
+		if got := mustShowTransactionIsolationLevel(t, session); got != "SERIALIZABLE" {
 			t.Fatalf("RO isolation = %q", got)
 		}
-		if got := mustShowTransaction(t, session, "SHOW TRANSACTION READ ONLY"); got != "TRUE" {
-			t.Fatalf("RO read only = %q", got)
+		if got := mustShowTransactionReadOnly(t, session); !got {
+			t.Fatalf("RO read only = %v, want true", got)
 		}
 		if txnContext(session.txn) != owner {
 			t.Fatal("SHOW replaced the RO owner")
@@ -267,11 +297,11 @@ func TestShowTransactionRecoveryRequiredOwner(t *testing.T) {
 	if _, err := execSQL(t, t.Context(), session, "SELECT 1"); !errors.Is(err, errSavepointRecovery) {
 		t.Fatalf("SELECT during recovery: %v", err)
 	}
-	if got := mustShowTransaction(t, session, "SHOW TRANSACTION ISOLATION LEVEL"); got != "REPEATABLE_READ" {
+	if got := mustShowTransactionIsolationLevel(t, session); got != "REPEATABLE_READ" {
 		t.Fatalf("recovery isolation = %q", got)
 	}
-	if got := mustShowTransaction(t, session, "SHOW TRANSACTION READ ONLY"); got != "FALSE" {
-		t.Fatalf("recovery read only = %q", got)
+	if got := mustShowTransactionReadOnly(t, session); got {
+		t.Fatalf("recovery read only = %v, want false", got)
 	}
 	if txnContext(session.txn) != owner {
 		t.Fatal("SHOW retired the recovery owner")
@@ -285,11 +315,11 @@ func TestShowTransactionUnspecifiedMeansDatabaseDefault(t *testing.T) {
 	t.Parallel()
 	session := newSessionForLocalVarTest(t)
 	mustExec(t, t.Context(), session, "SET DEFAULT_ISOLATION_LEVEL = 'UNSPECIFIED'")
-	if got := mustShowTransaction(t, session, "SHOW TRANSACTION ISOLATION LEVEL"); got != "UNSPECIFIED" {
+	if got := mustShowTransactionIsolationLevel(t, session); got != "UNSPECIFIED" {
 		t.Fatalf("idle unspecified = %q", got)
 	}
 	mustExec(t, t.Context(), session, "BEGIN")
-	if got := mustShowTransaction(t, session, "SHOW TRANSACTION ISOLATION LEVEL"); got != "UNSPECIFIED" {
+	if got := mustShowTransactionIsolationLevel(t, session); got != "UNSPECIFIED" {
 		t.Fatalf("pending unspecified = %q, want database default not a guessed server isolation", got)
 	}
 }
@@ -329,5 +359,46 @@ func TestShowTransactionStateWithoutSystemVariables(t *testing.T) {
 	res, err := (&ShowTransactionStatement{Kind: 0}).Execute(t.Context(), session, OperationOutput{})
 	if err == nil || err.Error() != "invalid SHOW TRANSACTION kind" {
 		t.Fatalf("invalid kind error = %v, result=%v", err, res)
+	}
+}
+
+func TestShowTransactionReadOnlyJSONLBoolean(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name     string
+		readOnly bool
+		wantJSON string
+	}{
+		{name: "false", readOnly: false, wantJSON: "{\"transaction_read_only\":false}\n"},
+		{name: "true", readOnly: true, wantJSON: "{\"transaction_read_only\":true}\n"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			session := newSessionForLocalVarTest(t)
+			if tt.readOnly {
+				mustExec(t, t.Context(), session, "SET READONLY = TRUE")
+			}
+			session.systemVariables.Display.CLIFormat = enums.DisplayModeJSONL
+			var buf bytes.Buffer
+			session.systemVariables.StreamManager = streamio.NewStreamManager(io.NopCloser(bytes.NewReader(nil)), &buf, &buf)
+
+			res := mustExec(t, t.Context(), session, "SHOW TRANSACTION READ ONLY")
+			if !res.KeepVariables {
+				t.Fatal("SHOW TRANSACTION READ ONLY KeepVariables=false")
+			}
+			fields, ok := res.TableHeader.structFields()
+			if !ok || len(fields) != 1 || fields[0].GetType().GetCode() != sppb.TypeCode_BOOL {
+				t.Fatalf("JSONL metadata=%v ok=%v, want BOOL", fields, ok)
+			}
+			if !res.alreadyDelivered() {
+				t.Fatal("JSONL SHOW TRANSACTION READ ONLY should stream")
+			}
+			if got := buf.String(); got != tt.wantJSON {
+				t.Fatalf("JSONL = %q, want %q", got, tt.wantJSON)
+			}
+			if _, active := session.txn.TransactionState(); active {
+				t.Fatal("JSONL SHOW TRANSACTION READ ONLY activated a transaction")
+			}
+		})
 	}
 }
