@@ -1180,6 +1180,11 @@ func TestFlagErrorMessages(t *testing.T) {
 			wantErrKeyword: "error on parsing --param=p1=invalid syntax",
 		},
 		{
+			name:           "conflicting param case aliases",
+			args:           withRequiredFlags("--param", "MixedCase=1", "--param", "mixedcase=2"),
+			wantErrKeyword: "ambiguous query parameter",
+		},
+		{
 			name:           "non-existent proto file shows file error",
 			args:           withRequiredFlags("--proto-descriptor-file", "missing.pb"),
 			wantErrKeyword: "error on --proto-descriptor-file, file: missing.pb",
@@ -1203,6 +1208,97 @@ func TestFlagErrorMessages(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestParseFlagsParamCaseIdentity(t *testing.T) {
+	t.Parallel()
+
+	t.Run("single --param binds case-insensitively after initialization", func(t *testing.T) {
+		t.Parallel()
+		gopts, err := parseAndValidate(withRequiredFlags("--param", "MixedCase=42"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := gopts.Spanner.Param["MixedCase"]; !ok {
+			t.Fatalf("opts.Param keys = %v, want MixedCase", gopts.Spanner.Param)
+		}
+		sv, err := initializeSystemVariables(&gopts.Spanner)
+		if err != nil {
+			t.Fatal(err)
+		}
+		stmt, err := newStatement("SELECT @mixedcase, @MixedCase", sv.Params, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if stmt.SQL != "SELECT @mixedcase, @MixedCase" {
+			t.Fatalf("SQL rewritten: %q", stmt.SQL)
+		}
+		if _, ok := stmt.Params["mixedcase"]; !ok {
+			t.Fatalf("missing mixedcase bind: %v", stmt.Params)
+		}
+		if _, ok := stmt.Params["MixedCase"]; ok {
+			t.Fatalf("duplicate case alias bound: %v", stmt.Params)
+		}
+	})
+
+	t.Run("exact-key --param repeats are last-wins in the map", func(t *testing.T) {
+		t.Parallel()
+		gopts, err := parseAndValidate(withRequiredFlags("--param", "p=1", "--param", "p=2"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := gopts.Spanner.Param["p"]; got != "2" {
+			t.Fatalf("opts.Param[p] = %q, want 2", got)
+		}
+		sv, err := initializeSystemVariables(&gopts.Spanner)
+		if err != nil {
+			t.Fatal(err)
+		}
+		node, ok := sv.Params["p"]
+		if !ok {
+			t.Fatal("initialized Params missing p")
+		}
+		if node.SQL() != "2" {
+			t.Fatalf("stored SQL() = %q, want 2", node.SQL())
+		}
+	})
+
+	t.Run("conflicting differently cased --param keys fail initialization", func(t *testing.T) {
+		t.Parallel()
+		gopts, err := parseAndValidate(withRequiredFlags("--param", "MixedCase=1", "--param", "mixedcase=2"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = initializeSystemVariables(&gopts.Spanner)
+		if !errors.Is(err, errAmbiguousQueryParameter) {
+			t.Fatalf("error = %v, want errAmbiguousQueryParameter", err)
+		}
+	})
+
+	t.Run("identical differently cased --param keys collapse to one SHOW PARAMS row", func(t *testing.T) {
+		t.Parallel()
+		gopts, err := parseAndValidate(withRequiredFlags("--param", "MixedCase=1", "--param", "mixedcase=1"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		sv, err := initializeSystemVariables(&gopts.Spanner)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := checkParamMapAmbiguity(sv.Params); err != nil {
+			t.Fatal(err)
+		}
+		if len(sv.Params) != 1 {
+			t.Fatalf("initialized Params = %v, want one stored spelling", sv.Params)
+		}
+		stmt, err := newStatement("SELECT @mixedcase", sv.Params, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := stmt.Params["mixedcase"]; !ok {
+			t.Fatalf("bound keys = %v, want mixedcase", stmt.Params)
+		}
+	})
 }
 
 // TestFileFlagBehavior tests file-related flag behavior

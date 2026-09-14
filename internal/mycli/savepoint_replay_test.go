@@ -398,6 +398,48 @@ func TestSavepointReplayUsesFrozenParamsOptionsAndTransactionTag(t *testing.T) {
 	}
 }
 
+func TestSavepointReplayUsesFrozenMixedCaseParamSpelling(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	const sql = "SELECT @mixedcase"
+	h := newHeartbeatHarness(t)
+	session := sessionForTM(t, h.tm)
+	mustExec(t, ctx, session, "SET CLI_SAVEPOINT_SUPPORT = 'ENABLED'")
+	mustExec(t, ctx, session, "SET PARAM MixedCase = 1")
+	mustExec(t, ctx, session, "BEGIN RW")
+	if _, err := executeSQLImplWithVars(ctx, session, sql, session.systemVariables, OperationOutput{w: io.Discard}); err != nil {
+		t.Fatal(err)
+	}
+	mustExec(t, ctx, session, "SAVEPOINT keep")
+	mustExec(t, ctx, session, "SET PARAM mixedcase = 99")
+	mustExec(t, ctx, session, "ROLLBACK TO SAVEPOINT keep")
+
+	replay, ok := lastSQLObservation(h.server.sqlObservations(), sql)
+	if !ok {
+		t.Fatal("no replay ExecuteSql for SELECT @mixedcase")
+	}
+	if replay.sql != sql {
+		t.Fatalf("replay SQL = %q, want original bytes", replay.sql)
+	}
+	if _, ok := replay.params["MixedCase"]; ok {
+		t.Fatalf("replay used stored spelling MixedCase: %v", replay.params)
+	}
+	if replay.params["mixedcase"] != "1" {
+		t.Fatalf("replay param mixedcase = %q, want frozen 1; obs=%v", replay.params["mixedcase"], replay.params)
+	}
+
+	if _, err := executeSQLImplWithVars(ctx, session, sql, session.systemVariables, OperationOutput{w: io.Discard}); err != nil {
+		t.Fatal(err)
+	}
+	later, ok := lastSQLObservation(h.server.sqlObservations(), sql)
+	if !ok {
+		t.Fatal("no later ExecuteSql for SELECT @mixedcase")
+	}
+	if later.params["mixedcase"] != "99" {
+		t.Fatalf("later param mixedcase = %q, want current 99; obs=%v", later.params["mixedcase"], later.params)
+	}
+}
+
 func TestSavepointRollbackToDropsEqualPositionMarkers(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()

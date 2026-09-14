@@ -66,6 +66,7 @@ says otherwise; `java-spanner` versions are given where known.
 | Statement | go-sql-spanner | java-spanner | spanner-mycli status |
 |-----------|----------------|--------------|----------------------|
 | `SET LOCAL <name> = <value>` | statement-scoped state (v1.22.0) | JDBC `SET LOCAL` | implemented (#691) |
+| Named query parameters (`SET PARAM` / `--param`) | case-insensitive name matching on bind | JDBC `PreparedStatement` names | case-insensitive logical identity (#958). Sequential `SET PARAM` updates one binding and keeps the first stored spelling. Binding uses the first SQL occurrence's spelling without rewriting SQL; Spanner matches later case variants in the same statement. `--param` is a `map[string]string` (no retained order for differently cased keys); conflicting case aliases are rejected. Identical aliases (same kind and memefish `SQL()` rendering) collapse to one stored spelling (lexicographically first) before `SHOW PARAMS`. |
 | `RESET ALL` | `RESET <property>` exists | JDBC `RESET ALL` | not implemented, tracked #484 (varDef series #725 PR5) |
 | `RESET <single property>` | yes | yes | not implemented (candidate gap) |
 | `SAVEPOINT` / `RELEASE` / `ROLLBACK TO` | not in the go driver | java-spanner Connection API since 2023 | `CLI_SAVEPOINT_SUPPORT` (`DISABLED` default, `ENABLED`). Client-emulated replay with result validation; not native Spanner savepoints. Deltas vs Java: disabled by default, synchronous reconstruction, no `FAIL_AFTER_ROLLBACK`, exact-case identifier names, 128 code-point CLI limit. See [docs/savepoint.md](savepoint.md). |
@@ -90,7 +91,6 @@ tracking issue. They are listed here so the gap is not lost:
   converged on it.
 - `RESET <single property>` (the non-`ALL` form).
 - `max_partitions` connection property.
-- Case-insensitive query parameter matching.
 - `transaction_isolation` PG alias for `isolation_level`.
 
 ## Intentionally not tracked / out of scope
