@@ -908,3 +908,102 @@ func TestIdleTransactionTimeoutProfileSelectRearmsWithoutCapture(t *testing.T) {
 		t.Fatal("SHOW/SET rearmed idle after PROFILE")
 	}
 }
+
+func TestIdleTransactionTimeoutStaleCaptureDoesNotRearmReplacement(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	h := newHeartbeatHarness(t)
+	h.tm.enableSavepointCaptureForTest()
+	session := sessionForTM(t, h.tm)
+	armIdleOwner(t, h, session, true)
+
+	iter, _, oldTok, err := h.tm.runQueryWithStatsAndCapture(ctx, spanner.NewStatement("SELECT 1"), false, sppb.ExecuteSqlRequest_PROFILE)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if oldTok == nil {
+		t.Fatal("query A was not admitted")
+	}
+	defer iter.Stop()
+	if _, _, _, _, err := consumeRowIterObserving(iter, func(*spanner.Row) error { return nil }, oldTok.receipt()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := oldTok.receipt().Finish(nil); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := h.tm.RollbackReadWriteTransaction(ctx); err != nil {
+		t.Fatal(err)
+	}
+	h.tm.restoreLocalVarsIfIdle()
+	if err := h.tm.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+		t.Fatal(err)
+	}
+
+	iterB, _, newTok, err := h.tm.runQueryWithStatsAndCapture(ctx, spanner.NewStatement("SELECT 2"), false, sppb.ExecuteSqlRequest_PROFILE)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if newTok == nil {
+		t.Fatal("replacement query was not admitted")
+	}
+	defer iterB.Stop()
+
+	h.tm.mu.RLock()
+	pending := h.tm.tc.pending
+	inFlight := h.tm.tc.inFlight
+	reserved := h.tm.tc.replay.retainedBytes
+	h.tm.mu.RUnlock()
+	gen := ownerIdleGen(h.tm)
+	if pending != newTok || inFlight != 1 {
+		t.Fatalf("replacement pending=%v inFlight=%d", pending != newTok, inFlight)
+	}
+
+	staleErr := errors.New("stale completion")
+	if err := h.tm.completeAdmittedQuery(oldTok, staleErr); !errors.Is(err, staleErr) {
+		t.Fatalf("stale complete = %v, want stale completion", err)
+	}
+
+	h.tm.mu.RLock()
+	defer h.tm.mu.RUnlock()
+	if h.tm.tc.pending != pending || h.tm.tc.inFlight != inFlight {
+		t.Fatal("stale completion finished the replacement operation")
+	}
+	if h.tm.tc.replay.retainedBytes != reserved {
+		t.Fatal("stale completion released replacement reservation")
+	}
+	if h.tm.tc.idleGen != gen {
+		t.Fatalf("stale completion rearmed replacement idle gen=%d want=%d", h.tm.tc.idleGen, gen)
+	}
+}
+
+func TestIdleTransactionTimeoutNoCaptureQueryCompletionRearms(t *testing.T) {
+	t.Parallel()
+	h := newHeartbeatHarness(t)
+	ctx := t.Context()
+	session := sessionForTM(t, h.tm)
+	armIdleOwner(t, h, session, true)
+	if got := mustGetVar(t, session, "CLI_SAVEPOINT_SUPPORT"); got != "DISABLED" {
+		t.Fatalf("CLI_SAVEPOINT_SUPPORT = %q, want DISABLED", got)
+	}
+
+	iter, _, tok, err := h.tm.runQueryWithStatsAndCapture(ctx, spanner.NewStatement("SELECT 1"), false, sppb.ExecuteSqlRequest_PROFILE)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tok != nil {
+		t.Fatal("expected nil capture token when SAVEPOINT is disabled")
+	}
+	defer iter.Stop()
+	if _, _, _, _, err := consumeRowIterObserving(iter, func(*spanner.Row) error { return nil }, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	gen := ownerIdleGen(h.tm)
+	if err := h.tm.completeAdmittedQuery(nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if ownerIdleGen(h.tm) == gen {
+		t.Fatal("no-capture query completion did not rearm idle")
+	}
+}

@@ -127,22 +127,21 @@ func (tm *TransactionManager) endIdleResultHold() {
 }
 
 // completeAdmittedQuery finishes optional SAVEPOINT capture and counts
-// completed admitted query work even when no replay token exists. Call this
-// after the query RPC/iterator has run. Rejected local admission should
-// return before this hook. A surviving owner still counts a server/result
-// error as activity.
+// completed admitted query work even when no replay token exists. A stale
+// token (wrong owner or attempt) is ignored for both capture and idle.
+// Call this after the query RPC/iterator has run. Rejected local admission
+// should return before this hook. A surviving current owner still counts a
+// server/result error as activity.
 func (tm *TransactionManager) completeAdmittedQuery(tok *captureToken, consumeErr error) error {
 	if tm == nil {
 		return consumeErr
 	}
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
+	count := tok == nil || tok.belongsToLocked(tm)
 	err := tm.finishQueryCaptureLocked(tok, consumeErr)
-	if tm.tc != nil {
+	if count && tm.tc != nil {
 		tm.noteIdleUserWorkLocked(true)
-	}
-	if consumeErr != nil {
-		return consumeErr
 	}
 	return err
 }
