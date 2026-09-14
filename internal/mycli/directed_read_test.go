@@ -349,6 +349,16 @@ func TestParseFormatDirectedReadCompleteJSON(t *testing.T) {
 			want:  &sppb.DirectedReadOptions{},
 		},
 		{
+			name:  "empty include replica stays json",
+			input: `{"includeReplicas":{"replicaSelections":[{}],"autoFailoverDisabled":true}}`,
+			want:  includeDirectedRead(true, replicaSel("", sppb.DirectedReadOptions_ReplicaSelection_TYPE_UNSPECIFIED)),
+		},
+		{
+			name:  "unknown replica type number stays json",
+			input: `{"includeReplicas":{"replicaSelections":[{"location":"us-east1","type":99}],"autoFailoverDisabled":true}}`,
+			want:  includeDirectedRead(true, replicaSel("us-east1", 99)),
+		},
+		{
 			name:      "unknown field",
 			input:     `{"includeReplicas":{"replicaSelections":[{"location":"us-east1"}]},"notAField":true}`,
 			errSubstr: "invalid directed read protobuf JSON",
@@ -391,6 +401,14 @@ func TestParseFormatDirectedReadCompleteJSON(t *testing.T) {
 			show := formatDirectedReadOption(got)
 			if tt.wantShow != "" && show != tt.wantShow {
 				t.Fatalf("SHOW=%q want shorthand %q", show, tt.wantShow)
+			}
+			if tt.wantShow == "" {
+				if show == "" {
+					t.Fatal("SHOW returned empty; SET would clear")
+				}
+				if !strings.HasPrefix(strings.TrimSpace(show), "{") {
+					t.Fatalf("SHOW=%q, want protobuf JSON", show)
+				}
 			}
 			again, err := parseDirectedReadOption(show)
 			if err != nil {
@@ -479,6 +497,71 @@ func TestDirectedReadCompleteJSONSetShowClearAndInvalidAtomic(t *testing.T) {
 	}
 	if got["DIRECTED_READ"] != "" {
 		t.Fatalf("SHOW after clear = %q", got["DIRECTED_READ"])
+	}
+}
+
+func TestDirectedReadSetShowSetShorthandBoundaries(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name      string
+		set       string
+		wantJSON  bool
+		wantEqual *sppb.DirectedReadOptions
+	}{
+		{
+			name:      "lossless include still shorthand",
+			set:       `{"includeReplicas":{"replicaSelections":[{"location":"us-east1","type":"READ_ONLY"}],"autoFailoverDisabled":true}}`,
+			wantEqual: includeDirectedRead(true, replicaSel("us-east1", sppb.DirectedReadOptions_ReplicaSelection_READ_ONLY)),
+		},
+		{
+			name:      "empty include replica stays json",
+			set:       `{"includeReplicas":{"replicaSelections":[{}],"autoFailoverDisabled":true}}`,
+			wantJSON:  true,
+			wantEqual: includeDirectedRead(true, replicaSel("", sppb.DirectedReadOptions_ReplicaSelection_TYPE_UNSPECIFIED)),
+		},
+		{
+			name:      "unknown replica type number stays json",
+			set:       `{"includeReplicas":{"replicaSelections":[{"location":"us-east1","type":99}],"autoFailoverDisabled":true}}`,
+			wantJSON:  true,
+			wantEqual: includeDirectedRead(true, replicaSel("us-east1", 99)),
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			sysVars := newSystemVariablesWithDefaultsForTest()
+			sysVars.ensureRegistry()
+			if err := sysVars.SetFromSimple("DIRECTED_READ", tt.set); err != nil {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff(tt.wantEqual, sysVars.Query.DirectedRead, protocmp.Transform()); diff != "" {
+				t.Fatalf("SET mismatch (-want +got):\n%s", diff)
+			}
+			original := proto.CloneOf(sysVars.Query.DirectedRead)
+			got, err := sysVars.Get("DIRECTED_READ")
+			if err != nil {
+				t.Fatal(err)
+			}
+			show := got["DIRECTED_READ"]
+			if show == "" {
+				t.Fatal("SHOW returned empty; SET would clear")
+			}
+			if tt.wantJSON {
+				if !strings.HasPrefix(strings.TrimSpace(show), "{") {
+					t.Fatalf("SHOW=%q, want protobuf JSON", show)
+				}
+				if show == "us-east1:99" {
+					t.Fatal("SHOW used invalid numeric-type shorthand")
+				}
+			} else if show != "us-east1:READ_ONLY" {
+				t.Fatalf("SHOW=%q, want lossless shorthand", show)
+			}
+			if err := sysVars.SetFromSimple("DIRECTED_READ", show); err != nil {
+				t.Fatalf("SET of SHOW %q: %v", show, err)
+			}
+			if !proto.Equal(original, sysVars.Query.DirectedRead) {
+				t.Fatalf("SET/SHOW/SET lost the message\nbefore=%v\nafter=%v\nSHOW=%q", original, sysVars.Query.DirectedRead, show)
+			}
+		})
 	}
 }
 

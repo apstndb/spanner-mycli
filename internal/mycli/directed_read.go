@@ -17,6 +17,7 @@ package mycli
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
@@ -69,9 +70,9 @@ func formatDirectedReadOption(d *sppb.DirectedReadOptions) string {
 }
 
 // losslessDirectedReadShorthand returns location or location:TYPE only when that
-// form round-trips to the same DirectedReadOptions: one include replica with
-// AutoFailoverDisabled true. Exclude, multiple selections, and explicit
-// failover remain protobuf JSON.
+// text is nonempty, parses through the setter grammar, and proto.Equal-s the
+// complete message. Shape alone is not enough: an empty replica SHOW would
+// clear, and an unknown type number is not valid shorthand.
 func losslessDirectedReadShorthand(d *sppb.DirectedReadOptions) (string, bool) {
 	include := d.GetIncludeReplicas()
 	if include == nil || !include.GetAutoFailoverDisabled() {
@@ -82,10 +83,18 @@ func losslessDirectedReadShorthand(d *sppb.DirectedReadOptions) (string, bool) {
 		return "", false
 	}
 	rs := sels[0]
-	if rs.GetType() == sppb.DirectedReadOptions_ReplicaSelection_TYPE_UNSPECIFIED {
-		return rs.GetLocation(), true
+	candidate := rs.GetLocation()
+	if rs.GetType() != sppb.DirectedReadOptions_ReplicaSelection_TYPE_UNSPECIFIED {
+		candidate = fmt.Sprintf("%s:%s", rs.GetLocation(), rs.GetType())
 	}
-	return fmt.Sprintf("%s:%s", rs.GetLocation(), rs.GetType()), true
+	if strings.TrimSpace(candidate) == "" {
+		return "", false
+	}
+	parsed, err := parseDirectedReadOption(candidate)
+	if err != nil || !proto.Equal(d, parsed) {
+		return "", false
+	}
+	return candidate, true
 }
 
 func queryWithDirectedRead(ctx context.Context, txn *spanner.ReadOnlyTransaction, stmt spanner.Statement, dro *sppb.DirectedReadOptions) *spanner.RowIterator {
