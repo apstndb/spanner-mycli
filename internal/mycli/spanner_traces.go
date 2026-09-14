@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"reflect"
 	"strings"
 	"sync/atomic"
@@ -66,7 +67,7 @@ func normalizeSpannerTracesOptions(exporter, endpoint string, ratio float64) (st
 		if end == "" {
 			return "", "", 0, fmt.Errorf("--spanner-traces-exporter=otlp requires --spanner-traces-endpoint")
 		}
-		if ratio < 0 || ratio > 1 {
+		if math.IsNaN(ratio) || math.IsInf(ratio, 0) || ratio < 0 || ratio > 1 {
 			return "", "", 0, fmt.Errorf("invalid --spanner-traces-sample-ratio %v: must be in [0,1]", ratio)
 		}
 		canonical, err := parseSpannerTracesEndpoint(end)

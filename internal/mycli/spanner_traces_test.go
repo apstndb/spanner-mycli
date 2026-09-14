@@ -21,6 +21,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -36,6 +37,7 @@ import (
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
@@ -71,6 +73,9 @@ func TestNormalizeSpannerTracesOptions(t *testing.T) {
 		{desc: "userinfo rejected", exporter: "otlp", endpoint: "http://user:pass@127.0.0.1:4318/v1/traces", ratio: 0.01, errContains: "userinfo"},
 		{desc: "unknown exporter rejected", exporter: "jaeger", errContains: "must be off or otlp"},
 		{desc: "ratio below 0 rejected", exporter: "otlp", endpoint: "http://127.0.0.1:4318", ratio: -0.1, errContains: "[0,1]"},
+		{desc: "NaN rejected", exporter: "otlp", endpoint: "http://127.0.0.1:4318", ratio: math.NaN(), errContains: "[0,1]"},
+		{desc: "+Inf rejected", exporter: "otlp", endpoint: "http://127.0.0.1:4318", ratio: math.Inf(1), errContains: "[0,1]"},
+		{desc: "-Inf rejected", exporter: "otlp", endpoint: "http://127.0.0.1:4318", ratio: math.Inf(-1), errContains: "[0,1]"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
@@ -128,6 +133,23 @@ func TestParseFlagsSpannerTraces(t *testing.T) {
 	}
 	if gopts.Spanner.SpannerTracesSampleRatio != 1 {
 		t.Fatalf("ratio = %v", gopts.Spanner.SpannerTracesSampleRatio)
+	}
+}
+
+func TestParseAndValidateRejectsNonFiniteSampleRatio(t *testing.T) {
+	t.Parallel()
+	for _, ratio := range []string{"NaN", "nan", "Inf", "+Inf", "-Inf"} {
+		t.Run(ratio, func(t *testing.T) {
+			t.Parallel()
+			_, err := parseAndValidate(withRequiredFlags(
+				"--spanner-traces-exporter=otlp",
+				"--spanner-traces-endpoint=http://127.0.0.1:4318",
+				"--spanner-traces-sample-ratio="+ratio,
+			))
+			if err == nil || !strings.Contains(err.Error(), "[0,1]") {
+				t.Fatalf("real CLI parser/validation error = %v, want [0,1]", err)
+			}
+		})
 	}
 }
 
@@ -198,6 +220,7 @@ func TestStartSpannerTracesOffLeavesGlobal(t *testing.T) {
 }
 
 func TestStartSpannerTracesRejectsSecondOwner(t *testing.T) {
+	restoreTestTracerProvider(t)
 	clearSpannerEmulatorHost(t)
 	sink := newOTLPSink()
 	collector := httptest.NewServer(sink)
@@ -227,6 +250,7 @@ func TestStartSpannerTracesRejectsSecondOwner(t *testing.T) {
 }
 
 func TestRestoreGlobalDoesNotOverwriteLaterProvider(t *testing.T) {
+	restoreTestTracerProvider(t)
 	clearSpannerEmulatorHost(t)
 	sink := newOTLPSink()
 	collector := httptest.NewServer(sink)
@@ -297,11 +321,14 @@ func TestOverlayEndToEndTracingCopiesEmbed(t *testing.T) {
 }
 
 func TestFakeRPCOTLPTracesPrivacyAndReuse(t *testing.T) {
+	restoreTestTracerProvider(t)
 	clearSpannerEmulatorHost(t)
-	_ = os.Unsetenv("SPANNER_ENABLE_END_TO_END_TRACING")
-	_ = os.Unsetenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
-	_ = os.Unsetenv("OTEL_EXPORTER_OTLP_COMPRESSION")
-	_ = os.Unsetenv("OTEL_EXPORTER_OTLP_TRACES_COMPRESSION")
+	unsetEnvForTest(t,
+		"SPANNER_ENABLE_END_TO_END_TRACING",
+		"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
+		"OTEL_EXPORTER_OTLP_COMPRESSION",
+		"OTEL_EXPORTER_OTLP_TRACES_COMPRESSION",
+	)
 
 	fake := &fakeTracesSpanner{}
 	host, port, stop := startFakeMetricsSpannerServer(t, fake)
@@ -351,7 +378,8 @@ func TestFakeRPCOTLPTracesPrivacyAndReuse(t *testing.T) {
 	runFakeTracesSelect(t, replacement.client, sampledTraceContext())
 	replacement.Close()
 
-	injectAdversarialTrace(t, sampledTraceContext())
+	injectAdversarialAllowedSpan(t, sampledTraceContextWithState(t))
+	injectRejectedUnknownSpans(t, sampledTraceContextWithState(t))
 	if err := owner.provider.ForceFlush(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -359,7 +387,7 @@ func TestFakeRPCOTLPTracesPrivacyAndReuse(t *testing.T) {
 	if !e2eHeaderPresent(fake.md) {
 		t.Fatal("CLI traces opt-in did not send x-goog-spanner-end-to-end-tracing")
 	}
-	names := requireSanitizedTraceExport(t, sink)
+	names := requireSanitizedTraceExport(t, sink, true)
 	if !containsAllStrings(names, []string{"Query", "RowIterator", "NewClient"}) {
 		t.Fatalf("useful spans missing: %v", names)
 	}
@@ -369,6 +397,7 @@ func TestFakeRPCOTLPTracesPrivacyAndReuse(t *testing.T) {
 }
 
 func TestParentBasedSampling(t *testing.T) {
+	restoreTestTracerProvider(t)
 	clearSpannerEmulatorHost(t)
 	sink := newOTLPSink()
 	collector := httptest.NewServer(sink)
@@ -412,6 +441,7 @@ func TestParentBasedSampling(t *testing.T) {
 }
 
 func TestSDKEnvE2EHeaderWithoutCLIPipeline(t *testing.T) {
+	restoreTestTracerProvider(t)
 	clearSpannerEmulatorHost(t)
 	t.Setenv("SPANNER_ENABLE_END_TO_END_TRACING", "true")
 	fake := &fakeTracesSpanner{}
@@ -439,6 +469,7 @@ func TestSDKEnvE2EHeaderWithoutCLIPipeline(t *testing.T) {
 }
 
 func TestRepeatTracesOwnerAfterShutdown(t *testing.T) {
+	restoreTestTracerProvider(t)
 	clearSpannerEmulatorHost(t)
 	sink := newOTLPSink()
 	collector := httptest.NewServer(sink)
@@ -465,6 +496,7 @@ func TestRepeatTracesOwnerAfterShutdown(t *testing.T) {
 }
 
 func TestStartSpannerTracesLeavesMetricsAndEnv(t *testing.T) {
+	restoreTestTracerProvider(t)
 	clearSpannerEmulatorHost(t)
 	t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "http://127.0.0.1:1/v1/traces")
 	beforeMeter := otel.GetMeterProvider()
@@ -496,9 +528,9 @@ func TestStartSpannerTracesLeavesMetricsAndEnv(t *testing.T) {
 }
 
 func TestStartSpannerTracesCLIURLWinsOverEnv(t *testing.T) {
+	restoreTestTracerProvider(t)
 	clearSpannerEmulatorHost(t)
-	_ = os.Unsetenv("OTEL_EXPORTER_OTLP_COMPRESSION")
-	_ = os.Unsetenv("OTEL_EXPORTER_OTLP_TRACES_COMPRESSION")
+	unsetEnvForTest(t, "OTEL_EXPORTER_OTLP_COMPRESSION", "OTEL_EXPORTER_OTLP_TRACES_COMPRESSION")
 
 	fake := &fakeTracesSpanner{}
 	host, port, stop := startFakeMetricsSpannerServer(t, fake)
@@ -552,7 +584,7 @@ func TestStartSpannerTracesCLIURLWinsOverEnv(t *testing.T) {
 			t.Fatalf("path = %q, want %q", p.path, wantPath)
 		}
 	}
-	names := requireSanitizedTraceExport(t, sink)
+	names := requireSanitizedTraceExport(t, sink, false)
 	if !containsAllStrings(names, []string{"Query", "RowIterator"}) {
 		t.Fatalf("useful spans missing on CLI path: %v", names)
 	}
@@ -618,13 +650,31 @@ func mustTracesEndpoint(t *testing.T, raw string) string {
 }
 
 func sampledTraceContext() context.Context {
-	sc := trace.NewSpanContext(trace.SpanContextConfig{
+	return sampledRemoteContext(trace.SpanContextConfig{
 		TraceID:    trace.TraceID{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16},
 		SpanID:     trace.SpanID{1, 2, 3, 4, 5, 6, 7, 8},
 		TraceFlags: trace.FlagsSampled,
 		Remote:     true,
 	})
-	return trace.ContextWithRemoteSpanContext(context.Background(), sc)
+}
+
+func sampledTraceContextWithState(t *testing.T) context.Context {
+	t.Helper()
+	ts, err := trace.ParseTraceState("adv=ADV_TS_SELECT_secret_col")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return sampledRemoteContext(trace.SpanContextConfig{
+		TraceID:    trace.TraceID{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16},
+		SpanID:     trace.SpanID{1, 2, 3, 4, 5, 6, 7, 8},
+		TraceFlags: trace.FlagsSampled,
+		TraceState: ts,
+		Remote:     true,
+	})
+}
+
+func sampledRemoteContext(cfg trace.SpanContextConfig) context.Context {
+	return trace.ContextWithRemoteSpanContext(context.Background(), trace.NewSpanContext(cfg))
 }
 
 func unsampledTraceContext() context.Context {
@@ -656,7 +706,7 @@ func runFakeTracesSelect(t *testing.T, client *spanner.Client, ctx context.Conte
 	}
 }
 
-func injectAdversarialTrace(t *testing.T, ctx context.Context) {
+func injectAdversarialAllowedSpan(t *testing.T, ctx context.Context) {
 	t.Helper()
 	ts, err := trace.ParseTraceState("adv=ADV_TS_SELECT_secret_col")
 	if err != nil {
@@ -677,15 +727,64 @@ func injectAdversarialTrace(t *testing.T, ctx context.Context) {
 	span.SetStatus(codes.Error, "Syntax error near secret_col")
 	span.RecordError(errors.New(tracesTestSQL))
 	span.AddEvent("ADV_ERR_Syntax_error_near_secret_col")
-	span.SetName("ADV_NAME_SELECT_secret_col")
 	span.End()
-	_, ok := tr.Start(ctx, "cloud.google.com/go/spanner.RowIterator")
-	ok.SetStatus(codes.Error, tracesTestSQL)
-	ok.End()
+	_, row := tr.Start(ctx, "cloud.google.com/go/spanner.RowIterator")
+	row.SetStatus(codes.Error, tracesTestSQL)
+	row.End()
+}
+
+func injectRejectedUnknownSpans(t *testing.T, ctx context.Context) {
+	t.Helper()
+	tr := otel.Tracer(spannerTracesScopeName, trace.WithInstrumentationVersion("ADV_SCOPE_secret_col"))
+	_, renamed := tr.Start(ctx, "cloud.google.com/go/spanner.Query")
+	renamed.SetName("ADV_NAME_SELECT_secret_col")
+	renamed.End()
 	_, ev := otel.Tracer("google.golang.org/grpc").Start(ctx, "google.spanner.v1.Spanner/ExecuteStreamingSql")
 	ev.End()
 	_, unk := tr.Start(ctx, "cloud.google.com/go/spanner.UnknownOp")
 	unk.End()
+}
+
+func unsetEnvForTest(t *testing.T, keys ...string) {
+	t.Helper()
+	type snap struct {
+		key     string
+		val     string
+		present bool
+	}
+	saved := make([]snap, 0, len(keys))
+	for _, key := range keys {
+		val, present := os.LookupEnv(key)
+		saved = append(saved, snap{key: key, val: val, present: present})
+		if err := os.Unsetenv(key); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Cleanup(func() {
+		for _, s := range saved {
+			if s.present {
+				if err := os.Setenv(s.key, s.val); err != nil {
+					t.Errorf("restore %s: %v", s.key, err)
+				}
+				continue
+			}
+			if err := os.Unsetenv(s.key); err != nil {
+				t.Errorf("restore unset %s: %v", s.key, err)
+			}
+		}
+	})
+}
+
+func restoreTestTracerProvider(t *testing.T) {
+	t.Helper()
+	prev := otel.GetTracerProvider()
+	t.Cleanup(func() {
+		if isPinnedInitialProxy(prev) {
+			otel.SetTracerProvider(noop.NewTracerProvider())
+			return
+		}
+		otel.SetTracerProvider(prev)
+	})
 }
 
 func e2eHeaderPresent(md metadata.MD) bool {
@@ -712,7 +811,7 @@ func decodeTraceBody(body []byte, encoding string) ([]byte, error) {
 	return body, nil
 }
 
-func requireSanitizedTraceExport(t *testing.T, sink *otlpSink) []string {
+func requireSanitizedTraceExport(t *testing.T, sink *otlpSink, wantErrorCode bool) []string {
 	t.Helper()
 	posts := sink.snapshot()
 	if len(posts) == 0 {
@@ -720,6 +819,8 @@ func requireSanitizedTraceExport(t *testing.T, sink *otlpSink) []string {
 	}
 	var names []string
 	sawSampledTrace := false
+	sawErrorCode := false
+	sawFixedResource := false
 	needles := []string{
 		tracesTestSQL, "bindval_sentinel_7", "rowval_sentinel_99",
 		"Syntax error near secret_col", "secret_col", "ADV_SCOPE_secret_col",
@@ -752,6 +853,13 @@ func requireSanitizedTraceExport(t *testing.T, sink *otlpSink) []string {
 			}
 		}
 		for _, rs := range req.GetResourceSpans() {
+			if res := rs.GetResource(); res != nil {
+				attrs := res.GetAttributes()
+				if len(attrs) != 1 || attrs[0].GetKey() != "service.name" || attrs[0].GetValue().GetStringValue() != spannerTracesServiceName {
+					t.Fatalf("resource attributes = %v", attrs)
+				}
+				sawFixedResource = true
+			}
 			for _, ss := range rs.GetScopeSpans() {
 				if sc := ss.GetScope(); sc != nil {
 					if sc.GetName() != spannerTracesScopeName || sc.GetVersion() != spannerTracesScopeVersion {
@@ -775,8 +883,11 @@ func requireSanitizedTraceExport(t *testing.T, sink *otlpSink) []string {
 					if hex.EncodeToString(sp.GetTraceId()) == sampledTraceIDHex {
 						sawSampledTrace = true
 					}
-					if sp.GetStatus().GetCode() == 2 && sp.GetStatus().GetMessage() != "" {
-						t.Fatalf("error status leaked a description on %s", sp.GetName())
+					if sp.GetStatus().GetCode() == 2 {
+						if sp.GetStatus().GetMessage() != "" {
+							t.Fatalf("error status leaked a description on %s", sp.GetName())
+						}
+						sawErrorCode = true
 					}
 				}
 			}
@@ -784,6 +895,12 @@ func requireSanitizedTraceExport(t *testing.T, sink *otlpSink) []string {
 	}
 	if !sawSampledTrace {
 		t.Fatal("posted body lost the sampled parent trace id")
+	}
+	if !sawFixedResource {
+		t.Fatal("posted body missing fixed service.name resource")
+	}
+	if wantErrorCode && !sawErrorCode {
+		t.Fatal("posted body lost retained error status code on an exported allowed span")
 	}
 	return names
 }

@@ -26,6 +26,7 @@ import (
 )
 
 func TestRunWithOutputPreservesStartupErrorAfterStuckTracesExport(t *testing.T) {
+	restoreTestTracerProvider(t)
 	clearSpannerEmulatorHost(t)
 	host, port, stop := startFakeMetricsSpanner(t)
 	t.Cleanup(stop)
@@ -53,6 +54,7 @@ func TestRunWithOutputPreservesStartupErrorAfterStuckTracesExport(t *testing.T) 
 }
 
 func TestRunWithOutputPreservesCancelAfterStuckTracesExport(t *testing.T) {
+	restoreTestTracerProvider(t)
 	clearSpannerEmulatorHost(t)
 	queryStarted := make(chan struct{}, 1)
 	host, port, stop := startFakeMetricsSpannerServer(t, &fakeMetricsSpanner{queryStarted: queryStarted})
@@ -101,6 +103,7 @@ func TestRunWithOutputPreservesCancelAfterStuckTracesExport(t *testing.T) {
 }
 
 func TestRunWithOutputSharedBudgetWhenMetricsAndTracesHang(t *testing.T) {
+	restoreTestTracerProvider(t)
 	clearSpannerEmulatorHost(t)
 	host, port, stop := startFakeMetricsSpanner(t)
 	t.Cleanup(stop)
@@ -128,6 +131,7 @@ func TestRunWithOutputSharedBudgetWhenMetricsAndTracesHang(t *testing.T) {
 }
 
 func TestRunWithOutputTracesInitFailureCleansMetrics(t *testing.T) {
+	restoreTestTracerProvider(t)
 	clearSpannerEmulatorHost(t)
 	host, port, stop := startFakeMetricsSpanner(t)
 	t.Cleanup(stop)
