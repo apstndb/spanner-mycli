@@ -56,10 +56,10 @@ func TestSystemVariables_Set_Errors(t *testing.T) {
 			wantError: "unknown variable name: UNKNOWN_VAR",
 		},
 		{
-			name:      "unimplemented setter",
+			name:      "invalid retry aborts value",
 			varName:   "RETRY_ABORTS_INTERNALLY",
-			value:     "true",
-			wantError: "unimplemented setter: RETRY_ABORTS_INTERNALLY",
+			value:     "not-a-bool",
+			wantError: "strconv.ParseBool: parsing \"not-a-bool\": invalid syntax",
 		},
 		{
 			name:      "invalid boolean value",

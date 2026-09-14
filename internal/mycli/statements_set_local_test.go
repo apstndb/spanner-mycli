@@ -153,6 +153,8 @@ func TestSetLocalRejectsUnsupportedVariables(t *testing.T) {
 		{desc: "multi-valued read-only variable", varName: "COMMIT_RESPONSE", value: "1", wantErr: "does not support SET LOCAL"},
 		{desc: "transaction-guarded variable", varName: "DIRECTED_READ", value: "'us-east1'", wantErr: "cannot be changed within a transaction"},
 		{desc: "autocommit", varName: "AUTOCOMMIT", value: "FALSE", wantErr: "does not support SET LOCAL"},
+		{desc: "retry aborts internally true", varName: "RETRY_ABORTS_INTERNALLY", value: "TRUE", wantErr: "SET LOCAL is not supported for RETRY_ABORTS_INTERNALLY"},
+		{desc: "retry aborts internally false", varName: "RETRY_ABORTS_INTERNALLY", value: "FALSE", wantErr: "SET LOCAL is not supported for RETRY_ABORTS_INTERNALLY"},
 		{desc: "savepoint support", varName: "CLI_SAVEPOINT_SUPPORT", value: "'ENABLED'", wantErr: "does not support SET LOCAL"},
 		{desc: "commit priority", varName: "COMMIT_PRIORITY", value: "'HIGH'", wantErr: "does not support SET LOCAL"},
 		{desc: "keep transaction alive", varName: "KEEP_TRANSACTION_ALIVE", value: "FALSE", wantErr: "does not support SET LOCAL"},
