@@ -80,7 +80,7 @@ func testStatementWithModes(t *testing.T, input string, want Statement, skipMode
 				}
 			} else {
 				// full comparison
-				if diff := cmp.Diff(want, got, protocmp.Transform()); diff != "" {
+				if diff := cmp.Diff(want, got, append([]cmp.Option{protocmp.Transform()}, syncProtoCmpOpts()...)...); diff != "" {
 					t.Errorf("BuildStatement(%q) differ: %v", input, diff)
 				}
 			}
@@ -1079,52 +1079,117 @@ TABLE Singers (42)
 		{
 			desc:  "SYNC PROTO BUNDLE UPSERT statement",
 			input: "SYNC PROTO BUNDLE UPSERT (examples.ProtoType, examples.`EscapedType`, `examples.EscapedPath`)",
-			want:  &SyncProtoStatement{UpsertPaths: sliceOf("examples.ProtoType", "examples.EscapedType", `examples.EscapedPath`)},
+			want: &SyncProtoStatement{
+				UpsertPaths: sliceOf("examples.ProtoType", "examples.EscapedType", `examples.EscapedPath`),
+				clauses:     []syncProtoClause{{paths: sliceOf("examples.ProtoType", "examples.EscapedType", `examples.EscapedPath`)}},
+			},
 		},
 		{
 			desc:  "SYNC PROTO BUNDLE DELETE statement",
 			input: "SYNC PROTO BUNDLE DELETE (examples.ProtoType, examples.`EscapedType`, `examples.EscapedPath`)",
-			want:  &SyncProtoStatement{DeletePaths: sliceOf("examples.ProtoType", "examples.EscapedType", `examples.EscapedPath`)},
+			want: &SyncProtoStatement{
+				DeletePaths: sliceOf("examples.ProtoType", "examples.EscapedType", `examples.EscapedPath`),
+				clauses:     []syncProtoClause{{delete: true, paths: sliceOf("examples.ProtoType", "examples.EscapedType", `examples.EscapedPath`)}},
+			},
 		},
 		{
 			desc:  "SYNC PROTO BUNDLE UPSERT statement with single path",
 			input: "SYNC PROTO BUNDLE UPSERT (examples.EnumType)",
-			want:  &SyncProtoStatement{UpsertPaths: sliceOf("examples.EnumType")},
+			want: &SyncProtoStatement{
+				UpsertPaths: sliceOf("examples.EnumType"),
+				clauses:     []syncProtoClause{{paths: sliceOf("examples.EnumType")}},
+			},
 		},
 		{
 			desc:  "SYNC PROTO BUNDLE UPSERT then DELETE",
 			input: "SYNC PROTO BUNDLE UPSERT (examples.EnumType) DELETE (examples.ProtoType)",
-			want:  &SyncProtoStatement{UpsertPaths: sliceOf("examples.EnumType"), DeletePaths: sliceOf("examples.ProtoType")},
+			want: &SyncProtoStatement{
+				UpsertPaths: sliceOf("examples.EnumType"),
+				DeletePaths: sliceOf("examples.ProtoType"),
+				clauses: []syncProtoClause{
+					{paths: sliceOf("examples.EnumType")},
+					{delete: true, paths: sliceOf("examples.ProtoType")},
+				},
+			},
 		},
 		{
 			desc:  "SYNC PROTO BUNDLE DELETE then UPSERT",
 			input: "SYNC PROTO BUNDLE DELETE (examples.ProtoType) UPSERT (examples.EnumType)",
-			want:  &SyncProtoStatement{UpsertPaths: sliceOf("examples.EnumType"), DeletePaths: sliceOf("examples.ProtoType")},
+			want: &SyncProtoStatement{
+				UpsertPaths: sliceOf("examples.EnumType"),
+				DeletePaths: sliceOf("examples.ProtoType"),
+				clauses: []syncProtoClause{
+					{delete: true, paths: sliceOf("examples.ProtoType")},
+					{paths: sliceOf("examples.EnumType")},
+				},
+			},
 		},
 		{
 			desc:  "SYNC PROTO BUNDLE mixed quoted names",
 			input: "SYNC PROTO BUNDLE UPSERT (examples.`EscapedType`) DELETE (`examples.EscapedPath`)",
-			want:  &SyncProtoStatement{UpsertPaths: sliceOf("examples.EscapedType"), DeletePaths: sliceOf(`examples.EscapedPath`)},
+			want: &SyncProtoStatement{
+				UpsertPaths: sliceOf("examples.EscapedType"),
+				DeletePaths: sliceOf(`examples.EscapedPath`),
+				clauses: []syncProtoClause{
+					{paths: sliceOf("examples.EscapedType")},
+					{delete: true, paths: sliceOf(`examples.EscapedPath`)},
+				},
+			},
 		},
 		{
 			desc:  "SYNC PROTO BUNDLE mixed with comment",
 			input: "SYNC PROTO BUNDLE UPSERT /*c*/ (examples.EnumType) DELETE (examples.ProtoType)",
-			want:  &SyncProtoStatement{UpsertPaths: sliceOf("examples.EnumType"), DeletePaths: sliceOf("examples.ProtoType")},
+			want: &SyncProtoStatement{
+				UpsertPaths: sliceOf("examples.EnumType"),
+				DeletePaths: sliceOf("examples.ProtoType"),
+				clauses: []syncProtoClause{
+					{paths: sliceOf("examples.EnumType")},
+					{delete: true, paths: sliceOf("examples.ProtoType")},
+				},
+			},
 		},
 		{
 			desc:  "SYNC PROTO BUNDLE repeated same-kind clauses",
 			input: "SYNC PROTO BUNDLE UPSERT (examples.A) UPSERT (examples.B)",
-			want:  &SyncProtoStatement{UpsertPaths: sliceOf("examples.A", "examples.B")},
+			want: &SyncProtoStatement{
+				UpsertPaths: sliceOf("examples.A", "examples.B"),
+				clauses: []syncProtoClause{
+					{paths: sliceOf("examples.A")},
+					{paths: sliceOf("examples.B")},
+				},
+			},
 		},
 		{
 			desc:  "SYNC PROTO BUNDLE intra-list duplicates keep first occurrence",
 			input: "SYNC PROTO BUNDLE DELETE (examples.A, examples.B, examples.A)",
-			want:  &SyncProtoStatement{DeletePaths: sliceOf("examples.A", "examples.B")},
+			want: &SyncProtoStatement{
+				DeletePaths: sliceOf("examples.A", "examples.B"),
+				clauses:     []syncProtoClause{{delete: true, paths: sliceOf("examples.A", "examples.B", "examples.A")}},
+			},
 		},
 		{
 			desc:  "SYNC PROTO BUNDLE empty args",
 			input: "SYNC PROTO BUNDLE",
 			want:  &SyncProtoStatement{},
+		},
+		{
+			desc:  "SYNC PROTO BUNDLE RECURSIVE UPSERT",
+			input: "SYNC PROTO BUNDLE RECURSIVE UPSERT (examples.shipping.Order)",
+			want: &SyncProtoStatement{
+				UpsertPaths: sliceOf("examples.shipping.Order"),
+				clauses:     []syncProtoClause{{recursive: true, paths: sliceOf("examples.shipping.Order")}},
+			},
+		},
+		{
+			desc:  "SYNC PROTO BUNDLE mixed RECURSIVE and plain UPSERT",
+			input: "SYNC PROTO BUNDLE UPSERT (examples.A) RECURSIVE UPSERT (examples.B)",
+			want: &SyncProtoStatement{
+				UpsertPaths: sliceOf("examples.A", "examples.B"),
+				clauses: []syncProtoClause{
+					{paths: sliceOf("examples.A")},
+					{recursive: true, paths: sliceOf("examples.B")},
+				},
+			},
 		},
 		{
 			desc:  "SET statement",
@@ -1560,6 +1625,9 @@ func TestBuildStatement_InvalidCase(t *testing.T) {
 		"SYNC PROTO BUNDLE UPSERT (examples.A) DELETE (examples.A)",
 		"SYNC PROTO BUNDLE DELETE (examples.A) UPSERT (examples.A)",
 		"SYNC PROTO BUNDLE UPSERT (examples.A) DELETE (",
+		"SYNC PROTO BUNDLE RECURSIVE DELETE (examples.A)",
+		"SYNC PROTO BUNDLE RECURSIVE",
+		"SYNC PROTO BUNDLE UPSERT (examples.A) RECURSIVE",
 		`SHOW LAST QUERY PLAN INTO "unterminated`,
 		"SHOW LAST QUERY PLAN INTO two paths.json",
 		`SHOW LAST QUERY PLAN INTO ""`,
