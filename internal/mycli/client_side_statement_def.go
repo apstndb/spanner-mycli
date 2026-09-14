@@ -994,6 +994,28 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			return &SetTransactionStatement{IsReadOnly: isReadOnly}, nil
 		},
 	},
+	{
+		Descriptions: []clientSideStatementDescription{
+			{
+				Usage:  `Show transaction isolation level`,
+				Syntax: `SHOW TRANSACTION ISOLATION LEVEL`,
+				Note:   `Inspects the current logical transaction, including pending and SAVEPOINT recovery, without activating it. When idle, reports DEFAULT_ISOLATION_LEVEL. UNSPECIFIED means the database default; it is not a guessed server isolation.`,
+			},
+			{
+				Usage:  `Show transaction read-only flag`,
+				Syntax: `SHOW TRANSACTION READ ONLY`,
+				Note:   `Inspects the current logical transaction, including pending and SAVEPOINT recovery, without activating it. When idle, reports READONLY.`,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^SHOW\s+TRANSACTION(?:\s+(?P<option>.*))?$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			kind, err := parseShowTransactionOption(groups["option"])
+			if err != nil {
+				return nil, err
+			}
+			return &ShowTransactionStatement{Kind: kind}, nil
+		},
+	},
 	// Batching
 	{
 		Descriptions: []clientSideStatementDescription{
@@ -1327,6 +1349,20 @@ func parseTransaction(s string) (isReadOnly bool, err error) {
 
 	submatch := transactionRe.FindStringSubmatch(s)
 	return submatch[1] != "", nil
+}
+
+func parseShowTransactionOption(s string) (showTransactionKind, error) {
+	option := strings.ToUpper(strings.Join(strings.Fields(s), " "))
+	switch option {
+	case "ISOLATION LEVEL":
+		return showTransactionIsolationLevel, nil
+	case "READ ONLY":
+		return showTransactionReadOnly, nil
+	case "":
+		return 0, errors.New("syntax error: missing TRANSACTION option, expected ISOLATION LEVEL or READ ONLY")
+	default:
+		return 0, fmt.Errorf("invalid TRANSACTION option %q, expected ISOLATION LEVEL or READ ONLY", strings.TrimSpace(s))
+	}
 }
 
 func parseSyncProtoBundle(s string) (Statement, error) {

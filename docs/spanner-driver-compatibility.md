@@ -69,7 +69,7 @@ says otherwise; `java-spanner` versions are given where known.
 | `RESET ALL` | `RESET <property>` exists | JDBC `RESET ALL` | not implemented, tracked #484 (varDef series #725 PR5) |
 | `RESET <single property>` | yes | yes | not implemented (candidate gap) |
 | `SAVEPOINT` / `RELEASE` / `ROLLBACK TO` | not in the go driver | java-spanner Connection API since 2023 | `CLI_SAVEPOINT_SUPPORT` (`DISABLED` default, `ENABLED`). Client-emulated replay with result validation; not native Spanner savepoints. Deltas vs Java: disabled by default, synchronous reconstruction, no `FAIL_AFTER_ROLLBACK`, exact-case identifier names, 128 code-point CLI limit. See [docs/savepoint.md](savepoint.md). |
-| `SHOW TRANSACTION ISOLATION LEVEL` / `SHOW TRANSACTION <var>` | yes (v1.26.0) | `SHOW DEFAULT_TRANSACTION_ISOLATION` v6.106.0 | not implemented (candidate gap; both drivers converged) |
+| `SHOW TRANSACTION ISOLATION LEVEL` / `SHOW TRANSACTION READ ONLY` | yes (v1.26.0) | `SHOW DEFAULT_TRANSACTION_ISOLATION` v6.106.0 | `SHOW TRANSACTION ISOLATION LEVEL` and `SHOW TRANSACTION READ ONLY` implemented (#959). Side-effect-free inspection of the current logical owner (pending, active RO/RW, SAVEPOINT recovery). Idle sessions report next-transaction `DEFAULT_ISOLATION_LEVEL` / `READONLY`. `UNSPECIFIED` isolation means the database default; it is not a guessed server isolation. PostgreSQL `DEFERRABLE` / `SHOW TRANSACTION <var>` aliases are tracked with #230. |
 | `RUN PARTITIONED QUERY <select>` | yes (v1.24.0) | — | `RUN PARTITIONED QUERY` implemented |
 | `RUN PARTITION '<token>'` | not at SQL level in the go driver | JDBC `RUN PARTITION '<token>'` | token form tracked #45 (see note below) |
 
@@ -84,8 +84,9 @@ says otherwise; `java-spanner` versions are given where known.
 These are deltas that look like plausible additions but do not yet have a
 tracking issue. They are listed here so the gap is not lost:
 
-- `SHOW TRANSACTION` statement family (isolation level and other transaction
-  variables) — both reference drivers converged on it.
+- `SHOW TRANSACTION` PostgreSQL-only aliases (`DEFERRABLE`, `transaction_isolation`,
+  arbitrary `SHOW TRANSACTION <var>`) — isolation level and read-only inspection
+  landed in #959; remaining aliases are tracked with #230.
 - `default_sequence_kind` (with auto-set on DDL failure) — both reference drivers
   converged on it.
 - `RESET <single property>` (the non-`ALL` form).

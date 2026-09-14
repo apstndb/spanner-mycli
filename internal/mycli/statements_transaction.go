@@ -7,6 +7,7 @@ import (
 	"time"
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/apstndb/spancodec"
 )
 
 type timestampBoundType int
@@ -105,6 +106,73 @@ func (s *SetTransactionStatement) Execute(ctx context.Context, session *Session,
 		}
 		return result, nil
 	}
+}
+
+type showTransactionKind int
+
+const (
+	showTransactionIsolationLevel showTransactionKind = iota + 1
+	showTransactionReadOnly
+)
+
+type ShowTransactionStatement struct {
+	Kind showTransactionKind
+}
+
+func (s *ShowTransactionStatement) isDetachedCompatible() {}
+
+func (s *ShowTransactionStatement) allowedDuringSavepointRecovery() {}
+
+type showTransactionIsolationRow struct {
+	IsolationLevel string `spanner:"isolation_level"`
+}
+
+type showTransactionReadOnlyRow struct {
+	ReadOnly string `spanner:"transaction_read_only"`
+}
+
+var (
+	showTransactionIsolationEncoder = spancodec.MustNewRowEncoder[showTransactionIsolationRow]()
+	showTransactionReadOnlyEncoder  = spancodec.MustNewRowEncoder[showTransactionReadOnlyRow]()
+)
+
+func formatIsolationLevel(level sppb.TransactionOptions_IsolationLevel) (string, error) {
+	return IsolationLevelVar(&level).Get()
+}
+
+func showTransactionStateFromSession(session *Session) (sppb.TransactionOptions_IsolationLevel, bool) {
+	if session != nil && session.txn != nil {
+		return session.txn.showTransactionState()
+	}
+	if session != nil && session.systemVariables != nil {
+		return session.systemVariables.Transaction.DefaultIsolationLevel, session.systemVariables.Transaction.ReadOnly
+	}
+	return sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, false
+}
+
+func (s *ShowTransactionStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
+	isolation, readOnly := showTransactionStateFromSession(session)
+	var (
+		result *Result
+		err    error
+	)
+	switch s.Kind {
+	case showTransactionIsolationLevel:
+		value, ferr := formatIsolationLevel(isolation)
+		if ferr != nil {
+			return nil, ferr
+		}
+		result, err = executeStructRows(showTransactionIsolationEncoder, []showTransactionIsolationRow{{IsolationLevel: value}}, session, out)
+	case showTransactionReadOnly:
+		result, err = executeStructRows(showTransactionReadOnlyEncoder, []showTransactionReadOnlyRow{{ReadOnly: formatBool(readOnly)}}, session, out)
+	default:
+		return nil, fmt.Errorf("invalid SHOW TRANSACTION kind")
+	}
+	if err != nil {
+		return nil, err
+	}
+	result.KeepVariables = true
+	return result, nil
 }
 
 // closeNonRWTransaction handles pending, read-only, and inactive transaction states
