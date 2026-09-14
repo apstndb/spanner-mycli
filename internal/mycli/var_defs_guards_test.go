@@ -40,10 +40,10 @@ func TestLocalAllowedRoundTrip(t *testing.T) {
 			sv := newSystemVariablesWithDefaultsForTest()
 			sv.ensureRegistry()
 
-			// Unimplemented placeholders (AUTOCOMMIT, RETRY_ABORTS_INTERNALLY)
-			// are nominally localAllowed but reject both Get and Set until their
-			// runtime behavior lands. SET LOCAL on them fails at the SET itself,
-			// so no undo entry is ever recorded and there is no restore hazard.
+			// Unimplemented placeholders (RETRY_ABORTS_INTERNALLY) are nominally
+			// localAllowed but reject both Get and Set until their runtime
+			// behavior lands. SET LOCAL on them fails at the SET itself, so no
+			// undo entry is ever recorded and there is no restore hazard.
 			if _, ok := sv.Registry.GetVariable(def.name).(*UnimplementedVar); ok {
 				t.Skipf("%s is an unimplemented placeholder", def.name)
 			}
