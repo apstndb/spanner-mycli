@@ -967,8 +967,14 @@ func (tm *TransactionManager) BeginReadWriteTransactionLocked(ctx context.Contex
 // BeginReadWriteTransaction starts read-write transaction.
 func (tm *TransactionManager) BeginReadWriteTransaction(ctx context.Context, isolationLevel sppb.TransactionOptions_IsolationLevel, priority sppb.RequestOptions_Priority) error {
 	return tm.withOwnerInstallAfterRestore(func() error {
-		if err := tm.rejectExplicitRetryAbortsLocked(); err != nil {
-			return err
+		// Activating an existing pending owner uses that owner's captured
+		// RETRY_ABORTS_INTERNALLY snapshot. Reject only newly created
+		// explicit/pending TRUE owners.
+		activatingPending := tm.tc != nil && tm.tc.attrs.mode == transactionModePending
+		if !activatingPending {
+			if err := tm.rejectExplicitRetryAbortsLocked(); err != nil {
+				return err
+			}
 		}
 		if err := tm.BeginReadWriteTransactionLocked(ctx, isolationLevel, priority); err != nil {
 			return err
@@ -1695,18 +1701,41 @@ func (tm *TransactionManager) runInNewOrExistRwTxLocked(ctx context.Context,
 			}
 			return nil, info, err
 		}
+		if remaining, unlimited := tm.abortWaitBudget(ctx); !unlimited && remaining <= 0 {
+			return tm.stopImplicitAbortForDeadlineLocked(owner, info)
+		}
 		if recErr := tm.reconstructImplicitPhysicalLocked(ctx); recErr != nil {
 			return nil, info, recErr
 		}
-		delay := clampAbortRetryDelay(abortRetryDelay(err), tm.remainingAbortWaitBudget(ctx))
+		remaining, unlimited := tm.abortWaitBudget(ctx)
+		if !unlimited && remaining <= 0 {
+			return tm.stopImplicitAbortForDeadlineLocked(owner, info)
+		}
+		delay := clampAbortRetryDelay(abortRetryDelay(err), remaining, unlimited)
+		waitCtx, waitCancel := tm.bindDeadlineLocked(ctx)
 		tm.mu.Unlock()
-		waitErr := tm.waitAbortRetry(ctx, delay)
+		waitErr := tm.waitAbortRetry(waitCtx, delay)
+		waitCancel()
 		tm.mu.Lock()
 		if waitErr != nil {
 			if tm.tc == owner {
 				tm.retireTransactionContextLocked()
 			}
+			if errors.Is(waitErr, context.Canceled) && ctx.Err() != nil && errors.Is(ctx.Err(), context.Canceled) {
+				return nil, info, waitErr
+			}
+			if ownerDeadlineExhausted(owner, tm.now()) || (errors.Is(waitErr, context.DeadlineExceeded) && owner != nil && !owner.deadline.IsZero() && !tm.now().Before(owner.deadline)) {
+				return nil, info, implicitAbortDeadlineErr(waitErr)
+			}
+			if errors.Is(waitErr, context.DeadlineExceeded) && owner != nil && !owner.deadline.IsZero() {
+				if annotated := annotateTransactionTimeout(waitErr, owner); errors.Is(annotated, errTransactionTimeout) {
+					return nil, info, annotated
+				}
+			}
 			return nil, info, waitErr
+		}
+		if ownerDeadlineExhausted(owner, tm.now()) {
+			return tm.stopImplicitAbortForDeadlineLocked(owner, info)
 		}
 		if tm.tc != owner || owner.txn == nil {
 			if tm.tc == owner {

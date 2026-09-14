@@ -18,17 +18,31 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/durationpb"
 )
 
 func abortedStatus(msg string) error {
 	return status.Error(codes.Aborted, msg)
+}
+
+func abortedWithRetryDelay(msg string, d time.Duration) error {
+	st := status.New(codes.Aborted, msg)
+	if d > 0 {
+		detailed, err := st.WithDetails(&errdetails.RetryInfo{RetryDelay: durationpb.New(d)})
+		if err == nil {
+			return detailed.Err()
+		}
+	}
+	return st.Err()
 }
 
 func newRetryAbortsSession(t *testing.T, h *heartbeatHarness) *Session {
@@ -377,14 +391,20 @@ func TestRetryAbortsBatchMutateAndProfile(t *testing.T) {
 		session := newRetryAbortsSession(t, h)
 		ctx := t.Context()
 		enableRetryAborts(t, ctx, session)
+		h.server.setQueryPlan(&sppb.QueryPlan{PlanNodes: hangingIndentPlanNodes()})
 		h.server.setFailStreamingSQLTimes(1, abortedStatus("profile aborted"))
-		_, err := executeExplainAnalyzeDML(ctx, session, "UPDATE T SET v = 1 WHERE TRUE", 0, 0, nil)
-		if err != nil && !strings.Contains(err.Error(), "emulator") {
-			// Dummy plan may fail formatting; RPCs still prove retry.
-			if !session.txn.InTransaction() && countRPC(userSQLObservations(h.server.sqlObservations()), "ExecuteStreamingSql", false) == 2 {
-				return
-			}
+		res, err := executeExplainAnalyzeDML(ctx, session, "UPDATE T SET v = 1 WHERE TRUE", 0, 0, nil)
+		if err != nil {
 			t.Fatalf("PROFILE: %v obs=%+v", err, h.server.sqlObservations())
+		}
+		if res == nil || res.AffectedRows != 1 || res.CommitTimestamp.IsZero() {
+			t.Fatalf("PROFILE result: %+v", res)
+		}
+		if session.systemVariables.LastResult.QueryCache == nil || session.systemVariables.LastResult.QueryCache.QueryPlan == nil {
+			t.Fatal("PROFILE did not publish QueryCache plan")
+		}
+		if session.txn.InTransaction() {
+			t.Fatal("PROFILE left an owner attached")
 		}
 		if got := countRPC(userSQLObservations(h.server.sqlObservations()), "ExecuteStreamingSql", false); got != 2 {
 			t.Fatalf("PROFILE SQL = %d", got)
@@ -458,5 +478,207 @@ func TestRetryAbortsExplicitOwnerKeepsDefaultNoLoop(t *testing.T) {
 	}
 	if got := countRPC(userSQLObservations(h.server.sqlObservations()), "ExecuteStreamingSql", false); got != 1 {
 		t.Fatalf("explicit owner retried: %+v", h.server.sqlObservations())
+	}
+}
+
+func TestReview997PendingOwnerKeepsCapturedFalse(t *testing.T) {
+	t.Parallel()
+	h := newHeartbeatHarness(t)
+	session := newRetryAbortsSession(t, h)
+	ctx := t.Context()
+	mustExec(t, ctx, session, "BEGIN")
+	mustExec(t, ctx, session, "SET RETRY_ABORTS_INTERNALLY = TRUE")
+	if _, err := execSQL(t, ctx, session, "SET TRANSACTION READ WRITE"); err != nil {
+		t.Fatalf("activate pending: %v", err)
+	}
+	if !session.txn.InReadWriteTransaction() {
+		t.Fatal("expected activated read-write owner")
+	}
+	h.tm.mu.Lock()
+	captured := session.txn.tc.retryAborts
+	h.tm.mu.Unlock()
+	if captured {
+		t.Fatal("pending owner captured FALSE did not survive session SET TRUE")
+	}
+	h.server.setFailStreamingSQL(abortedStatus("sql aborted"))
+	_, err := execSQL(t, ctx, session, "UPDATE T SET v = 1 WHERE TRUE")
+	if err == nil || !isAbortedErr(err) {
+		t.Fatalf("captured FALSE should not retry: %v", err)
+	}
+	if got := countRPC(userSQLObservations(h.server.sqlObservations()), "ExecuteStreamingSql", false); got != 1 {
+		t.Fatalf("pending FALSE retried: %+v", h.server.sqlObservations())
+	}
+}
+
+func TestRetryAbortsExtractRetryDelayThroughSDK(t *testing.T) {
+	t.Parallel()
+	const want = 1234 * time.Millisecond
+	t.Run("sql", func(t *testing.T) {
+		t.Parallel()
+		h := newHeartbeatHarness(t)
+		session := newRetryAbortsSession(t, h)
+		ctx := t.Context()
+		enableRetryAborts(t, ctx, session)
+		h.server.setFailStreamingSQLTimes(1, abortedWithRetryDelay("sql aborted", want))
+		var seen time.Duration
+		h.tm.abortRetryWait = func(_ context.Context, d time.Duration) error {
+			seen = d
+			return nil
+		}
+		if _, err := execSQL(t, ctx, session, "UPDATE T SET v = 1 WHERE TRUE"); err != nil {
+			t.Fatalf("sql retry: %v", err)
+		}
+		if seen != want {
+			t.Fatalf("sql ExtractRetryDelay wait = %s, want %s", seen, want)
+		}
+	})
+	t.Run("batch", func(t *testing.T) {
+		t.Parallel()
+		h := newHeartbeatHarness(t)
+		session := newRetryAbortsSession(t, h)
+		ctx := t.Context()
+		enableRetryAborts(t, ctx, session)
+		h.server.setFailBatchDMLTimes(1, abortedWithRetryDelay("batch aborted", want))
+		var seen time.Duration
+		h.tm.abortRetryWait = func(_ context.Context, d time.Duration) error {
+			seen = d
+			return nil
+		}
+		mustExec(t, ctx, session, "START BATCH DML")
+		mustExec(t, ctx, session, "UPDATE T SET v = 1 WHERE TRUE")
+		if _, err := execSQL(t, ctx, session, "RUN BATCH"); err != nil {
+			t.Fatalf("batch retry: %v", err)
+		}
+		if seen != want {
+			t.Fatalf("batch ExtractRetryDelay wait = %s, want %s", seen, want)
+		}
+	})
+	t.Run("commit", func(t *testing.T) {
+		t.Parallel()
+		h := newHeartbeatHarness(t)
+		session := newRetryAbortsSession(t, h)
+		ctx := t.Context()
+		enableRetryAborts(t, ctx, session)
+		h.server.setFailCommitTimes(1, abortedWithRetryDelay("commit aborted", want))
+		var seen time.Duration
+		h.tm.abortRetryWait = func(_ context.Context, d time.Duration) error {
+			seen = d
+			return nil
+		}
+		if _, err := execSQL(t, ctx, session, "UPDATE T SET v = 1 WHERE TRUE"); err != nil {
+			t.Fatalf("commit retry: %v", err)
+		}
+		if seen != want {
+			t.Fatalf("commit ExtractRetryDelay wait = %s, want %s", seen, want)
+		}
+	})
+}
+
+func TestRetryAbortsCurrentOperationDeadlineStopsRetry(t *testing.T) {
+	t.Parallel()
+	h := newHeartbeatHarness(t)
+	session := newRetryAbortsSession(t, h)
+	ctx := t.Context()
+	enableRetryAborts(t, ctx, session)
+	mustExec(t, ctx, session, "SET TRANSACTION_TIMEOUT = '1s'")
+	start := time.Now()
+	h.tm.nowFunc = func() time.Time {
+		if len(h.server.beginObservations()) >= 2 {
+			return start.Add(2 * time.Second)
+		}
+		return start
+	}
+	var waited atomic.Bool
+	h.tm.abortRetryWait = func(context.Context, time.Duration) error {
+		waited.Store(true)
+		return nil
+	}
+	h.server.setFailStreamingSQLTimes(1, abortedStatus("sql aborted"))
+	_, err := execSQL(t, ctx, session, "UPDATE T SET v = 1 WHERE TRUE")
+	if err == nil || !errors.Is(err, errTransactionTimeout) {
+		t.Fatalf("current-operation deadline: %v", err)
+	}
+	if waited.Load() {
+		t.Fatal("exhausted owner deadline still entered backoff wait")
+	}
+	if got := countRPC(userSQLObservations(h.server.sqlObservations()), "ExecuteStreamingSql", false); got != 1 {
+		t.Fatalf("retried after owner deadline: %+v", h.server.sqlObservations())
+	}
+	if session.txn.InTransaction() {
+		t.Fatal("owner remained after TRANSACTION_TIMEOUT")
+	}
+}
+
+func TestReview997ExpiredOwnerStopsDuringBackoff(t *testing.T) {
+	t.Parallel()
+	h := newHeartbeatHarness(t)
+	session := newRetryAbortsSession(t, h)
+	ctx := t.Context()
+	enableRetryAborts(t, ctx, session)
+	mustExec(t, ctx, session, "SET TRANSACTION_TIMEOUT = '2s'")
+	start := time.Now()
+	var advanced atomic.Bool
+	h.tm.nowFunc = func() time.Time {
+		if advanced.Load() {
+			return start.Add(3 * time.Second)
+		}
+		return start
+	}
+	h.server.setFailStreamingSQLTimes(1, abortedWithRetryDelay("sql aborted", 5*time.Second))
+	var seen time.Duration
+	var waitHadDeadline bool
+	h.tm.abortRetryWait = func(waitCtx context.Context, d time.Duration) error {
+		seen = d
+		_, waitHadDeadline = waitCtx.Deadline()
+		advanced.Store(true)
+		return context.DeadlineExceeded
+	}
+	_, err := execSQL(t, ctx, session, "UPDATE T SET v = 1 WHERE TRUE")
+	if err == nil || !errors.Is(err, errTransactionTimeout) {
+		t.Fatalf("expired during backoff: %v", err)
+	}
+	if !waitHadDeadline {
+		t.Fatal("backoff wait was not bound to the owner/caller deadline")
+	}
+	if seen <= 0 || seen > 2*time.Second {
+		t.Fatalf("backoff wait %s was not clamped to the original owner budget", seen)
+	}
+	if got := countRPC(userSQLObservations(h.server.sqlObservations()), "ExecuteStreamingSql", false); got != 1 {
+		t.Fatalf("continued retry after backoff timeout: %+v", h.server.sqlObservations())
+	}
+}
+
+func TestRetryAbortsChangedResultOnRetry(t *testing.T) {
+	t.Parallel()
+	h := newHeartbeatHarness(t)
+	session := newRetryAbortsSession(t, h)
+	ctx := t.Context()
+	enableRetryAborts(t, ctx, session)
+	const returningSQL = "UPDATE T SET v = 2 WHERE TRUE THEN RETURN v"
+	h.server.setSQLRowCountSequence(returningSQL, 1, 2)
+	h.server.setSQLRowsSequence(returningSQL, []string{"11"}, []string{"21", "22"})
+	h.server.setFailCommitTimes(1, abortedStatus("commit aborted"))
+	res, err := execSQL(t, ctx, session, returningSQL)
+	if err != nil {
+		t.Fatalf("changed-result retry: %v", err)
+	}
+	if res == nil || res.AffectedRows != 2 {
+		t.Fatalf("published affected = %+v, want last successful attempt 2", res)
+	}
+	out := string(res.preparedOutput())
+	if !strings.Contains(out, "21") || !strings.Contains(out, "22") {
+		t.Fatalf("published body %q missing retried rows", out)
+	}
+	if strings.Contains(out, "11") {
+		t.Fatalf("published first-attempt row after retry: %q", out)
+	}
+	if session.txn.InTransaction() {
+		t.Fatal("owner remained after changed-result retry")
+	}
+	if got := countRPC(userSQLObservations(h.server.sqlObservations()), "ExecuteStreamingSql", false); got != 2 {
+		t.Fatalf("THEN RETURN SQL = %d", got)
+	}
+	if got := len(h.server.commitIDs()); got != 2 {
+		t.Fatalf("commits = %d", got)
 	}
 }

@@ -90,11 +90,57 @@ func TestAbortRetryDelayDefaultBounded(t *testing.T) {
 
 func TestClampAbortRetryDelay(t *testing.T) {
 	t.Parallel()
-	if got := clampAbortRetryDelay(20*time.Millisecond, 5*time.Millisecond); got != 5*time.Millisecond {
+	if got := clampAbortRetryDelay(20*time.Millisecond, 5*time.Millisecond, false); got != 5*time.Millisecond {
 		t.Fatalf("clamp = %s", got)
 	}
-	if got := clampAbortRetryDelay(2*time.Millisecond, 5*time.Millisecond); got != 2*time.Millisecond {
+	if got := clampAbortRetryDelay(2*time.Millisecond, 5*time.Millisecond, false); got != 2*time.Millisecond {
 		t.Fatalf("unchanged = %s", got)
+	}
+	if got := clampAbortRetryDelay(5*time.Second, 0, true); got != 5*time.Second {
+		t.Fatalf("unlimited zero remaining = %s", got)
+	}
+	if got := clampAbortRetryDelay(5*time.Second, 0, false); got != 0 {
+		t.Fatalf("exhausted remaining = %s", got)
+	}
+}
+
+func TestAbortWaitBudgetDistinguishesNoDeadlineFromExhausted(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 9, 14, 12, 0, 0, 0, time.UTC)
+	tm := &TransactionManager{nowFunc: func() time.Time { return now }}
+
+	remaining, unlimited := tm.abortWaitBudget(t.Context())
+	if !unlimited || remaining != 0 {
+		t.Fatalf("no deadline: remaining=%s unlimited=%v", remaining, unlimited)
+	}
+
+	caller, cancel := context.WithDeadline(t.Context(), now.Add(5*time.Second))
+	t.Cleanup(cancel)
+	tm.tc = &transactionContext{
+		timeoutCaptured: true,
+		deadline:        now.Add(-time.Millisecond),
+	}
+	remaining, unlimited = tm.abortWaitBudget(caller)
+	if unlimited || remaining != 0 {
+		t.Fatalf("expired owner with live caller: remaining=%s unlimited=%v", remaining, unlimited)
+	}
+
+	tm.tc = &transactionContext{expirePending: true, timeoutCaptured: true, deadline: now.Add(time.Hour)}
+	remaining, unlimited = tm.abortWaitBudget(caller)
+	if unlimited || remaining != 0 {
+		t.Fatalf("expirePending: remaining=%s unlimited=%v", remaining, unlimited)
+	}
+
+	tm.tc = &transactionContext{timeoutCaptured: true, deadline: now.Add(2 * time.Second)}
+	remaining, unlimited = tm.abortWaitBudget(caller)
+	if unlimited || remaining != 2*time.Second {
+		t.Fatalf("owner sooner than caller: remaining=%s unlimited=%v", remaining, unlimited)
+	}
+
+	tm.tc = &transactionContext{timeoutCaptured: true}
+	remaining, unlimited = tm.abortWaitBudget(t.Context())
+	if !unlimited || remaining != 0 {
+		t.Fatalf("captured NULL timeout: remaining=%s unlimited=%v", remaining, unlimited)
 	}
 }
 

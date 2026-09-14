@@ -113,6 +113,10 @@ type heartbeatRPCServer struct {
 	sqlRowCount           map[string]int64
 	sqlValue              map[string]string
 	sqlRows               map[string][]string
+	sqlCallN              map[string]int
+	sqlRowCountSeq        map[string][]int64
+	sqlRowsSeq            map[string][][]string
+	queryPlan             *sppb.QueryPlan
 
 	heartbeatStarted     chan struct{}
 	heartbeatStartedOnce sync.Once
@@ -262,6 +266,34 @@ func (s *heartbeatRPCServer) setSQLRows(sql string, values []string) {
 		s.sqlRows = make(map[string][]string)
 	}
 	s.sqlRows[sql] = slices.Clone(values)
+}
+
+func (s *heartbeatRPCServer) setQueryPlan(plan *sppb.QueryPlan) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.queryPlan = plan
+}
+
+func (s *heartbeatRPCServer) setSQLRowCountSequence(sql string, counts ...int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.sqlRowCountSeq == nil {
+		s.sqlRowCountSeq = make(map[string][]int64)
+	}
+	s.sqlRowCountSeq[sql] = slices.Clone(counts)
+}
+
+func (s *heartbeatRPCServer) setSQLRowsSequence(sql string, rows ...[]string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.sqlRowsSeq == nil {
+		s.sqlRowsSeq = make(map[string][][]string)
+	}
+	cloned := make([][]string, len(rows))
+	for i, r := range rows {
+		cloned[i] = slices.Clone(r)
+	}
+	s.sqlRowsSeq[sql] = cloned
 }
 
 func (s *heartbeatRPCServer) rollbackIDs() []string {
@@ -749,12 +781,32 @@ func (s *heartbeatRPCServer) waitHeartbeatIfNeeded(ctx context.Context, r *sppb.
 
 func (s *heartbeatRPCServer) resultSet(txnID []byte, readTs *timestamppb.Timestamp, sql string) *sppb.ResultSet {
 	s.mu.Lock()
+	if s.sqlCallN == nil {
+		s.sqlCallN = make(map[string]int)
+	}
+	call := s.sqlCallN[sql]
+	s.sqlCallN[sql] = call + 1
 	count := s.rowCountLocked(sql)
+	if seq := s.sqlRowCountSeq[sql]; len(seq) > 0 {
+		i := min(call, len(seq)-1)
+		count = seq[i]
+	}
 	values := s.rowValuesLocked(sql)
+	if seq := s.sqlRowsSeq[sql]; len(seq) > 0 {
+		i := min(call, len(seq)-1)
+		values = slices.Clone(seq[i])
+	}
+	plan := s.queryPlan
 	s.mu.Unlock()
 	rows := make([]*structpb.ListValue, len(values))
 	for i, value := range values {
 		rows[i] = &structpb.ListValue{Values: []*structpb.Value{structpb.NewStringValue(value)}}
+	}
+	stats := &sppb.ResultSetStats{
+		RowCount: &sppb.ResultSetStats_RowCountExact{RowCountExact: count},
+	}
+	if plan != nil {
+		stats.QueryPlan = plan
 	}
 	return &sppb.ResultSet{
 		Metadata: &sppb.ResultSetMetadata{
@@ -764,9 +816,7 @@ func (s *heartbeatRPCServer) resultSet(txnID []byte, readTs *timestamppb.Timesta
 			Transaction: &sppb.Transaction{Id: txnID, ReadTimestamp: readTs},
 		},
 		Rows: rows,
-		Stats: &sppb.ResultSetStats{
-			RowCount: &sppb.ResultSetStats_RowCountExact{RowCountExact: count},
-		},
+		Stats: stats,
 	}
 }
 

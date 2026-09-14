@@ -23,9 +23,7 @@ import (
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
-	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 // maxImplicitAbortAttempts is the inclusive cap for one implicit logical
@@ -81,57 +79,82 @@ func (tm *TransactionManager) rejectExplicitRetryAbortsLocked() error {
 }
 
 func abortRetryDelay(err error) time.Duration {
-	if d := retryInfoDelay(err); d > 0 {
+	// ExtractRetryDelay unwraps *spanner.Error to the original status.
+	// GRPCStatus() rebuilds code/description and drops RetryInfo details.
+	if d, ok := spanner.ExtractRetryDelay(err); ok && d > 0 {
 		return d
 	}
 	return time.Duration(1+rand.IntN(32)) * time.Millisecond
 }
 
-func retryInfoDelay(err error) time.Duration {
-	st := status.Convert(err)
-	if st == nil {
-		return 0
-	}
-	for _, d := range st.Details() {
-		if ri, ok := d.(*errdetails.RetryInfo); ok {
-			if delay := ri.GetRetryDelay(); delay != nil {
-				if got := delay.AsDuration(); got > 0 {
-					return got
-				}
-			}
-		}
-	}
-	return 0
-}
-
-func clampAbortRetryDelay(d, remaining time.Duration) time.Duration {
+func clampAbortRetryDelay(d, remaining time.Duration, unlimited bool) time.Duration {
 	if d < 0 {
 		return 0
 	}
-	if remaining > 0 && d > remaining {
+	if unlimited {
+		return d
+	}
+	if remaining <= 0 {
+		return 0
+	}
+	if d > remaining {
 		return remaining
 	}
 	return d
 }
 
-func (tm *TransactionManager) remainingAbortWaitBudget(ctx context.Context) time.Duration {
-	var remaining time.Duration
+func ownerDeadlineExhausted(owner *transactionContext, now time.Time) bool {
+	if owner == nil {
+		return false
+	}
+	if owner.expirePending {
+		return true
+	}
+	return owner.timeoutCaptured && !owner.deadline.IsZero() && !now.Before(owner.deadline)
+}
+
+func implicitAbortDeadlineErr(err error) error {
+	if err == nil {
+		err = context.DeadlineExceeded
+	}
+	if errors.Is(err, errTransactionTimeout) {
+		return err
+	}
+	return fmt.Errorf("%w: %w", errTransactionTimeout, err)
+}
+
+// abortWaitBudget returns how long abort backoff may wait.
+// unlimited is true only when neither the caller nor the owner has a deadline.
+// unlimited is false with remaining==0 when a deadline exists and is exhausted.
+func (tm *TransactionManager) abortWaitBudget(ctx context.Context) (remaining time.Duration, unlimited bool) {
+	now := time.Now()
+	if tm != nil {
+		now = tm.now()
+	}
+	if tm != nil && ownerDeadlineExhausted(tm.tc, now) {
+		return 0, false
+	}
+
+	var deadline time.Time
+	limited := false
 	if dl, ok := ctx.Deadline(); ok {
-		remaining = time.Until(dl)
+		deadline = dl
+		limited = true
 	}
-	if tm != nil && tm.tc != nil && !tm.tc.deadline.IsZero() {
-		ownerRem := tm.tc.deadline.Sub(tm.now())
-		switch {
-		case remaining <= 0:
-			remaining = ownerRem
-		case ownerRem > 0 && ownerRem < remaining:
-			remaining = ownerRem
+	if tm != nil && tm.tc != nil && tm.tc.timeoutCaptured && !tm.tc.deadline.IsZero() {
+		if !limited || tm.tc.deadline.Before(deadline) {
+			deadline = tm.tc.deadline
 		}
+		limited = true
 	}
-	if remaining < 0 {
-		return 0
+	if !limited {
+		return 0, true
 	}
-	return remaining
+	rem := deadline.Sub(now)
+	if rem < 0 {
+		return 0, false
+	}
+	return rem, false
 }
 
 func (tm *TransactionManager) waitAbortRetry(ctx context.Context, d time.Duration) error {
@@ -223,6 +246,13 @@ func (tm *TransactionManager) reconstructImplicitPhysicalLocked(ctx context.Cont
 	}
 	owner.publishPhysical(candidate)
 	return nil
+}
+
+func (tm *TransactionManager) stopImplicitAbortForDeadlineLocked(owner *transactionContext, info rwTxAttemptInfo) (*DMLResult, rwTxAttemptInfo, error) {
+	if tm.tc == owner {
+		tm.retireTransactionContextLocked()
+	}
+	return nil, info, implicitAbortDeadlineErr(context.DeadlineExceeded)
 }
 
 func (tm *TransactionManager) finalizeImplicitAbortLocked(ctx context.Context, info rwTxAttemptInfo, err error) error {
