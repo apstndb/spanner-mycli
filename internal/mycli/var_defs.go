@@ -15,7 +15,7 @@ type varScope int
 
 const (
 	// scopeSession is the SET-able surface. Resettable session vars participate
-	// in RESET ALL when they have explicit prepare/commit support.
+	// in RESET / RESET ALL when they have explicit prepare/commit support.
 	scopeSession varScope = iota
 	// scopeStartup is StartupConfig-backed: read-only via SET, written only by
 	// config.go/app.go before session creation.
@@ -41,7 +41,7 @@ type varDef struct {
 	txnGuard   bool // SET rejected while a transaction is active
 	batchGuard bool // SET rejected while a manual START BATCH is open
 	noLocal    bool // opt-out of SET LOCAL for otherwise-eligible vars
-	noReset    bool // opt-out of RESET ALL for otherwise-eligible vars
+	noReset    bool // opt-out of RESET / RESET ALL for otherwise-eligible vars
 
 	// aliases are additional (typically deprecated) names accepted by
 	// SET/SHOW/ADD. They resolve to the same handler as name but are excluded
@@ -66,8 +66,8 @@ func (d *varDef) localAllowed() bool {
 	return d.settable() && !d.initOnly && !d.txnGuard && !d.noLocal
 }
 
-// resettable reports whether RESET ALL should restore this variable to its
-// captured startup snapshot. Session-init-only, read-only, and explicitly
+// resettable reports whether RESET / RESET ALL should restore this variable to
+// its captured startup snapshot. Session-init-only, read-only, and explicitly
 // opted-out (noReset) variables are excluded, including file-backed reloads,
 // opaque descriptor graphs, unimplemented placeholders, and connection identity.
 func (d *varDef) resettable() bool {

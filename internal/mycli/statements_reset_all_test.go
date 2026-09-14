@@ -28,10 +28,15 @@ func newSessionForResetTest(t *testing.T) *Session {
 func TestBuildStatement_ResetSingleVariableNotResetAll(t *testing.T) {
 	t.Parallel()
 	got, err := BuildStatement("RESET CLI_VERBOSE")
-	if err == nil {
-		if _, ok := got.(*ResetAllStatement); ok {
-			t.Fatal("RESET CLI_VERBOSE parsed as RESET ALL; single-variable RESET belongs to #960")
-		}
+	if err != nil {
+		t.Fatalf("RESET CLI_VERBOSE: %v", err)
+	}
+	stmt, ok := got.(*ResetStatement)
+	if !ok {
+		t.Fatalf("RESET CLI_VERBOSE type %T, want *ResetStatement", got)
+	}
+	if stmt.VarName != "CLI_VERBOSE" {
+		t.Fatalf("VarName = %q, want CLI_VERBOSE", stmt.VarName)
 	}
 }
 

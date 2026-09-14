@@ -93,7 +93,7 @@ type FeatureVar struct {
 	InitOnly bool // settable only before session creation
 	TxnGuard bool // SET rejected while a transaction is active
 	NoLocal  bool // opt-out of SET LOCAL
-	NoReset  bool // opt-out of RESET ALL
+	NoReset  bool // opt-out of RESET / RESET ALL
 }
 
 // toVarDef converts a FeatureVar into the internal declarative varDef. Feature

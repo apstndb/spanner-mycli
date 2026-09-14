@@ -184,6 +184,28 @@ func (s *ResetAllStatement) Execute(ctx context.Context, session *Session, out O
 	return &Result{KeepVariables: true}, nil
 }
 
+// ResetStatement implements `RESET <name>`: restore one canonical name or
+// alias to its captured startup snapshot. It uses the shared prepare/commit
+// path so a successful reset retires only that variable's LOCAL undo.
+type ResetStatement struct {
+	VarName string
+}
+
+func (s *ResetStatement) isDetachedCompatible() {}
+
+func (s *ResetStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
+	sysVars := session.systemVariables
+	sysVars.ensureRegistry()
+	prep, err := sysVars.Registry.prepareReset([]string{s.VarName})
+	if err != nil {
+		return nil, err
+	}
+	if err := commitPersistentReset(session, prep); err != nil {
+		return nil, err
+	}
+	return &Result{KeepVariables: true}, nil
+}
+
 type SetAddStatement struct {
 	VarName string
 	Value   string
