@@ -956,6 +956,7 @@ func TestSystemVariables_SetGetOperations(t *testing.T) {
 			"OPTIMIZER_VERSION":            "LATEST",
 			"OPTIMIZER_STATISTICS_PACKAGE": "test-package",
 			"RPC_PRIORITY":                 "HIGH",
+			"COMMIT_PRIORITY":              "LOW",
 			"STATEMENT_TAG":                "test-statement",
 			"CLI_OUTPUT_TEMPLATE_FILE":     "output_default.tmpl",
 			"CLI_PROMPT":                   "test-prompt",

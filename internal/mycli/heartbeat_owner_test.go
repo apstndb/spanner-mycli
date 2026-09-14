@@ -54,6 +54,7 @@ type sqlObservation struct {
 	hadReadTs bool
 	queryMode sppb.ExecuteSqlRequest_QueryMode
 	params    map[string]string
+	priority  sppb.RequestOptions_Priority
 	optimizer string
 }
 
@@ -65,6 +66,11 @@ type beginObservation struct {
 type batchDMLObservation struct {
 	txnID string
 	sqls  []string
+}
+
+type commitObservation struct {
+	txnID    string
+	priority sppb.RequestOptions_Priority
 }
 
 type heartbeatRPCServer struct {
@@ -81,6 +87,7 @@ type heartbeatRPCServer struct {
 	begins       []beginObservation
 	rollbacks    []string
 	commits      []string
+	commitObs    []commitObservation
 	failROQuery  error
 	failSQL      error
 	failBatchDML error
@@ -205,6 +212,12 @@ func (s *heartbeatRPCServer) commitIDs() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return slices.Clone(s.commits)
+}
+
+func (s *heartbeatRPCServer) commitObservations() []commitObservation {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.commitObs)
 }
 
 func (s *heartbeatRPCServer) setFailBatchDML(err error) {
@@ -370,6 +383,10 @@ func (s *heartbeatRPCServer) Rollback(_ context.Context, r *sppb.RollbackRequest
 func (s *heartbeatRPCServer) Commit(_ context.Context, r *sppb.CommitRequest) (*sppb.CommitResponse, error) {
 	s.mu.Lock()
 	s.commits = append(s.commits, string(r.GetTransactionId()))
+	s.commitObs = append(s.commitObs, commitObservation{
+		txnID:    string(r.GetTransactionId()),
+		priority: r.GetRequestOptions().GetPriority(),
+	})
 	s.mu.Unlock()
 	return &sppb.CommitResponse{CommitTimestamp: timestamppb.Now()}, nil
 }
@@ -489,6 +506,7 @@ func (s *heartbeatRPCServer) prepareSQL(ctx context.Context, r *sppb.ExecuteSqlR
 		hadReadTs: readTs != nil,
 		queryMode: r.GetQueryMode(),
 		params:    paramStringValues(r.GetParams()),
+		priority:  r.GetRequestOptions().GetPriority(),
 		optimizer: r.GetQueryOptions().GetOptimizerVersion(),
 	})
 	return txnID, readTs, nil

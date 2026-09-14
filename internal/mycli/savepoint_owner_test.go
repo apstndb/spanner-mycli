@@ -197,9 +197,18 @@ func TestSavepointOwnerJournalFreezesCtorAndRejectsNonGCV(t *testing.T) {
 	if opts.CommitOptions.MaxCommitDelay == nil || *opts.CommitOptions.MaxCommitDelay != delay {
 		t.Fatalf("MaxCommitDelay = %v", opts.CommitOptions.MaxCommitDelay)
 	}
+	if opts.CommitPriority != sppb.RequestOptions_PRIORITY_HIGH {
+		t.Fatalf("inherited CommitPriority = %v, want HIGH", opts.CommitPriority)
+	}
 	h.tm.sysVars.Transaction.MaxCommitDelay = nil
-	if replayCtor(h.tm).CommitOptions.MaxCommitDelay == nil {
+	h.tm.sysVars.Transaction.CommitPriority = sppb.RequestOptions_PRIORITY_LOW
+	h.tm.sysVars.Query.RPCPriority = sppb.RequestOptions_PRIORITY_MEDIUM
+	replayed := replayCtor(h.tm)
+	if replayed.CommitOptions.MaxCommitDelay == nil {
 		t.Fatal("ctor snapshot aliased live MaxCommitDelay")
+	}
+	if replayed.CommitPriority != sppb.RequestOptions_PRIORITY_HIGH {
+		t.Fatal("ctor snapshot followed later COMMIT_PRIORITY or RPC_PRIORITY")
 	}
 
 	_, _, err := h.tm.RunQueryWithStats(ctx, spanner.Statement{SQL: "SELECT @p", Params: map[string]any{"p": int64(1)}}, false, sppb.ExecuteSqlRequest_PROFILE)
