@@ -802,6 +802,7 @@ func (tm *TransactionManager) BeginPendingTransaction(ctx context.Context, isola
 		}
 		snapshotTransactionTimeoutLocked(tm.tc, tm.sysVars)
 		snapshotIdleTimeoutLocked(tm.tc, tm.sysVars)
+		snapshotDdlInTransactionModeLocked(tm.tc, tm.sysVars)
 		tm.ensureReplayLocked()
 		return nil
 	})
@@ -896,6 +897,7 @@ func (tm *TransactionManager) BeginReadWriteTransactionLocked(ctx context.Contex
 		tm.tc = &transactionContext{}
 		snapshotTransactionTimeoutLocked(tm.tc, tm.sysVars)
 		snapshotIdleTimeoutLocked(tm.tc, tm.sysVars)
+		snapshotDdlInTransactionModeLocked(tm.tc, tm.sysVars)
 		createdOwner = true
 	}
 
@@ -1098,12 +1100,13 @@ func (tm *TransactionManager) BeginReadOnlyTransactionLocked(ctx context.Context
 		return time.Time{}, err
 	}
 
-	tm.activateTransactionLocked(transactionAttributes{
+	owner := tm.activateTransactionLocked(transactionAttributes{
 		mode:     transactionModeReadOnly,
 		priority: resolvedPriority,
 	}, txn)
 	snapshotTransactionTimeoutLocked(tm.tc, tm.sysVars)
 	snapshotIdleTimeoutLocked(tm.tc, tm.sysVars)
+	snapshotDdlInTransactionModeLocked(owner, tm.sysVars)
 	tm.noteIdleUserWorkLocked(true)
 
 	return resultTimestamp, nil
@@ -1428,6 +1431,7 @@ func (tm *TransactionManager) tryQueryInTransaction(ctx context.Context, stmt sp
 
 	// Execute query on the transaction
 	iter := tm.tc.txn.QueryWithOptions(ctx, stmt, opts)
+	tm.markUserWorkLocked()
 
 	// For read-only transactions, return the transaction for timestamp access
 	if tm.tc.attrs.mode == transactionModeReadOnly {
@@ -1667,6 +1671,9 @@ func (tm *TransactionManager) runInNewOrExistRwTxLocked(ctx context.Context,
 	affected, plan, metadata, err = f(txn, implicitRWTx)
 	if owner.idleHold > 0 {
 		owner.idleHold--
+	}
+	if !isAdmissionError(err) {
+		tm.markUserWorkLocked()
 	}
 	err = annotateTransactionTimeout(err, owner)
 

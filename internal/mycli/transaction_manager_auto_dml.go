@@ -87,6 +87,7 @@ func (tm *TransactionManager) TryEnqueueAutomaticDML(stmt spanner.Statement) (bo
 			return err
 		}
 		tm.tc.autoDML = append(tm.tc.autoDML, tm.newAutomaticDMLEntry(stmt))
+		tm.markUserWorkLocked()
 		// Queued automatic DML is uncommitted work on an already-started RW
 		// owner. Enable the existing keepalive now; waiting until flush is too
 		// late to cover the think/paste interval before COMMIT or a read.

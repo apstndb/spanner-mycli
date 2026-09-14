@@ -1079,6 +1079,7 @@ func TestSystemVariables_SetGetOperations(t *testing.T) {
 			"DIRECTED_READ":                "us-east1:READ_ONLY",
 			"DDL_EXECUTION_MODE":           "ASYNC_WAIT",
 			"DDL_ASYNC_WAIT_TIMEOUT":       "5s",
+			"CLI_DDL_IN_TRANSACTION_MODE":  "ALLOW_IN_EMPTY_TRANSACTION",
 		}
 		for name, value := range stringTests {
 			t.Run(name, func(t *testing.T) {

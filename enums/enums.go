@@ -121,6 +121,19 @@ const (
 	DDLExecutionModeAsyncWait
 )
 
+// DdlInTransactionMode controls whether DDL may run while a logical
+// transaction owner exists. FAIL is the CLI default and intentionally
+// differs from Java's ALLOW_IN_EMPTY_TRANSACTION.
+//
+//go:generate go tool enumer -type=DdlInTransactionMode -trimprefix=DdlInTransactionMode -transform=snake_upper
+type DdlInTransactionMode int
+
+const (
+	DdlInTransactionModeFail DdlInTransactionMode = iota
+	DdlInTransactionModeAllowInEmptyTransaction
+	DdlInTransactionModeAutoCommitTransaction
+)
+
 // IsSQLExport returns true if the display mode is one of the SQL export formats
 func (d DisplayMode) IsSQLExport() bool {
 	return d == DisplayModeSQLInsert || d == DisplayModeSQLInsertOrUpdate || d == DisplayModeSQLInsertOrIgnore

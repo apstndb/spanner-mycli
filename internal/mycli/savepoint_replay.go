@@ -244,6 +244,7 @@ func (tm *TransactionManager) CreateSavepoint(ctx context.Context, name string) 
 		if err := rs.commitSavepoint(name, n); err != nil {
 			return err
 		}
+		tm.markUserWorkLocked()
 		tm.noteIdleUserWorkLocked(true)
 		return nil
 	})

@@ -39,7 +39,7 @@ type SyncProtoStatement struct {
 	DeletePaths []string
 }
 
-func (SyncProtoStatement) isMutationStatement() {}
+func (SyncProtoStatement) isNonTransactionalMutationStatement() {}
 
 func (s *SyncProtoStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	if name, ok := firstSharedFullName(s.UpsertPaths, s.DeletePaths); ok {
