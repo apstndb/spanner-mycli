@@ -656,7 +656,7 @@ var varDefs = []varDef{
 	},
 	{
 		name:  "AUTOCOMMIT_DML_MODE",
-		desc:  "A STRING property indicating the autocommit mode for Data Manipulation Language (DML) statements.",
+		desc:  "A STRING property indicating the autocommit mode for Data Manipulation Language (DML) statements. TRANSACTIONAL (default) commits each implicit DML atomically. PARTITIONED_NON_ATOMIC uses partitioned DML for implicit UPDATE/DELETE. TRANSACTIONAL_WITH_FALLBACK_TO_PARTITIONED_NON_ATOMIC retries one eligible implicit UPDATE/DELETE as partitioned DML only after a SQL-phase mutation-limit failure that matches the pinned InvalidArgument + exact mutation-limit sentence + Cloud Spanner limits Help classifier. The fallback is non-atomic, returns a lower-bound count, and can partially commit if the partitioned attempt later fails. INSERT, THEN RETURN, explicit/pending/RO/SAVEPOINT owners, batches, EXPLAIN/analysis, Commit-phase failures, and weaker resource-limit errors are not retried. Not a Java-complete or stable driver-parity claim.",
 		scope: scopeSession,
 		bind:  func(sv *systemVariables) Variable { return AutocommitDMLModeVar(&sv.Transaction.AutocommitDMLMode) },
 	},

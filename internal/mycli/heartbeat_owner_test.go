@@ -48,15 +48,19 @@ type heartbeatRecord struct {
 }
 
 type sqlObservation struct {
-	sql       string
-	reqTag    string
-	txnID     string
-	readOnly  bool
-	hadReadTs bool
-	queryMode sppb.ExecuteSqlRequest_QueryMode
-	params    map[string]string
-	priority  sppb.RequestOptions_Priority
-	optimizer string
+	sql         string
+	reqTag      string
+	txnID       string
+	readOnly    bool
+	hadReadTs   bool
+	queryMode   sppb.ExecuteSqlRequest_QueryMode
+	params      map[string]string
+	priority    sppb.RequestOptions_Priority
+	optimizer   string
+	rpc         string
+	partitioned bool
+	deadline    time.Time
+	hasDeadline bool
 }
 
 type beginObservation struct {
@@ -93,6 +97,10 @@ type heartbeatRPCServer struct {
 	commitObs             []commitObservation
 	failROQuery           error
 	failSQL               error
+	failStreamingSQL      error
+	failUnarySQL          error
+	failCommit            error
+	pdmlIDs               map[string]struct{}
 	failBatchDML          error
 	failBegin             error
 	blockBegin            <-chan struct{}
@@ -160,6 +168,12 @@ func (s *heartbeatRPCServer) noteSelectorLocked(id []byte, sel *sppb.Transaction
 	case opts.GetReadWrite() != nil:
 		s.rwIDs[key] = struct{}{}
 	}
+	if opts.GetPartitionedDml() != nil {
+		if s.pdmlIDs == nil {
+			s.pdmlIDs = make(map[string]struct{})
+		}
+		s.pdmlIDs[key] = struct{}{}
+	}
 }
 
 func (s *heartbeatRPCServer) isReadOnlyLocked(r *sppb.ExecuteSqlRequest, txnID []byte) bool {
@@ -184,6 +198,24 @@ func (s *heartbeatRPCServer) setFailSQL(err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.failSQL = err
+}
+
+func (s *heartbeatRPCServer) setFailStreamingSQL(err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.failStreamingSQL = err
+}
+
+func (s *heartbeatRPCServer) setFailUnarySQL(err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.failUnarySQL = err
+}
+
+func (s *heartbeatRPCServer) setFailCommit(err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.failCommit = err
 }
 
 func (s *heartbeatRPCServer) setSQLRowCount(sql string, n int64) {
@@ -422,6 +454,12 @@ func (s *heartbeatRPCServer) BeginTransaction(ctx context.Context, r *sppb.Begin
 	} else {
 		s.rwIDs[string(id)] = struct{}{}
 	}
+	if r.GetOptions().GetPartitionedDml() != nil {
+		if s.pdmlIDs == nil {
+			s.pdmlIDs = make(map[string]struct{})
+		}
+		s.pdmlIDs[string(id)] = struct{}{}
+	}
 	s.mu.Unlock()
 	return txn, nil
 }
@@ -440,7 +478,11 @@ func (s *heartbeatRPCServer) Commit(_ context.Context, r *sppb.CommitRequest) (*
 		txnID:    string(r.GetTransactionId()),
 		priority: r.GetRequestOptions().GetPriority(),
 	})
+	fail := s.failCommit
 	s.mu.Unlock()
+	if fail != nil {
+		return nil, fail
+	}
 	return &sppb.CommitResponse{CommitTimestamp: timestamppb.Now()}, nil
 }
 
@@ -512,17 +554,29 @@ func (s *heartbeatRPCServer) ExecuteBatchDml(ctx context.Context, r *sppb.Execut
 }
 
 func (s *heartbeatRPCServer) ExecuteSql(ctx context.Context, r *sppb.ExecuteSqlRequest) (*sppb.ResultSet, error) {
-	txnID, readTs, err := s.prepareSQL(ctx, r)
+	txnID, readTs, err := s.prepareSQL(ctx, r, "ExecuteSql")
 	if err != nil {
 		return nil, err
+	}
+	s.mu.Lock()
+	fail := s.failUnarySQL
+	s.mu.Unlock()
+	if fail != nil {
+		return nil, fail
 	}
 	return s.resultSet(txnID, readTs, r.GetSql()), nil
 }
 
 func (s *heartbeatRPCServer) ExecuteStreamingSql(r *sppb.ExecuteSqlRequest, stream sppb.Spanner_ExecuteStreamingSqlServer) error {
-	txnID, readTs, err := s.prepareSQL(stream.Context(), r)
+	txnID, readTs, err := s.prepareSQL(stream.Context(), r, "ExecuteStreamingSql")
 	if err != nil {
 		return err
+	}
+	s.mu.Lock()
+	fail := s.failStreamingSQL
+	s.mu.Unlock()
+	if fail != nil && r.GetRequestOptions().GetRequestTag() != "spanner_mycli_heartbeat" {
+		return fail
 	}
 	rs := s.resultSet(txnID, readTs, r.GetSql())
 	if len(rs.Rows) == 0 {
@@ -543,7 +597,7 @@ func (s *heartbeatRPCServer) ExecuteStreamingSql(r *sppb.ExecuteSqlRequest, stre
 	return nil
 }
 
-func (s *heartbeatRPCServer) prepareSQL(ctx context.Context, r *sppb.ExecuteSqlRequest) ([]byte, *timestamppb.Timestamp, error) {
+func (s *heartbeatRPCServer) prepareSQL(ctx context.Context, r *sppb.ExecuteSqlRequest, rpc string) ([]byte, *timestamppb.Timestamp, error) {
 	txnID := s.txnIDFor(r)
 	s.mu.Lock()
 	block := s.blockSQL
@@ -582,18 +636,34 @@ func (s *heartbeatRPCServer) prepareSQL(ctx context.Context, r *sppb.ExecuteSqlR
 	if ro {
 		readTs = timestamppb.Now()
 	}
-	s.sqlObs = append(s.sqlObs, sqlObservation{
-		sql:       r.GetSql(),
-		reqTag:    r.GetRequestOptions().GetRequestTag(),
-		txnID:     string(txnID),
-		readOnly:  ro,
-		hadReadTs: readTs != nil,
-		queryMode: r.GetQueryMode(),
-		params:    paramStringValues(r.GetParams()),
-		priority:  r.GetRequestOptions().GetPriority(),
-		optimizer: r.GetQueryOptions().GetOptimizerVersion(),
-	})
+	obs := sqlObservation{
+		sql:         r.GetSql(),
+		reqTag:      r.GetRequestOptions().GetRequestTag(),
+		txnID:       string(txnID),
+		readOnly:    ro,
+		hadReadTs:   readTs != nil,
+		queryMode:   r.GetQueryMode(),
+		params:      paramStringValues(r.GetParams()),
+		priority:    r.GetRequestOptions().GetPriority(),
+		optimizer:   r.GetQueryOptions().GetOptimizerVersion(),
+		rpc:         rpc,
+		partitioned: s.isPartitionedLocked(r, txnID),
+	}
+	if dl, ok := ctx.Deadline(); ok {
+		obs.deadline = dl
+		obs.hasDeadline = true
+	}
+	s.sqlObs = append(s.sqlObs, obs)
 	return txnID, readTs, nil
+}
+
+func (s *heartbeatRPCServer) isPartitionedLocked(r *sppb.ExecuteSqlRequest, txnID []byte) bool {
+	sel := r.GetTransaction()
+	if sel.GetBegin().GetPartitionedDml() != nil || sel.GetSingleUse().GetPartitionedDml() != nil {
+		return true
+	}
+	_, ok := s.pdmlIDs[string(txnID)]
+	return ok
 }
 
 func (s *heartbeatRPCServer) rowCountLocked(sql string) int64 {
