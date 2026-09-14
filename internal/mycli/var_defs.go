@@ -984,6 +984,24 @@ var varDefs = []varDef{
 		scope: scopeStartup,
 		bind:  func(sv *systemVariables) Variable { return BoolVar(&sv.Config.LogGrpc) },
 	},
+	{
+		name: "CLI_SPANNER_METRICS_EXPORTER",
+		desc: "Startup-only caller-owned Spanner client metrics exporter: off (default) or otlp. " +
+			"otlp uses OTLP HTTP/protobuf to CLI_SPANNER_METRICS_ENDPOINT. " +
+			"Does not enable native Cloud Monitoring or a global MeterProvider. " +
+			"OTEL_* environment variables alone do not initialize export. " +
+			"SPANNER_EMULATOR_HOST suppresses SDK caller metrics. Not SET-able.",
+		scope: scopeStartup,
+		bind:  func(sv *systemVariables) Variable { return StringVar(&sv.Config.SpannerMetricsExporter) },
+	},
+	{
+		name: "CLI_SPANNER_METRICS_ENDPOINT",
+		desc: "Startup-only absolute http/https URL of the OTLP metrics collector used when " +
+			"CLI_SPANNER_METRICS_EXPORTER=otlp. Host required; no userinfo, query, or fragment. " +
+			"Missing or root path is /v1/metrics. Empty when export is off. Not SET-able.",
+		scope: scopeStartup,
+		bind:  func(sv *systemVariables) Variable { return StringVar(&sv.Config.SpannerMetricsEndpoint) },
+	},
 
 	// === Unimplemented variables ===
 	{

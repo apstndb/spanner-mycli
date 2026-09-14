@@ -107,6 +107,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 					Insecure:                  true,
 					ImpersonateServiceAccount: "test-sa@example.com",
 					EnableADCPlus:             true,
+					SpannerMetricsExporter:    "off",
 					LogGrpc:                   true,
 				},
 				Display: DisplayVars{
@@ -181,7 +182,8 @@ func Test_initializeSystemVariables(t *testing.T) {
 			},
 			want: systemVariables{
 				Config: StartupConfig{
-					EnableADCPlus: true,
+					EnableADCPlus:          true,
+					SpannerMetricsExporter: "off",
 				},
 				Display: DisplayVars{
 					DumpCyclicMaxBytes:   67108864,
@@ -238,7 +240,8 @@ func Test_initializeSystemVariables(t *testing.T) {
 			},
 			want: systemVariables{
 				Config: StartupConfig{
-					EnableADCPlus: true,
+					EnableADCPlus:          true,
+					SpannerMetricsExporter: "off",
 				},
 				Display: DisplayVars{
 					DumpCyclicMaxBytes:   67108864,
@@ -280,8 +283,9 @@ func Test_initializeSystemVariables(t *testing.T) {
 			},
 			want: systemVariables{
 				Config: StartupConfig{
-					Insecure:      true, // --insecure takes precedence
-					EnableADCPlus: true,
+					Insecure:               true, // --insecure takes precedence
+					EnableADCPlus:          true,
+					SpannerMetricsExporter: "off",
 				},
 				Display: DisplayVars{
 					DumpCyclicMaxBytes:   67108864,
@@ -321,8 +325,9 @@ func Test_initializeSystemVariables(t *testing.T) {
 			},
 			want: systemVariables{
 				Config: StartupConfig{
-					Insecure:      false, // --insecure takes precedence even when false
-					EnableADCPlus: true,
+					Insecure:               false, // --insecure takes precedence even when false
+					EnableADCPlus:          true,
+					SpannerMetricsExporter: "off",
 				},
 				Display: DisplayVars{
 					DumpCyclicMaxBytes:   67108864,
@@ -362,8 +367,9 @@ func Test_initializeSystemVariables(t *testing.T) {
 			want: systemVariables{
 				Connection: ConnectionVars{},
 				Config: StartupConfig{
-					Insecure:      true, // Uses skip-tls-verify value
-					EnableADCPlus: true,
+					Insecure:               true, // Uses skip-tls-verify value
+					EnableADCPlus:          true,
+					SpannerMetricsExporter: "off",
 				},
 				Display: DisplayVars{
 					DumpCyclicMaxBytes:   67108864,
@@ -410,7 +416,8 @@ func Test_initializeSystemVariables(t *testing.T) {
 			},
 			want: systemVariables{
 				Config: StartupConfig{
-					EnableADCPlus: true,
+					EnableADCPlus:          true,
+					SpannerMetricsExporter: "off",
 				},
 				Display: DisplayVars{
 					DumpCyclicMaxBytes:   67108864,
@@ -490,8 +497,9 @@ func Test_initializeSystemVariables(t *testing.T) {
 					Database: "user-database",
 				},
 				Config: StartupConfig{
-					Insecure:      true, // embedded emulator always sets this
-					EnableADCPlus: true,
+					Insecure:               true, // embedded emulator always sets this
+					EnableADCPlus:          true,
+					SpannerMetricsExporter: "off",
 				},
 				Display: DisplayVars{
 					DumpCyclicMaxBytes:   67108864,
@@ -535,8 +543,9 @@ func Test_initializeSystemVariables(t *testing.T) {
 					Database: "emulator-database", // Default value set in initializeSystemVariables
 				},
 				Config: StartupConfig{
-					Insecure:      true,
-					EnableADCPlus: true,
+					Insecure:               true,
+					EnableADCPlus:          true,
+					SpannerMetricsExporter: "off",
 				},
 				Display: DisplayVars{
 					DumpCyclicMaxBytes:   67108864,
@@ -581,8 +590,9 @@ func Test_initializeSystemVariables(t *testing.T) {
 					Database: "",                  // Empty - respects detached mode
 				},
 				Config: StartupConfig{
-					Insecure:      true,
-					EnableADCPlus: true,
+					Insecure:               true,
+					EnableADCPlus:          true,
+					SpannerMetricsExporter: "off",
 				},
 				Display: DisplayVars{
 					DumpCyclicMaxBytes:   67108864,
@@ -626,8 +636,9 @@ func Test_initializeSystemVariables(t *testing.T) {
 					Database: "emulator-database",
 				},
 				Config: StartupConfig{
-					Insecure:      true,
-					EnableADCPlus: true,
+					Insecure:               true,
+					EnableADCPlus:          true,
+					SpannerMetricsExporter: "off",
 				},
 				Display: DisplayVars{
 					DumpCyclicMaxBytes:   67108864,
@@ -672,8 +683,9 @@ func Test_initializeSystemVariables(t *testing.T) {
 					Database: "",
 				},
 				Config: StartupConfig{
-					Insecure:      true,
-					EnableADCPlus: true,
+					Insecure:               true,
+					EnableADCPlus:          true,
+					SpannerMetricsExporter: "off",
 				},
 				Display: DisplayVars{
 					DumpCyclicMaxBytes:   67108864,
@@ -714,7 +726,8 @@ func Test_initializeSystemVariables(t *testing.T) {
 			},
 			want: systemVariables{
 				Config: StartupConfig{
-					EnableADCPlus: true,
+					EnableADCPlus:          true,
+					SpannerMetricsExporter: "off",
 				},
 				Display: DisplayVars{
 					DumpCyclicMaxBytes:   67108864,
@@ -753,7 +766,8 @@ func Test_initializeSystemVariables(t *testing.T) {
 			},
 			want: systemVariables{
 				Config: StartupConfig{
-					EnableADCPlus: true,
+					EnableADCPlus:          true,
+					SpannerMetricsExporter: "off",
 				},
 				Display: DisplayVars{
 					DumpCyclicMaxBytes: 67108864,
@@ -794,7 +808,8 @@ func Test_initializeSystemVariables(t *testing.T) {
 			},
 			want: systemVariables{
 				Config: StartupConfig{
-					EnableADCPlus: true,
+					EnableADCPlus:          true,
+					SpannerMetricsExporter: "off",
 				},
 				Display: DisplayVars{
 					DumpCyclicMaxBytes:   67108864,
@@ -835,7 +850,8 @@ func Test_initializeSystemVariables(t *testing.T) {
 			},
 			want: systemVariables{
 				Config: StartupConfig{
-					EnableADCPlus: true,
+					EnableADCPlus:          true,
+					SpannerMetricsExporter: "off",
 				},
 				Display: DisplayVars{
 					DumpCyclicMaxBytes:   67108864,
@@ -954,8 +970,9 @@ func Test_newSystemVariablesWithDefaults(t *testing.T) {
 	want := systemVariables{
 		Connection: ConnectionVars{},
 		Config: StartupConfig{
-			EnableADCPlus:    true,
-			EmbeddedLogLevel: slog.LevelWarn,
+			EnableADCPlus:          true,
+			SpannerMetricsExporter: "off",
+			EmbeddedLogLevel:       slog.LevelWarn,
 		},
 		Display: DisplayVars{
 			DumpCyclicMaxBytes:   67108864,

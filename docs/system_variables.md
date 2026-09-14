@@ -109,6 +109,8 @@ both `SHOW` and `SET`.
 | `CLI_SAVEPOINT_SUPPORT`                    | read,write     | Enable client-emulated SAVEPOINT for explicit transactions. DISABLED (default) preserves current behavior. ENABLED records a journal from BEGIN and reconstructs RW prefixes on ROLLBACK TO. This is replay with result validation, not a native Spanner savepoint. SET is rejected while a transaction is pending or active and while a manual batch is open; SET LOCAL is not supported.                                                                                                                                                                                                                                                                                                                                                    |
 | `CLI_SKIP_COLUMN_NAMES`                    | read,write     | A boolean indicating whether to suppress column headers in output. The default is false.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | `CLI_SKIP_SYSTEM_COMMAND`                  | read           | A read-only boolean indicating whether system commands are disabled. Set by --skip-system-command or --system-command=OFF.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `CLI_SPANNER_METRICS_ENDPOINT`             | read           | Startup-only absolute http/https URL of the OTLP metrics collector used when CLI_SPANNER_METRICS_EXPORTER=otlp. Host required; no userinfo, query, or fragment. Missing or root path is /v1/metrics. Empty when export is off. Not SET-able.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `CLI_SPANNER_METRICS_EXPORTER`             | read           | Startup-only caller-owned Spanner client metrics exporter: off (default) or otlp. otlp uses OTLP HTTP/protobuf to CLI_SPANNER_METRICS_ENDPOINT. Does not enable native Cloud Monitoring or a global MeterProvider. OTEL_* environment variables alone do not initialize export. SPANNER_EMULATOR_HOST suppresses SDK caller metrics. Not SET-able.                                                                                                                                                                                                                                                                                                                                                                                            |
 | `CLI_SQL_BATCH_SIZE`                       | read,write     | Number of VALUES per INSERT statement for SQL export. 0 (default): single-row INSERT statements. 2+: multi-row INSERT with up to N rows per statement.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `CLI_SQL_TABLE_NAME`                       | read,write     | Table name for generated SQL statements. Required for SQL export formats. Supports both simple names (e.g., 'Users') and schema-qualified names (e.g., 'myschema.Users').                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | `CLI_STYLED_OUTPUT`                        | read,write     | Controls ANSI styling in table output: AUTO (styled if TTY), TRUE (always styled), FALSE (never styled). Default is AUTO.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
@@ -525,6 +527,42 @@ active and while a manual batch is open; SET LOCAL is not supported.
 
 See [savepoint.md](savepoint.md) for syntax, recovery, and volatile-write
 limits.
+
+### CLI_SPANNER_METRICS_EXPORTER / CLI_SPANNER_METRICS_ENDPOINT
+
+Startup-only caller-owned Spanner client metrics. These are not JDBC
+`disable_native_metrics` and do not turn native Cloud Monitoring back on.
+
+- **Type**: STRING / STRING
+- **Default**: `off` / empty
+- **Access**: Read-only after connect. SQL `SET`, `SET LOCAL`, and `RESET` are
+  rejected. Flags/TOML: `--spanner-metrics-exporter=off|otlp` and
+  `--spanner-metrics-endpoint`.
+- **Description**: `off` constructs no exporter or MeterProvider and leaves any
+  preexisting injected `ClientMetricsProvider` untouched. `otlp` starts one
+  dedicated MeterProvider plus PeriodicReader before the first Spanner client
+  and exports SDK `spanner/client/*` instruments over OTLP HTTP/protobuf to the
+  explicit endpoint. The process owner is reused across USE/DETACH/reconnect/
+  `RecreateClient` and is flushed/shut down once from `runWithOutput` with a
+  single five-second budget.
+- **Notes**:
+  - Endpoint must be an absolute `http` or `https` URL with a host. Userinfo,
+    query, and fragment are rejected. A missing or root path becomes
+    `/v1/metrics`; any other path is kept. `http` is plaintext collector
+    transport; `https` uses the collector's normal TLS.
+  - `off` plus a nonempty endpoint, and `otlp` without an endpoint, are
+    rejected before an exporter or client is constructed.
+  - `OTEL_*` environment variables alone do not initialize export or choose a
+    destination. After explicit `otlp` opt-in, other standard OTLP HTTP
+    exporter settings (timeouts, headers, certificate files) may still apply;
+    destination, path, and scheme come only from the CLI URL.
+  - The collector does not reuse the Spanner endpoint, Google credentials, or
+    custom Spanner certificate options. A global MeterProvider is not
+    installed.
+  - `SPANNER_EMULATOR_HOST` still suppresses SDK caller-owned client metrics.
+    Native Cloud Monitoring stays disabled (`DisableNativeMetrics: true`).
+  - There is no `SHOW METRICS` snapshot. End-to-end tracing is independent
+    (#967) and is not enabled by these variables.
 
 Variables not covered in this section are described by the generated
 [reference table](#reference) above.

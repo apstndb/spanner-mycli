@@ -34,6 +34,7 @@ import (
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"go.opentelemetry.io/otel/metric"
 	"google.golang.org/api/option"
 
 	"github.com/apstndb/spanner-mycli/internal/mycli/streamio"
@@ -71,6 +72,17 @@ type StartupConfig struct {
 	LogGrpc           bool   // CLI_LOG_GRPC
 	MCP               bool   // CLI_MCP
 	SkipSystemCommand bool   // CLI_SKIP_SYSTEM_COMMAND
+
+	// SpannerMetricsExporter and SpannerMetricsEndpoint are startup-only
+	// caller-owned client-metrics settings (--spanner-metrics-exporter /
+	// --spanner-metrics-endpoint). Empty exporter is treated as off.
+	SpannerMetricsExporter string // CLI_SPANNER_METRICS_EXPORTER
+	SpannerMetricsEndpoint string // CLI_SPANNER_METRICS_ENDPOINT
+
+	// ClientMetricsProvider is the process-owned or test-injected meter
+	// provider. Not a registered variable. Off mode must not clear a
+	// preexisting injected value.
+	ClientMetricsProvider metric.MeterProvider
 
 	// EmbeddedLogLevel is the --log-level value parsed at startup. It gates
 	// embedded runtime container lifecycle logs and is not CLI_LOG_LEVEL:
@@ -395,8 +407,9 @@ const defaultDDLAsyncWaitTimeout = 10 * time.Second
 func newSystemVariablesWithDefaults() systemVariables {
 	sv := systemVariables{
 		Config: StartupConfig{
-			EnableADCPlus:    true,
-			EmbeddedLogLevel: slog.LevelWarn,
+			EnableADCPlus:          true,
+			EmbeddedLogLevel:       slog.LevelWarn,
+			SpannerMetricsExporter: spannerMetricsExporterOff,
 		},
 		Display: DisplayVars{
 			DumpCyclicMode:             enums.DumpCyclicModeReject,

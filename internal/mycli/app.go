@@ -389,7 +389,17 @@ func runWithOutput(ctx context.Context, opts *spannerOptions, stdout io.Writer, 
 		}
 	}
 
-	cli, err := NewCli(ctx, cred, sysVars)
+	metrics, err := startSpannerMetrics(sysVars)
+	if err != nil {
+		return err
+	}
+	var cli *Cli
+	defer func() {
+		closeCliClients(cli)
+		metrics.Shutdown(errStream)
+	}()
+
+	cli, err = NewCli(ctx, cred, sysVars)
 	if err != nil {
 		return fmt.Errorf("failed to connect to Spanner: %w", err)
 	}
