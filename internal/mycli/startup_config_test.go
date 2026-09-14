@@ -72,6 +72,8 @@ func TestStartupConfigVariablesAreReadOnly(t *testing.T) {
 		{varName: "CLI_LOG_GRPC", value: "TRUE"},
 		{varName: "CLI_MCP", value: "TRUE"},
 		{varName: "CLI_SKIP_SYSTEM_COMMAND", value: "FALSE"},
+		{varName: "CLI_SPANNER_METRICS_EXPORTER", value: "otlp"},
+		{varName: "CLI_SPANNER_METRICS_ENDPOINT", value: "http://127.0.0.1:4318/v1/metrics"},
 	} {
 		t.Run(tt.varName, func(t *testing.T) {
 			t.Parallel()
