@@ -60,14 +60,10 @@ func TestAutocommitDMLModeSetLocalFallbackValue(t *testing.T) {
 func TestIsMutationLimitExceededClassifier(t *testing.T) {
 	t.Parallel()
 
-	strong := mutationLimitStatusErr(t)
-	apiErr, ok := apierror.FromError(strong)
-	if !ok {
-		t.Fatal("status details did not produce *apierror.APIError")
-	}
-	wrapped := fmt.Errorf("transaction was aborted: %w", apiErr)
-	if !isMutationLimitExceeded(wrapped) {
-		t.Fatal("strong Help through APIError must match")
+	strong := wrapAsAbortedAPIError(t, mutationLimitStatusErr(t))
+	requireAPIError(t, strong)
+	if !isMutationLimitExceeded(strong) {
+		t.Fatal("strong Help through *apierror.APIError must match")
 	}
 
 	handmade := spanner.ToSpannerError(status.Error(codes.InvalidArgument, mutationLimitSentence))
@@ -78,26 +74,97 @@ func TestIsMutationLimitExceededClassifier(t *testing.T) {
 		t.Fatal("handmade status.Error unexpectedly carried details")
 	}
 
-	if isMutationLimitExceeded(mutationLimitStatusWithDesc(t, weakerResourceLimitsMessage())) {
-		t.Fatal("weaker resource-limits text must not match")
+	for _, tc := range []struct {
+		name string
+		err  error
+		// Each named negative must pass every earlier classifier gate so it
+		// actually exercises the intended predicate.
+		wantCode     codes.Code
+		wantSentence bool
+		wantAPIErr   bool
+	}{
+		{
+			name:         "wrong Help URL",
+			err:          wrapAsAbortedAPIError(t, mutationLimitStatusWithHelp(t, mutationLimitHelpDesc, "https://example.invalid/limits")),
+			wantCode:     codes.InvalidArgument,
+			wantSentence: true,
+			wantAPIErr:   true,
+		},
+		{
+			name:         "wrong Help description",
+			err:          wrapAsAbortedAPIError(t, mutationLimitStatusWithHelp(t, "Wrong documentation.", mutationLimitHelpURL)),
+			wantCode:     codes.InvalidArgument,
+			wantSentence: true,
+			wantAPIErr:   true,
+		},
+		{
+			name:         "extra Help link",
+			err:          wrapAsAbortedAPIError(t, mutationLimitStatusWithExtraHelp(t)),
+			wantCode:     codes.InvalidArgument,
+			wantSentence: true,
+			wantAPIErr:   true,
+		},
+		{
+			name:         "weaker resource-limits text",
+			err:          wrapAsAbortedAPIError(t, mutationLimitStatusWithDesc(t, weakerResourceLimitsMessage())),
+			wantCode:     codes.InvalidArgument,
+			wantSentence: false,
+			wantAPIErr:   true,
+		},
+		{
+			name:         "ResourceExhausted",
+			err:          wrapAsAbortedAPIError(t, mutationLimitStatusWithCode(t, codes.ResourceExhausted, mutationLimitSentence)),
+			wantCode:     codes.ResourceExhausted,
+			wantSentence: true,
+			wantAPIErr:   true,
+		},
+		{
+			name:         "Aborted",
+			err:          wrapAsAbortedAPIError(t, mutationLimitStatusWithCode(t, codes.Aborted, mutationLimitSentence)),
+			wantCode:     codes.Aborted,
+			wantSentence: true,
+			wantAPIErr:   true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := spanner.ErrCode(tc.err); got != tc.wantCode {
+				t.Fatalf("ErrCode = %v, want %v", got, tc.wantCode)
+			}
+			if got := strings.Contains(spanner.ErrDesc(tc.err), mutationLimitSentence); got != tc.wantSentence {
+				t.Fatalf("sentence present = %v, want %v", got, tc.wantSentence)
+			}
+			if tc.wantAPIErr {
+				requireAPIError(t, tc.err)
+			}
+			if isMutationLimitExceeded(tc.err) {
+				t.Fatal("must not match")
+			}
+		})
 	}
-	if isMutationLimitExceeded(status.Error(codes.ResourceExhausted, mutationLimitSentence)) {
-		t.Fatal("ResourceExhausted must not match")
-	}
-	if isMutationLimitExceeded(status.Error(codes.Aborted, mutationLimitSentence)) {
-		t.Fatal("Aborted must not match")
-	}
-	if isMutationLimitExceeded(mutationLimitStatusWithHelp(t, mutationLimitHelpDesc, "https://example.invalid/limits")) {
-		t.Fatal("wrong Help URL must not match")
-	}
-	if isMutationLimitExceeded(mutationLimitStatusWithExtraHelp(t)) {
-		t.Fatal("extra Help link must not match")
-	}
+
 	if isMutationLimitExceeded(errors.New(mutationLimitSentence)) {
 		t.Fatal("message-only error must not match")
 	}
 	if isMutationLimitExceeded(nil) {
 		t.Fatal("nil must not match")
+	}
+}
+
+func wrapAsAbortedAPIError(t *testing.T, err error) error {
+	t.Helper()
+	apiErr, ok := apierror.FromError(err)
+	if !ok {
+		t.Fatalf("apierror.FromError(%T) failed", err)
+	}
+	return fmt.Errorf("transaction was aborted: %w", apiErr)
+}
+
+func requireAPIError(t *testing.T, err error) {
+	t.Helper()
+	var apiErr *apierror.APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("missing *apierror.APIError: %T %v", err, err)
 	}
 }
 
@@ -141,6 +208,25 @@ func mutationLimitStatusWithExtraHelp(t *testing.T) error {
 			{Description: mutationLimitHelpDesc, Url: mutationLimitHelpURL},
 			{Description: "extra", Url: "https://example.invalid/extra"},
 		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return st.Err()
+}
+
+func mutationLimitStatusWithCode(t *testing.T, code codes.Code, desc string) error {
+	t.Helper()
+	return mutationLimitStatusWithCodeAndHelp(t, code, desc, mutationLimitHelpDesc, mutationLimitHelpURL)
+}
+
+func mutationLimitStatusWithCodeAndHelp(t *testing.T, code codes.Code, desc, helpDesc, helpURL string) error {
+	t.Helper()
+	st, err := status.New(code, desc).WithDetails(&errdetails.Help{
+		Links: []*errdetails.Help_Link{{
+			Description: helpDesc,
+			Url:         helpURL,
+		}},
 	})
 	if err != nil {
 		t.Fatal(err)

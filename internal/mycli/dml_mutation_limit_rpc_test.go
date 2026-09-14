@@ -423,7 +423,10 @@ func TestMutationLimitFallbackBudgets(t *testing.T) {
 		h := newHeartbeatHarness(t)
 		session := newMutationLimitSession(t, h)
 		ctx := t.Context()
-		start := time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC)
+		h.server.setFailStreamingSQL(mutationLimitStatusErr(t))
+		mustExec(t, ctx, session, "SET AUTOCOMMIT_DML_MODE = 'TRANSACTIONAL_WITH_FALLBACK_TO_PARTITIONED_NON_ATOMIC'")
+		mustExec(t, ctx, session, "SET TRANSACTION_TIMEOUT = '2s'")
+		start := time.Now()
 		var advanced atomic.Bool
 		h.tm.nowFunc = func() time.Time {
 			if advanced.Load() {
@@ -431,13 +434,38 @@ func TestMutationLimitFallbackBudgets(t *testing.T) {
 			}
 			return start
 		}
-		h.server.setFailStreamingSQL(mutationLimitStatusErr(t))
-		mustExec(t, ctx, session, "SET AUTOCOMMIT_DML_MODE = 'TRANSACTIONAL_WITH_FALLBACK_TO_PARTITIONED_NON_ATOMIC'")
-		mustExec(t, ctx, session, "SET TRANSACTION_TIMEOUT = '2s'")
-		session.txn.afterMutationLimitBeforeFallback = func() { advanced.Store(true) }
+		type phaseSnap struct {
+			sql      int
+			rollback int
+			pdml     int
+		}
+		hookSnap := make(chan phaseSnap, 1)
+		session.txn.afterMutationLimitBeforeFallback = func() {
+			obs := userSQLObservations(h.server.sqlObservations())
+			hookSnap <- phaseSnap{
+				sql:      countRPC(obs, "ExecuteStreamingSql", false),
+				rollback: len(h.server.rollbackIDs()),
+				pdml:     countRPC(obs, "ExecuteSql", true),
+			}
+			advanced.Store(true)
+		}
 		_, err := execSQL(t, ctx, session, "UPDATE T SET v = 1 WHERE TRUE")
 		if err == nil || !errors.Is(err, errTransactionTimeout) {
 			t.Fatalf("deadline skip: %v", err)
+		}
+		select {
+		case snap := <-hookSnap:
+			if snap.sql != 1 {
+				t.Fatalf("hook SQL count = %d, want 1 after original ExecuteStreamingSql", snap.sql)
+			}
+			if snap.rollback == 0 {
+				t.Fatal("hook ran before original-owner rollback")
+			}
+			if snap.pdml != 0 {
+				t.Fatalf("PDML already issued before between-phase hook: %+v", h.server.sqlObservations())
+			}
+		default:
+			t.Fatal("between-phase hook did not run")
 		}
 		if countRPC(userSQLObservations(h.server.sqlObservations()), "ExecuteSql", true) != 0 {
 			t.Fatalf("expired budget still issued PDML: %+v", h.server.sqlObservations())
