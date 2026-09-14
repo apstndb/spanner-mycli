@@ -492,6 +492,16 @@ func TestBuildStatement(t *testing.T) {
 			want:  &SetTransactionStatement{IsReadOnly: false},
 		},
 		{
+			desc:  "SHOW TRANSACTION ISOLATION LEVEL statement",
+			input: "SHOW TRANSACTION ISOLATION LEVEL",
+			want:  &ShowTransactionStatement{Kind: showTransactionIsolationLevel},
+		},
+		{
+			desc:  "SHOW TRANSACTION READ ONLY statement",
+			input: "SHOW TRANSACTION READ ONLY",
+			want:  &ShowTransactionStatement{Kind: showTransactionReadOnly},
+		},
+		{
 			desc:  "COMMIT statement",
 			input: "COMMIT",
 			want:  &CommitStatement{},
@@ -1499,6 +1509,13 @@ func TestBuildStatement_InvalidCase(t *testing.T) {
 		"EXPLAIN WIDTH= SELECT * FROM t1",
 		"EXPLAIN WIDTH SELECT * FROM t1",
 		"BEGIN RO foo",
+		"SHOW TRANSACTION",
+		"SHOW TRANSACTION ISOLATION",
+		"SHOW TRANSACTION ISOLATION LEVEL leftover",
+		"SHOW TRANSACTION READ ONLY leftover",
+		"SHOW TRANSACTION DEFERRABLE",
+		"SHOW TRANSACTION READ WRITE",
+		"SHOW TRANSACTION FOO",
 		// SHOW TABLES takes a bare schema name; a MySQL-style FROM clause
 		// previously misparsed as schema "FROM foo" and returned an empty result.
 		"SHOW TABLES FROM foo",
