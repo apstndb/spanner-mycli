@@ -26,7 +26,7 @@ import (
 )
 
 // TRANSACTION_TIMEOUT is a logical read/write budget, distinct from
-// STATEMENT_TIMEOUT and from unimplemented user-idle expiry (#357).
+// STATEMENT_TIMEOUT and from CLI_IDLE_TRANSACTION_TIMEOUT (#357).
 // Zero or NULL means no additional transaction deadline. ABORTED retry
 // (#293) is not implemented; a later retry path must reuse this remaining
 // budget instead of restarting it.

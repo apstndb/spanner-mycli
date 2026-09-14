@@ -17,6 +17,7 @@ package mycli
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -64,6 +65,40 @@ func assertStmtTimeout(t *testing.T, session *Session, sql string, want time.Dur
 	}
 	if got := session.getTimeoutForStatement(stmt); got != want {
 		t.Fatalf("%s: timeout=%s want=%s var=%v type=%T", sql, got, want, session.systemVariables.Query.StatementTimeout, stmt)
+	}
+}
+
+func TestOmittedIdleTransactionTimeoutStaysNull(t *testing.T) {
+	t.Parallel()
+	session := timeoutSession(t, withRequiredFlags())
+	if session.systemVariables.Transaction.IdleTransactionTimeout != nil {
+		t.Fatalf("omitted --idle-transaction-timeout set CLI_IDLE_TRANSACTION_TIMEOUT to %v", *session.systemVariables.Transaction.IdleTransactionTimeout)
+	}
+	got, err := session.systemVariables.Get("CLI_IDLE_TRANSACTION_TIMEOUT")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["CLI_IDLE_TRANSACTION_TIMEOUT"] != "NULL" {
+		t.Fatalf("default = %q, want NULL", got["CLI_IDLE_TRANSACTION_TIMEOUT"])
+	}
+}
+
+func TestIdleTransactionTimeoutFlagMapsDuration(t *testing.T) {
+	t.Parallel()
+	session := timeoutSession(t, withRequiredFlags("--idle-transaction-timeout", "5m"))
+	if session.systemVariables.Transaction.IdleTransactionTimeout == nil || *session.systemVariables.Transaction.IdleTransactionTimeout != 5*time.Minute {
+		t.Fatalf("flag mapped %v, want 5m", session.systemVariables.Transaction.IdleTransactionTimeout)
+	}
+}
+
+func TestIdleTransactionTimeoutFlagRejectsInvalid(t *testing.T) {
+	t.Parallel()
+	gopts, err := parseTestFlags(withRequiredFlags("--idle-transaction-timeout", "invalid"))
+	if err != nil {
+		t.Fatalf("parseTestFlags: %v", err)
+	}
+	if _, err := initializeSystemVariables(&gopts.Spanner); err == nil || !strings.Contains(err.Error(), "invalid value of --idle-transaction-timeout") {
+		t.Fatalf("initializeSystemVariables: %v", err)
 	}
 }
 

@@ -198,7 +198,12 @@ func (tm *TransactionManager) finishQueryCapture(tok *captureToken, consumeErr e
 	}
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
-	return tm.finishQueryCaptureLocked(tok, consumeErr)
+	belongs := tok.belongsToLocked(tm)
+	err := tm.finishQueryCaptureLocked(tok, consumeErr)
+	if belongs && tm.tc != nil {
+		tm.noteIdleUserWorkLocked(true)
+	}
+	return err
 }
 
 func (tm *TransactionManager) finishQueryCaptureLocked(tok *captureToken, consumeErr error) error {
@@ -375,6 +380,9 @@ func (tm *TransactionManager) admitMutationsLocked(frozen []frozenMutation) erro
 }
 
 func (tm *TransactionManager) completeMutationsLocked(rpcErr error) (*captureToken, error) {
+	if rpcErr == nil && tm.tc != nil {
+		tm.noteIdleUserWorkLocked(true)
+	}
 	if !tm.capturingLocked() {
 		return nil, rpcErr
 	}

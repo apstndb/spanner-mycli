@@ -588,6 +588,14 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 	_, isMetaCommand := stmt.(MetaCommandStatement)
 	outW := w
 	var sink *resultSink
+	// Hold the CLI execution/result frame before sink.abort is registered so
+	// LIFO runs pager/error cleanup inside the hold, then releases. The hold
+	// is manager-level so a newly installed owner (BEGIN RW) is covered
+	// through output.
+	if c.SessionHandler != nil && c.SessionHandler.txn != nil {
+		c.SessionHandler.txn.beginIdleResultHold()
+		defer c.SessionHandler.txn.endIdleResultHold()
+	}
 	if !isMetaCommand {
 		sink = c.newResultSink(ctx, w, input)
 		sink.beforeStart = stop
