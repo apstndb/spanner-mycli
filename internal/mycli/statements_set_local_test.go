@@ -157,6 +157,9 @@ func TestSetLocalRejectsUnsupportedVariables(t *testing.T) {
 		{desc: "keep transaction alive", varName: "KEEP_TRANSACTION_ALIVE", value: "FALSE", wantErr: "does not support SET LOCAL"},
 		{desc: "spanner metrics exporter", varName: "CLI_SPANNER_METRICS_EXPORTER", value: "'otlp'", wantErr: "does not support SET LOCAL"},
 		{desc: "spanner metrics endpoint", varName: "CLI_SPANNER_METRICS_ENDPOINT", value: "'http://127.0.0.1:4318/v1/metrics'", wantErr: "does not support SET LOCAL"},
+		{desc: "spanner traces exporter", varName: "CLI_SPANNER_TRACES_EXPORTER", value: "'otlp'", wantErr: "does not support SET LOCAL"},
+		{desc: "spanner traces endpoint", varName: "CLI_SPANNER_TRACES_ENDPOINT", value: "'http://127.0.0.1:4318/v1/traces'", wantErr: "does not support SET LOCAL"},
+		{desc: "spanner traces sample ratio", varName: "CLI_SPANNER_TRACES_SAMPLE_RATIO", value: "1", wantErr: "does not support SET LOCAL"},
 	} {
 		t.Run(tt.desc, func(t *testing.T) {
 			t.Parallel()

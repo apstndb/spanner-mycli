@@ -208,6 +208,16 @@ Flags:
       --spanner-metrics-endpoint=STRING        Absolute http/https collector URL for --spanner-metrics-exporter=otlp.
                                                Host required; no userinfo, query, or fragment. Missing/root path becomes
                                                /v1/metrics. Required with otlp; forbidden with off.
+      --spanner-traces-exporter="off"          Opt-in process-owned Spanner client traces exporter: off (default, no
+                                               pipeline or global TracerProvider change) or otlp (OTLP HTTP/protobuf).
+                                               OTEL_* environment variables alone do not enable export. SQL SET cannot
+                                               change this.
+      --spanner-traces-endpoint=STRING         Absolute http/https collector URL for --spanner-traces-exporter=otlp.
+                                               Host required; no userinfo, query, or fragment. Missing/root path becomes
+                                               /v1/traces. Required with otlp; forbidden with off.
+      --spanner-traces-sample-ratio=0.01       Root sampling ratio in [0,1] used when --spanner-traces-exporter=otlp.
+                                               ParentBased: a sampled parent is honored and an unsampled parent drops
+                                               the child. Default 0.01. Ignored when export is off.
       --query-mode=QUERY-MODE                  Mode in which the query must be processed. Allowed values: NORMAL, PLAN,
                                                PROFILE, WITH_STATS, WITH_PLAN_AND_STATS.
       --strong                                 Perform a strong query.

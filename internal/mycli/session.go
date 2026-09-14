@@ -403,6 +403,7 @@ func clientConfigForIdentity(sysVars *systemVariables, identity ConnectionVars) 
 	clientConfig.DatabaseRole = identity.Role
 	forceNilDirectedReadOnCopiedClientConfig(&clientConfig)
 	overlayClientMetricsProvider(&clientConfig, sysVars)
+	overlayEndToEndTracing(&clientConfig, sysVars)
 	return clientConfig
 }
 
