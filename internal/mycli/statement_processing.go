@@ -79,18 +79,20 @@ var (
 	_ MutationStatement = (*ExplainAnalyzeDmlStatement)(nil)
 	_ MutationStatement = (*BeginRwStatement)(nil)
 	_ MutationStatement = (*DmlStatement)(nil)
-	_ MutationStatement = (*DdlStatement)(nil)
 	_ MutationStatement = (*CreateDatabaseStatement)(nil)
 	_ MutationStatement = (*DropDatabaseStatement)(nil)
 	_ MutationStatement = (*TruncateTableStatement)(nil)
 	_ MutationStatement = (*PartitionedDmlStatement)(nil)
-	_ MutationStatement = (*BulkDdlStatement)(nil)
 	_ MutationStatement = (*BatchDMLStatement)(nil)
-	_ MutationStatement = (*SyncProtoStatement)(nil)
 	_ MutationStatement = (*AddSplitPointsStatement)(nil)
 )
 
-var _ nonTransactionalMutationStatement = (*ExportDataStatement)(nil)
+var (
+	_ nonTransactionalMutationStatement = (*ExportDataStatement)(nil)
+	_ nonTransactionalMutationStatement = (*DdlStatement)(nil)
+	_ nonTransactionalMutationStatement = (*BulkDdlStatement)(nil)
+	_ nonTransactionalMutationStatement = (*SyncProtoStatement)(nil)
+)
 
 // No core statement implements ConditionallyMutatingStatement any more: both
 // implementations were extracted into feature packages, where each carries its

@@ -272,6 +272,10 @@ func DDLExecutionModeVar(ptr *enums.DDLExecutionMode) *EnumVar[enums.DDLExecutio
 	return &EnumVar[enums.DDLExecutionMode]{ptr: ptr, values: enumerValues(enums.DDLExecutionModeValues())}
 }
 
+func DdlInTransactionModeVar(ptr *enums.DdlInTransactionMode) *EnumVar[enums.DdlInTransactionMode] {
+	return &EnumVar[enums.DdlInTransactionMode]{ptr: ptr, values: enumerValues(enums.DdlInTransactionModeValues())}
+}
+
 func StyledModeVar(ptr *enums.StyledMode) *EnumVar[enums.StyledMode] {
 	return &EnumVar[enums.StyledMode]{
 		ptr:    ptr,

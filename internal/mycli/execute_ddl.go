@@ -27,16 +27,20 @@ import (
 func bufferOrExecuteDdlStatements(ctx context.Context, session *Session, ddls []string) (*Result, error) {
 	switch b := session.batch.Current().(type) {
 	case *BatchDMLStatement:
-		return nil, errors.New("there is active batch DML")
+		return nil, errDDLManualDMLBatch
 	case *BulkDdlStatement:
 		b.Ddls = append(b.Ddls, ddls...)
 		return &Result{}, nil
 	default:
-		if session.txn != nil && session.txn.HasAutomaticDML() {
-			return nil, errors.New("there is active batch DML")
-		}
 		return executeDdlStatements(ctx, session, ddls)
 	}
+}
+
+func marshalDDLProtoDescriptors(session *Session) ([]byte, error) {
+	if session == nil || session.systemVariables == nil {
+		return nil, nil
+	}
+	return proto.Marshal(session.systemVariables.Internal.ProtoDescriptor)
 }
 
 // replacerForProgress replaces tabs and newlines to avoid breaking progress bars.
@@ -58,6 +62,7 @@ func newProgressWithTTY(ctx context.Context, session *Session) *mpb.Progress {
 
 func executeDdlStatements(ctx context.Context, session *Session, ddls []string) (*Result, error) {
 	if len(ddls) == 0 {
+		// Empty BulkDdl is a no-op and must not commit a transaction.
 		result := &Result{}
 		if session.systemVariables.Feature.EchoExecutedDDL {
 			result.TableHeader = toTableHeader("Executed", "Commit Timestamp")
@@ -66,11 +71,24 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 		return result, nil
 	}
 
-	b, err := proto.Marshal(session.systemVariables.Internal.ProtoDescriptor)
+	b, err := marshalDDLProtoDescriptors(session)
 	if err != nil {
 		return nil, err
 	}
 
+	prep, err := prepareDDLInTransaction(ctx, session)
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := submitDdlStatements(ctx, session, ddls, b)
+	if err != nil {
+		return result, annotateDDLAfterCommit(prep, err)
+	}
+	return result, nil
+}
+
+func submitDdlStatements(ctx context.Context, session *Session, ddls []string, protoDescriptors []byte) (*Result, error) {
 	var p *mpb.Progress
 	var bars []*mpb.Bar
 	teardown := func() {
@@ -103,7 +121,7 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 	op, err := session.adminClient.UpdateDatabaseDdl(ctx, &databasepb.UpdateDatabaseDdlRequest{
 		Database:         session.DatabasePath(),
 		Statements:       ddls,
-		ProtoDescriptors: b,
+		ProtoDescriptors: protoDescriptors,
 	})
 	if err != nil {
 		teardown()
