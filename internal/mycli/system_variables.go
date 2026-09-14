@@ -254,10 +254,13 @@ type systemVariables struct {
 	// nil means no session has been created yet.
 	inManualBatch func() bool
 
-	// transactionTagView, setTransactionTagSlot, and transactionTagWritable are
-	// bound to the live TransactionManager. nil means no session has been
-	// created yet, so the TRANSACTION_TAG slot is accessed directly.
+	// transactionTagView, transactionTagSlot, setTransactionTagSlot, and
+	// transactionTagWritable are bound to the live TransactionManager. nil
+	// means no session has been created yet, so the TRANSACTION_TAG slot is
+	// accessed directly. transactionTagSlot is the writable next-owner value
+	// RESET compares; transactionTagView is SHOW (applied RW tag or slot).
 	transactionTagView     func() string
+	transactionTagSlot     func() string
 	setTransactionTagSlot  func(string) error
 	transactionTagWritable func() error
 

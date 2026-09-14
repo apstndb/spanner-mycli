@@ -73,7 +73,7 @@ func (r *VarRegistry) captureStartupSnapshots() error {
 			captureErr = fmt.Errorf("RESET ALL: %s is resettable but has no prepare support", def.name)
 			return
 		}
-		value, err := rv.v.Get()
+		value, err := variableResetValue(rv.v)
 		if err != nil {
 			captureErr = fmt.Errorf("RESET ALL: capture %s: %w", def.name, err)
 			return
@@ -126,7 +126,7 @@ func (r *VarRegistry) prepareReset(names []string) (*preparedReset, error) {
 			return nil, fmt.Errorf("%s does not support RESET", def.name)
 		}
 		rv := r.vars[strings.ToUpper(def.name)]
-		current, err := rv.v.Get()
+		current, err := variableResetValue(rv.v)
 		if err != nil {
 			return nil, fmt.Errorf("RESET %s: %w", def.name, err)
 		}
@@ -159,6 +159,15 @@ func (r *VarRegistry) commitReset(prep *preparedReset) error {
 		}
 	}
 	return nil
+}
+
+// variableResetValue is the RESET compare/capture string. Handlers whose SHOW
+// value is not the writable setting implement resetSnapshotter.
+func variableResetValue(v Variable) (string, error) {
+	if s, ok := v.(resetSnapshotter); ok {
+		return s.ResetSnapshot()
+	}
+	return v.Get()
 }
 
 func commitPersistentReset(session *Session, prep *preparedReset) error {

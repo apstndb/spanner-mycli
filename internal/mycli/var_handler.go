@@ -22,6 +22,12 @@ type resetPreparer interface {
 	PrepareReset(value string) error
 }
 
+// resetSnapshotter provides the mutable RESET value when that value is not Get().
+// Capture and unchanged-RESET compare ResetSnapshot; SHOW continues to use Get().
+type resetSnapshotter interface {
+	ResetSnapshot() (string, error)
+}
+
 // MultiValueVar is an optional capability for a Variable whose SHOW VARIABLE
 // result has multiple columns (e.g. COMMIT_RESPONSE, which surfaces
 // COMMIT_TIMESTAMP and MUTATION_COUNT). Such a variable's plain Get returns an

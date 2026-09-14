@@ -48,6 +48,18 @@ func (v *transactionTagVar) Set(value string) error {
 	return nil
 }
 
+// ResetSnapshot returns the writable next-owner slot. RESET capture and
+// unchanged-equality use this. Get/SHOW still report the applied RW tag.
+func (v *transactionTagVar) ResetSnapshot() (string, error) {
+	if v.sv == nil {
+		return "", fmt.Errorf("variable not initialized")
+	}
+	if v.sv.transactionTagSlot != nil {
+		return v.sv.transactionTagSlot(), nil
+	}
+	return v.sv.Transaction.TransactionTag, nil
+}
+
 // PrepareReset checks the TRANSACTION_TAG slot can be written without mutating it.
 func (v *transactionTagVar) PrepareReset(string) error {
 	if v.sv == nil {

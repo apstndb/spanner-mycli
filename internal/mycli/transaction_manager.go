@@ -191,6 +191,7 @@ func bindTransactionManagerCallbacks(sv *systemVariables, tm *TransactionManager
 	}
 	sv.inTransaction = tm.InTransaction
 	sv.transactionTagView = tm.transactionTagView
+	sv.transactionTagSlot = tm.transactionTagSlot
 	sv.setTransactionTagSlot = tm.setTransactionTagSlot
 	sv.transactionTagWritable = tm.checkTransactionTagSlot
 }
@@ -532,6 +533,17 @@ func (tm *TransactionManager) transactionTagView() string {
 	if tm.tc != nil && tm.tc.attrs.mode == transactionModeReadWrite {
 		return tm.tc.attrs.tag
 	}
+	if tm.sysVars == nil {
+		return ""
+	}
+	return tm.sysVars.Transaction.TransactionTag
+}
+
+// transactionTagSlot reports the writable next-owner slot under the same lock
+// as set/check. RESET capture and equality use this, not SHOW.
+func (tm *TransactionManager) transactionTagSlot() string {
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
 	if tm.sysVars == nil {
 		return ""
 	}
