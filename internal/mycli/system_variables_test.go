@@ -106,26 +106,6 @@ func testReadOnlyVariable(t *testing.T, setFunc func(*systemVariables, string, s
 	}
 }
 
-// testUnimplementedVariable tests variables that have neither setter nor getter implemented
-func testUnimplementedVariable(t *testing.T, setFunc func(*systemVariables, string, string) error, name string) {
-	t.Helper()
-	sysVars := newSystemVariablesWithDefaultsForTest()
-
-	// Verify setter is unimplemented
-	err := setFunc(sysVars, name, "dummy")
-	var e errSetterUnimplemented
-	if !errors.As(err, &e) && !errors.Is(err, errSetterReadOnly) {
-		t.Errorf("sysVars setter for %s is skipped, but implemented: %v", name, err)
-	}
-
-	// Verify getter is unimplemented
-	_, err = sysVars.Get(name)
-	var eg errGetterUnimplemented
-	if !errors.As(err, &eg) {
-		t.Errorf("sysVars getter for %s is skipped, but implemented: %v", name, err)
-	}
-}
-
 // testSpecialVariable tests variables that need custom setup or validation
 func testSpecialVariable(t *testing.T, setFunc func(*systemVariables, string, string) error, desc, name, value string, sysVars *systemVariables, want map[string]string) {
 	t.Helper()
@@ -1191,7 +1171,6 @@ func TestSystemVariables_SetGetOperations(t *testing.T) {
 				testReadOnlyVariable(t, setFunc, test.name, test.sysVars, test.want)
 			})
 		}
-
 	})
 
 	t.Run("GoogleSQLMode", func(t *testing.T) {

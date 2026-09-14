@@ -122,8 +122,8 @@ type transactionContext struct {
 	retryAborts         bool
 	retryAbortsCaptured bool
 	attempt             uint64
-	inFlight        int
-	pending         *captureToken
+	inFlight            int
+	pending             *captureToken
 	// replacing is true while ROLLBACK TO is replacing the physical RW handle.
 	replacing bool
 }
