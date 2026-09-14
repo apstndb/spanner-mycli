@@ -18,6 +18,7 @@ There are differences between spanner-mycli and spanner-cli that include not onl
   * Configurable query plan appendix presets and sections with `EXPLAIN PRINT=<preset-or-sections>` and `CLI_EXPLAIN_PRINT_SECTIONS`
   * Query plan investigation with `EXPLAIN [ANALYZE] LAST QUERY` for re-rendering without re-execution and `SHOW PLAN NODE` for inspecting specific plan nodes
   * Compact format (`FORMAT=COMPACT`) and wrapped plans (`WIDTH=<width>`) with hanging indent for limited display spaces like narrow terminals, code blocks, and technical documentation
+  * Optional EXPLAIN Operator header label with `CLI_EXPLAIN_OPERATOR_HEADER` (empty keeps the existing WIDTH-dependent name)
   * Query plan linter (EARLY EXPERIMENTAL) using `CLI_LINT_PLAN` system variable for heuristic query plan analysis
   * Query profiles (EARLY EXPERIMENTAL) for rendering sampled query plans using `SHOW QUERY PROFILES` and `SHOW QUERY PROFILE`
 * Respects my minor use cases
@@ -1094,6 +1095,7 @@ For how these and other connection properties map to the official Spanner driver
 | CLI_QUERY_MODE             | READ_WRITE | `"PROFILE"`                                    |
 | CLI_LINT_PLAN              | READ_WRITE | `"TRUE"`                                       |
 | CLI_EXPLAIN_HANGING_INDENT | READ_WRITE | `"TRUE"`                                       |
+| CLI_EXPLAIN_OPERATOR_HEADER | READ_WRITE | `""`                                          |
 | CLI_USE_PAGER              | READ_WRITE | `"TRUE"`                                       |
 | CLI_AUTOWRAP               | READ_WRITE | `"TRUE"`                                       |
 | CLI_DATABASE_DIALECT       | READ_WRITE | `"TRUE"`                                       |
