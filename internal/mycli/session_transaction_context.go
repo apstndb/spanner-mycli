@@ -6,6 +6,7 @@ import (
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/apstndb/spanner-mycli/enums"
 )
 
 type transactionMode string
@@ -68,6 +69,16 @@ type transactionContext struct {
 	// an explicit zero from an uninitialized ad-hoc test owner.
 	timeout         time.Duration
 	timeoutCaptured bool
+	// ddlInTransaction is the CLI_DDL_IN_TRANSACTION_MODE captured for this
+	// logical owner. ddlInTransactionCaptured distinguishes an uninitialized
+	// ad-hoc test owner from an explicit FAIL snapshot.
+	ddlInTransaction         enums.DdlInTransactionMode
+	ddlInTransactionCaptured bool
+	// hasUserWork is the conservative owner-owned history bit for
+	// CLI_DDL_IN_TRANSACTION_MODE emptiness. Constructor BeginTransaction,
+	// TRANSACTION_TIMEOUT firstUse, and heartbeat do not set it. Physical
+	// reconstruction and ROLLBACK TO must not clear it.
+	hasUserWork bool
 	// firstUse is set at the first real read/write database RPC for this
 	// logical owner, including constructor BeginTransaction. It is
 	// independent of whether a timer exists: NULL/0 still freezes SET LOCAL

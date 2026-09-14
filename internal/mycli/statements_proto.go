@@ -50,7 +50,7 @@ type SyncProtoStatement struct {
 	clauses []syncProtoClause
 }
 
-func (SyncProtoStatement) isMutationStatement() {}
+func (SyncProtoStatement) isNonTransactionalMutationStatement() {}
 
 // Equal reports listed-path identity so existing cmp.Diff cases ignore clauses.
 func (s *SyncProtoStatement) Equal(o *SyncProtoStatement) bool {
