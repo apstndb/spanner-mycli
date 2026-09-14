@@ -100,6 +100,11 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 		}
 	}
 
+	// Snapshot repair policy for this execution. Later SET must not change
+	// whether this SYNC attempt is eligible.
+	kind := session.systemVariables.Feature.DefaultSequenceKind
+	mode := session.systemVariables.Feature.DDLExecutionMode
+
 	op, err := session.adminClient.UpdateDatabaseDdl(ctx, &databasepb.UpdateDatabaseDdlRequest{
 		Database:         session.DatabasePath(),
 		Statements:       ddls,
@@ -107,10 +112,12 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 	})
 	if err != nil {
 		teardown()
+		if result, repairErr, ok := tryDefaultSequenceKindRepair(ctx, session, ddls, b, kind, nil, err); ok {
+			return result, repairErr
+		}
 		return nil, fmt.Errorf("error on create op: %w", err)
 	}
 
-	mode := session.systemVariables.Feature.DDLExecutionMode
 	if mode == enums.DDLExecutionModeAsync {
 		session.IncrementSchemaGeneration()
 		return formatAsyncDdlResult(op)
@@ -121,7 +128,14 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 		waitDeadline = asyncWaitDeadline(session.systemVariables.Feature.DDLAsyncWaitTimeout)
 	}
 
-	return waitForDdlOperation(ctx, session, op, ddls, p, bars, teardown, waitDeadline)
+	result, waitErr := waitForDdlOperation(ctx, session, op, ddls, p, bars, teardown, waitDeadline)
+	if waitErr == nil || mode != enums.DDLExecutionModeSync {
+		return result, waitErr
+	}
+	if repaired, repairErr, ok := tryDefaultSequenceKindRepair(ctx, session, ddls, b, kind, op, waitErr); ok {
+		return repaired, repairErr
+	}
+	return result, waitErr
 }
 
 // errWaitBudgetExpired is the internal signal that ASYNC_WAIT's remaining
