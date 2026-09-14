@@ -175,7 +175,7 @@ func TestTransactionTimeoutRejectsLocalChangeAfterArm(t *testing.T) {
 	if err == nil || !errors.Is(err, errTransactionTimeoutFrozen) {
 		t.Fatalf("SET LOCAL after arm: %v", err)
 	}
-	if got := mustGetVar(t, session, "TRANSACTION_TIMEOUT"); got != (time.Hour).String() {
+	if got := mustGetVar(t, session, "TRANSACTION_TIMEOUT"); got != time.Hour.String() {
 		t.Fatalf("rejected LOCAL leaked: %s", got)
 	}
 	mustExec(t, ctx, session, "SET LOCAL TRANSACTION_TIMEOUT = '1h'")
@@ -325,7 +325,7 @@ func TestTransactionTimeoutIdleExpiryThenNewOwner(t *testing.T) {
 	if got := mustGetVar(t, session, "CLI_VERBOSE"); got != "FALSE" {
 		t.Fatalf("LOCAL undo not restored before new owner: %s", got)
 	}
-	if got := mustGetVar(t, session, "TRANSACTION_TIMEOUT"); got != (time.Hour).String() {
+	if got := mustGetVar(t, session, "TRANSACTION_TIMEOUT"); got != time.Hour.String() {
 		t.Fatalf("LOCAL timeout not restored before new owner: %s", got)
 	}
 	ownerB := requireOwner(t, h.tm)
