@@ -16,6 +16,7 @@ package mycli
 
 import (
 	"bytes"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -37,8 +38,8 @@ import (
 type showNullsRow struct {
 	NullCol      spanner.NullString   `spanner:"null_col"`
 	StringCol    string               `spanner:"string_col"`
-	MarkerCol    string               `spanner:"marker_col"`
-	QuotedMark   string               `spanner:"quoted_mark"`
+	AngleCol     string               `spanner:"angle_col"`
+	QuotedNULL   string               `spanner:"quoted_null"`
 	EmptyStr     string               `spanner:"empty_str"`
 	NullInt      spanner.NullInt64    `spanner:"null_int"`
 	NullBytes    []byte               `spanner:"null_bytes"`
@@ -49,6 +50,8 @@ type showNullsRow struct {
 	NestedStruct showNullsStruct      `spanner:"nested_struct"`
 	JSONNull     spanner.NullJSON     `spanner:"json_null"`
 	SQLJSONNull  spanner.NullJSON     `spanner:"sql_json_null"`
+	Ordinary     string               `spanner:"ordinary"`
+	EscapedIn    string               `spanner:"escaped_in"`
 }
 
 type showNullsStruct struct {
@@ -59,22 +62,24 @@ type showNullsStruct struct {
 func showNullsItems() []showNullsRow {
 	return []showNullsRow{{
 		NullCol:    spanner.NullString{Valid: false},
-		StringCol:  "NULL",
-		MarkerCol:  showNullsMarker,
-		QuotedMark: `"` + showNullsMarker + `"`,
+		StringCol:  showNullsLiteral,
+		AngleCol:   "<NULL>",
+		QuotedNULL: `"NULL"`,
 		EmptyStr:   "",
 		NullInt:    spanner.NullInt64{Valid: false},
 		NullBytes:  nil,
 		EmptyBytes: []byte{},
 		NullArr:    nil,
 		EmptyArr:   []string{},
-		Nested:     []spanner.NullString{{Valid: false}, {StringVal: "NULL", Valid: true}},
+		Nested:     []spanner.NullString{{Valid: false}, {StringVal: "NULL", Valid: true}, {StringVal: `"NULL"`, Valid: true}},
 		NestedStruct: showNullsStruct{
 			A: spanner.NullString{Valid: false},
 			B: "NULL",
 		},
 		JSONNull:    spanner.NullJSON{Value: nil, Valid: true},
 		SQLJSONNull: spanner.NullJSON{Valid: false},
+		Ordinary:    "abc",
+		EscapedIn:   strconv.Quote(`"NULL"`),
 	}}
 }
 
@@ -160,8 +165,81 @@ func TestApplyShowNullsDisplayPreservesInput(t *testing.T) {
 	if fc.GetNullString() != "NULL" {
 		t.Fatal("enabled helper mutated the input preset")
 	}
-	if updated.GetNullString() != showNullsMarker {
-		t.Fatalf("enabled NullString = %q", updated.GetNullString())
+	if updated.GetNullString() != "NULL" {
+		t.Fatalf("enabled NullString = %q, want existing NULL spelling", updated.GetNullString())
+	}
+	sqlNull, err := updated.FormatToplevelColumn(gcvctor.NullFromCode(sppb.TypeCode_STRING))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lit, err := updated.FormatToplevelColumn(gcvctor.StringValue(showNullsLiteral))
+	if err != nil {
+		t.Fatal(err)
+	}
+	angle, err := updated.FormatToplevelColumn(gcvctor.StringValue("<NULL>"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	quoted, err := updated.FormatToplevelColumn(gcvctor.StringValue(`"NULL"`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	already := strconv.Quote(`"NULL"`)
+	escaped, err := updated.FormatToplevelColumn(gcvctor.StringValue(already))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ordinary, err := updated.FormatToplevelColumn(gcvctor.StringValue("abc"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sqlNull != "NULL" || lit != strconv.Quote(showNullsLiteral) || angle != "<NULL>" || quoted != strconv.Quote(`"NULL"`) || escaped != strconv.Quote(already) || ordinary != "abc" {
+		t.Fatalf("enabled seam sql=%q lit=%q angle=%q quoted=%q escaped=%q ordinary=%q", sqlNull, lit, angle, quoted, escaped, ordinary)
+	}
+}
+
+func TestApplyShowNullsDisplayTargetedQuoting(t *testing.T) {
+	t.Parallel()
+	fc, err := decoder.FormatConfigWithProto(nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err := applyShowNullsDisplay(fc, true, enums.DisplayModeTable)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	alreadyEscaped := strconv.Quote(`"NULL"`)
+	cases := []struct {
+		name string
+		val  spanner.GenericColumnValue
+		want string
+	}{
+		{"sql null", gcvctor.NullFromCode(sppb.TypeCode_STRING), "NULL"},
+		{"literal NULL", gcvctor.StringValue(showNullsLiteral), strconv.Quote(showNullsLiteral)},
+		{"quote-prefixed NULL", gcvctor.StringValue(`"NULL"`), strconv.Quote(`"NULL"`)},
+		{"already escaped output", gcvctor.StringValue(alreadyEscaped), strconv.Quote(alreadyEscaped)},
+		{"angle", gcvctor.StringValue("<NULL>"), "<NULL>"},
+		{"ordinary", gcvctor.StringValue("abc"), "abc"},
+		{"empty", gcvctor.StringValue(""), ""},
+		{"nullish", gcvctor.StringValue("NULLISH"), "NULLISH"},
+		{"lowercase null", gcvctor.StringValue("null"), "null"},
+		{"leading space NULL", gcvctor.StringValue(" NULL"), " NULL"},
+		{"quote plus backslash", gcvctor.StringValue(`"\`), strconv.Quote(`"\`)},
+		{"quote plus tab", gcvctor.StringValue("\"\t"), strconv.Quote("\"\t")},
+		{"quote plus newline", gcvctor.StringValue("\"\n"), strconv.Quote("\"\n")},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := updated.FormatToplevelColumn(tc.val)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != tc.want {
+				t.Fatalf("got %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -182,19 +260,16 @@ func TestCLIShowNullsDefaultIdentityAndEnabledContract(t *testing.T) {
 	if strings.Contains(gotOff, "\033[") {
 		t.Fatalf("colors-off TABLE leaked ANSI:\n%s", gotOff)
 	}
-	if !strings.Contains(gotOff, "| NULL     | NULL       | <NULL>     |") {
+	if !strings.Contains(gotOff, "| NULL     | NULL       | <NULL>    |") {
 		t.Fatalf("default TABLE should collide SQL NULL with STRING NULL:\n%s", gotOff)
 	}
 
 	gotOn := printShowNulls(t, &on, header, md, rawRows)
-	if !strings.Contains(gotOn, "| <NULL>   | NULL       | \"<NULL>\"   |") {
+	if !strings.Contains(gotOn, `| NULL     | "NULL"     | <NULL>    |`) {
 		t.Fatalf("enabled TABLE contract mismatch:\n%s", gotOn)
 	}
-	if !strings.Contains(gotOn, "[<NULL>, NULL]") {
+	if !strings.Contains(gotOn, `[NULL, "NULL"]`) {
 		t.Fatalf("nested ARRAY should distinguish SQL NULL from STRING NULL:\n%s", gotOn)
-	}
-	if !strings.Contains(gotOn, "[<NULL>, NULL]") && !strings.Contains(gotOn, "nested_struct") {
-		t.Fatalf("nested STRUCT missing:\n%s", gotOn)
 	}
 
 	cellsOff, err := deriveDisplayRows(&off, &TypedRows{Metadata: md, Rows: rawRows})
@@ -205,8 +280,9 @@ func TestCLIShowNullsDefaultIdentityAndEnabledContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantOff := []string{"NULL", "NULL", showNullsMarker, `"` + showNullsMarker + `"`, "", "NULL", "NULL", "", "NULL", "[]", "[NULL, NULL]"}
-	wantOn := []string{showNullsMarker, "NULL", `"` + showNullsMarker + `"`, `"` + showNullsMarker + `"`, "", showNullsMarker, showNullsMarker, "", showNullsMarker, "[]", "[<NULL>, NULL]"}
+	alreadyEscaped := strconv.Quote(`"NULL"`)
+	wantOff := []string{"NULL", "NULL", "<NULL>", `"NULL"`, "", "NULL", "NULL", "", "NULL", "[]", `[NULL, NULL, "NULL"]`}
+	wantOn := []string{"NULL", strconv.Quote(showNullsLiteral), "<NULL>", strconv.Quote(`"NULL"`), "", "NULL", "NULL", "", "NULL", "[]", `[NULL, "NULL", ` + strconv.Quote(`"NULL"`) + `]`}
 	for i, want := range wantOff {
 		if got := cellsOff[0][i].RawText(); got != want {
 			t.Errorf("default cell %d = %q, want %q", i, got, want)
@@ -217,14 +293,23 @@ func TestCLIShowNullsDefaultIdentityAndEnabledContract(t *testing.T) {
 			t.Errorf("enabled cell %d = %q, want %q", i, got, want)
 		}
 	}
-	if cellsOn[0][11].RawText() != "[<NULL>, NULL]" {
-		t.Errorf("enabled STRUCT = %q, want [<NULL>, NULL]", cellsOn[0][11].RawText())
+	if cellsOff[0][14].RawText() != "abc" || cellsOn[0][14].RawText() != "abc" {
+		t.Errorf("ordinary STRING abc changed: off=%q on=%q", cellsOff[0][14].RawText(), cellsOn[0][14].RawText())
+	}
+	if cellsOff[0][15].RawText() != alreadyEscaped {
+		t.Errorf("default already-escaped = %q, want %q", cellsOff[0][15].RawText(), alreadyEscaped)
+	}
+	if cellsOn[0][15].RawText() != strconv.Quote(alreadyEscaped) {
+		t.Errorf("enabled already-escaped = %q, want %q", cellsOn[0][15].RawText(), strconv.Quote(alreadyEscaped))
+	}
+	if cellsOn[0][11].RawText() != `[NULL, "NULL"]` {
+		t.Errorf("enabled STRUCT = %q, want [NULL, \"NULL\"]", cellsOn[0][11].RawText())
 	}
 	if cellsOn[0][12].RawText() != "null" {
 		t.Errorf("JSON JSON-null = %q, want null", cellsOn[0][12].RawText())
 	}
-	if cellsOn[0][13].RawText() != showNullsMarker {
-		t.Errorf("SQL-null JSON = %q, want %s", cellsOn[0][13].RawText(), showNullsMarker)
+	if cellsOn[0][13].RawText() != "NULL" {
+		t.Errorf("SQL-null JSON = %q, want NULL", cellsOn[0][13].RawText())
 	}
 	if _, ok := cellsOn[0][0].(format.NoWrapCell); !ok {
 		t.Fatalf("enabled SQL NULL cell type %T, want NoWrapCell", cellsOn[0][0])
@@ -235,11 +320,11 @@ func TestCLIShowNullsDefaultIdentityAndEnabledContract(t *testing.T) {
 
 	styledOn := showNullsSysVars(enums.DisplayModeTable, true, enums.StyledModeTrue)
 	styledOut := printShowNulls(t, &styledOn, header, md, rawRows)
-	if !strings.Contains(styledOut, "\033[2m"+showNullsMarker+"\033[0m") {
-		t.Fatalf("styled SQL NULL should keep dim around the marker:\n%s", styledOut)
+	if !strings.Contains(styledOut, "\033[2mNULL\033[0m") {
+		t.Fatalf("styled SQL NULL should keep dim around NULL:\n%s", styledOut)
 	}
-	if !strings.Contains(strings.NewReplacer("\033[2m", "", "\033[0m", "").Replace(styledOut), "| <NULL> ") {
-		t.Fatalf("color-stripped enabled TABLE should still show <NULL>:\n%s", styledOut)
+	if strings.Contains(styledOut, "\033[2m\"NULL\"") {
+		t.Fatalf("quoted STRING NULL must not use NULL dim styling:\n%s", styledOut)
 	}
 
 	vertOn := showNullsSysVars(enums.DisplayModeVertical, true, enums.StyledModeFalse)
@@ -249,8 +334,11 @@ func TestCLIShowNullsDefaultIdentityAndEnabledContract(t *testing.T) {
 	if !strings.Contains(gotVertOff, "null_col: NULL") || !strings.Contains(gotVertOff, "string_col: NULL") {
 		t.Fatalf("VERTICAL default collision missing:\n%s", gotVertOff)
 	}
-	if !strings.Contains(gotVertOn, "null_col: <NULL>") || !strings.Contains(gotVertOn, "string_col: NULL") || !strings.Contains(gotVertOn, `marker_col: "<NULL>"`) {
+	if !strings.Contains(gotVertOn, "null_col: NULL") || !strings.Contains(gotVertOn, `string_col: "NULL"`) || !strings.Contains(gotVertOn, "angle_col: <NULL>") {
 		t.Fatalf("VERTICAL enabled contract mismatch:\n%s", gotVertOn)
+	}
+	if !strings.Contains(gotVertOn, `quoted_null: `+strconv.Quote(`"NULL"`)) || !strings.Contains(gotVertOn, "ordinary: abc") {
+		t.Fatalf("VERTICAL enabled quote-prefix/ordinary mismatch:\n%s", gotVertOn)
 	}
 
 	for _, mode := range []enums.DisplayMode{
@@ -258,7 +346,7 @@ func TestCLIShowNullsDefaultIdentityAndEnabledContract(t *testing.T) {
 	} {
 		sv := showNullsSysVars(mode, true, enums.StyledModeFalse)
 		got := printShowNulls(t, &sv, header, md, rawRows)
-		if !strings.Contains(got, "<NULL>") || !strings.Contains(got, "NULL") {
+		if !strings.Contains(got, `"NULL"`) || !strings.Contains(got, "<NULL>") {
 			t.Fatalf("%s enabled output missing distinction:\n%s", mode, got)
 		}
 	}
@@ -324,7 +412,7 @@ func TestCLIShowNullsStreamingMatchesBuffered(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if render.Spanvalue.GetNullString() != showNullsMarker {
+	if render.Spanvalue.GetNullString() != "NULL" {
 		t.Fatalf("streaming FormatConfig NullString = %q", render.Spanvalue.GetNullString())
 	}
 	transform := spannerRowToRow(render.Spanvalue, render.TypeStyles, render.NullStyle)
@@ -369,8 +457,8 @@ func TestCLIShowNullsPresentationRowsUnchanged(t *testing.T) {
 	if err := printTableData(&sv, 0, &buf, result); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(buf.String(), showNullsMarker) {
-		t.Fatalf("preformatted presentation NULL must stay NULL:\n%s", buf.String())
+	if strings.Contains(buf.String(), `"NULL"`) {
+		t.Fatalf("preformatted presentation NULL must not be quote-wrapped:\n%s", buf.String())
 	}
 	if !strings.Contains(buf.String(), "NULL") {
 		t.Fatalf("expected presentation NULL text:\n%s", buf.String())
@@ -406,7 +494,7 @@ func TestCLIShowNullsPreservesProtoEnumPlugins(t *testing.T) {
 	if diff := cmp.Diff(baseEnum, seamEnum); diff != "" {
 		t.Fatalf("enum formatting changed (-base +seamed):\n%s", diff)
 	}
-	if seamEnum == "NULL" || seamEnum == showNullsMarker {
+	if seamEnum == "NULL" || seamEnum == `"NULL"` {
 		t.Fatalf("enum formatted as null-like %q", seamEnum)
 	}
 
@@ -430,7 +518,7 @@ func TestCLIShowNullsPreservesProtoEnumPlugins(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if baseNull != "NULL" || seamNull != showNullsMarker {
+	if baseNull != "NULL" || seamNull != "NULL" {
 		t.Fatalf("null proto: base=%q seamed=%q", baseNull, seamNull)
 	}
 }
@@ -494,8 +582,15 @@ func TestPrepareAndClientSideFormatContextHonorShowNulls(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if render.Spanvalue.GetNullString() != showNullsMarker {
+	if render.Spanvalue.GetNullString() != "NULL" {
 		t.Fatalf("prepareFormatConfig TABLE NullString = %q", render.Spanvalue.GetNullString())
+	}
+	lit, err := render.Spanvalue.FormatToplevelColumn(gcvctor.StringValue(showNullsLiteral))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lit != `"NULL"` {
+		t.Fatalf("prepareFormatConfig TABLE STRING NULL = %q", lit)
 	}
 
 	csv := showNullsSysVars(enums.DisplayModeCSV, true, enums.StyledModeFalse)
@@ -506,13 +601,27 @@ func TestPrepareAndClientSideFormatContextHonorShowNulls(t *testing.T) {
 	if csvRender.Spanvalue.GetNullString() != "NULL" {
 		t.Fatalf("prepareFormatConfig CSV NullString = %q", csvRender.Spanvalue.GetNullString())
 	}
+	csvLit, err := csvRender.Spanvalue.FormatToplevelColumn(gcvctor.StringValue(showNullsLiteral))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if csvLit != "NULL" {
+		t.Fatalf("prepareFormatConfig CSV STRING NULL = %q, want unquoted", csvLit)
+	}
 
 	fc, _, err := clientSideFormatContext(&sv)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fc.GetNullString() != showNullsMarker {
+	if fc.GetNullString() != "NULL" {
 		t.Fatalf("clientSideFormatContext TABLE NullString = %q", fc.GetNullString())
+	}
+	clientLit, err := fc.FormatToplevelColumn(gcvctor.StringValue(showNullsLiteral))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if clientLit != `"NULL"` {
+		t.Fatalf("clientSideFormatContext TABLE STRING NULL = %q", clientLit)
 	}
 
 	sqlSV := showNullsSysVars(enums.DisplayModeSQLInsert, true, enums.StyledModeFalse)

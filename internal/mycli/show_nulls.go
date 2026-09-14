@@ -15,14 +15,17 @@
 package mycli
 
 import (
+	"strconv"
+	"strings"
+
 	"cloud.google.com/go/spanner"
 	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spanvalue"
 )
 
-// showNullsMarker is the fixed SQL NULL spelling used when CLI_SHOW_NULLS is
-// enabled in an accepted human table format. It is not user-configurable.
-const showNullsMarker = "<NULL>"
+// showNullsLiteral is the exact STRING value that CLI_SHOW_NULLS always quotes.
+// SQL NULL keeps the existing NullString spelling ("NULL").
+const showNullsLiteral = "NULL"
 
 func isShowNullsDisplayMode(mode enums.DisplayMode) bool {
 	switch mode {
@@ -33,30 +36,34 @@ func isShowNullsDisplayMode(mode enums.DisplayMode) bool {
 	}
 }
 
+func needsShowNullsQuote(s string) bool {
+	return s == showNullsLiteral || strings.HasPrefix(s, `"`)
+}
+
 // applyShowNullsDisplay returns a display FormatConfig that, when CLI_SHOW_NULLS
 // is enabled and mode is TABLE / TABLE_COMMENT / TABLE_DETAIL_COMMENT /
-// VERTICAL, renders SQL NULL as <NULL> (including nested ARRAY/STRUCT NULLs
-// via NullString) and quote-wraps an ordinary STRING whose current formatted
-// text is exactly that marker. The input config is not mutated. Shared
-// presets stay untouched. Excluded formats, including SQL-export fallback
-// that still renders as a table, keep their existing bytes.
+// VERTICAL, quotes a non-NULL STRING with strconv.Quote only when its value is
+// exactly NULL or starts with a double quote. SQL NULL keeps the existing
+// NullString spelling, including nested ARRAY/STRUCT NULLs. Other strings,
+// including <NULL>, stay unchanged. The input config is not mutated. Shared
+// presets stay untouched. Excluded formats, including SQL-export fallback that
+// still renders as a table, keep their existing bytes.
 func applyShowNullsDisplay(fc *spanvalue.FormatConfig, showNulls bool, mode enums.DisplayMode) (*spanvalue.FormatConfig, error) {
 	if fc == nil || !showNulls || !isShowNullsDisplayMode(mode) {
 		return fc, nil
 	}
 
-	updated := fc.WithComplexPlugin(spanvalue.PluginFromNullable(quoteShowNullsMarkerString))
-	updated.NullString = showNullsMarker
+	updated := fc.WithComplexPlugin(spanvalue.PluginFromNullable(quoteShowNullsString))
 	if err := updated.Validate(); err != nil {
 		return nil, err
 	}
 	return updated, nil
 }
 
-func quoteShowNullsMarkerString(v spanvalue.NullableValue) (string, error) {
+func quoteShowNullsString(v spanvalue.NullableValue) (string, error) {
 	ns, ok := v.(spanner.NullString)
-	if !ok || !ns.Valid || ns.StringVal != showNullsMarker {
+	if !ok || !ns.Valid || !needsShowNullsQuote(ns.StringVal) {
 		return "", spanvalue.ErrFallthrough
 	}
-	return `"` + showNullsMarker + `"`, nil
+	return strconv.Quote(ns.StringVal), nil
 }

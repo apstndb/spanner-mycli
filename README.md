@@ -1160,7 +1160,7 @@ is unchanged. It does not change when plans are cached or cleared (plain
 > - Set to empty string to disable all type styling.
 > - See [docs/system_variables.md](docs/system_variables.md) for full reference.
 
-> **Note**: `CLI_SHOW_NULLS` (default `FALSE`) is an opt-in TABLE/VERTICAL distinction between SQL NULL and a STRING that spells `NULL`. When `TRUE`, SQL NULL becomes `<NULL>` and a STRING equal to that marker is quote-wrapped as `"<NULL>"`. STRING `NULL` stays `NULL`. This is not a lossless string format: an already-quoted marker can still match the quoted form. CSV, TSV, JSONL, SQL export, TAB, HTML, and XML are unchanged. See [docs/system_variables.md](docs/system_variables.md#cli_show_nulls).
+> **Note**: `CLI_SHOW_NULLS` (default `FALSE`) is an opt-in TABLE/VERTICAL distinction between SQL NULL and a STRING that spells `NULL`. When `TRUE`, SQL NULL stays `NULL`. A non-NULL STRING is quoted with `strconv.Quote` only when its value is exactly `NULL` or starts with `"`. STRING `<NULL>` and other strings stay unchanged. CSV, TSV, JSONL, SQL export, TAB, HTML, and XML are unchanged. See [docs/system_variables.md](docs/system_variables.md#cli_show_nulls).
 
 Table width calculation and wrapping account for 7-bit ANSI escape sequences
 already present in values or headers, independently of CLI-added type styling.

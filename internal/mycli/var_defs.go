@@ -332,7 +332,7 @@ var varDefs = []varDef{
 	},
 	{
 		name:  "CLI_SHOW_NULLS",
-		desc:  "When TRUE, TABLE, TABLE_COMMENT, TABLE_DETAIL_COMMENT, and VERTICAL render SQL NULL as <NULL> and quote-wrap a STRING whose current display text is exactly <NULL>. STRING NULL stays NULL. Default FALSE leaves current bytes unchanged. This is a NULL-versus-string distinction, not a lossless string format: an already-quoted marker string can still match the quoted form. CSV, TSV, JSONL, SQL export, TAB, HTML, and XML are unchanged.",
+		desc:  "When TRUE, TABLE, TABLE_COMMENT, TABLE_DETAIL_COMMENT, and VERTICAL keep SQL NULL as NULL and quote a non-NULL STRING with strconv.Quote only when its value is exactly NULL or starts with a double quote. Other strings, including <NULL>, stay unchanged. Default FALSE leaves current bytes unchanged. CSV, TSV, JSONL, SQL export, TAB, HTML, and XML are unchanged.",
 		scope: scopeSession,
 		bind:  func(sv *systemVariables) Variable { return BoolVar(&sv.Display.ShowNulls) },
 	},
