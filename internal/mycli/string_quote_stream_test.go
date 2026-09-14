@@ -26,6 +26,7 @@ import (
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/apstndb/spancodec"
 	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spanner-mycli/internal/mycli/streamio"
 	"google.golang.org/api/option"
@@ -34,6 +35,37 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/types/known/structpb"
 )
+
+type stringQuoteStreamRow struct {
+	NullCol    spanner.NullString `spanner:"null_col"`
+	StringNULL string             `spanner:"string_null"`
+	EmptyStr   string             `spanner:"empty_str"`
+	CommaStr   string             `spanner:"comma_str"`
+	Ordinary   string             `spanner:"ordinary"`
+}
+
+func mustStringQuoteStreamTyped(t *testing.T) (*sppb.ResultSetMetadata, []*spanner.Row) {
+	t.Helper()
+	enc := spancodec.MustNewRowEncoder[stringQuoteStreamRow]()
+	md, err := enc.ResultSetMetadata()
+	if err != nil {
+		t.Fatalf("ResultSetMetadata: %v", err)
+	}
+	var rows []*spanner.Row
+	for row, err := range enc.Rows([]stringQuoteStreamRow{{
+		NullCol:    spanner.NullString{Valid: false},
+		StringNULL: "NULL",
+		EmptyStr:   "",
+		CommaStr:   "a,b",
+		Ordinary:   "abc",
+	}}) {
+		if err != nil {
+			t.Fatalf("encode: %v", err)
+		}
+		rows = append(rows, row)
+	}
+	return md, rows
+}
 
 var stringQuoteStreamModes = []enums.DisplayMode{
 	enums.DisplayModeTable,
@@ -141,10 +173,31 @@ func newStringQuoteStreamRPCSession(t *testing.T) (*Session, *systemVariables) {
 	return session, live
 }
 
+func joinedStreamingQuoteText(out string) string {
+	var b strings.Builder
+	for line := range strings.SplitSeq(out, "\n") {
+		line = strings.TrimSpace(line)
+		line = strings.TrimPrefix(line, "/*")
+		line = strings.TrimSuffix(line, "*/")
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "+") {
+			continue
+		}
+		line = strings.TrimPrefix(line, "|")
+		line = strings.TrimSuffix(line, "|")
+		b.WriteString(strings.TrimSpace(line))
+	}
+	return b.String()
+}
+
 func assertStringQuoteAUTOContent(t *testing.T, mode enums.DisplayMode, got string) {
 	t.Helper()
+	haystack := got
+	if mode != enums.DisplayModeVertical {
+		haystack = joinedStreamingQuoteText(got)
+	}
 	for _, tok := range []string{strconv.Quote("NULL"), strconv.Quote(""), strconv.Quote("a,b"), "abc"} {
-		if !strings.Contains(got, tok) {
+		if !strings.Contains(haystack, tok) {
 			t.Fatalf("%s missing complete quoted content %q:\n%s", mode, tok, got)
 		}
 	}
@@ -169,7 +222,7 @@ func assertStringQuoteAUTOContent(t *testing.T, mode enums.DisplayMode, got stri
 
 func TestCLIStringQuoteModeStreamingProcessorQuotes(t *testing.T) {
 	t.Parallel()
-	md, rawRows, _ := mustStringQuoteTyped(t)
+	md, rawRows := mustStringQuoteStreamTyped(t)
 	for _, mode := range stringQuoteStreamModes {
 		t.Run(mode.String(), func(t *testing.T) {
 			t.Parallel()
