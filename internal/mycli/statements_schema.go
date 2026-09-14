@@ -156,6 +156,10 @@ func executeInformationSchemaBasedStatementImpl(ctx context.Context, session *Se
 	if err != nil {
 		return nil, err
 	}
+	fc, err = applyStringQuoteDisplay(fc, session.systemVariables.Display.StringQuoteMode, session.systemVariables.Display.CLIFormat)
+	if err != nil {
+		return nil, err
+	}
 
 	iter, _, err := session.txn.RunQuery(ctx, stmt)
 	if err != nil {

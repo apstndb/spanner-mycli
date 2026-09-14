@@ -1103,6 +1103,7 @@ Parser-valid samples (not defaults):
 | `CLI_DATABASE_DIALECT` | `'GOOGLE_STANDARD_SQL'` (`POSTGRESQL` and `DATABASE_DIALECT_UNSPECIFIED` are also accepted; `TRUE` is not) |
 | `STATEMENT_TIMEOUT` | `'2m'` or `NULL` (`NULL` when `--timeout`, config, and `--set` all omit a value) |
 | `CLI_IDLE_TRANSACTION_TIMEOUT` | `'60s'` or `NULL` (`NULL` when `--idle-transaction-timeout`, config, and `--set` all omit a value) |
+| `CLI_STRING_QUOTE_MODE` | `'NONE'` (`AUTO`, `ALWAYS`) |
 | `RPC_PRIORITY` | `'HIGH'` (`MEDIUM`, `LOW`; prefer the short form) |
 | `READ_ONLY_STALENESS` | `'STRONG'` |
 | `CLI_QUERY_MODE` | `'PLAN'` |
@@ -1154,6 +1155,8 @@ is unchanged. It does not change when plans are cached or cleared (plain
 > - Example: `SET CLI_TYPE_STYLES = 'STRING=green:INT64=cyan:NULL=dim';`
 > - Set to empty string to disable all type styling.
 > - See [docs/system_variables.md](docs/system_variables.md) for full reference.
+
+> **Note**: `CLI_STRING_QUOTE_MODE` (default `NONE`) is an opt-in TABLE/VERTICAL STRING quoting policy: `NONE` keeps current bytes, `AUTO` quotes ambiguous strings, `ALWAYS` quotes every non-NULL STRING. AUTO and ALWAYS share `strconv.Quote` (Go-style display escaping, not JSON or SQL encoding). SQL NULL stays `NULL`. CSV, TSV, JSONL, SQL export, TAB, HTML, and XML are unchanged. See [docs/system_variables.md](docs/system_variables.md#cli_string_quote_mode).
 
 Table width calculation and wrapping account for 7-bit ANSI escape sequences
 already present in values or headers, independently of CLI-added type styling.

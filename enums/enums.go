@@ -134,6 +134,17 @@ const (
 	DdlInTransactionModeAutoCommitTransaction
 )
 
+// StringQuoteMode is the human-table STRING quoting policy.
+//
+//go:generate go tool enumer -type=StringQuoteMode -trimprefix=StringQuoteMode -transform=snake_upper
+type StringQuoteMode int
+
+const (
+	StringQuoteModeNone StringQuoteMode = iota
+	StringQuoteModeAuto
+	StringQuoteModeAlways
+)
+
 // IsSQLExport returns true if the display mode is one of the SQL export formats
 func (d DisplayMode) IsSQLExport() bool {
 	return d == DisplayModeSQLInsert || d == DisplayModeSQLInsertOrUpdate || d == DisplayModeSQLInsertOrIgnore

@@ -124,12 +124,20 @@ func prepareFormatConfig(sql string, sysVars *systemVariables, render queryRende
 		render.Spanvalue = decoder.JSONFormatConfig()
 		return render, nil
 	default:
+		var (
+			fc  *spanvalue.FormatConfig
+			err error
+		)
 		if sysVars == nil {
-			fc, err := decoder.FormatConfigWithProto(nil, false)
+			fc, err = decoder.FormatConfigWithProto(nil, false)
+		} else {
+			fc, err = decoder.FormatConfigWithProto(sysVars.Internal.ProtoDescriptor, sysVars.Display.MultilineProtoText)
+		}
+		if err != nil {
 			render.Spanvalue = fc
 			return render, err
 		}
-		fc, err := decoder.FormatConfigWithProto(sysVars.Internal.ProtoDescriptor, sysVars.Display.MultilineProtoText)
+		fc, err = applyStringQuoteDisplay(fc, stringQuoteModeOf(sysVars), render.CLIFormat)
 		render.Spanvalue = fc
 		return render, err
 	}

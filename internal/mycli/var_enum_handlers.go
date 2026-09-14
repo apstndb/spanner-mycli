@@ -283,6 +283,13 @@ func StyledModeVar(ptr *enums.StyledMode) *EnumVar[enums.StyledMode] {
 	}
 }
 
+func StringQuoteModeVar(ptr *enums.StringQuoteMode) *EnumVar[enums.StringQuoteMode] {
+	return &EnumVar[enums.StringQuoteMode]{
+		ptr:    ptr,
+		values: enumerValues(enums.StringQuoteModeValues()),
+	}
+}
+
 // WidthStrategyVar creates an enum handler for WidthStrategy
 func WidthStrategyVar(ptr *enums.WidthStrategy) *EnumVar[enums.WidthStrategy] {
 	return &EnumVar[enums.WidthStrategy]{

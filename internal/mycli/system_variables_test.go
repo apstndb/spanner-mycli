@@ -1057,6 +1057,7 @@ func TestSystemVariables_SetGetOperations(t *testing.T) {
 			"CLI_EXPLAIN_OPERATOR_HEADER":  "Op",
 			"CLI_EXPLAIN_PRINT_SECTIONS":   "ordering,aggregate",
 			"CLI_WIDTH_STRATEGY":           "GREEDY_FREQUENCY",
+			"CLI_STRING_QUOTE_MODE":        "AUTO",
 			"DIRECTED_READ":                "us-east1:READ_ONLY",
 			"DDL_EXECUTION_MODE":           "ASYNC_WAIT",
 			"DDL_ASYNC_WAIT_TIMEOUT":       "5s",

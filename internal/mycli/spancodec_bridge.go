@@ -59,6 +59,10 @@ func clientSideFormatContext(sysVars *systemVariables) (*spanvalue.FormatConfig,
 	}
 
 	fc, err := decoder.FormatConfigWithProto(sysVars.Internal.ProtoDescriptor, sysVars.Display.MultilineProtoText)
+	if err != nil {
+		return fc, format.DisplayValues, err
+	}
+	fc, err = applyStringQuoteDisplay(fc, sysVars.Display.StringQuoteMode, sysVars.Display.CLIFormat)
 	return fc, format.DisplayValues, err
 }
 
