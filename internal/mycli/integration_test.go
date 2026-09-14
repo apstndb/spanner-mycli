@@ -750,6 +750,65 @@ func TestParameterStatements(t *testing.T) {
 			},
 		},
 		{
+			desc: "case-insensitive parameter identity binds mixed-case SQL references",
+			stmtResults: []stmtResult{
+				srKeep("SET PARAM MixedCase = 42"),
+				{
+					"SHOW PARAMS",
+					&Result{
+						KeepVariables: true,
+						TableHeader:   typedStringHeader("Param_Name", "Param_Kind", "Param_Value"),
+						AffectedRows:  1,
+						Body:          PresentationBody(sliceOf(toRow("MixedCase", "VALUE", "42"))),
+					},
+				},
+				srKeep("SET PARAM mixedcase = 99"),
+				{
+					"SHOW PARAMS",
+					&Result{
+						KeepVariables: true,
+						TableHeader:   typedStringHeader("Param_Name", "Param_Kind", "Param_Value"),
+						AffectedRows:  1,
+						Body:          PresentationBody(sliceOf(toRow("MixedCase", "VALUE", "99"))),
+					},
+				},
+				{
+					"SELECT @MixedCase AS exact_match, @mixedcase AS folded_match",
+					&Result{
+						AffectedRows: 1,
+						TableHeader: toTableHeader(
+							typector.NameTypeToStructTypeField("exact_match", typector.CodeToSimpleType(sppb.TypeCode_INT64)),
+							typector.NameTypeToStructTypeField("folded_match", typector.CodeToSimpleType(sppb.TypeCode_INT64)),
+						),
+						Body: PresentationBody(sliceOf(toRow("99", "99"))),
+					},
+				},
+				srKeep("UNSET PARAM MIXEDCASE"),
+				{
+					"SHOW PARAMS",
+					&Result{
+						KeepVariables: true,
+						TableHeader:   typedStringHeader("Param_Name", "Param_Kind", "Param_Value"),
+						Body:          PresentationBody(nil),
+					},
+				},
+			},
+		},
+		{
+			desc: "type-only parameter case variants",
+			stmtResults: []stmtResult{
+				srKeep("SET PARAM MixedType INT64"),
+				{
+					"DESCRIBE SELECT @mixedtype AS v",
+					&Result{
+						AffectedRows: 1,
+						TableHeader:  toTableHeader("Column_Name", "Column_Type"),
+						Body:         PresentationBody(sliceOf(toRow("v", "INT64"))),
+					},
+				},
+			},
+		},
+		{
 			desc: "CLI_TRY_PARTITION_QUERY with parameters",
 			stmtResults: []stmtResult{
 				srKeep("SET CLI_TRY_PARTITION_QUERY = TRUE"),
