@@ -509,7 +509,7 @@ var varDefs = []varDef{
 	},
 	{
 		name:    "KEEP_TRANSACTION_ALIVE",
-		desc:    "Whether an explicit read-write owner schedules keepalive heartbeats after the first user SQL. TRUE (default) preserves existing mycli behavior. FALSE prevents heartbeat scheduling for that owner without changing user SQL, COMMIT, ROLLBACK, or cancellation. Java KEEP_TRANSACTION_ALIVE defaults to false; this CLI default is intentionally TRUE. The policy is frozen on the logical owner with the constructor snapshot reused across physical attempts, including SAVEPOINT reconstruction. Changing the session default does not alter an active owner. SET LOCAL is not supported. Disabling keepalive does not disable idle-deadline (#357) or TRANSACTION_TIMEOUT (#482) enforcement; heartbeat traffic is not user activity.",
+		desc:    "Whether an explicit read-write owner schedules keepalive heartbeats after the first user SQL. TRUE (default) preserves existing mycli behavior. FALSE prevents heartbeat scheduling for that owner without changing user SQL, COMMIT, ROLLBACK, or cancellation. Java KEEP_TRANSACTION_ALIVE defaults to false; this CLI default is intentionally TRUE. The policy is frozen on the logical owner with the constructor snapshot reused across physical attempts, including SAVEPOINT reconstruction. Changing the session default does not alter an active owner. SET LOCAL is not supported. Idle-deadline (#357) and TRANSACTION_TIMEOUT (#482) are not implemented; they are separate follow-up work and are not implied by this variable.",
 		scope:   scopeSession,
 		noLocal: true,
 		bind:    func(sv *systemVariables) Variable { return BoolVar(&sv.Transaction.KeepTransactionAlive) },
