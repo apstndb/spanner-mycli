@@ -448,6 +448,25 @@ func (tm *TransactionManager) TransactionState() (mode transactionMode, isActive
 	return attrs.mode, isActive
 }
 
+// showTransactionState is a side-effect-free snapshot for SHOW TRANSACTION.
+// A live logical owner (pending, active RO/RW, or SAVEPOINT recovery-required)
+// supplies isolation and read-only from that owner. When idle, the values are
+// the next-transaction defaults DEFAULT_ISOLATION_LEVEL and READONLY.
+func (tm *TransactionManager) showTransactionState() (isolation sppb.TransactionOptions_IsolationLevel, readOnly bool) {
+	if tm == nil {
+		return sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, false
+	}
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+	if tm.tc != nil {
+		return tm.tc.attrs.isolationLevel, tm.tc.attrs.mode == transactionModeReadOnly
+	}
+	if tm.sysVars == nil {
+		return sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, false
+	}
+	return tm.sysVars.Transaction.DefaultIsolationLevel, tm.sysVars.Transaction.ReadOnly
+}
+
 // TransactionAttrsWithLock returns a copy of all transaction attributes.
 // This allows safe inspection of transaction state without holding the mutex.
 // If no transaction is active, returns a zero-value struct with mode=transactionModeUndetermined.

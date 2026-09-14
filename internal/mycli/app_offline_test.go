@@ -80,6 +80,8 @@ func TestRunOfflineHelp(t *testing.T) {
 			"`HELP;`",
 			"Exit CLI",
 			"`EXIT;`",
+			"`SHOW TRANSACTION ISOLATION LEVEL;`",
+			"`SHOW TRANSACTION READ ONLY;`",
 			// Pipe characters in syntax must be escaped so markdown cells stay intact.
 			"{READ ONLY\\|READ WRITE}",
 		} {
