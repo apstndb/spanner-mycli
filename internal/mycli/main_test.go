@@ -1,6 +1,7 @@
 package mycli
 
 import (
+	"errors"
 	"io"
 	"log/slog"
 	"strings"
@@ -1000,6 +1001,42 @@ func Test_parseParams(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "identical case aliases collapse to the sorted spelling",
+			params: map[string]string{
+				"MixedCase": "1",
+				"mixedcase": "1",
+			},
+			want: map[string]ast.Node{
+				"MixedCase": lo.Must(memefish.ParseExpr("", "1")),
+			},
+		},
+		{
+			name: "identical type aliases collapse to the sorted spelling",
+			params: map[string]string{
+				"MixedType": "INT64",
+				"mixedtype": "INT64",
+			},
+			want: map[string]ast.Node{
+				"MixedType": lo.Must(memefish.ParseType("", "INT64")),
+			},
+		},
+		{
+			name: "conflicting case aliases are rejected",
+			params: map[string]string{
+				"MixedCase": "1",
+				"mixedcase": "2",
+			},
+			wantErr: true,
+		},
+		{
+			name: "value and type case aliases are rejected",
+			params: map[string]string{
+				"MixedCase": "1",
+				"mixedcase": "INT64",
+			},
+			wantErr: true,
+		},
 	}
 
 	for _, test := range tests {
@@ -1034,6 +1071,80 @@ func Test_parseParams(t *testing.T) {
 			}
 		})
 	}
+}
+
+func Test_parseParams_conflictingCaseAliases(t *testing.T) {
+	t.Parallel()
+	_, err := parseParams(map[string]string{
+		"MixedCase": "1",
+		"mixedcase": "2",
+	})
+	if !errors.Is(err, errAmbiguousQueryParameter) {
+		t.Fatalf("error = %v, want errAmbiguousQueryParameter", err)
+	}
+}
+
+func Test_initializeSystemVariables_paramCaseAliases(t *testing.T) {
+	t.Parallel()
+
+	t.Run("single --param spelling is available under case-insensitive bind", func(t *testing.T) {
+		t.Parallel()
+		sv, err := initializeSystemVariables(&spannerOptions{
+			Param: map[string]string{"MixedCase": "42"},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		stmt, err := newStatement("SELECT @mixedcase", sv.Params, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if stmt.SQL != "SELECT @mixedcase" {
+			t.Fatalf("SQL rewritten: %q", stmt.SQL)
+		}
+		if _, ok := stmt.Params["mixedcase"]; !ok {
+			t.Fatalf("bound keys = %v, want mixedcase", stmt.Params)
+		}
+	})
+
+	t.Run("conflicting opts.Param aliases fail initialization", func(t *testing.T) {
+		t.Parallel()
+		_, err := initializeSystemVariables(&spannerOptions{
+			Param: map[string]string{
+				"MixedCase": "1",
+				"mixedcase": "2",
+			},
+		})
+		if !errors.Is(err, errAmbiguousQueryParameter) {
+			t.Fatalf("error = %v, want errAmbiguousQueryParameter", err)
+		}
+	})
+
+	t.Run("identical opts.Param aliases collapse to one stored spelling", func(t *testing.T) {
+		t.Parallel()
+		sv, err := initializeSystemVariables(&spannerOptions{
+			Param: map[string]string{
+				"MixedCase": "1",
+				"mixedcase": "1",
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := sv.Params["MixedCase"]; !ok {
+			t.Fatalf("missing MixedCase: %v", sv.Params)
+		}
+		if _, ok := sv.Params["mixedcase"]; ok {
+			t.Fatalf("identical alias was not collapsed: %v", sv.Params)
+		}
+		stmt, err := newStatement("SELECT @MIXEDCASE", sv.Params, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := stmt.Params["MIXEDCASE"]; !ok {
+			t.Fatalf("bound keys = %v, want MIXEDCASE", stmt.Params)
+		}
+	})
 }
 
 func Test_createSystemVariablesFromOptions(t *testing.T) {

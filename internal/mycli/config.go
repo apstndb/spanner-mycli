@@ -135,7 +135,7 @@ type spannerOptions struct {
 	DirectedRead        string            `name:"directed-read" help:"Directed read option (replica_location:replica_type). The replica_type is optional and either READ_ONLY or READ_WRITE"`
 	SQL                 string            `name:"sql" hidden:"" help:"Hidden alias of --execute for gcloud spanner databases execute-sql compatibility"`
 	Set                 map[string]string `name:"set" mapsep:"none" help:"Set system variables e.g. --set=name1=value1 --set=name2=value2"`
-	Param               map[string]string `name:"param" mapsep:"none" help:"Set query parameters, it can be literal or type(EXPLAIN/DESCRIBE only) e.g. --param=\"p1='string_value'\" --param=p2=FLOAT64"`
+	Param               map[string]string `name:"param" mapsep:"none" help:"Set query parameters, it can be literal or type(EXPLAIN/DESCRIBE only). Names are case-insensitive; conflicting case aliases are rejected; identical aliases collapse to one name. e.g. --param=\"p1='string_value'\" --param=p2=FLOAT64"`
 	ProtoDescriptorFile string            `name:"proto-descriptor-file" help:"Path of a file that contains a protobuf-serialized google.protobuf.FileDescriptorSet message."`
 	Insecure            *bool             `name:"insecure" help:"Skip TLS verification and permit plaintext gRPC. --skip-tls-verify is an alias."`
 	SkipTlsVerify       *bool             `name:"skip-tls-verify" hidden:"" help:"Hidden alias of --insecure from original spanner-cli"`
@@ -303,7 +303,12 @@ func ValidateSpannerOptions(opts *spannerOptions) error {
 	return nil
 }
 
-// parseParams converts command-line parameters to AST nodes for queries.
+// parseParams converts command-line --param map entries to AST nodes.
+// Kong's map[string]string does not retain input order for differently cased
+// keys, so this function does not invent an order. Conflicting case aliases
+// (different stored kind or memefish SQL() rendering) are rejected
+// deterministically. Identical aliases collapse to one stored spelling, the
+// lexicographically first key, before the map is exposed to SHOW PARAMS.
 func parseParams(paramMap map[string]string) (map[string]ast.Node, error) {
 	params := make(map[string]ast.Node)
 	for k, v := range paramMap {
@@ -319,6 +324,10 @@ func parseParams(paramMap map[string]string) (map[string]ast.Node, error) {
 			params[k] = expr
 		}
 	}
+	if err := checkParamMapAmbiguity(params); err != nil {
+		return nil, fmt.Errorf("error on parsing --param: %w", err)
+	}
+	collapseIdenticalParamAliases(params)
 	return params, nil
 }
 

@@ -17,7 +17,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"maps"
 	"regexp"
 	"slices"
 	"strconv"
@@ -816,8 +815,15 @@ func newStatement(sql string, params map[string]ast.Node, includeType bool) (spa
 
 	filteredParams := make(map[string]ast.Node)
 	for _, name := range usedParamNames {
-		if _, ok := params[name]; ok {
-			filteredParams[name] = params[name]
+		node, ok, err := lookupParam(params, name)
+		if err != nil {
+			return spanner.Statement{}, err
+		}
+		if ok {
+			// Bind under the first SQL spelling of this logical name. The SQL
+			// bytes are not rewritten. Spanner matches later case variants of
+			// the same name without a second RPC key.
+			filteredParams[name] = node
 		}
 	}
 
@@ -832,18 +838,23 @@ func newStatement(sql string, params map[string]ast.Node, includeType bool) (spa
 }
 
 func usedQueryParameterNames(s string) ([]string, error) {
-	set := make(map[string]struct{})
+	var names []string
 	for tok, err := range gsqlutils.NewLexerSeq("", s) {
 		if err != nil {
 			return nil, err
 		}
-
-		if tok.Kind == token.TokenParam {
-			set[tok.AsString] = struct{}{}
+		if tok.Kind != token.TokenParam {
+			continue
 		}
+		name := tok.AsString
+		if slices.ContainsFunc(names, func(existing string) bool {
+			return strings.EqualFold(existing, name)
+		}) {
+			continue
+		}
+		names = append(names, name)
 	}
-
-	return slices.Sorted(maps.Keys(set)), nil
+	return names, nil
 }
 
 // formatUpdateDatabaseDdlRows formats UpdateDatabaseDdlMetadata into rows for SHOW OPERATION format
