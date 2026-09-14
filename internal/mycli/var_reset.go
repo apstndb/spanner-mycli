@@ -32,8 +32,9 @@ func (sv *systemVariables) CaptureStartupSnapshots() error {
 }
 
 // Reset restores one canonical name or alias to its captured startup snapshot.
-// It does not retire SET LOCAL undo; persistent RESET statements do that after
-// the whole operation succeeds. Single-variable parser/help belong to #960.
+// It does not retire SET LOCAL undo. Persistent RESET statements must use
+// prepareReset plus commitPersistentReset so targeted undo is retired after
+// the whole operation succeeds.
 func (sv *systemVariables) Reset(name string) error {
 	sv.ensureRegistry()
 	return sv.Registry.Reset(name)

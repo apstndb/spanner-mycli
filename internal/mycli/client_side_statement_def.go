@@ -1072,6 +1072,27 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		},
 	},
 	{
+		Descriptions: []clientSideStatementDescription{
+			{
+				Usage:  `Reset a resettable session variable to its startup snapshot`,
+				Syntax: `RESET <name>`,
+				Note:   `Restores the post-default/config/flag/--set startup value of one canonical name or alias. Same exclusions, guards, and LOCAL undo rules as RESET ALL, scoped to that variable. RESET LOCAL and SET x=DEFAULT are not supported.`,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^RESET\s+(?P<name>\S+)$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			name := groups["name"]
+			if strings.EqualFold(name, "LOCAL") {
+				return nil, errors.New("RESET LOCAL is not supported")
+			}
+			return &ResetStatement{VarName: name}, nil
+		},
+		Completion: []fuzzyArgCompletion{{
+			PrefixPattern:  regexp.MustCompile(`(?i)^\s*RESET\s+(\S*)$`),
+			CompletionType: fuzzyCompleteVariable,
+		}},
+	},
+	{
 		// Must precede the generic `SET <name> = <value>` definition so that
 		// LOCAL is consumed as a keyword rather than as a variable name.
 		Descriptions: []clientSideStatementDescription{
