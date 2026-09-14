@@ -847,6 +847,8 @@ BEGIN RO 2021-04-01T23:47:44+00:00 PRIORITY MEDIUM;
 
 Note that transaction-level priority takes precedence over command-level priority.
 
+`COMMIT_PRIORITY` overrides only the Commit RPC. `HIGH`, `MEDIUM`, and `LOW` set that override. `UNSPECIFIED` (the default) inherits the resolved transaction RPC priority, matching previous mycli behavior. That is not the go-sql-spanner default: the Go driver's unset `commit_priority` is `UNSPECIFIED` and does not inherit RPC priority. The effective commit priority is frozen when the physical read-write attempt is constructed, including SAVEPOINT reconstruction. Changing the session default does not alter an active attempt. Query, DML, heartbeat, partitioned DML, read-only, and Admin RPCs keep using their existing priority fields. `SET LOCAL COMMIT_PRIORITY` is not supported.
+
 ## Transaction Tags and Request Tags
 
 You can set transaction tag using `SET TRANSACTION_TAG = "<tag>"`, and request tag using `SET STATEMENT_TAG = "<tag>"`.
@@ -1004,6 +1006,7 @@ For how these and other connection properties map to the official Spanner driver
 | OPTIMIZER_VERSION               | READ_WRITE | `"7"`                                               |
 | OPTIMIZER_STATISTICS_PACKAGE    | READ_WRITE | `"7"`                                               |
 | RPC_PRIORITY                    | READ_WRITE | `"MEDIUM"`                                          |
+| COMMIT_PRIORITY                 | READ_WRITE | `"UNSPECIFIED"`                                     |
 | READ_TIMESTAMP                  | READ_ONLY  | `"2024-11-01T05:28:58.943332+09:00"`                |
 | COMMIT_RESPONSE                 | READ_ONLY  | `"2024-11-01T05:31:11.311894+09:00"`                |
 | TRANSACTION_TAG                 | READ_WRITE | `"app=concert,env=dev,action=update"`               |

@@ -600,10 +600,20 @@ func (tm *TransactionManager) resolveTransactionIsolationLevel(level sppb.Transa
 	return level
 }
 
+// effectiveCommitPriority returns the Commit RPC priority frozen into
+// TransactionOptions. UNSPECIFIED inherits the already-resolved transaction
+// RPC priority; it must not re-read a later session RPC_PRIORITY.
+func effectiveCommitPriority(vars *systemVariables, txnPriority sppb.RequestOptions_Priority) sppb.RequestOptions_Priority {
+	if vars != nil && vars.Transaction.CommitPriority != sppb.RequestOptions_PRIORITY_UNSPECIFIED {
+		return vars.Transaction.CommitPriority
+	}
+	return txnPriority
+}
+
 func transactionOptions(vars *systemVariables, priority sppb.RequestOptions_Priority, isolationLevel sppb.TransactionOptions_IsolationLevel, tag string) spanner.TransactionOptions {
 	return spanner.TransactionOptions{
 		CommitOptions:               spanner.CommitOptions{ReturnCommitStats: vars.Transaction.ReturnCommitStats, MaxCommitDelay: vars.Transaction.MaxCommitDelay},
-		CommitPriority:              priority,
+		CommitPriority:              effectiveCommitPriority(vars, priority),
 		TransactionTag:              tag,
 		ExcludeTxnFromChangeStreams: vars.Transaction.ExcludeTxnFromChangeStreams,
 		IsolationLevel:              isolationLevel,
