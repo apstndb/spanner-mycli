@@ -223,12 +223,8 @@ func joinedStreamingCellText(out string) string {
 		if line == "" || strings.HasPrefix(line, "+") {
 			continue
 		}
-		if strings.HasPrefix(line, "|") {
-			line = strings.TrimPrefix(line, "|")
-		}
-		if strings.HasSuffix(line, "|") {
-			line = strings.TrimSuffix(line, "|")
-		}
+		line = strings.TrimPrefix(line, "|")
+		line = strings.TrimSuffix(line, "|")
 		b.WriteString(strings.TrimSpace(line))
 	}
 	return b.String()
