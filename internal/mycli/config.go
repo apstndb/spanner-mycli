@@ -456,7 +456,9 @@ func createSystemVariablesFromOptions(opts *spannerOptions, features ...Feature)
 	sysVars.Feature.LogLevel = l
 	sysVars.Config.ImpersonateServiceAccount = opts.ImpersonateServiceAccount
 	// --vertexai-project application moved to the GEMINI feature's ApplyFlags (#778).
-	sysVars.Feature.AsyncDDL = opts.Async
+	if opts.Async {
+		sysVars.Feature.DDLExecutionMode = enums.DDLExecutionModeAsync
+	}
 
 	// Handle system command options
 	// Priority: --skip-system-command takes precedence over --system-command
@@ -650,6 +652,13 @@ func initializeSystemVariables(opts *spannerOptions, features ...Feature) (*syst
 		if err := apply(sysVars, opts); err != nil {
 			return nil, err
 		}
+	}
+
+	// Capture RESET baselines after defaults/config/flags/--set and before
+	// --init-command / --init-command-add. Init SQL is ordinary SQL that RESET
+	// ALL may later undo.
+	if err := sysVars.CaptureStartupSnapshots(); err != nil {
+		return nil, err
 	}
 
 	return sysVars, nil

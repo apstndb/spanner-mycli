@@ -11,6 +11,8 @@ var (
 	errSetterInTransaction       = errors.New("can't change variable when there is an active transaction")
 	errSetterInManualBatch       = errors.New("can't change variable while a manual batch is open")
 	errTransactionTagInReadWrite = errors.New("TRANSACTION_TAG cannot be changed while a read-write transaction is active")
+	errResetSnapshotsMissing     = errors.New("RESET ALL: startup snapshots were not captured")
+	errResetUnsupported          = errors.New("variable does not support RESET")
 )
 
 // Error types for proper error handling with errors.Is/As

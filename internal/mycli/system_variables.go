@@ -206,7 +206,8 @@ type FeatureVars struct {
 	// config struct in internal/mycli/feature/llm (#778).
 	EchoExecutedDDL        bool                       // CLI_ECHO_EXECUTED_DDL
 	EchoInput              bool                       // CLI_ECHO_INPUT
-	AsyncDDL               bool                       // CLI_ASYNC_DDL
+	DDLExecutionMode       enums.DDLExecutionMode     // DDL_EXECUTION_MODE
+	DDLAsyncWaitTimeout    time.Duration              // DDL_ASYNC_WAIT_TIMEOUT
 	AutoConnectAfterCreate bool                       // CLI_AUTO_CONNECT_AFTER_CREATE
 	LogLevel               slog.Level                 // CLI_LOG_LEVEL (session-reported; runtime threshold is runtimeLogLevel when bound)
 	DatabaseDialect        databasepb.DatabaseDialect // CLI_DATABASE_DIALECT
@@ -255,11 +256,20 @@ type systemVariables struct {
 	// nil means no session has been created yet.
 	inManualBatch func() bool
 
-	// transactionTagView and setTransactionTagSlot are bound to the live
-	// TransactionManager. nil means no session has been created yet, so the
-	// TRANSACTION_TAG slot is accessed directly.
-	transactionTagView    func() string
-	setTransactionTagSlot func(string) error
+	// transactionTagView, transactionTagSlot, setTransactionTagSlot, and
+	// transactionTagWritable are bound to the live TransactionManager. nil
+	// means no session has been created yet, so the TRANSACTION_TAG slot is
+	// accessed directly. transactionTagSlot is the writable next-owner value
+	// RESET compares; transactionTagView is SHOW (applied RW tag or slot).
+	transactionTagView     func() string
+	transactionTagSlot     func() string
+	setTransactionTagSlot  func(string) error
+	transactionTagWritable func() error
+
+	// startupSnapshots holds explicit supported RESET baselines, keyed by
+	// canonical variable name. Captured after initializeSystemVariables
+	// (defaults/config/flags/--set) and before --init-command / --init-command-add.
+	startupSnapshots map[string]string
 
 	// StreamManager manages tee output functionality
 	StreamManager *streamio.StreamManager
@@ -368,6 +378,9 @@ func (sv *systemVariables) ProjectPath() string {
 	return sv.Connection.ProjectPath()
 }
 
+// defaultDDLAsyncWaitTimeout is the ASYNC_WAIT budget when DDL_ASYNC_WAIT_TIMEOUT is unset.
+const defaultDDLAsyncWaitTimeout = 10 * time.Second
+
 // newSystemVariablesWithDefaults creates a new systemVariables instance with default values.
 // This function ensures consistency between initialization and test expectations.
 func newSystemVariablesWithDefaults() systemVariables {
@@ -401,8 +414,9 @@ func newSystemVariablesWithDefaults() systemVariables {
 			KeepTransactionAlive: true,
 		},
 		Feature: FeatureVars{
-			LogLevel:       slog.LevelWarn,
-			FuzzyFinderKey: "C_T",
+			LogLevel:            slog.LevelWarn,
+			FuzzyFinderKey:      "C_T",
+			DDLAsyncWaitTimeout: defaultDDLAsyncWaitTimeout,
 		},
 
 		// Initialize empty maps to avoid nil

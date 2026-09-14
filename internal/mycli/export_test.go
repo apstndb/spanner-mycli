@@ -63,6 +63,17 @@ func NewSessionWithFeaturesForTest(t *testing.T, features ...Feature) *Session {
 	return s
 }
 
+// InitializeSystemVariablesForTest runs the production startup initializer,
+// including RESET ALL snapshot capture after flags/--set.
+func InitializeSystemVariablesForTest(features ...Feature) error {
+	_, err := initializeSystemVariables(&spannerOptions{
+		ProjectId:  "p",
+		InstanceId: "i",
+		DatabaseId: "d",
+	}, features...)
+	return err
+}
+
 // ListVariablesForTest returns the single-value variable listing backing
 // SHOW VARIABLES and fuzzy variable-name completion, for external
 // enumeration-surface regression tests.

@@ -879,12 +879,12 @@ func TestSystemVariables_SpecialBehaviors(t *testing.T) {
 
 			// Verify other variables are not restricted after session creation
 			{
-				desc:          "CLI_ASYNC_DDL can be changed after session creation",
-				varName:       "CLI_ASYNC_DDL",
-				setName:       "CLI_ASYNC_DDL",
-				setValue:      "true",
+				desc:          "DDL_EXECUTION_MODE can be changed after session creation",
+				varName:       "DDL_EXECUTION_MODE",
+				setName:       "DDL_EXECUTION_MODE",
+				setValue:      "ASYNC",
 				hasSession:    true,
-				expectedValue: "TRUE",
+				expectedValue: "ASYNC",
 			},
 			{
 				desc:          "CLI_VERBOSE can be changed after session creation",
@@ -940,7 +940,7 @@ func TestSystemVariables_SetGetOperations(t *testing.T) {
 			"CLI_VERBOSE", "CLI_ECHO_EXECUTED_DDL", "CLI_ECHO_INPUT", "CLI_USE_PAGER",
 			"CLI_AUTOWRAP", "CLI_ENABLE_HIGHLIGHT", "CLI_PROTOTEXT_MULTILINE",
 			"CLI_MARKDOWN_CODEBLOCK", "CLI_LINT_PLAN", "CLI_SKIP_COLUMN_NAMES",
-			"CLI_ENABLE_PROGRESS_BAR", "CLI_ENABLE_ADC_PLUS", "CLI_ASYNC_DDL",
+			"CLI_ENABLE_PROGRESS_BAR", "CLI_ENABLE_ADC_PLUS",
 			"CLI_TAB_VISUALIZE", "CLI_EXPLAIN_HANGING_INDENT",
 		}
 		for _, name := range boolVars {
@@ -980,6 +980,8 @@ func TestSystemVariables_SetGetOperations(t *testing.T) {
 			"CLI_EXPLAIN_PRINT_SECTIONS":   "ordering,aggregate",
 			"CLI_WIDTH_STRATEGY":           "GREEDY_FREQUENCY",
 			"DIRECTED_READ":                "us-east1:READ_ONLY",
+			"DDL_EXECUTION_MODE":           "ASYNC_WAIT",
+			"DDL_ASYNC_WAIT_TIMEOUT":       "5s",
 		}
 		for name, value := range stringTests {
 			t.Run(name, func(t *testing.T) {
@@ -1117,6 +1119,8 @@ func TestSystemVariables_SetGetOperations(t *testing.T) {
 			"STATEMENT_TIMEOUT":            `"30s"`,
 			"MAX_COMMIT_DELAY":             `"100ms"`,
 			"DIRECTED_READ":                `"us-east1:READ_ONLY"`,
+			"DDL_EXECUTION_MODE":           `"ASYNC"`,
+			"DDL_ASYNC_WAIT_TIMEOUT":       `"15s"`,
 		}
 		for name, quotedValue := range quotedStringTests {
 			t.Run(name, func(t *testing.T) {
@@ -1190,7 +1194,8 @@ func TestCommitResponseVariableInfo(t *testing.T) {
 // CLI_OUTPUT_TEMPLATE_FILE to an empty string (or NULL) must restore the
 // built-in default template (defaultOutputFormat), not nil, and it must match
 // the startup state produced when no --output-template flag is given. This
-// Get/Set round-trip is what RESET ALL relies on.
+// Get/Set empty-path round-trip keeps SET and startup in sync. RESET ALL
+// excludes CLI_OUTPUT_TEMPLATE_FILE (file-backed template reload).
 func TestOutputTemplateFileEmptyRestoresDefault(t *testing.T) {
 	t.Parallel()
 

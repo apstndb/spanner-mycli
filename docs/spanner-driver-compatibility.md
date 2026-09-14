@@ -43,7 +43,7 @@ says otherwise; `java-spanner` versions are given where known.
 | `autocommit_dml_mode` (`Transactional`/`PartitionedNonAtomic`) | yes | yes | `AUTOCOMMIT_DML_MODE` implemented |
 | `auto_batch_dml` | yes | yes | `AUTO_BATCH_DML` implemented |
 | `auto_batch_dml_update_count` / `auto_batch_dml_update_count_verification` | yes (v1.11.0) | yes | not implemented, tracked #401 |
-| `ddl_execution_mode` (`SYNC`/`ASYNC`/`ASYNC_WAIT`) + `ddl_async_wait_timeout` | yes (v1.24.0) | n/a | `CLI_ASYNC_DDL` (bool) approximates; enum rename tracked #485 |
+| `ddl_execution_mode` (`SYNC`/`ASYNC`/`ASYNC_WAIT`) + `ddl_async_wait_timeout` | yes (v1.24.0) | n/a | `DDL_EXECUTION_MODE` (`SYNC` default / `ASYNC` / `ASYNC_WAIT`) + `DDL_ASYNC_WAIT_TIMEOUT` (default 10s). `--async` selects `ASYNC`. The remaining wait budget bounds in-flight GetOperation polls as well as the between-poll wait. Wait-budget expiry is a successful handoff of the still-running operation ID and cancels only the polling RPC, not the server operation; caller/statement cancellation remains an error with that ID; a completed failing LRO remains a failure. `CLI_ASYNC_DDL` was removed (#485). |
 | `directed_read` | yes (v1.26.0) | Connection API Directed Read since the 6.52.x era | `DIRECTED_READ` (session SET/SHOW, location[:READ_ONLY\|READ_WRITE] shorthand plus DirectedReadOptions protobuf JSON, empty clears). SHOW uses shorthand when lossless. SET rejected while a transaction is pending or active. Not applied to RW/DML/heartbeat/PDML. |
 | `transaction_timeout` | yes (v1.22.0) | v6.101.0 | not implemented, tracked #482 |
 | `statement_timeout` | yes (v1.22.0) | connection URL support v6.102.0 | `STATEMENT_TIMEOUT` implemented |
@@ -69,8 +69,8 @@ says otherwise; `java-spanner` versions are given where known.
 |-----------|----------------|--------------|----------------------|
 | `SET LOCAL <name> = <value>` | statement-scoped state (v1.22.0) | JDBC `SET LOCAL` | implemented (#691) |
 | Named query parameters (`SET PARAM` / `--param`) | case-insensitive name matching on bind | JDBC `PreparedStatement` names | case-insensitive logical identity (#958). Sequential `SET PARAM` updates one binding and keeps the first stored spelling. Binding uses the first SQL occurrence's spelling without rewriting SQL; Spanner matches later case variants in the same statement. `--param` is a `map[string]string` (no retained order for differently cased keys); conflicting case aliases are rejected. Identical aliases (same kind and memefish `SQL()` rendering) collapse to one stored spelling (lexicographically first) before `SHOW PARAMS`. |
-| `RESET ALL` | `RESET <property>` exists | JDBC `RESET ALL` | not implemented, tracked #484 (varDef series #725 PR5) |
-| `RESET <single property>` | yes | yes | not implemented (candidate gap) |
+| `RESET ALL` | `RESET <property>` exists | JDBC `RESET ALL` | implemented (#484). Restores values captured after defaults/config/flags/--set, before `--init-command` / `--init-command-add`. File-backed descriptors/templates, opaque graphs, connection identity, stream/output handles, and unimplemented placeholders are excluded. Ordinary RESET is persistent like SET: after the whole operation succeeds it retires only the targeted LOCAL undo entries, including equal-value resets. A rejected RESET ALL changes neither values nor undo. Single-variable `RESET <name>` is tracked #960. |
+| `RESET <single property>` | yes | yes | not implemented, tracked #960 |
 | `SAVEPOINT` / `RELEASE` / `ROLLBACK TO` | not in the go driver | java-spanner Connection API since 2023 | `CLI_SAVEPOINT_SUPPORT` (`DISABLED` default, `ENABLED`). Client-emulated replay with result validation; not native Spanner savepoints. Deltas vs Java: disabled by default, synchronous reconstruction, no `FAIL_AFTER_ROLLBACK`, exact-case identifier names, 128 code-point CLI limit. See [docs/savepoint.md](savepoint.md). |
 | `SHOW TRANSACTION ISOLATION LEVEL` / `SHOW TRANSACTION READ ONLY` | yes (v1.26.0) | `SHOW DEFAULT_TRANSACTION_ISOLATION` v6.106.0 | `SHOW TRANSACTION ISOLATION LEVEL` and `SHOW TRANSACTION READ ONLY` implemented (#959). Side-effect-free inspection of the current logical owner (pending, active RO/RW, SAVEPOINT recovery). Idle sessions report next-transaction `DEFAULT_ISOLATION_LEVEL` / `READONLY`. `UNSPECIFIED` isolation means the database default; it is not a guessed server isolation. PostgreSQL `DEFERRABLE` / `SHOW TRANSACTION <var>` aliases are tracked with #230. |
 | `RUN PARTITIONED QUERY <select>` | yes (v1.24.0) | — | `RUN PARTITIONED QUERY` implemented |
@@ -92,7 +92,7 @@ tracking issue. They are listed here so the gap is not lost:
   landed in #959; remaining aliases are tracked with #230.
 - `default_sequence_kind` (with auto-set on DDL failure) — both reference drivers
   converged on it.
-- `RESET <single property>` (the non-`ALL` form).
+- `RESET <single property>` (the non-`ALL` form) — tracked #960.
 - `max_partitions` connection property.
 - `transaction_isolation` PG alias for `isolation_level`.
 

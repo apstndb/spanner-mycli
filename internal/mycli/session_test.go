@@ -690,8 +690,15 @@ func TestNewAdminSessionWithFactoriesClosesNothingWhenAdminCreationFails(t *test
 
 func assertCallbacksUnbound(t *testing.T, sv *systemVariables) {
 	t.Helper()
-	if sv.inTransaction != nil || sv.transactionTagView != nil || sv.setTransactionTagSlot != nil {
+	if sv.inTransaction != nil || sv.transactionTagView != nil || sv.transactionTagSlot != nil || sv.setTransactionTagSlot != nil || sv.transactionTagWritable != nil {
 		t.Fatal("constructor bound live callbacks")
+	}
+}
+
+func assertTagCallbacksBound(t *testing.T, sv *systemVariables) {
+	t.Helper()
+	if sv.inTransaction == nil || sv.transactionTagView == nil || sv.transactionTagSlot == nil || sv.setTransactionTagSlot == nil || sv.transactionTagWritable == nil {
+		t.Fatal("TRANSACTION_TAG / inTransaction callbacks unbound")
 	}
 }
 
@@ -703,9 +710,7 @@ func TestNewTransactionManagerPublishesCallbacks(t *testing.T) {
 	if tm == nil {
 		t.Fatal("NewTransactionManager returned nil")
 	}
-	if sv.inTransaction == nil || sv.transactionTagView == nil || sv.setTransactionTagSlot == nil {
-		t.Fatal("NewTransactionManager did not bind callbacks")
-	}
+	assertTagCallbacksBound(t, sv)
 	if sv.inTransaction() {
 		t.Fatal("idle manager reported an active transaction")
 	}
@@ -737,6 +742,7 @@ func TestSessionConstructionLeavesExistingCallbacksUntouched(t *testing.T) {
 	sentinelErr := errors.New("live setTransactionTagSlot")
 	sv.inTransaction = func() bool { return true }
 	sv.transactionTagView = func() string { return "live-tag" }
+	sv.transactionTagSlot = func() string { return "live-slot" }
 	sv.setTransactionTagSlot = func(string) error { return sentinelErr }
 
 	var sawLiveDuringClient, sawLiveDuringAdmin bool
@@ -769,7 +775,7 @@ func TestSessionConstructionLeavesExistingCallbacksUntouched(t *testing.T) {
 	if sv.Connection != live {
 		t.Fatalf("live Connection = %+v, want %+v", sv.Connection, live)
 	}
-	if !sv.inTransaction() || sv.transactionTagView() != "live-tag" {
+	if !sv.inTransaction() || sv.transactionTagView() != "live-tag" || sv.transactionTagSlot() != "live-slot" {
 		t.Fatal("construction rebound live callbacks")
 	}
 	if err := sv.setTransactionTagSlot("x"); !errors.Is(err, sentinelErr) {
@@ -841,9 +847,7 @@ func TestSwitchSessionValidatesBeforePublishing(t *testing.T) {
 		if handler.Session != session {
 			t.Fatal("live session pointer changed")
 		}
-		if sv.inTransaction == nil || sv.transactionTagView == nil || sv.setTransactionTagSlot == nil {
-			t.Fatal("live callbacks were cleared")
-		}
+		assertTagCallbacksBound(t, sv)
 	}
 
 	t.Run("client creation failure", func(t *testing.T) {
@@ -1100,9 +1104,7 @@ func TestSwitchSessionValidatesBeforePublishing(t *testing.T) {
 		if !sv.Feature.EchoInput {
 			t.Fatal("USE dropped feature configuration")
 		}
-		if sv.inTransaction == nil || sv.transactionTagView == nil || sv.setTransactionTagSlot == nil {
-			t.Fatal("successful USE left callbacks unbound")
-		}
+		assertTagCallbacksBound(t, sv)
 		if sv.inTransaction() {
 			t.Fatal("adopted session reported an active transaction")
 		}
@@ -1176,9 +1178,7 @@ func TestSwitchSessionValidatesBeforePublishing(t *testing.T) {
 		if sv.Connection.Project != live.Project || sv.Connection.Instance != live.Instance {
 			t.Fatalf("DETACH changed project/instance: %+v", sv.Connection)
 		}
-		if sv.inTransaction == nil || sv.transactionTagView == nil || sv.setTransactionTagSlot == nil {
-			t.Fatal("DETACH reset callbacks to nil")
-		}
+		assertTagCallbacksBound(t, sv)
 		if sv.Registry != registry {
 			t.Fatal("DETACH forked Registry")
 		}

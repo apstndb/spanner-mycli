@@ -16,6 +16,18 @@ type Variable interface {
 	Set(string) error
 }
 
+// resetPreparer validates a RESET assignment without mutating live state.
+// Capture and the prepare/commit primitive only include handlers that implement this.
+type resetPreparer interface {
+	PrepareReset(value string) error
+}
+
+// resetSnapshotter provides the mutable RESET value when that value is not Get().
+// Capture and unchanged-RESET compare ResetSnapshot; SHOW continues to use Get().
+type resetSnapshotter interface {
+	ResetSnapshot() (string, error)
+}
+
 // MultiValueVar is an optional capability for a Variable whose SHOW VARIABLE
 // result has multiple columns (e.g. COMMIT_RESPONSE, which surfaces
 // COMMIT_TIMESTAMP and MUTATION_COUNT). Such a variable's plain Get returns an
@@ -81,6 +93,18 @@ func (h *VarHandler[T]) Set(value string) error {
 	return nil
 }
 
+// PrepareReset parses and validates without assigning to the live pointer.
+func (h *VarHandler[T]) PrepareReset(value string) error {
+	parsed, err := h.parse(value)
+	if err != nil {
+		return err
+	}
+	if h.validate != nil {
+		return h.validate(parsed)
+	}
+	return nil
+}
+
 // ValidValues returns the constrained valid values, if any.
 // Implements ValidValuesEnumerator for VarHandler instances with enumValues set.
 func (h *VarHandler[T]) ValidValues() []string {
@@ -118,6 +142,15 @@ func IntVar(ptr *int64) *VarHandler[int64] {
 		ptr:    ptr,
 		format: func(i int64) string { return strconv.FormatInt(i, 10) },
 		parse:  func(s string) (int64, error) { return strconv.ParseInt(s, 10, 64) },
+	}
+}
+
+// DurationVar creates a handler for non-nullable duration variables.
+func DurationVar(ptr *time.Duration) *VarHandler[time.Duration] {
+	return &VarHandler[time.Duration]{
+		ptr:    ptr,
+		format: func(d time.Duration) string { return d.String() },
+		parse:  time.ParseDuration,
 	}
 }
 
@@ -192,6 +225,7 @@ type CustomVar struct {
 	base         Variable
 	customGetter func() (string, error)
 	customSetter func(string) error
+	prepareReset func(string) error
 }
 
 func (c *CustomVar) Get() (string, error) {
@@ -208,16 +242,35 @@ func (c *CustomVar) Set(value string) error {
 	return c.base.Set(value)
 }
 
+// PrepareReset validates without running a mutating customSetter.
+func (c *CustomVar) PrepareReset(value string) error {
+	if c.prepareReset != nil {
+		return c.prepareReset(value)
+	}
+	if c.base != nil {
+		if p, ok := c.base.(resetPreparer); ok {
+			return p.PrepareReset(value)
+		}
+	}
+	return errResetUnsupported
+}
+
 // Helper function for duration validation
 func durationValidator(min, max *time.Duration) func(*time.Duration) error {
 	return func(d *time.Duration) error {
 		if d == nil {
 			return nil
 		}
-		if min != nil && *d < *min {
-			return fmt.Errorf("duration %v is less than minimum %v", *d, *min)
+		return durationValueValidator(min, max)(*d)
+	}
+}
+
+func durationValueValidator(min, max *time.Duration) func(time.Duration) error {
+	return func(d time.Duration) error {
+		if min != nil && d < *min {
+			return fmt.Errorf("duration %v is less than minimum %v", d, *min)
 		}
-		if max != nil && *d > *max {
+		if max != nil && d > *max {
 			return fmt.Errorf("duration must be at most %v", *max)
 		}
 		return nil

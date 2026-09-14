@@ -48,6 +48,23 @@ func (e *EnumVar[T]) Set(value string) error {
 	return nil
 }
 
+// PrepareReset validates the enum without assigning to the live pointer.
+func (e *EnumVar[T]) PrepareReset(value string) error {
+	upperValue := strings.ToUpper(value)
+	if _, ok := e.values[upperValue]; ok {
+		return nil
+	}
+	if _, ok := e.values[value]; ok {
+		return nil
+	}
+	validValues := make([]string, 0, len(e.values))
+	for k := range e.values {
+		validValues = append(validValues, k)
+	}
+	slices.Sort(validValues)
+	return fmt.Errorf("invalid value \"%s\", must be one of: %s", value, strings.Join(validValues, ", "))
+}
+
 // ValidValues returns sorted valid values as GoogleSQL string literals.
 func (e *EnumVar[T]) ValidValues() []string {
 	keys := slices.Sorted(maps.Keys(e.values))
@@ -134,6 +151,13 @@ func (p *ProtoEnumVar[T]) Set(value string) error {
 	slices.Sort(validValues)
 
 	return fmt.Errorf("invalid value \"%s\", must be one of: %s", value, strings.Join(validValues, ", "))
+}
+
+// PrepareReset validates the proto enum without assigning to the live pointer.
+func (p *ProtoEnumVar[T]) PrepareReset(value string) error {
+	var tmp T
+	h := &ProtoEnumVar[T]{values: p.values, prefix: p.prefix, aliases: p.aliases, ptr: &tmp}
+	return h.Set(value)
 }
 
 // ValidValues returns sorted prefix-stripped valid values as GoogleSQL string literals.
@@ -242,6 +266,10 @@ func DumpCyclicModeVar(ptr *enums.DumpCyclicMode) *EnumVar[enums.DumpCyclicMode]
 
 func SavepointSupportVar(ptr *enums.SavepointSupport) *EnumVar[enums.SavepointSupport] {
 	return &EnumVar[enums.SavepointSupport]{ptr: ptr, values: enumerValues(enums.SavepointSupportValues())}
+}
+
+func DDLExecutionModeVar(ptr *enums.DDLExecutionMode) *EnumVar[enums.DDLExecutionMode] {
+	return &EnumVar[enums.DDLExecutionMode]{ptr: ptr, values: enumerValues(enums.DDLExecutionModeValues())}
 }
 
 func StyledModeVar(ptr *enums.StyledMode) *EnumVar[enums.StyledMode] {

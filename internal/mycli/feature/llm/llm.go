@@ -116,6 +116,21 @@ func (v *enumStringVar) Set(value string) error {
 	return fmt.Errorf("invalid value %q, must be one of: %s", value, strings.Join(v.values, ", "))
 }
 
+// PrepareReset validates without assigning. RESET ALL (#484) requires this so
+// feature-contributed enums can be captured and restored without live mutation.
+func (v *enumStringVar) PrepareReset(value string) error {
+	normalized := strings.ToUpper(value)
+	if _, ok := v.aliases[normalized]; ok {
+		return nil
+	}
+	for _, valid := range v.values {
+		if normalized == valid {
+			return nil
+		}
+	}
+	return fmt.Errorf("invalid value %q, must be one of: %s", value, strings.Join(v.values, ", "))
+}
+
 func (v *enumStringVar) ValidValues() []string {
 	values := make([]string, len(v.values))
 	for i, value := range v.values {
