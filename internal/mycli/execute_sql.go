@@ -385,6 +385,9 @@ func executeSQLImplWithQueryRunner(ctx context.Context, session *Session, sql st
 		if capErr := session.txn.finishQueryCapture(tok, err); err == nil {
 			err = capErr
 		}
+		if tok == nil && session.txn.hasLiveLogicalOwner() {
+			session.txn.noteIdleUserWork(true)
+		}
 		if err == nil {
 			err = session.txn.invokeQueryAfterCollectHook()
 		}

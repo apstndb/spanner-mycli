@@ -83,6 +83,23 @@ type transactionContext struct {
 	deadline       time.Time
 	deadlineCtx    context.Context
 	deadlineCancel context.CancelFunc
+	// idle is the CLI_IDLE_TRANSACTION_TIMEOUT duration captured for this
+	// logical owner. Zero means disabled. idleCaptured distinguishes an
+	// explicit zero from an uninitialized ad-hoc test owner. idleUserWork
+	// is admitted user/database work on this owner (including successful
+	// BEGIN RW/RO that acquired a server transaction, buffered DML/MUTATE,
+	// and SAVEPOINT ops). It is not constructor firstUse and not #402
+	// hasUserWork.
+	idle           time.Duration
+	idleCaptured   bool
+	idleUserWork   bool
+	idleExpired    bool
+	idleNeedsRearm bool
+	idleGen        uint64
+	idleResultHold int
+	idleHold       int
+	idleLastUser   time.Time
+	idleCancel     context.CancelFunc
 	attempt        uint64
 	inFlight       int
 	pending        *captureToken
@@ -148,5 +165,9 @@ func (tc *transactionContext) Close() {
 	if tc.deadlineCancel != nil {
 		tc.deadlineCancel()
 		tc.deadlineCancel = nil
+	}
+	if tc.idleCancel != nil {
+		tc.idleCancel()
+		tc.idleCancel = nil
 	}
 }

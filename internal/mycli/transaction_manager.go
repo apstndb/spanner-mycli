@@ -158,6 +158,11 @@ type TransactionManager struct {
 	// still under tm.mu.
 	nowFunc            func() time.Time
 	timeoutAfterExpire func(*transactionContext)
+	// idleNotice is the one-shot subsequent-command error after idle
+	// expiry. idleAfterExpire runs after a matching owner is retired by
+	// idle expiry, still under tm.mu.
+	idleNotice      error
+	idleAfterExpire func(*transactionContext)
 	// afterEntryRestore runs after ExecuteStatement drains detached SET LOCAL
 	// undo and before the statement-safe retirement barrier. Tests use it to
 	// expire an owner at that exact boundary. Production remains nil. The
@@ -412,7 +417,13 @@ func (tm *TransactionManager) leaveStatement() {
 		tm.statementDepth--
 	}
 	if tm.statementDepth == 0 && tm.expirePendingBlocksLocked() {
-		tm.retireTransactionContextLocked()
+		if tm.tc != nil && tm.tc.idleExpired {
+			tm.rollbackAndRetireIdleLocked(tm.tc)
+		} else {
+			tm.retireTransactionContextLocked()
+		}
+	} else if tm.statementDepth == 0 && tm.tc != nil {
+		tm.maybeRearmIdleLocked(tm.tc)
 	}
 	tm.mu.Unlock()
 	tm.restoreLocalVarsIfIdle()
@@ -429,7 +440,11 @@ func (tm *TransactionManager) syncExpiredOwnerRestore() {
 	}
 	tm.mu.Lock()
 	if tm.expirePendingBlocksLocked() {
-		tm.retireTransactionContextLocked()
+		if tm.tc != nil && tm.tc.idleExpired {
+			tm.rollbackAndRetireIdleLocked(tm.tc)
+		} else {
+			tm.retireTransactionContextLocked()
+		}
 	}
 	tm.mu.Unlock()
 	tm.restoreLocalVarsIfIdle()
@@ -539,6 +554,7 @@ func (tc *transactionContext) publishPhysical(txn transaction) {
 func (tm *TransactionManager) clearTransactionContext() {
 	_ = tm.withTransactionContextWithLock(func(tcPtr **transactionContext) error {
 		tm.retireTransactionContextLocked()
+		tm.idleNotice = nil
 		return nil
 	})
 }
@@ -784,6 +800,7 @@ func (tm *TransactionManager) BeginPendingTransaction(ctx context.Context, isola
 			},
 		}
 		snapshotTransactionTimeoutLocked(tm.tc, tm.sysVars)
+		snapshotIdleTimeoutLocked(tm.tc, tm.sysVars)
 		tm.ensureReplayLocked()
 		return nil
 	})
@@ -877,6 +894,7 @@ func (tm *TransactionManager) BeginReadWriteTransactionLocked(ctx context.Contex
 	if tm.tc == nil {
 		tm.tc = &transactionContext{}
 		snapshotTransactionTimeoutLocked(tm.tc, tm.sysVars)
+		snapshotIdleTimeoutLocked(tm.tc, tm.sysVars)
 		createdOwner = true
 	}
 
@@ -915,6 +933,11 @@ func (tm *TransactionManager) BeginReadWriteTransactionLocked(ctx context.Contex
 	owner.heartbeatFunc = func(ctx context.Context, startedAttempt uint64) {
 		tm.startHeartbeat(ctx, owner, startedAttempt)
 	}
+
+	// A successful constructor that acquired a server transaction starts
+	// the idle quiet interval. Constructor firstUse still does not reset
+	// an already-running idle clock (note is a rearm of the same command).
+	tm.noteIdleUserWorkLocked(true)
 
 	// Heartbeat will be started by EnableHeartbeat() after the first operation.
 	// For implicit transactions, they commit immediately so heartbeat isn't needed.
@@ -1078,6 +1101,9 @@ func (tm *TransactionManager) BeginReadOnlyTransactionLocked(ctx context.Context
 		mode:     transactionModeReadOnly,
 		priority: resolvedPriority,
 	}, txn)
+	snapshotTransactionTimeoutLocked(tm.tc, tm.sysVars)
+	snapshotIdleTimeoutLocked(tm.tc, tm.sysVars)
+	tm.noteIdleUserWorkLocked(true)
 
 	return resultTimestamp, nil
 }
@@ -1625,7 +1651,11 @@ func (tm *TransactionManager) RunInNewOrExistRwTxLocked(ctx context.Context,
 	var metadata *sppb.ResultSetMetadata
 
 	// Execute the function
+	owner.idleHold++
 	affected, plan, metadata, err = f(txn, implicitRWTx)
+	if owner.idleHold > 0 {
+		owner.idleHold--
+	}
 	err = annotateTransactionTimeout(err, owner)
 
 	// Enable heartbeat after any operation (success or failure)
@@ -1640,7 +1670,13 @@ func (tm *TransactionManager) RunInNewOrExistRwTxLocked(ctx context.Context,
 			return nil, err
 		}
 		err = tm.handleOwnerFailureLocked(ctx, err)
+		if tm.tc != nil {
+			tm.noteIdleUserWorkLocked(true)
+		}
 		return nil, fmt.Errorf("transaction was aborted: %w", err)
+	}
+	if !implicitRWTx && tm.tc != nil {
+		tm.noteIdleUserWorkLocked(true)
 	}
 
 	result := &DMLResult{

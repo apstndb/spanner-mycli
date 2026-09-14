@@ -602,6 +602,10 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 		// pager pipe is never a terminal.
 		screenWidth: func() int { return c.resolveScreenWidth(w) },
 	}
+	if c.SessionHandler != nil && c.SessionHandler.txn != nil {
+		c.SessionHandler.txn.beginIdleResultHold()
+		defer c.SessionHandler.txn.endIdleResultHold()
+	}
 	result, err := c.SessionHandler.ExecuteStatementWithOutput(ctx, stmt, out)
 
 	// Stop progress after execution so messages written to w (not the sink)

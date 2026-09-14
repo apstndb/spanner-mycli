@@ -292,6 +292,23 @@ func TestResetKeepTransactionAlive(t *testing.T) {
 	}
 }
 
+func TestResetIdleTransactionTimeout(t *testing.T) {
+	t.Parallel()
+	sv := newSystemVariablesWithDefaultsForTest()
+	if err := sv.CaptureStartupSnapshots(); err != nil {
+		t.Fatal(err)
+	}
+	if err := sv.SetFromSimple("CLI_IDLE_TRANSACTION_TIMEOUT", "60s"); err != nil {
+		t.Fatal(err)
+	}
+	if err := sv.Reset("CLI_IDLE_TRANSACTION_TIMEOUT"); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := sv.Registry.Get("CLI_IDLE_TRANSACTION_TIMEOUT"); got != "NULL" {
+		t.Errorf("CLI_IDLE_TRANSACTION_TIMEOUT = %q, want NULL", got)
+	}
+}
+
 func TestResetCommitPriority(t *testing.T) {
 	t.Parallel()
 	sv := newSystemVariablesWithDefaultsForTest()

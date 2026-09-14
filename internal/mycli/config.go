@@ -173,6 +173,7 @@ type spannerOptions struct {
 	DeploymentEndpoint        string                    `name:"deployment-endpoint" hidden:"" help:"Hidden alias of --endpoint for Google Cloud Spanner CLI compatibility"`
 	EnablePartitionedDML      bool                      `name:"enable-partitioned-dml" help:"Partitioned DML as default (AUTOCOMMIT_DML_MODE=PARTITIONED_NON_ATOMIC)"`
 	Timeout                   string                    `name:"timeout" help:"Statement timeout (e.g., '10s', '5m', '1h'). Omit for 10m on ordinary statements and 24h on partitioned DML."`
+	IdleTransactionTimeout    string                    `name:"idle-transaction-timeout" help:"User-idle transaction timeout (e.g., '60s', '5m'). Omit or empty leaves CLI_IDLE_TRANSACTION_TIMEOUT disabled (NULL)."`
 	Async                     bool                      `name:"async" help:"Return immediately, without waiting for the operation in progress to complete"`
 	TryPartitionQuery         bool                      `name:"try-partition-query" help:"Test whether the query can be executed as partition query without execution"`
 	MCP                       bool                      `name:"mcp" help:"Run as MCP server"`
@@ -662,6 +663,7 @@ func initializeSystemVariables(opts *spannerOptions, features ...Feature) (*syst
 		{"CLI_DATABASE_DIALECT", string(lo.FromPtr(opts.DatabaseDialect)), "--database-dialect"},
 		{"AUTOCOMMIT_DML_MODE", lo.Ternary(opts.EnablePartitionedDML, "PARTITIONED_NON_ATOMIC", ""), "--enable-partitioned-dml"},
 		{"STATEMENT_TIMEOUT", opts.Timeout, "--timeout"},
+		{"CLI_IDLE_TRANSACTION_TIMEOUT", opts.IdleTransactionTimeout, "--idle-transaction-timeout"},
 		{"RPC_PRIORITY", cmp.Or(opts.Priority, "MEDIUM"), "--priority"},
 		{"CLI_QUERY_MODE", string(lo.FromPtr(opts.QueryMode)), "--query-mode"},
 		{"CLI_TRY_PARTITION_QUERY", lo.Ternary(opts.TryPartitionQuery, "TRUE", ""), "--try-partition-query"},

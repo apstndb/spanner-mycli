@@ -92,6 +92,7 @@ func (tm *TransactionManager) TryEnqueueAutomaticDML(stmt spanner.Statement) (bo
 		// late to cover the think/paste interval before COMMIT or a read.
 		tm.tc.EnableHeartbeat()
 		enqueued = true
+		tm.noteIdleUserWorkLocked(true)
 		return nil
 	})
 	return enqueued, err
@@ -155,8 +156,12 @@ func (tm *TransactionManager) flushAutomaticDMLLocked(ctx context.Context) ([]sp
 	}
 	if err != nil {
 		err = tm.handleOwnerFailureLocked(ctx, err)
+		if tm.tc != nil {
+			tm.noteIdleUserWorkLocked(true)
+		}
 		return nil, nil, fmt.Errorf("transaction was aborted: %w", err)
 	}
+	tm.noteIdleUserWorkLocked(true)
 	return dmls, counts, nil
 }
 

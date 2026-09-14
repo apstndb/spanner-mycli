@@ -241,7 +241,11 @@ func (tm *TransactionManager) CreateSavepoint(ctx context.Context, name string) 
 			rs.release(n)
 			return err
 		}
-		return rs.commitSavepoint(name, n)
+		if err := rs.commitSavepoint(name, n); err != nil {
+			return err
+		}
+		tm.noteIdleUserWorkLocked(true)
+		return nil
 	})
 }
 
@@ -262,7 +266,11 @@ func (tm *TransactionManager) ReleaseSavepoint(name string) error {
 		if !tm.capturingLocked() {
 			return errSavepointDisabled
 		}
-		return tm.tc.replay.releaseNamed(name)
+		if err := tm.tc.replay.releaseNamed(name); err != nil {
+			return err
+		}
+		tm.noteIdleUserWorkLocked(true)
+		return nil
 	})
 }
 
@@ -271,7 +279,11 @@ func (tm *TransactionManager) RollbackToSavepoint(ctx context.Context, name stri
 		return err
 	}
 	return tm.withTransactionContextWithLock(func(**transactionContext) error {
-		return tm.rollbackToSavepointLocked(ctx, name)
+		if err := tm.rollbackToSavepointLocked(ctx, name); err != nil {
+			return err
+		}
+		tm.noteIdleUserWorkLocked(true)
+		return nil
 	})
 }
 
