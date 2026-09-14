@@ -868,6 +868,21 @@ func (s *Session) ExecuteStatement(ctx context.Context, stmt Statement) (*Result
 }
 
 func (s *Session) executeStatement(ctx context.Context, stmt Statement, out OperationOutput) (result *Result, err error) {
+	// Owner-aware deferred retirement: enter the statement frame so a
+	// timeout callback can only mark expirePending, then drain any
+	// already-detached undo, run the test seam, and apply the barrier
+	// before statement-timeout defaults are read. Timer goroutines never
+	// call Registry.Set. Nested ExecuteStatement increments depth.
+	if s.txn != nil {
+		s.txn.enterStatement()
+		defer s.txn.leaveStatement()
+		s.txn.restoreLocalVarsIfIdle()
+		if s.txn.afterEntryRestore != nil {
+			s.txn.afterEntryRestore()
+		}
+		s.txn.syncExpiredOwnerRestore()
+	}
+
 	// Validate statement compatibility with current session mode
 	if err := s.ValidateStatementExecution(stmt); err != nil {
 		return nil, err

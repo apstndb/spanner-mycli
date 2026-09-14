@@ -76,6 +76,9 @@ type SetStatement struct {
 func (s *SetStatement) isDetachedCompatible() {}
 
 func (s *SetStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
+	if session.txn != nil {
+		session.txn.syncExpiredOwnerRestore()
+	}
 	sysVars := session.systemVariables
 	sysVars.ensureRegistry()
 	if strings.EqualFold(s.VarName, protoDescriptorsVarName) && session.batch.IsActive() {
@@ -143,6 +146,15 @@ func (s *SetLocalStatement) Execute(ctx context.Context, session *Session, out O
 		return nil, err
 	}
 
+	if def.name == "TRANSACTION_TIMEOUT" {
+		if err := session.txn.applyLocalTransactionTimeout(transactionTimeoutDuration(sysVars)); err != nil {
+			if restoreErr := sysVars.Registry.Set(upperName, oldValue, false); restoreErr != nil {
+				err = errors.Join(err, restoreErr)
+			}
+			return nil, err
+		}
+	}
+
 	if err := session.txn.pushLocalVarUndo(def.name, oldValue); err != nil {
 		// The transaction ended between the check above and the push;
 		// undo the set so the value does not silently outlive the transaction.
@@ -163,6 +175,9 @@ type ResetAllStatement struct{}
 func (s *ResetAllStatement) isDetachedCompatible() {}
 
 func (s *ResetAllStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
+	if session.txn != nil {
+		session.txn.syncExpiredOwnerRestore()
+	}
 	sysVars := session.systemVariables
 	sysVars.ensureRegistry()
 	prep, err := sysVars.Registry.prepareResetAll()
@@ -185,6 +200,9 @@ type ResetStatement struct {
 func (s *ResetStatement) isDetachedCompatible() {}
 
 func (s *ResetStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
+	if session.txn != nil {
+		session.txn.syncExpiredOwnerRestore()
+	}
 	sysVars := session.systemVariables
 	sysVars.ensureRegistry()
 	prep, err := sysVars.Registry.prepareReset([]string{s.VarName})

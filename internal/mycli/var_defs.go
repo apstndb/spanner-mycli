@@ -554,10 +554,19 @@ var varDefs = []varDef{
 	},
 	{
 		name:    "KEEP_TRANSACTION_ALIVE",
-		desc:    "Whether an explicit read-write owner schedules keepalive heartbeats after the first user SQL. TRUE (default) preserves existing mycli behavior. FALSE prevents heartbeat scheduling for that owner without changing user SQL, COMMIT, ROLLBACK, or cancellation. Java KEEP_TRANSACTION_ALIVE defaults to false; this CLI default is intentionally TRUE. The policy is frozen on the logical owner with the constructor snapshot reused across physical attempts, including SAVEPOINT reconstruction. Changing the session default does not alter an active owner. SET LOCAL is not supported. Idle-deadline (#357) and TRANSACTION_TIMEOUT (#482) are not implemented; they are separate follow-up work and are not implied by this variable.",
+		desc:    "Whether an explicit read-write owner schedules keepalive heartbeats after the first user SQL. TRUE (default) preserves existing mycli behavior. FALSE prevents heartbeat scheduling for that owner without changing user SQL, COMMIT, ROLLBACK, or cancellation. Java KEEP_TRANSACTION_ALIVE defaults to false; this CLI default is intentionally TRUE. The policy is frozen on the logical owner with the constructor snapshot reused across physical attempts, including SAVEPOINT reconstruction. Changing the session default does not alter an active owner. SET LOCAL is not supported. Idle-deadline (#357) is not implemented. TRANSACTION_TIMEOUT is a separate logical-owner budget and is not implied by this variable.",
 		scope:   scopeSession,
 		noLocal: true,
 		bind:    func(sv *systemVariables) Variable { return BoolVar(&sv.Transaction.KeepTransactionAlive) },
+	},
+	{
+		name:  "TRANSACTION_TIMEOUT",
+		desc:  "Logical read/write transaction deadline (duration or NULL). NULL or 0 means no additional transaction deadline. The duration is captured for the logical owner; the single total budget starts at the first real database RPC (including constructor BeginTransaction) and is preserved across physical reconstruction. Pending SET LOCAL may select the duration before the first RPC; changing it after first real database use is rejected, including when the selected duration is NULL or 0 and no timer exists. Session SET after BEGIN applies to a later owner. Distinct from STATEMENT_TIMEOUT and from unimplemented user-idle expiry (#357). ABORTED retries (#293) are not implemented; a later retry path must reuse the remaining budget.",
+		scope: scopeSession,
+		bind: func(sv *systemVariables) Variable {
+			return NullableDurationVar(&sv.Transaction.TransactionTimeout).
+				WithValidator(durationValidator(durationPtr(0), nil))
+		},
 	},
 	{
 		name:  "DEFAULT_ISOLATION_LEVEL",
