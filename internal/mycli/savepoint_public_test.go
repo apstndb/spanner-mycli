@@ -350,6 +350,12 @@ func TestSavepointPublicRecoveryAllowlistPreservesState(t *testing.T) {
 	if _, err := execSQL(t, ctx, session, "SHOW PARAMS"); err != nil {
 		t.Fatalf("SHOW PARAMS during recovery: %v", err)
 	}
+	if _, err := execSQL(t, ctx, session, "SHOW TRANSACTION ISOLATION LEVEL"); err != nil {
+		t.Fatalf("SHOW TRANSACTION ISOLATION LEVEL during recovery: %v", err)
+	}
+	if _, err := execSQL(t, ctx, session, "SHOW TRANSACTION READ ONLY"); err != nil {
+		t.Fatalf("SHOW TRANSACTION READ ONLY during recovery: %v", err)
+	}
 
 	mustExec(t, ctx, session, "ROLLBACK TO SAVEPOINT keep")
 	if h.tm.NeedsRecovery() {
