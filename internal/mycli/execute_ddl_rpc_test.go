@@ -312,6 +312,66 @@ func TestExecuteDdlStatementsRPC(t *testing.T) {
 		}
 	})
 
+	t.Run("async wait zero budget preserves completed LRO failure", func(t *testing.T) {
+		t.Parallel()
+		server := newCompletedDDLServer(ddl, commitTS)
+		server.opErr = status.New(codes.FailedPrecondition, "completed DDL failure").Proto()
+		session := newDDLAdminSession(t, server)
+		session.systemVariables.Feature.DDLExecutionMode = enums.DDLExecutionModeAsyncWait
+		session.systemVariables.Feature.DDLAsyncWaitTimeout = 0
+		before := session.SchemaGeneration()
+		got, err := executeDdlStatements(t.Context(), session, []string{ddl})
+		if got != nil {
+			t.Fatalf("result = %+v, want completed LRO failure", got)
+		}
+		if err == nil || strings.Contains(err.Error(), "SHOW OPERATION") {
+			t.Fatalf("error = %v, want completed LRO failure without cancel hint or handoff", err)
+		}
+		if status.Code(err) != codes.FailedPrecondition {
+			t.Fatalf("status.Code = %v, want FailedPrecondition; err = %v", status.Code(err), err)
+		}
+		if !strings.Contains(err.Error(), "completed DDL failure") {
+			t.Fatalf("error = %v, want injected LRO failure", err)
+		}
+		if session.SchemaGeneration() != before+1 {
+			t.Fatalf("schema generation = %d, want %d after accepted op", session.SchemaGeneration(), before+1)
+		}
+		if server.getCalls.Load() != 0 {
+			t.Fatalf("cached completed LRO polled GetOperation %d times, want 0", server.getCalls.Load())
+		}
+		if server.cancelCalls.Load() != 0 {
+			t.Fatalf("CancelOperation called %d times, want 0", server.cancelCalls.Load())
+		}
+	})
+
+	t.Run("async wait zero budget preserves completed LRO deadline failure", func(t *testing.T) {
+		t.Parallel()
+		server := newCompletedDDLServer(ddl, commitTS)
+		server.opErr = status.New(codes.DeadlineExceeded, "operation deadline exceeded").Proto()
+		session := newDDLAdminSession(t, server)
+		session.systemVariables.Feature.DDLExecutionMode = enums.DDLExecutionModeAsyncWait
+		session.systemVariables.Feature.DDLAsyncWaitTimeout = 0
+		got, err := executeDdlStatements(t.Context(), session, []string{ddl})
+		if got != nil {
+			t.Fatalf("result = %+v, want completed LRO deadline failure", got)
+		}
+		if err == nil || strings.Contains(err.Error(), "SHOW OPERATION") {
+			t.Fatalf("error = %v, want terminal LRO failure, not wait-budget or caller cancel", err)
+		}
+		if status.Code(err) != codes.DeadlineExceeded {
+			t.Fatalf("status.Code = %v, want DeadlineExceeded; err = %v", status.Code(err), err)
+		}
+		if !strings.Contains(err.Error(), "operation deadline exceeded") {
+			t.Fatalf("error = %v, want injected LRO failure", err)
+		}
+		if server.getCalls.Load() != 0 {
+			t.Fatalf("cached completed LRO polled GetOperation %d times, want 0", server.getCalls.Load())
+		}
+		if server.cancelCalls.Load() != 0 {
+			t.Fatalf("CancelOperation called %d times, want 0", server.cancelCalls.Load())
+		}
+	})
+
 	t.Run("async wait budget expiry hands off operation id", func(t *testing.T) {
 		t.Parallel()
 		server := newCompletedDDLServer(ddl, commitTS)

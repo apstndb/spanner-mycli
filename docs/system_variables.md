@@ -440,8 +440,10 @@ type/behavior replacement for the removed boolean `CLI_ASYNC_DDL`.
 - **Description**: Maximum time `ASYNC_WAIT` spends waiting before handing off
   the still-running operation ID. Unused in `SYNC` and `ASYNC`. Must be >= 0.
   The remaining budget applies to in-flight GetOperation polls as well as the
-  between-poll wait. Zero expires the wait budget immediately, including
-  before the first poll.
+  between-poll wait. Zero expires the wait budget immediately for a
+  still-pending operation, including before the first GetOperation poll. A
+  terminal result already received from UpdateDatabaseDdl or a preceding poll
+  is reported as-is.
 
 ### CLI_SAVEPOINT_SUPPORT
 

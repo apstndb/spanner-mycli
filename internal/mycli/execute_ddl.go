@@ -164,14 +164,17 @@ func waitForDdlOperation(ctx context.Context, session *Session, op *adminapi.Upd
 	}
 
 	finishWaitErr := func(err error) (*Result, error) {
-		if errors.Is(classifyDdlWaitError(ctx, waitDeadline, err), errWaitBudgetExpired) {
+		// A cached terminal LRO is an actual result, including cancellation
+		// or deadline status codes. The wait budget only applies while the
+		// operation is still pending.
+		if !op.Done() && errors.Is(classifyDdlWaitError(ctx, waitDeadline, err), errWaitBudgetExpired) {
 			return handoff()
 		}
 		teardown()
 		return nil, handleDdlWaitError(session, op, err)
 	}
 
-	metadata, err := pollDdlWithWaitBudget(ctx, waitDeadline, pollDdl)
+	metadata, err := pollDdlWithWaitBudget(ctx, op, waitDeadline, pollDdl)
 	if err != nil {
 		return finishWaitErr(err)
 	}
@@ -190,7 +193,7 @@ func waitForDdlOperation(ctx context.Context, session *Session, op *adminapi.Upd
 				return finishWaitErr(err)
 			}
 
-			metadata, err = pollDdlWithWaitBudget(ctx, waitDeadline, pollDdl)
+			metadata, err = pollDdlWithWaitBudget(ctx, op, waitDeadline, pollDdl)
 			if err != nil {
 				return finishWaitErr(err)
 			}
@@ -266,7 +269,13 @@ func ddlPollContext(ctx context.Context, waitDeadline time.Time) (context.Contex
 	return pollCtx, cancel, nil
 }
 
-func pollDdlWithWaitBudget(ctx context.Context, waitDeadline time.Time, pollDdl func(context.Context) (*databasepb.UpdateDatabaseDdlMetadata, error)) (*databasepb.UpdateDatabaseDdlMetadata, error) {
+func pollDdlWithWaitBudget(ctx context.Context, op *adminapi.UpdateDatabaseDdlOperation, waitDeadline time.Time, pollDdl func(context.Context) (*databasepb.UpdateDatabaseDdlMetadata, error)) (*databasepb.UpdateDatabaseDdlMetadata, error) {
+	// Poll resolves a cached terminal operation without GetOperation. Do that
+	// before applying the wait budget so a completed LRO is not turned into a
+	// successful async handoff.
+	if op.Done() {
+		return pollDdl(ctx)
+	}
 	pollCtx, cancel, err := ddlPollContext(ctx, waitDeadline)
 	if err != nil {
 		return nil, err
@@ -339,7 +348,10 @@ func classifyDdlWaitError(ctx context.Context, waitDeadline time.Time, err error
 func handleDdlWaitError(session *Session, op *adminapi.UpdateDatabaseDdlOperation, err error) error {
 	session.IncrementSchemaGeneration()
 
-	if !isCancellationError(err) {
+	// A completed LRO already has its real outcome, including an operation
+	// that failed with Canceled or DeadlineExceeded. Those are not a local
+	// wait-budget or caller-context cancellation.
+	if op.Done() || !isCancellationError(err) {
 		return err
 	}
 	return ddlCancellationError(op.Name(), err)
@@ -353,11 +365,9 @@ func handleDdlWaitError(session *Session, op *adminapi.UpdateDatabaseDdlOperatio
 // error (codes.Canceled / "context canceled") that does NOT wrap context.Canceled, so errors.Is
 // alone would miss it and the cancellation hint would silently not fire.
 //
-// Tradeoff: a DDL that genuinely fails server-side could in principle carry codes.Canceled or
-// codes.DeadlineExceeded and be misreported as a user cancellation. This is accepted because the
-// in-flight-cancellation window is only reachable through those status codes, so code-based
-// classification is the only way to catch it; misclassification only changes the error text (the
-// invalidation above happens regardless).
+// A completed LRO that failed with those same status codes is excluded by
+// handleDdlWaitError via op.Done() so a known operation failure is not
+// mistaken for expiration of the local polling context.
 func isCancellationError(err error) bool {
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return true
