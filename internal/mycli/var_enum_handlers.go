@@ -268,6 +268,10 @@ func SavepointSupportVar(ptr *enums.SavepointSupport) *EnumVar[enums.SavepointSu
 	return &EnumVar[enums.SavepointSupport]{ptr: ptr, values: enumerValues(enums.SavepointSupportValues())}
 }
 
+func DDLExecutionModeVar(ptr *enums.DDLExecutionMode) *EnumVar[enums.DDLExecutionMode] {
+	return &EnumVar[enums.DDLExecutionMode]{ptr: ptr, values: enumerValues(enums.DDLExecutionModeValues())}
+}
+
 func StyledModeVar(ptr *enums.StyledMode) *EnumVar[enums.StyledMode] {
 	return &EnumVar[enums.StyledMode]{
 		ptr:    ptr,

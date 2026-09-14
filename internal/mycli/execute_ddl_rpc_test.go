@@ -29,8 +29,10 @@ import (
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	adminapi "cloud.google.com/go/spanner/admin/database/apiv1"
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
+	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spanner-mycli/internal/mycli/streamio"
 	"google.golang.org/api/option"
+	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -111,7 +113,7 @@ func TestExecuteDdlStatementsRPC(t *testing.T) {
 		server := newCompletedDDLServer(ddl, commitTS)
 		server.done = false
 		session := newDDLAdminSession(t, server)
-		session.systemVariables.Feature.AsyncDDL = true
+		session.systemVariables.Feature.DDLExecutionMode = enums.DDLExecutionModeAsync
 		before := session.SchemaGeneration()
 		got, err := executeDdlStatements(t.Context(), session, []string{ddl})
 		if err != nil {
@@ -149,7 +151,7 @@ func TestExecuteDdlStatementsRPC(t *testing.T) {
 			done:     false,
 		}
 		session := newDDLAdminSession(t, server)
-		session.systemVariables.Feature.AsyncDDL = true
+		session.systemVariables.Feature.DDLExecutionMode = enums.DDLExecutionModeAsync
 		_, execErr := executeDdlStatements(t.Context(), session, []string{ddl})
 		if execErr == nil || !strings.Contains(execErr.Error(), "failed to get operation metadata") {
 			t.Fatalf("error = %v, want metadata unmarshal failure", execErr)
@@ -254,25 +256,325 @@ func TestExecuteDdlStatementsRPC(t *testing.T) {
 			t.Fatalf("CommitTimestamp = %v, want %v", got.CommitTimestamp, commitTS)
 		}
 	})
+
+	t.Run("async wait success before deadline", func(t *testing.T) {
+		t.Parallel()
+		server := newCompletedDDLServer(ddl, commitTS)
+		session := newDDLAdminSession(t, server)
+		session.systemVariables.Feature.DDLExecutionMode = enums.DDLExecutionModeAsyncWait
+		session.systemVariables.Feature.DDLAsyncWaitTimeout = time.Second
+		session.systemVariables.Feature.EchoExecutedDDL = true
+		before := session.SchemaGeneration()
+		got, err := executeDdlStatements(t.Context(), session, []string{ddl})
+		if err != nil {
+			t.Fatalf("executeDdlStatements() error = %v", err)
+		}
+		if session.SchemaGeneration() != before+1 {
+			t.Fatalf("schema generation = %d, want %d", session.SchemaGeneration(), before+1)
+		}
+		if !got.CommitTimestamp.Equal(commitTS) {
+			t.Fatalf("CommitTimestamp = %v, want %v", got.CommitTimestamp, commitTS)
+		}
+		if got.TableHeader == nil || len(got.presentationRows()) != 1 {
+			t.Fatalf("completed ASYNC_WAIT result = %+v, want echo rows", got)
+		}
+		if got.presentationRows()[0][0].RawText() != ddl+";" {
+			t.Fatalf("executed DDL = %q, want %q", got.presentationRows()[0][0].RawText(), ddl+";")
+		}
+		if server.cancelCalls.Load() != 0 {
+			t.Fatalf("CancelOperation called %d times, want 0", server.cancelCalls.Load())
+		}
+	})
+
+	t.Run("async wait ddl failure before deadline", func(t *testing.T) {
+		t.Parallel()
+		server := newCompletedDDLServer(ddl, commitTS)
+		server.opErr = status.New(codes.FailedPrecondition, "index already exists").Proto()
+		session := newDDLAdminSession(t, server)
+		session.systemVariables.Feature.DDLExecutionMode = enums.DDLExecutionModeAsyncWait
+		session.systemVariables.Feature.DDLAsyncWaitTimeout = time.Second
+		before := session.SchemaGeneration()
+		_, err := executeDdlStatements(t.Context(), session, []string{ddl})
+		if err == nil || strings.Contains(err.Error(), "SHOW OPERATION") {
+			t.Fatalf("error = %v, want completed LRO failure without cancel hint", err)
+		}
+		if status.Code(err) != codes.FailedPrecondition {
+			t.Fatalf("status.Code = %v, want FailedPrecondition; err = %v", status.Code(err), err)
+		}
+		if !strings.Contains(err.Error(), "index already exists") {
+			t.Fatalf("error = %v, want injected LRO failure", err)
+		}
+		if session.SchemaGeneration() != before+1 {
+			t.Fatalf("schema generation = %d, want %d after accepted op", session.SchemaGeneration(), before+1)
+		}
+		if server.cancelCalls.Load() != 0 {
+			t.Fatalf("CancelOperation called %d times, want 0", server.cancelCalls.Load())
+		}
+	})
+
+	t.Run("async wait zero budget preserves completed LRO failure", func(t *testing.T) {
+		t.Parallel()
+		server := newCompletedDDLServer(ddl, commitTS)
+		server.opErr = status.New(codes.FailedPrecondition, "completed DDL failure").Proto()
+		session := newDDLAdminSession(t, server)
+		session.systemVariables.Feature.DDLExecutionMode = enums.DDLExecutionModeAsyncWait
+		session.systemVariables.Feature.DDLAsyncWaitTimeout = 0
+		before := session.SchemaGeneration()
+		got, err := executeDdlStatements(t.Context(), session, []string{ddl})
+		if got != nil {
+			t.Fatalf("result = %+v, want completed LRO failure", got)
+		}
+		if err == nil || strings.Contains(err.Error(), "SHOW OPERATION") {
+			t.Fatalf("error = %v, want completed LRO failure without cancel hint or handoff", err)
+		}
+		if status.Code(err) != codes.FailedPrecondition {
+			t.Fatalf("status.Code = %v, want FailedPrecondition; err = %v", status.Code(err), err)
+		}
+		if !strings.Contains(err.Error(), "completed DDL failure") {
+			t.Fatalf("error = %v, want injected LRO failure", err)
+		}
+		if session.SchemaGeneration() != before+1 {
+			t.Fatalf("schema generation = %d, want %d after accepted op", session.SchemaGeneration(), before+1)
+		}
+		if server.getCalls.Load() != 0 {
+			t.Fatalf("cached completed LRO polled GetOperation %d times, want 0", server.getCalls.Load())
+		}
+		if server.cancelCalls.Load() != 0 {
+			t.Fatalf("CancelOperation called %d times, want 0", server.cancelCalls.Load())
+		}
+	})
+
+	t.Run("async wait zero budget preserves completed LRO deadline failure", func(t *testing.T) {
+		t.Parallel()
+		server := newCompletedDDLServer(ddl, commitTS)
+		server.opErr = status.New(codes.DeadlineExceeded, "operation deadline exceeded").Proto()
+		session := newDDLAdminSession(t, server)
+		session.systemVariables.Feature.DDLExecutionMode = enums.DDLExecutionModeAsyncWait
+		session.systemVariables.Feature.DDLAsyncWaitTimeout = 0
+		got, err := executeDdlStatements(t.Context(), session, []string{ddl})
+		if got != nil {
+			t.Fatalf("result = %+v, want completed LRO deadline failure", got)
+		}
+		if err == nil || strings.Contains(err.Error(), "SHOW OPERATION") {
+			t.Fatalf("error = %v, want terminal LRO failure, not wait-budget or caller cancel", err)
+		}
+		if status.Code(err) != codes.DeadlineExceeded {
+			t.Fatalf("status.Code = %v, want DeadlineExceeded; err = %v", status.Code(err), err)
+		}
+		if !strings.Contains(err.Error(), "operation deadline exceeded") {
+			t.Fatalf("error = %v, want injected LRO failure", err)
+		}
+		if server.getCalls.Load() != 0 {
+			t.Fatalf("cached completed LRO polled GetOperation %d times, want 0", server.getCalls.Load())
+		}
+		if server.cancelCalls.Load() != 0 {
+			t.Fatalf("CancelOperation called %d times, want 0", server.cancelCalls.Load())
+		}
+	})
+
+	t.Run("async wait budget expiry hands off operation id", func(t *testing.T) {
+		t.Parallel()
+		server := newCompletedDDLServer(ddl, commitTS)
+		server.stayPending = true
+		session := newDDLAdminSession(t, server)
+		session.systemVariables.Feature.DDLExecutionMode = enums.DDLExecutionModeAsyncWait
+		session.systemVariables.Feature.DDLAsyncWaitTimeout = 20 * time.Millisecond
+		before := session.SchemaGeneration()
+		got, err := executeDdlStatements(t.Context(), session, []string{ddl})
+		if err != nil {
+			t.Fatalf("wait-budget expiry error = %v, want successful handoff", err)
+		}
+		if session.SchemaGeneration() != before+1 {
+			t.Fatalf("schema generation = %d, want %d", session.SchemaGeneration(), before+1)
+		}
+		if got.AffectedRows != 1 || len(got.presentationRows()) != 1 {
+			t.Fatalf("handoff result = %+v", got)
+		}
+		if got.presentationRows()[0][0].RawText() != "op-ddl" {
+			t.Fatalf("OPERATION_ID = %q, want op-ddl", got.presentationRows()[0][0].RawText())
+		}
+		if got.presentationRows()[0][2].RawText() != "false" {
+			t.Fatalf("DONE = %q, want false", got.presentationRows()[0][2].RawText())
+		}
+		if server.getCalls.Load() < 1 {
+			t.Fatal("ASYNC_WAIT handoff did not poll GetOperation")
+		}
+		if server.cancelCalls.Load() != 0 {
+			t.Fatalf("CancelOperation called %d times, want 0", server.cancelCalls.Load())
+		}
+	})
+
+	t.Run("async wait blocked poll respects budget", func(t *testing.T) {
+		t.Parallel()
+		server := newCompletedDDLServer(ddl, commitTS)
+		server.stayPending = true
+		server.blockGetUntilCancel = true
+		session := newDDLAdminSession(t, server)
+		session.systemVariables.Feature.DDLExecutionMode = enums.DDLExecutionModeAsyncWait
+		session.systemVariables.Feature.DDLAsyncWaitTimeout = 20 * time.Millisecond
+		caller, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+		defer cancel()
+		before := session.SchemaGeneration()
+		started := time.Now()
+		got, err := executeDdlStatements(caller, session, []string{ddl})
+		elapsed := time.Since(started)
+		if err != nil {
+			t.Fatalf("blocked-poll budget expiry error = %v, want successful handoff", err)
+		}
+		if elapsed >= 400*time.Millisecond {
+			t.Fatalf("elapsed %v, want budget-limited handoff well under the 500ms caller guard", elapsed)
+		}
+		if session.SchemaGeneration() != before+1 {
+			t.Fatalf("schema generation = %d, want %d", session.SchemaGeneration(), before+1)
+		}
+		if got.AffectedRows != 1 || len(got.presentationRows()) != 1 {
+			t.Fatalf("handoff result = %+v", got)
+		}
+		if got.presentationRows()[0][0].RawText() != "op-ddl" {
+			t.Fatalf("OPERATION_ID = %q, want op-ddl", got.presentationRows()[0][0].RawText())
+		}
+		if got.presentationRows()[0][2].RawText() != "false" {
+			t.Fatalf("DONE = %q, want false", got.presentationRows()[0][2].RawText())
+		}
+		if server.getCalls.Load() < 1 {
+			t.Fatal("blocked ASYNC_WAIT poll did not invoke GetOperation")
+		}
+		if server.cancelCalls.Load() != 0 {
+			t.Fatalf("CancelOperation called %d times, want 0", server.cancelCalls.Load())
+		}
+	})
+
+	t.Run("async wait caller deadline precedes wait budget", func(t *testing.T) {
+		t.Parallel()
+		server := newCompletedDDLServer(ddl, commitTS)
+		server.stayPending = true
+		server.blockGetUntilCancel = true
+		session := newDDLAdminSession(t, server)
+		session.systemVariables.Feature.DDLExecutionMode = enums.DDLExecutionModeAsyncWait
+		session.systemVariables.Feature.DDLAsyncWaitTimeout = time.Minute
+		caller, cancel := context.WithTimeout(t.Context(), 30*time.Millisecond)
+		defer cancel()
+		before := session.SchemaGeneration()
+		started := time.Now()
+		got, err := executeDdlStatements(caller, session, []string{ddl})
+		elapsed := time.Since(started)
+		if got != nil {
+			t.Fatalf("result = %+v, want caller-deadline error", got)
+		}
+		if err == nil || !strings.Contains(err.Error(), "SHOW OPERATION 'op-ddl'") {
+			t.Fatalf("error = %v, want caller-deadline SHOW OPERATION hint", err)
+		}
+		if !errors.Is(err, context.DeadlineExceeded) && status.Code(err) != codes.DeadlineExceeded {
+			t.Fatalf("error = %v, want DeadlineExceeded cause", err)
+		}
+		if elapsed >= 400*time.Millisecond {
+			t.Fatalf("elapsed %v, want caller deadline, not the 1m wait budget", elapsed)
+		}
+		if session.SchemaGeneration() != before+1 {
+			t.Fatalf("schema generation = %d, want %d", session.SchemaGeneration(), before+1)
+		}
+		if server.cancelCalls.Load() != 0 {
+			t.Fatalf("CancelOperation called %d times, want 0", server.cancelCalls.Load())
+		}
+	})
+
+	t.Run("async wait zero budget skips blocked poll", func(t *testing.T) {
+		t.Parallel()
+		server := newCompletedDDLServer(ddl, commitTS)
+		server.stayPending = true
+		server.blockGetUntilCancel = true
+		session := newDDLAdminSession(t, server)
+		session.systemVariables.Feature.DDLExecutionMode = enums.DDLExecutionModeAsyncWait
+		session.systemVariables.Feature.DDLAsyncWaitTimeout = 0
+		caller, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+		defer cancel()
+		before := session.SchemaGeneration()
+		started := time.Now()
+		got, err := executeDdlStatements(caller, session, []string{ddl})
+		elapsed := time.Since(started)
+		if err != nil {
+			t.Fatalf("zero-budget error = %v, want immediate handoff", err)
+		}
+		if elapsed >= 200*time.Millisecond {
+			t.Fatalf("elapsed %v, want immediate zero-budget handoff", elapsed)
+		}
+		if session.SchemaGeneration() != before+1 {
+			t.Fatalf("schema generation = %d, want %d", session.SchemaGeneration(), before+1)
+		}
+		if got.presentationRows()[0][0].RawText() != "op-ddl" {
+			t.Fatalf("OPERATION_ID = %q, want op-ddl", got.presentationRows()[0][0].RawText())
+		}
+		if server.getCalls.Load() != 0 {
+			t.Fatalf("zero-budget path polled GetOperation %d times, want 0", server.getCalls.Load())
+		}
+		if server.cancelCalls.Load() != 0 {
+			t.Fatalf("CancelOperation called %d times, want 0", server.cancelCalls.Load())
+		}
+	})
+
+	t.Run("async wait caller cancellation", func(t *testing.T) {
+		t.Parallel()
+		server := newCompletedDDLServer(ddl, commitTS)
+		server.stayPending = true
+		server.accepted = make(chan struct{})
+		server.polled = make(chan struct{})
+		session := newDDLAdminSession(t, server)
+		session.systemVariables.Feature.DDLExecutionMode = enums.DDLExecutionModeAsyncWait
+		session.systemVariables.Feature.DDLAsyncWaitTimeout = time.Minute
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		guard, guardCancel := context.WithTimeout(t.Context(), 30*time.Second)
+		defer guardCancel()
+
+		errc := make(chan error, 1)
+		before := session.SchemaGeneration()
+		go func() {
+			_, err := executeDdlStatements(ctx, session, []string{ddl})
+			errc <- err
+		}()
+
+		waitForClosed(t, guard, server.accepted, "accepted UpdateDatabaseDdl")
+		waitForClosed(t, guard, server.polled, "first GetOperation poll")
+		cancel()
+
+		var err error
+		select {
+		case err = <-errc:
+		case <-guard.Done():
+			t.Fatal("timed out waiting for canceled ASYNC_WAIT")
+		}
+		if err == nil || !strings.Contains(err.Error(), "SHOW OPERATION 'op-ddl'") {
+			t.Fatalf("error = %v, want canceled wait hint", err)
+		}
+		if session.SchemaGeneration() != before+1 {
+			t.Fatalf("schema generation = %d, want %d", session.SchemaGeneration(), before+1)
+		}
+		if server.cancelCalls.Load() != 0 {
+			t.Fatalf("CancelOperation called %d times, want 0", server.cancelCalls.Load())
+		}
+	})
 }
 
 type ddlAdminTestServer struct {
 	databasepb.UnimplementedDatabaseAdminServer
 	longrunningpb.UnimplementedOperationsServer
 
-	mu           sync.Mutex
-	updateErr    error
-	getErr       error
-	stayPending  bool
-	done         bool
-	opName       string
-	metadata     *anypb.Any
-	lastUpdate   *databasepb.UpdateDatabaseDdlRequest
-	getCalls     atomic.Int32
-	accepted     chan struct{}
-	acceptedOnce sync.Once
-	polled       chan struct{}
-	pollOnce     sync.Once
+	mu                  sync.Mutex
+	updateErr           error
+	getErr              error
+	opErr               *statuspb.Status
+	stayPending         bool
+	done                bool
+	opName              string
+	metadata            *anypb.Any
+	lastUpdate          *databasepb.UpdateDatabaseDdlRequest
+	getCalls            atomic.Int32
+	cancelCalls         atomic.Int32
+	blockGetUntilCancel bool
+	accepted            chan struct{}
+	acceptedOnce        sync.Once
+	polled              chan struct{}
+	pollOnce            sync.Once
 }
 
 func (s *ddlAdminTestServer) notifyAccepted() {
@@ -331,13 +633,22 @@ func (s *ddlAdminTestServer) operation() *longrunningpb.Operation {
 		Metadata: s.metadata,
 	}
 	if op.Done {
-		resp, err := anypb.New(&emptypb.Empty{})
-		if err != nil {
-			panic(err)
+		if s.opErr != nil {
+			op.Result = &longrunningpb.Operation_Error{Error: proto.Clone(s.opErr).(*statuspb.Status)}
+		} else {
+			resp, err := anypb.New(&emptypb.Empty{})
+			if err != nil {
+				panic(err)
+			}
+			op.Result = &longrunningpb.Operation_Response{Response: resp}
 		}
-		op.Result = &longrunningpb.Operation_Response{Response: resp}
 	}
 	return op
+}
+
+func (s *ddlAdminTestServer) CancelOperation(context.Context, *longrunningpb.CancelOperationRequest) (*emptypb.Empty, error) {
+	s.cancelCalls.Add(1)
+	return &emptypb.Empty{}, nil
 }
 
 func (s *ddlAdminTestServer) UpdateDatabaseDdl(_ context.Context, req *databasepb.UpdateDatabaseDdlRequest) (*longrunningpb.Operation, error) {
@@ -353,17 +664,21 @@ func (s *ddlAdminTestServer) UpdateDatabaseDdl(_ context.Context, req *databasep
 	return op, nil
 }
 
-func (s *ddlAdminTestServer) GetOperation(context.Context, *longrunningpb.GetOperationRequest) (*longrunningpb.Operation, error) {
+func (s *ddlAdminTestServer) GetOperation(ctx context.Context, _ *longrunningpb.GetOperationRequest) (*longrunningpb.Operation, error) {
 	s.getCalls.Add(1)
+	s.notifyPolled()
 	s.mu.Lock()
 	err := s.getErr
+	block := s.blockGetUntilCancel
 	s.mu.Unlock()
 	if err != nil {
 		return nil, err
 	}
-	op := s.operation()
-	s.notifyPolled()
-	return op, nil
+	if block {
+		<-ctx.Done()
+		return nil, status.FromContextError(ctx.Err()).Err()
+	}
+	return s.operation(), nil
 }
 
 func newDDLAdminSession(t *testing.T, server *ddlAdminTestServer) *Session {

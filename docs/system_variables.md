@@ -51,7 +51,6 @@ both `SHOW` and `SET`.
 | `AUTO_BATCH_DML`                  | read,write     | A BOOL indicating whether DML in an explicit read-write transaction is buffered until COMMIT, a later execute-now statement, or RUN BATCH. SET only changes future buffering. The default is false.                                                                                                                                                                                                                                                                                                                                                                   |
 | `AUTO_PARTITION_MODE`             | read,write     | A property of type BOOL indicating whether the connection automatically uses partitioned queries for all queries that are executed.                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `CLI_ANALYZE_COLUMNS`             | read,write     | Go template for analyzing column data.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `CLI_ASYNC_DDL`                   | read,write     | A boolean indicating whether DDL statements should be executed asynchronously. The default is false.                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `CLI_AUTOWRAP`                    | read,write     | Enable automatic line wrapping.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | `CLI_AUTO_CONNECT_AFTER_CREATE`   | read,write     | A boolean indicating whether to automatically connect to a database after CREATE DATABASE. The default is false.                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | `CLI_BIGQUERY_LOCATION`           | read,write     | BigQuery location for queries (e.g. US, EU).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
@@ -124,6 +123,8 @@ both `SHOW` and `SET`.
 | `COMMIT_RESPONSE`                 | read           | The most recent response for a read-write transaction. SHOW VARIABLE COMMIT_RESPONSE returns COMMIT_TIMESTAMP and MUTATION_COUNT columns; SHOW VARIABLES includes those values as COMMIT_TIMESTAMP and MUTATION_COUNT.                                                                                                                                                                                                                                                                                                                                                |
 | `COMMIT_TIMESTAMP`                | read           | The commit timestamp of the last read-write transaction that Spanner committed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | `DATA_BOOST_ENABLED`              | read,write     | A property of type BOOL indicating whether this connection should use Data Boost for partitioned queries. The default is false.                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `DDL_ASYNC_WAIT_TIMEOUT`          | read,write     | Maximum time ASYNC_WAIT spends waiting for a DDL operation before returning the still-running operation ID as a successful asynchronous submission. The remaining budget bounds in-flight GetOperation polls as well as the time between polls. Expiry cancels only the polling RPC and does not cancel the server operation. The default is 10s. Unused in SYNC and ASYNC modes.                                                                                                                                                                                     |
+| `DDL_EXECUTION_MODE`              | read,write     | How DDL statements wait for the Admin long-running operation. SYNC (default) waits for the actual result. ASYNC returns the accepted operation ID immediately. ASYNC_WAIT waits up to DDL_ASYNC_WAIT_TIMEOUT and, on wait-budget expiry, returns the still-running operation ID as a successful asynchronous submission without canceling the server operation. --async selects ASYNC. Replaces CLI_ASYNC_DDL.                                                                                                                                                        |
 | `DEFAULT_ISOLATION_LEVEL`         | read,write     | The transaction isolation level that is used by default for read/write transactions.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `DIRECTED_READ`                   | read,write     | Directed read options for supported read-only queries. Accepts replica_location or replica_location:READ_ONLY\|READ_WRITE shorthand, or DirectedReadOptions protobuf JSON. SHOW uses shorthand when that form is lossless; otherwise protobuf JSON. Empty string clears. SET is rejected while a transaction is pending or active; SET LOCAL is not supported. Not applied to read-write queries, DML, heartbeat, or partitioned DML.                                                                                                                                 |
 | `EXCLUDE_TXN_FROM_CHANGE_STREAMS` | read,write     | Controls whether to exclude recording modifications in current transaction from the allowed tracking change streams(with DDL option allow_txn_exclusion=true).                                                                                                                                                                                                                                                                                                                                                                                                        |
@@ -415,6 +416,42 @@ more explanation than the reference table above.
   - The default `"NULL=dim"` renders NULL values in dim (faint) text
   - Styling only applies when output supports ANSI escape codes (interactive terminal with styled formats)
   - Inspired by `LS_COLORS`, `GCC_COLORS`, and `JQ_COLORS` environment variable patterns
+
+### DDL_EXECUTION_MODE
+
+How DDL statements wait for the Admin long-running operation. This is a
+type/behavior replacement for the removed boolean `CLI_ASYNC_DDL`.
+
+- **Type**: STRING (`SYNC` / `ASYNC` / `ASYNC_WAIT`)
+- **Default**: `SYNC`
+- **Access**: Read/Write
+- **Values**:
+  - `SYNC` waits until the LRO completes and reports its actual result
+    (including a completed failing LRO).
+  - `ASYNC` returns the accepted operation ID immediately. Later DDL failure
+    remains visible through `SHOW OPERATION`. `--async` selects this mode.
+  - `ASYNC_WAIT` waits until completion or `DDL_ASYNC_WAIT_TIMEOUT`. The
+    remaining wait budget bounds the initial GetOperation poll, later polls,
+    and the time between polls. When that separate wait budget expires, the
+    still-running operation ID is returned as a successful asynchronous
+    submission. Expiry cancels only the polling RPC; the server operation is
+    not canceled. Caller or `STATEMENT_TIMEOUT` cancellation remains an error
+    that includes the operation ID.
+- **Migration**: `SET CLI_ASYNC_DDL = TRUE` becomes
+  `SET DDL_EXECUTION_MODE = 'ASYNC'`. `FALSE` is the `SYNC` default.
+
+### DDL_ASYNC_WAIT_TIMEOUT
+
+- **Type**: duration string (for example `10s`, `1m`)
+- **Default**: `10s`
+- **Access**: Read/Write
+- **Description**: Maximum time `ASYNC_WAIT` spends waiting before handing off
+  the still-running operation ID. Unused in `SYNC` and `ASYNC`. Must be >= 0.
+  The remaining budget applies to in-flight GetOperation polls as well as the
+  between-poll wait. Zero expires the wait budget immediately for a
+  still-pending operation, including before the first GetOperation poll. A
+  terminal result already received from UpdateDatabaseDdl or a preceding poll
+  is reported as-is.
 
 ### CLI_SAVEPOINT_SUPPORT
 

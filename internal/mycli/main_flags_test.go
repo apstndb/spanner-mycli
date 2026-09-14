@@ -1443,8 +1443,8 @@ func TestSpecialFlags(t *testing.T) {
 			// If async flag is set, check it's propagated to system variables
 			if tt.wantAsync && err == nil {
 				sysVars := initSysVarsOrFail(t, &gopts.Spanner)
-				if !sysVars.Feature.AsyncDDL {
-					t.Errorf("AsyncDDL not set in system variables when --async flag is used")
+				if sysVars.Feature.DDLExecutionMode != enums.DDLExecutionModeAsync {
+					t.Errorf("DDLExecutionMode = %v, want ASYNC when --async flag is used", sysVars.Feature.DDLExecutionMode)
 				}
 			}
 		})
@@ -1534,7 +1534,16 @@ func TestTimeoutAsyncInteraction(t *testing.T) {
 						t.Errorf("StatementTimeout = %v, want %v", *sysVars.Query.StatementTimeout, *tt.wantTimeout)
 					}
 
-					assertEqual(t, "AsyncDDL", sysVars.Feature.AsyncDDL, &tt.wantAsync)
+					wantMode := enums.DDLExecutionModeSync
+					if tt.wantAsync {
+						wantMode = enums.DDLExecutionModeAsync
+					}
+					if sysVars.Feature.DDLExecutionMode != wantMode {
+						t.Errorf("DDLExecutionMode = %v, want %v", sysVars.Feature.DDLExecutionMode, wantMode)
+					}
+					if sysVars.Feature.DDLAsyncWaitTimeout != defaultDDLAsyncWaitTimeout {
+						t.Errorf("DDLAsyncWaitTimeout = %v, want %v", sysVars.Feature.DDLAsyncWaitTimeout, defaultDDLAsyncWaitTimeout)
+					}
 				}
 			}
 

@@ -145,6 +145,15 @@ func IntVar(ptr *int64) *VarHandler[int64] {
 	}
 }
 
+// DurationVar creates a handler for non-nullable duration variables.
+func DurationVar(ptr *time.Duration) *VarHandler[time.Duration] {
+	return &VarHandler[time.Duration]{
+		ptr:    ptr,
+		format: func(d time.Duration) string { return d.String() },
+		parse:  time.ParseDuration,
+	}
+}
+
 // NullableDurationVar creates a handler for nullable duration variables
 func NullableDurationVar(ptr **time.Duration) *VarHandler[*time.Duration] {
 	return &VarHandler[*time.Duration]{
@@ -252,10 +261,16 @@ func durationValidator(min, max *time.Duration) func(*time.Duration) error {
 		if d == nil {
 			return nil
 		}
-		if min != nil && *d < *min {
-			return fmt.Errorf("duration %v is less than minimum %v", *d, *min)
+		return durationValueValidator(min, max)(*d)
+	}
+}
+
+func durationValueValidator(min, max *time.Duration) func(time.Duration) error {
+	return func(d time.Duration) error {
+		if min != nil && d < *min {
+			return fmt.Errorf("duration %v is less than minimum %v", d, *min)
 		}
-		if max != nil && *d > *max {
+		if max != nil && d > *max {
 			return fmt.Errorf("duration must be at most %v", *max)
 		}
 		return nil
