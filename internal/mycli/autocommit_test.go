@@ -206,6 +206,17 @@ func TestLazyAutocommitEligibilityDispatch(t *testing.T) {
 	if lazyAutocommitEligible(session, &DmlStatement{Dml: "INSERT INTO T (id) VALUES (1)"}) {
 		t.Fatal("manual-batch DML enqueue must not acquire an owner")
 	}
+	profile := sppb.ExecuteSqlRequest_PROFILE
+	session.systemVariables.Query.QueryMode = &profile
+	if !lazyAutocommitEligible(session, &DmlStatement{Dml: "UPDATE T SET x=1 WHERE true"}) {
+		t.Fatal("PROFILE DML in a manual batch must join an owner")
+	}
+	planInBatch := sppb.ExecuteSqlRequest_PLAN
+	session.systemVariables.Query.QueryMode = &planInBatch
+	if lazyAutocommitEligible(session, &DmlStatement{Dml: "UPDATE T SET x=1 WHERE true"}) {
+		t.Fatal("PLAN DML in a manual batch must stay one-shot")
+	}
+	session.systemVariables.Query.QueryMode = nil
 	if lazyAutocommitEligible(session, &RunBatchStatement{}) {
 		t.Fatal("empty RUN BATCH must not be eligible")
 	}

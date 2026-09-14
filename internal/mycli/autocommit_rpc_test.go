@@ -19,6 +19,7 @@ import (
 	"strings"
 	"testing"
 
+	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/spanner-mycli/enums"
 )
 
@@ -222,14 +223,41 @@ func TestAutocommitFalseExplainPlanDoesNotLeaveOwner(t *testing.T) {
 	ctx := t.Context()
 
 	mustExec(t, ctx, session, "SET AUTOCOMMIT = FALSE")
-	_, _ = execSQL(t, ctx, session, "EXPLAIN SELECT 1")
-	assertIdle(t, session, "EXPLAIN PLAN SELECT left an owner")
 
-	before := len(h.server.commits)
-	_, _ = execSQL(t, ctx, session, "EXPLAIN UPDATE T SET id = 1 WHERE true")
+	_, err := execSQL(t, ctx, session, "EXPLAIN SELECT 1")
+	if err == nil || !strings.Contains(err.Error(), "EXPLAIN statement is not supported for Cloud Spanner Emulator") {
+		t.Fatalf("EXPLAIN PLAN SELECT: %v, want emulator plan rejection after the PLAN RPC", err)
+	}
+	assertIdle(t, session, "EXPLAIN PLAN SELECT left an owner")
+	selectObs := requireUserSQL(t, h, "SELECT 1")
+	if selectObs.queryMode != sppb.ExecuteSqlRequest_PLAN {
+		t.Fatalf("EXPLAIN PLAN SELECT QueryMode = %v, want PLAN", selectObs.queryMode)
+	}
+	if selectObs.partitioned {
+		t.Fatal("EXPLAIN PLAN SELECT used a PDML selector")
+	}
+	if n := len(h.server.commits); n != 0 {
+		t.Fatalf("EXPLAIN PLAN SELECT commits = %d, want 0", n)
+	}
+
+	const planDML = "UPDATE T SET id = 1 WHERE true"
+	_, err = execSQL(t, ctx, session, "EXPLAIN "+planDML)
+	if err == nil || !strings.Contains(err.Error(), "EXPLAIN statement is not supported for Cloud Spanner Emulator") {
+		t.Fatalf("EXPLAIN PLAN DML: %v, want emulator plan rejection after the PLAN RPC", err)
+	}
 	assertIdle(t, session, "EXPLAIN PLAN DML must not leave an owner")
-	if n := len(h.server.commits); n < before {
-		t.Fatalf("EXPLAIN PLAN DML commit count went backwards: %d -> %d", before, n)
+	dmlObs := requireUserSQL(t, h, planDML)
+	if dmlObs.queryMode != sppb.ExecuteSqlRequest_PLAN {
+		t.Fatalf("EXPLAIN PLAN DML QueryMode = %v, want PLAN", dmlObs.queryMode)
+	}
+	if dmlObs.partitioned {
+		t.Fatal("EXPLAIN PLAN DML used a PDML selector")
+	}
+	if n := len(h.server.commits); n != 1 {
+		t.Fatalf("idle EXPLAIN PLAN DML commits = %d, want 1 implicit one-shot Commit", n)
+	}
+	if pdml := pdmlBeginCount(h); pdml != 0 {
+		t.Fatalf("EXPLAIN PLAN DML began PDML: %d", pdml)
 	}
 }
 
@@ -281,14 +309,140 @@ func TestAutocommitFalseExplicitPDMLAndTruncateStayOutside(t *testing.T) {
 	ctx := t.Context()
 
 	mustExec(t, ctx, session, "SET AUTOCOMMIT = FALSE")
-	_, _ = execSQL(t, ctx, session, "PARTITIONED UPDATE T SET id = 1 WHERE true")
-	assertIdle(t, session, "explicit PDML created a session owner")
 
-	_, _ = execSQL(t, ctx, session, "TRUNCATE TABLE T")
+	const pdmlSQL = "UPDATE T SET id = 1 WHERE true"
+	res, err := execSQL(t, ctx, session, "PARTITIONED "+pdmlSQL)
+	if err != nil {
+		t.Fatalf("PARTITIONED UPDATE: %v", err)
+	}
+	if !res.IsExecutedDML {
+		t.Fatalf("PARTITIONED UPDATE result = %+v, want executed DML", res)
+	}
+	assertIdle(t, session, "explicit PDML created a session owner")
+	pdmlObs := requireUserSQL(t, h, pdmlSQL)
+	if !pdmlObs.partitioned {
+		t.Fatalf("PARTITIONED UPDATE selector = %+v, want PDML", pdmlObs)
+	}
+	if pdmlBeginCount(h) == 0 {
+		t.Fatalf("PARTITIONED UPDATE issued no PDML Begin: begins=%v sql=%+v", h.server.beginObservations(), h.server.sqlObservations())
+	}
+
+	res, err = execSQL(t, ctx, session, "TRUNCATE TABLE T")
+	if err != nil {
+		t.Fatalf("TRUNCATE TABLE: %v", err)
+	}
+	if !res.IsExecutedDML {
+		t.Fatalf("TRUNCATE result = %+v, want executed DML", res)
+	}
 	assertIdle(t, session, "TRUNCATE created a session owner")
+	truncObs, ok := lastPartitionedUserSQL(h)
+	if !ok || !strings.Contains(truncObs.sql, "DELETE FROM") || !strings.Contains(truncObs.sql, "T") {
+		t.Fatalf("TRUNCATE PDML SQL = %+v, want partitioned DELETE FROM T", truncObs)
+	}
 	if n := len(h.server.commits); n != 0 {
 		t.Fatalf("PDML/TRUNCATE used RW Commit: %d", n)
 	}
+	if pdmlBeginCount(h) < 2 {
+		t.Fatalf("PDML Begin count = %d, want at least 2 (PARTITIONED UPDATE + TRUNCATE)", pdmlBeginCount(h))
+	}
+}
+
+func TestAutocommitFalseManualBatchOrdinaryVsProfileDML(t *testing.T) {
+	t.Parallel()
+
+	t.Run("ordinary enqueue", func(t *testing.T) {
+		t.Parallel()
+		h, session := newAutocommitRPCSession(t)
+		ctx := t.Context()
+		mustExec(t, ctx, session, "SET AUTOCOMMIT = FALSE")
+		mustExec(t, ctx, session, "START BATCH DML")
+		assertIdle(t, session, "START BATCH DML must not create an owner")
+
+		const insertSQL = "INSERT INTO T (id) VALUES (1)"
+		res := mustExec(t, ctx, session, insertSQL)
+		if res.IsExecutedDML {
+			t.Fatal("ordinary manual-batch DML reported execution")
+		}
+		assertIdle(t, session, "ordinary manual-batch DML enqueue must not create an owner")
+		assertManualBatchDMLSize(t, session, 1)
+		if _, ok := lastSQLObservation(userSQLObservations(h.server.sqlObservations()), insertSQL); ok {
+			t.Fatalf("ordinary manual-batch DML executed: %+v", h.server.sqlObservations())
+		}
+		if n := len(h.server.commits); n != 0 {
+			t.Fatalf("ordinary manual-batch DML commits = %d, want 0", n)
+		}
+		if pdml := pdmlBeginCount(h); pdml != 0 {
+			t.Fatalf("ordinary manual-batch DML began PDML: %d", pdml)
+		}
+	})
+
+	t.Run("PROFILE executes and joins owner", func(t *testing.T) {
+		t.Parallel()
+		h, session := newAutocommitRPCSession(t)
+		ctx := t.Context()
+		mustExec(t, ctx, session, "SET AUTOCOMMIT = FALSE")
+		mustExec(t, ctx, session, "START BATCH DML")
+		mustExec(t, ctx, session, "SET CLI_QUERY_MODE = 'PROFILE'")
+
+		const updateSQL = "UPDATE T SET id = 1 WHERE true"
+		_, err := execSQL(t, ctx, session, updateSQL)
+		if !errors.Is(err, errExplainAnalyzeUnsupportedOnEmulator) {
+			t.Fatalf("PROFILE DML in a manual batch: %v, want %v after execution", err, errExplainAnalyzeUnsupportedOnEmulator)
+		}
+		if !session.txn.InTransaction() {
+			t.Fatal("PROFILE DML in a manual batch must join an owner")
+		}
+		assertManualBatchDMLSize(t, session, 0)
+		obs := requireUserSQL(t, h, updateSQL)
+		if obs.queryMode != sppb.ExecuteSqlRequest_PROFILE {
+			t.Fatalf("PROFILE DML QueryMode = %v, want PROFILE", obs.queryMode)
+		}
+		if obs.partitioned {
+			t.Fatal("PROFILE DML used a PDML selector")
+		}
+		if n := len(h.server.commits); n != 0 {
+			t.Fatalf("PROFILE DML in a manual batch committed: %d", n)
+		}
+		if pdml := pdmlBeginCount(h); pdml != 0 {
+			t.Fatalf("PROFILE DML in a manual batch began PDML: %d", pdml)
+		}
+	})
+}
+
+func requireUserSQL(t *testing.T, h *heartbeatHarness, sql string) sqlObservation {
+	t.Helper()
+	obs, ok := lastSQLObservation(userSQLObservations(h.server.sqlObservations()), sql)
+	if !ok {
+		t.Fatalf("missing user SQL %q: %+v", sql, h.server.sqlObservations())
+	}
+	return obs
+}
+
+func lastPartitionedUserSQL(h *heartbeatHarness) (sqlObservation, bool) {
+	obs := userSQLObservations(h.server.sqlObservations())
+	for i := len(obs) - 1; i >= 0; i-- {
+		if obs[i].partitioned {
+			return obs[i], true
+		}
+	}
+	return sqlObservation{}, false
+}
+
+func assertManualBatchDMLSize(t *testing.T, session *Session, want int) {
+	t.Helper()
+	b, ok := session.batch.Current().(*BatchDMLStatement)
+	if !ok {
+		t.Fatalf("batch.Current() = %T, want *BatchDMLStatement", session.batch.Current())
+	}
+	if got := len(b.DMLs); got != want {
+		t.Fatalf("manual batch size = %d, want %d", got, want)
+	}
+}
+
+func pdmlBeginCount(h *heartbeatHarness) int {
+	h.server.mu.Lock()
+	defer h.server.mu.Unlock()
+	return len(h.server.pdmlIDs)
 }
 
 func TestAutocommitFalseCloseDoesNotCommit(t *testing.T) {

@@ -70,14 +70,19 @@ func admitLazyAutocommitStatement(s *Session, stmt Statement) error {
 }
 
 // lazyAutocommitEligible is a real-dispatch type switch, not MutationStatement.
-// EXPLAIN PLAN (including DML), PDML/TRUNCATE, DDL, admin, partition, and
-// inspection commands stay non-eligible so existing guards keep working.
+// DML follows DmlStatement.Execute: PLAN and TRY PARTITION QUERY stay one-shot;
+// ordinary manual-batch enqueue stays buffered; PROFILE executes immediately
+// and must join an owner. EXPLAIN PLAN (including DML), PDML/TRUNCATE, DDL,
+// admin, partition, and inspection commands stay non-eligible.
 func lazyAutocommitEligible(session *Session, stmt Statement) bool {
 	switch s := stmt.(type) {
 	case *SelectStatement:
 		return !sessionQueryModeIsPlan(session) && !tryPartitionQuery(session)
 	case *DmlStatement:
-		if session.batch.IsActive() || tryPartitionQuery(session) || sessionQueryModeIsPlan(session) {
+		if tryPartitionQuery(session) || sessionQueryModeIsPlan(session) {
+			return false
+		}
+		if session.batch.IsActive() && !sessionQueryModeIsProfile(session) {
 			return false
 		}
 		return true
@@ -97,11 +102,19 @@ func lazyAutocommitEligible(session *Session, stmt Statement) bool {
 }
 
 func sessionQueryModeIsPlan(session *Session) bool {
+	return sessionQueryModeIs(session, sppb.ExecuteSqlRequest_PLAN)
+}
+
+func sessionQueryModeIsProfile(session *Session) bool {
+	return sessionQueryModeIs(session, sppb.ExecuteSqlRequest_PROFILE)
+}
+
+func sessionQueryModeIs(session *Session, mode sppb.ExecuteSqlRequest_QueryMode) bool {
 	if session == nil || session.systemVariables == nil {
 		return false
 	}
 	qm := session.systemVariables.Query.QueryMode
-	return qm != nil && *qm == sppb.ExecuteSqlRequest_PLAN
+	return qm != nil && *qm == mode
 }
 
 func tryPartitionQuery(session *Session) bool {
