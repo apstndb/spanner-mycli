@@ -760,6 +760,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `Show partition tokens of partition query`,
 				Syntax: `PARTITION <sql>`,
+				Note:   `Experimental. Each token is a complete native envelope for RUN PARTITION (smycli-part/1/...), not a bare partition token. Client-side validity is one hour.`,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^PARTITION\s(?P<sql>\S.*)$`),
@@ -781,14 +782,11 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 	},
 	{
 		Descriptions: []clientSideStatementDescription{
-			// It is commented out because it is not implemented yet.
-			/*
-				{
-					Usage:  `Run a specific partition`,
-					Syntax: `RUN PARTITION <token>`,
-					Note:   `This statement is currently unimplemented.`,
-				},
-			*/
+			{
+				Usage:  `Run a specific partition`,
+				Syntax: `RUN PARTITION <token>`,
+				Note:   `Experimental. The token is the complete native envelope exported by PARTITION. Requires an idle session (no live transaction or manual batch). Client-side validity is one hour. Not an authentication grant and not Java/JDBC compatible.`,
+			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^RUN\s+PARTITION\s+(?P<token>'[^']*'|"[^"]*")$`),
 		HandleGroups: func(groups map[string]string) (Statement, error) {

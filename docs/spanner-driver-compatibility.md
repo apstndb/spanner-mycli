@@ -75,13 +75,19 @@ says otherwise; `java-spanner` versions are given where known.
 | `SAVEPOINT` / `RELEASE` / `ROLLBACK TO` | not in the go driver | java-spanner Connection API since 2023 | `CLI_SAVEPOINT_SUPPORT` (`DISABLED` default, `ENABLED`). Client-emulated replay with result validation; not native Spanner savepoints. Deltas vs Java: disabled by default, synchronous reconstruction, no `FAIL_AFTER_ROLLBACK`, exact-case identifier names, 128 code-point CLI limit. See [docs/savepoint.md](savepoint.md). |
 | `SHOW TRANSACTION ISOLATION LEVEL` / `SHOW TRANSACTION READ ONLY` | yes (v1.26.0) | `SHOW DEFAULT_TRANSACTION_ISOLATION` v6.106.0 | `SHOW TRANSACTION ISOLATION LEVEL` and `SHOW TRANSACTION READ ONLY` implemented (#959). Side-effect-free inspection of the current logical owner (pending, active RO/RW, SAVEPOINT recovery). Idle sessions report next-transaction `DEFAULT_ISOLATION_LEVEL` / `READONLY`. `UNSPECIFIED` isolation means the database default; it is not a guessed server isolation. PostgreSQL `DEFERRABLE` / `SHOW TRANSACTION <var>` aliases are tracked with #230. |
 | `RUN PARTITIONED QUERY <select>` | yes (v1.24.0) | — | `RUN PARTITIONED QUERY` implemented |
-| `RUN PARTITION '<token>'` | not at SQL level in the go driver | JDBC `RUN PARTITION '<token>'` | token form tracked #45 (see note below) |
+| `RUN PARTITION '<token>'` | not at SQL level in the go driver | JDBC `RUN PARTITION '<token>'` | experimental native Go envelope (#45). Not JDBC/Java wire compatible. |
 
-> Note on `RUN PARTITION '<token>'`: a matching pattern and a
-> `RunPartitionStatement` handler exist in
-> `internal/mycli/client_side_statement_def.go`, but the statement's help/usage
-> is commented out and annotated "This statement is currently unimplemented", so
-> it is not exposed as a supported statement. Completing it is tracked in #45.
+> Note on `RUN PARTITION '<token>'`: `PARTITION` now exports
+> `smycli-part/1/<base64url(JSON)>` complete native tokens (pinned
+> `cloud.google.com/go/spanner` v1.95.0 `MarshalBinary` payloads plus database
+> and RFC3339Nano UTC timestamps). Older bare `GetPartitionToken` values are
+> unsupported. Client-side validity is one hour with a one-minute
+> forward-clock tolerance; this is not authentication or remote cleanup.
+> `RUN PARTITION` requires an idle session (no live logical owner or manual
+> batch). A decoder-only inspector of the pinned gob/protobuf layout checks
+> native consistency before SDK Unmarshal/Execute. `Cleanup`/`Close` in
+> v1.95.0 are local and do not `DeleteSession`. Managed-service retention and
+> cross-principal behavior are unverified. `RUN PARTITIONED QUERY` is unchanged.
 
 ## Candidate gaps (no issue yet)
 

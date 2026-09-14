@@ -78,6 +78,7 @@ var syntaxPlaceholderValues = map[string]string{
 	"<name>":                 "myvar",
 	"<value>":                "1",
 	"<prompt>":               "prompt text",
+	"<token>":                "'smycli-part/1/example'",
 }
 
 var placeholderRe = regexp.MustCompile(`<[^<>]+>`)
