@@ -166,6 +166,9 @@ func initializeSession(ctx context.Context, clients *spanemuboost.Clients) (sess
 		},
 		Transaction: TransactionVars{
 			KeepTransactionAlive: true,
+			// Hand-built fixtures must set the live default. The Go zero
+			// value is false and would now start a lazy owner.
+			Autocommit: true,
 		},
 		Params: make(map[string]ast.Node),
 	}
@@ -263,6 +266,7 @@ func initializeAdminSession(t *testing.T) (clients *spanemuboost.Clients, sessio
 		},
 		Transaction: TransactionVars{
 			KeepTransactionAlive: true,
+			Autocommit:           true,
 		},
 	}
 	// Parse the default type styles to populate typeStyles/nullStyle
