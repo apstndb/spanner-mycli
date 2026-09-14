@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"fmt"
 	"io"
+	"math"
 	"regexp"
 	"slices"
 	"strings"
@@ -94,6 +95,13 @@ func (f *TableStreamingFormatter) InitFormat(columnNames []string, config Format
 
 	// Calculate optimal widths using preview rows
 	f.calculateWidths(columnNames, headerForWidth, previewRows)
+	streamWidths := f.widths
+	if !constrainedScreen(f.screenWidth) {
+		// Unlimited/unknown screens still wrap with MaxInt budgets. Do not
+		// lock tablewriter to that leftover width or Start/Header will
+		// Repeat a MaxInt-wide border.
+		streamWidths = naturalPreviewWidths(f.newCondition(), headerForWidth, previewRows)
+	}
 
 	// Determine output writer (buffer for comment modes)
 	tableOut := f.out
@@ -122,7 +130,7 @@ func (f *TableStreamingFormatter) InitFormat(columnNames []string, config Format
 		// calculated content widths so tablewriter does not re-derive them
 		// from the short header (Config.Widths; StreamConfig.Widths is deprecated).
 		if f.streaming {
-			applyCalculatedStreamWidths(twConfig, f.widths, f.newCondition())
+			applyCalculatedStreamWidths(twConfig, streamWidths, f.newCondition())
 		}
 	})
 
@@ -268,6 +276,27 @@ func applyCalculatedStreamWidths(twConfig *tablewriter.Config, contentWidths []i
 		widths.Set(i, w+extra)
 	}
 	twConfig.Widths.PerColumn = widths
+}
+
+func constrainedScreen(width int) bool {
+	return width > 0 && width < math.MaxInt/4
+}
+
+func naturalPreviewWidths(cond *tabwrap.Condition, headers []string, rows []Row) []int {
+	if cond == nil {
+		cond = &tabwrap.Condition{}
+	}
+	wc := &widthCalculator{Condition: cond}
+	out := make([]int, len(headers))
+	for i, h := range headers {
+		out[i] = max(1, wc.maxWidth(h))
+	}
+	for _, row := range rows {
+		for i := 0; i < len(out) && i < len(row); i++ {
+			out[i] = max(out[i], wc.maxWidth(row[i].RawText()))
+		}
+	}
+	return out
 }
 
 // wrapHeaders wraps headers according to calculated widths.

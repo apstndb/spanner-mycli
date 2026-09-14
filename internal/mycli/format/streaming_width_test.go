@@ -16,6 +16,7 @@ package format
 
 import (
 	"bytes"
+	"math"
 	"strings"
 	"testing"
 )
@@ -153,6 +154,21 @@ func TestStreamingTableLaterRowUsesExistingWrap(t *testing.T) {
 			t.Fatalf("narrow wrap streaming/buffered mismatch\nstreamed:\n%s\nbuffered:\n%s", got, want)
 		}
 	})
+}
+
+func TestStreamingTableUnconstrainedScreenUsesNaturalWidths(t *testing.T) {
+	t.Parallel()
+	headers := []string{"id"}
+	preview := []Row{StringsToRow(streamWidthFullValue)}
+	got, _ := renderStreamingTable(t, ModeTable, FormatConfig{}, math.MaxInt, 50, headers, preview, nil)
+	if !strings.Contains(got, streamWidthFullValue) {
+		t.Fatalf("unconstrained stream truncated: %q", got)
+	}
+	for line := range strings.SplitSeq(got, "\n") {
+		if len(line) > 80 {
+			t.Fatalf("unconstrained stream locked MaxInt width: %q", line)
+		}
+	}
 }
 
 func TestStreamingTableANSIAndNoWrapFollowExistingHelpers(t *testing.T) {
