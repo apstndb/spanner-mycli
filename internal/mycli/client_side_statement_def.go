@@ -1069,6 +1069,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `Set type query parameter`,
 				Syntax: `SET PARAM <name> <type>`,
+				Note:   `Names are case-insensitive. Later SET PARAM of the same logical name keeps the first stored spelling.`,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^SET\s+PARAM\s+(?P<name>[^\s=]+)\s*(?P<type>[^=]*)$`),
@@ -1171,6 +1172,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `Set value query parameter`,
 				Syntax: `SET PARAM <name> = <value>`,
+				Note:   `Names are case-insensitive. Later SET PARAM of the same logical name keeps the first stored spelling. Binding uses the first SQL occurrence's spelling without rewriting the statement.`,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^SET\s+PARAM\s+(?P<name>[^\s=]+)\s*=\s*(?P<value>.*)$`),
@@ -1183,6 +1185,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `Show query parameters`,
 				Syntax: `SHOW PARAMS`,
+				Note:   `Displays the stored spelling of each logical parameter.`,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^SHOW\s+PARAMS$`),
@@ -1195,6 +1198,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `Unset query parameter`,
 				Syntax: `UNSET PARAM <name>`,
+				Note:   `Names are case-insensitive; UNSET removes the logical parameter.`,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^UNSET\s+PARAM\s+(?P<name>\S+)$`),
