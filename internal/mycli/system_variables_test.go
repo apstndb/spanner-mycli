@@ -532,6 +532,54 @@ func TestSystemVariables_StringTypes(t *testing.T) {
 		}
 	})
 
+	t.Run("IdleTransactionTimeout", func(t *testing.T) {
+		t.Parallel()
+		tests := []struct {
+			desc     string
+			value    string
+			want     *time.Duration
+			errorMsg string
+		}{
+			{desc: "valid_seconds", value: "60s", want: durationPtr(60 * time.Second)},
+			{desc: "valid_minutes", value: "5m", want: durationPtr(5 * time.Minute)},
+			{desc: "valid_zero", value: "0s", want: durationPtr(0)},
+			{desc: "null", value: "NULL", want: nil},
+			{desc: "invalid_format", value: "invalid", errorMsg: "invalid duration"},
+			{desc: "negative_value", value: "-30s", errorMsg: "duration -30s is less than minimum 0s"},
+			{desc: "overflow", value: "2562048h", errorMsg: "invalid duration"},
+		}
+		for _, test := range tests {
+			t.Run(test.desc, func(t *testing.T) {
+				t.Parallel()
+				sysVars := newSystemVariablesWithDefaultsForTest()
+				err := sysVars.SetFromSimple("CLI_IDLE_TRANSACTION_TIMEOUT", test.value)
+				assertError(t, err, test.errorMsg)
+				if err != nil {
+					return
+				}
+				if test.want == nil {
+					if sysVars.Transaction.IdleTransactionTimeout != nil {
+						t.Errorf("expected NULL, got %v", *sysVars.Transaction.IdleTransactionTimeout)
+					}
+					result, err := sysVars.Get("CLI_IDLE_TRANSACTION_TIMEOUT")
+					assertNoError(t, err)
+					if diff := cmp.Diff(singletonMap("CLI_IDLE_TRANSACTION_TIMEOUT", "NULL"), result); diff != "" {
+						t.Errorf("CLI_IDLE_TRANSACTION_TIMEOUT getter mismatch (-want +got):\n%s", diff)
+					}
+					return
+				}
+				if sysVars.Transaction.IdleTransactionTimeout == nil || *sysVars.Transaction.IdleTransactionTimeout != *test.want {
+					t.Errorf("expected IdleTransactionTimeout %v, got %v", *test.want, sysVars.Transaction.IdleTransactionTimeout)
+				}
+				result, err := sysVars.Get("CLI_IDLE_TRANSACTION_TIMEOUT")
+				assertNoError(t, err)
+				if diff := cmp.Diff(singletonMap("CLI_IDLE_TRANSACTION_TIMEOUT", test.want.String()), result); diff != "" {
+					t.Errorf("CLI_IDLE_TRANSACTION_TIMEOUT getter mismatch (-want +got):\n%s", diff)
+				}
+			})
+		}
+	})
+
 	t.Run("StatementTimeout", func(t *testing.T) {
 		t.Parallel()
 		tests := []struct {

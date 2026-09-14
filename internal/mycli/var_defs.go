@@ -581,17 +581,26 @@ var varDefs = []varDef{
 	},
 	{
 		name:    "KEEP_TRANSACTION_ALIVE",
-		desc:    "Whether an explicit read-write owner schedules keepalive heartbeats after the first user SQL. TRUE (default) preserves existing mycli behavior. FALSE prevents heartbeat scheduling for that owner without changing user SQL, COMMIT, ROLLBACK, or cancellation. Java KEEP_TRANSACTION_ALIVE defaults to false; this CLI default is intentionally TRUE. The policy is frozen on the logical owner with the constructor snapshot reused across physical attempts, including SAVEPOINT reconstruction. Changing the session default does not alter an active owner. SET LOCAL is not supported. Idle-deadline (#357) is not implemented. TRANSACTION_TIMEOUT is a separate logical-owner budget and is not implied by this variable.",
+		desc:    "Whether an explicit read-write owner schedules keepalive heartbeats after the first user SQL. TRUE (default) preserves existing mycli behavior. FALSE prevents heartbeat scheduling for that owner without changing user SQL, COMMIT, ROLLBACK, or cancellation. Java KEEP_TRANSACTION_ALIVE defaults to false; this CLI default is intentionally TRUE. The policy is frozen on the logical owner with the constructor snapshot reused across physical attempts, including SAVEPOINT reconstruction. Changing the session default does not alter an active owner. SET LOCAL is not supported. CLI_IDLE_TRANSACTION_TIMEOUT is an independent user-idle quiet interval and still expires when keepalive is disabled. TRANSACTION_TIMEOUT is a separate logical-owner budget and is not implied by this variable.",
 		scope:   scopeSession,
 		noLocal: true,
 		bind:    func(sv *systemVariables) Variable { return BoolVar(&sv.Transaction.KeepTransactionAlive) },
 	},
 	{
 		name:  "TRANSACTION_TIMEOUT",
-		desc:  "Logical read/write transaction deadline (duration or NULL). NULL or 0 means no additional transaction deadline. The duration is captured for the logical owner; the single total budget starts at the first real database RPC (including constructor BeginTransaction) and is preserved across physical reconstruction. Pending SET LOCAL may select the duration before the first RPC; changing it after first real database use is rejected, including when the selected duration is NULL or 0 and no timer exists. Session SET after BEGIN applies to a later owner. Distinct from STATEMENT_TIMEOUT and from unimplemented user-idle expiry (#357). ABORTED retries (#293) are not implemented; a later retry path must reuse the remaining budget.",
+		desc:  "Logical read/write transaction deadline (duration or NULL). NULL or 0 means no additional transaction deadline. The duration is captured for the logical owner; the single total budget starts at the first real database RPC (including constructor BeginTransaction) and is preserved across physical reconstruction. Pending SET LOCAL may select the duration before the first RPC; changing it after first real database use is rejected, including when the selected duration is NULL or 0 and no timer exists. Session SET after BEGIN applies to a later owner. Distinct from STATEMENT_TIMEOUT and from CLI_IDLE_TRANSACTION_TIMEOUT (#357). ABORTED retries (#293) are not implemented; a later retry path must reuse the remaining budget.",
 		scope: scopeSession,
 		bind: func(sv *systemVariables) Variable {
 			return NullableDurationVar(&sv.Transaction.TransactionTimeout).
+				WithValidator(durationValidator(durationPtr(0), nil))
+		},
+	},
+	{
+		name:  "CLI_IDLE_TRANSACTION_TIMEOUT",
+		desc:  "Sliding user-idle quiet interval on the logical owner (duration or NULL). Units are Go duration strings (for example 60s or 5m). NULL or 0 disables expiry; there is no default 60-second timeout. The duration is captured at BEGIN. Session SET or RESET after BEGIN applies to a later owner. SET LOCAL may change the captured duration before admitted user or database work and then freezes (identical values remain accepted). Successful explicit BEGIN RW or BEGIN RO that acquired a server transaction starts the first quiet interval; a resource-free pending BEGIN does not arm until work. Completed admitted work rearms, including successful buffered automatic or manual DML, buffered MUTATE, and successful SAVEPOINT, RELEASE, or ROLLBACK TO. Heartbeat SELECT 1, client-only SHOW, polling, SET, RESET, invalid syntax, and rejected admission do not reset idle. Expiry holds through the user RPC, iterator consumption, and CLI result rendering or pager. Idle is not an RPC context deadline; TRANSACTION_TIMEOUT still cancels in-flight work. Expiry rolls back and retires only the matching owner. The next ordinary command reports a one-shot error without executing; ROLLBACK, CLOSE, BEGIN, USE, and DETACH acknowledge the notice. Independent of KEEP_TRANSACTION_ALIVE.",
+		scope: scopeSession,
+		bind: func(sv *systemVariables) Variable {
+			return NullableDurationVar(&sv.Transaction.IdleTransactionTimeout).
 				WithValidator(durationValidator(durationPtr(0), nil))
 		},
 	},

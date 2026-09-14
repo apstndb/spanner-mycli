@@ -154,6 +154,14 @@ func (s *SetLocalStatement) Execute(ctx context.Context, session *Session, out O
 			return nil, err
 		}
 	}
+	if def.name == idleTransactionTimeoutVarName {
+		if err := session.txn.applyLocalIdleTimeout(idleTransactionTimeoutDuration(sysVars)); err != nil {
+			if restoreErr := sysVars.Registry.Set(upperName, oldValue, false); restoreErr != nil {
+				err = errors.Join(err, restoreErr)
+			}
+			return nil, err
+		}
+	}
 
 	if def.name == "CLI_DDL_IN_TRANSACTION_MODE" {
 		if err := session.txn.applyLocalDdlInTransactionMode(sysVars.Transaction.DdlInTransactionMode); err != nil {
