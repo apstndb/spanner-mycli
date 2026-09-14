@@ -354,6 +354,9 @@ func resultLine(outputTemplate *template.Template, result *Result, verbose bool)
 
 		// Always show affected rows for DML (including "0 rows affected" for MySQL compatibility)
 		affectedRowsPart = fmt.Sprintf(", %s%d rows affected", affectedRowsPrefix, result.AffectedRows)
+		if result.MutationLimitFallback {
+			affectedRowsPart += " (" + mutationLimitFallbackNote + ")"
+		}
 	}
 
 	return fmt.Sprintf("Query OK%s%s%s\n%s", affectedRowsPart, elapsedTimePart, batchInfo, detail)

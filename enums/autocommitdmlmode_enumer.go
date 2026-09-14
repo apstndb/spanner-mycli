@@ -7,11 +7,11 @@ import (
 	"strings"
 )
 
-const _AutocommitDMLModeName = "TRANSACTIONALPARTITIONED_NON_ATOMIC"
+const _AutocommitDMLModeName = "TRANSACTIONALPARTITIONED_NON_ATOMICTRANSACTIONAL_WITH_FALLBACK_TO_PARTITIONED_NON_ATOMIC"
 
-var _AutocommitDMLModeIndex = [...]uint8{0, 13, 35}
+var _AutocommitDMLModeIndex = [...]uint8{0, 13, 35, 88}
 
-const _AutocommitDMLModeLowerName = "transactionalpartitioned_non_atomic"
+const _AutocommitDMLModeLowerName = "transactionalpartitioned_non_atomictransactional_with_fallback_to_partitioned_non_atomic"
 
 func (i AutocommitDMLMode) String() string {
 	if i < 0 || i >= AutocommitDMLMode(len(_AutocommitDMLModeIndex)-1) {
@@ -26,20 +26,24 @@ func _AutocommitDMLModeNoOp() {
 	var x [1]struct{}
 	_ = x[AutocommitDMLModeTransactional-(0)]
 	_ = x[AutocommitDMLModePartitionedNonAtomic-(1)]
+	_ = x[AutocommitDMLModeTransactionalWithFallbackToPartitionedNonAtomic-(2)]
 }
 
-var _AutocommitDMLModeValues = []AutocommitDMLMode{AutocommitDMLModeTransactional, AutocommitDMLModePartitionedNonAtomic}
+var _AutocommitDMLModeValues = []AutocommitDMLMode{AutocommitDMLModeTransactional, AutocommitDMLModePartitionedNonAtomic, AutocommitDMLModeTransactionalWithFallbackToPartitionedNonAtomic}
 
 var _AutocommitDMLModeNameToValueMap = map[string]AutocommitDMLMode{
 	_AutocommitDMLModeName[0:13]:       AutocommitDMLModeTransactional,
 	_AutocommitDMLModeLowerName[0:13]:  AutocommitDMLModeTransactional,
 	_AutocommitDMLModeName[13:35]:      AutocommitDMLModePartitionedNonAtomic,
 	_AutocommitDMLModeLowerName[13:35]: AutocommitDMLModePartitionedNonAtomic,
+	_AutocommitDMLModeName[35:88]:      AutocommitDMLModeTransactionalWithFallbackToPartitionedNonAtomic,
+	_AutocommitDMLModeLowerName[35:88]: AutocommitDMLModeTransactionalWithFallbackToPartitionedNonAtomic,
 }
 
 var _AutocommitDMLModeNames = []string{
 	_AutocommitDMLModeName[0:13],
 	_AutocommitDMLModeName[13:35],
+	_AutocommitDMLModeName[35:88],
 }
 
 // AutocommitDMLModeString retrieves an enum value from the enum constants string name.

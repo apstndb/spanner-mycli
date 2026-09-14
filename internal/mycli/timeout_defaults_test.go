@@ -255,4 +255,8 @@ func TestAutocommitUsesPartitionedDMLPredicate(t *testing.T) {
 	if autocommitUsesPartitionedDML(session, "UPDATE T SET V = 1 WHERE TRUE") {
 		t.Fatal("transactional autocommit must not use PDML")
 	}
+	session.systemVariables.Transaction.AutocommitDMLMode = enums.AutocommitDMLModeTransactionalWithFallbackToPartitionedNonAtomic
+	if autocommitUsesPartitionedDML(session, "UPDATE T SET V = 1 WHERE TRUE") {
+		t.Fatal("mutation-limit fallback mode must not start on the 24h PDML timeout route")
+	}
 }
