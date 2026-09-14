@@ -160,10 +160,82 @@ func TestStreamingTableUnconstrainedScreenUsesNaturalWidths(t *testing.T) {
 	t.Parallel()
 	headers := []string{"id"}
 	preview := []Row{StringsToRow(streamWidthFullValue)}
-	got, _ := renderStreamingTable(t, ModeTable, FormatConfig{}, math.MaxInt, 50, headers, preview, nil)
-	if !strings.Contains(got, streamWidthFullValue) {
+	got, widths := renderStreamingTable(t, ModeTable, FormatConfig{}, math.MaxInt, 50, headers, preview, nil)
+	if !strings.Contains(joinedStreamingCellText(got), streamWidthFullValue) {
 		t.Fatalf("unconstrained stream truncated: %q", got)
 	}
+	if len(widths) != 1 || widths[0] != len(streamWidthFullValue) {
+		t.Fatalf("wrap widths = %v, want natural preview width %d", widths, len(streamWidthFullValue))
+	}
+	assertNoUnboundedBorder(t, got)
+}
+
+func TestStreamingTableUnconstrainedLaterRowsWrapInsteadOfCut(t *testing.T) {
+	t.Parallel()
+	headers := []string{"id"}
+
+	t.Run("empty preview later value", func(t *testing.T) {
+		t.Parallel()
+		got, widths := renderStreamingTable(t, ModeTable, FormatConfig{}, math.MaxInt, 0, headers, nil, []Row{StringsToRow(streamWidthFullValue)})
+		if joined := joinedStreamingCellText(got); !strings.Contains(joined, streamWidthFullValue) {
+			t.Fatalf("empty-preview later row lost data: joined=%q output=%q widths=%v", joined, got, widths)
+		}
+		if strings.Contains(got, streamWidthFullValue) {
+			t.Fatalf("later value should wrap to header width, got single-line %q", got)
+		}
+		assertNoUnboundedBorder(t, got)
+	})
+
+	t.Run("short preview later value", func(t *testing.T) {
+		t.Parallel()
+		preview := []Row{StringsToRow("ab")}
+		later := []Row{StringsToRow(streamWidthFullValue)}
+		got, widths := renderStreamingTable(t, ModeTable, FormatConfig{}, math.MaxInt, 1, headers, preview, later)
+		if joined := joinedStreamingCellText(got); !strings.Contains(joined, streamWidthFullValue) {
+			t.Fatalf("short-preview later row lost data: joined=%q output=%q widths=%v", joined, got, widths)
+		}
+		if strings.Count(joinedStreamingCellText(got), "ab") < 2 {
+			t.Fatalf("preview row missing from wrapped later output: %q", got)
+		}
+		assertNoUnboundedBorder(t, got)
+	})
+
+	t.Run("late NoWrap value", func(t *testing.T) {
+		t.Parallel()
+		later := []Row{{NoWrapCell{Cell: PlainCell{Text: streamWidthFullValue}}}}
+		got, widths := renderStreamingTable(t, ModeTable, FormatConfig{}, math.MaxInt, 0, headers, nil, later)
+		if joined := joinedStreamingCellText(got); !strings.Contains(joined, streamWidthFullValue) {
+			t.Fatalf("late NoWrap lost data: joined=%q output=%q widths=%v", joined, got, widths)
+		}
+		assertNoUnboundedBorder(t, got)
+	})
+}
+
+// joinedStreamingCellText concatenates visible table cell fragments so wrapped
+// later rows can be checked for complete values rather than a single-line cut.
+func joinedStreamingCellText(out string) string {
+	var b strings.Builder
+	for line := range strings.SplitSeq(out, "\n") {
+		line = strings.TrimSpace(line)
+		line = strings.TrimPrefix(line, "/*")
+		line = strings.TrimSuffix(line, "*/")
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "+") {
+			continue
+		}
+		if strings.HasPrefix(line, "|") {
+			line = strings.TrimPrefix(line, "|")
+		}
+		if strings.HasSuffix(line, "|") {
+			line = strings.TrimSuffix(line, "|")
+		}
+		b.WriteString(strings.TrimSpace(line))
+	}
+	return b.String()
+}
+
+func assertNoUnboundedBorder(t *testing.T, got string) {
+	t.Helper()
 	for line := range strings.SplitSeq(got, "\n") {
 		if len(line) > 80 {
 			t.Fatalf("unconstrained stream locked MaxInt width: %q", line)

@@ -95,12 +95,12 @@ func (f *TableStreamingFormatter) InitFormat(columnNames []string, config Format
 
 	// Calculate optimal widths using preview rows
 	f.calculateWidths(columnNames, headerForWidth, previewRows)
-	streamWidths := f.widths
-	if !constrainedScreen(f.screenWidth) {
-		// Unlimited/unknown screens still wrap with MaxInt budgets. Do not
-		// lock tablewriter to that leftover width or Start/Header will
-		// Repeat a MaxInt-wide border.
-		streamWidths = naturalPreviewWidths(f.newCondition(), headerForWidth, previewRows)
+	if f.streaming && !constrainedScreen(f.screenWidth) {
+		// Unlimited/unknown screens still compute leftover MaxInt budgets.
+		// Lock wrap and tablewriter to the same natural preview/header
+		// widths so later rows wrap instead of being cut, without an
+		// unbounded border.
+		f.widths = naturalPreviewWidths(f.newCondition(), headerForWidth, previewRows)
 	}
 
 	// Determine output writer (buffer for comment modes)
@@ -130,7 +130,7 @@ func (f *TableStreamingFormatter) InitFormat(columnNames []string, config Format
 		// calculated content widths so tablewriter does not re-derive them
 		// from the short header (Config.Widths; StreamConfig.Widths is deprecated).
 		if f.streaming {
-			applyCalculatedStreamWidths(twConfig, streamWidths, f.newCondition())
+			applyCalculatedStreamWidths(twConfig, f.widths, f.newCondition())
 		}
 	})
 
