@@ -685,9 +685,7 @@ func TestAutomaticDMLExpectedCountPolicyViaSetResetPaths(t *testing.T) {
 	}
 
 	mustExecStmt(t, ctx, session, &SetStatement{VarName: "AUTO_BATCH_DML_UPDATE_COUNT", Value: "5"})
-	if err := session.systemVariables.Reset("AUTO_BATCH_DML_UPDATE_COUNT"); err != nil {
-		t.Fatalf("RESET AUTO_BATCH_DML_UPDATE_COUNT: %v", err)
-	}
+	mustExecStmt(t, ctx, session, &ResetStatement{VarName: "AUTO_BATCH_DML_UPDATE_COUNT"})
 	if got := mustGetVar(t, session, "AUTO_BATCH_DML_UPDATE_COUNT"); got != "1" {
 		t.Fatalf("after single-var RESET count = %q, want 1", got)
 	}
