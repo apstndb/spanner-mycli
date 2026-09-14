@@ -34,6 +34,7 @@ func TestResetStatementRestoresStartupAndIgnoresInitCommand(t *testing.T) {
 			"CLI_PROMPT":             "startup> ",
 			"DDL_EXECUTION_MODE":     "ASYNC",
 			"DDL_ASYNC_WAIT_TIMEOUT": "15s",
+			"KEEP_TRANSACTION_ALIVE": "FALSE",
 		},
 	})
 	if err != nil {
@@ -61,6 +62,9 @@ func TestResetStatementRestoresStartupAndIgnoresInitCommand(t *testing.T) {
 	if _, err := session.ExecuteStatement(ctx, &SetStatement{VarName: "DDL_ASYNC_WAIT_TIMEOUT", Value: "'30s'"}); err != nil {
 		t.Fatalf("init-command SET DDL_ASYNC_WAIT_TIMEOUT: %v", err)
 	}
+	if _, err := session.ExecuteStatement(ctx, &SetStatement{VarName: "KEEP_TRANSACTION_ALIVE", Value: "TRUE"}); err != nil {
+		t.Fatalf("init-command SET KEEP_TRANSACTION_ALIVE: %v", err)
+	}
 
 	res, err := session.ExecuteStatement(ctx, &ResetStatement{VarName: "cli_verbose"})
 	if err != nil {
@@ -81,6 +85,9 @@ func TestResetStatementRestoresStartupAndIgnoresInitCommand(t *testing.T) {
 	if got := mustGetVar(t, session, "DDL_ASYNC_WAIT_TIMEOUT"); got != "30s" {
 		t.Errorf("RESET CLI_VERBOSE changed DDL_ASYNC_WAIT_TIMEOUT: %q", got)
 	}
+	if got := mustGetVar(t, session, "KEEP_TRANSACTION_ALIVE"); got != "TRUE" {
+		t.Errorf("RESET CLI_VERBOSE changed KEEP_TRANSACTION_ALIVE: %q", got)
+	}
 
 	if _, err := session.ExecuteStatement(ctx, &ResetStatement{VarName: "DDL_EXECUTION_MODE"}); err != nil {
 		t.Fatalf("RESET DDL_EXECUTION_MODE: %v", err)
@@ -97,6 +104,16 @@ func TestResetStatementRestoresStartupAndIgnoresInitCommand(t *testing.T) {
 	}
 	if got := mustGetVar(t, session, "DDL_ASYNC_WAIT_TIMEOUT"); got != "15s" {
 		t.Errorf("after RESET DDL_ASYNC_WAIT_TIMEOUT = %q, want 15s", got)
+	}
+
+	if _, err := session.ExecuteStatement(ctx, &ResetStatement{VarName: "KEEP_TRANSACTION_ALIVE"}); err != nil {
+		t.Fatalf("RESET KEEP_TRANSACTION_ALIVE: %v", err)
+	}
+	if got := mustGetVar(t, session, "KEEP_TRANSACTION_ALIVE"); got != "FALSE" {
+		t.Errorf("after RESET KEEP_TRANSACTION_ALIVE = %q, want FALSE (--set snapshot)", got)
+	}
+	if got := mustGetVar(t, session, "CLI_VERBOSE"); got != "TRUE" {
+		t.Errorf("RESET KEEP_TRANSACTION_ALIVE changed CLI_VERBOSE: %q", got)
 	}
 }
 
@@ -355,4 +372,44 @@ func TestResetStatementTransactionTagUsesWritableSlot(t *testing.T) {
 			t.Errorf("RESET TRANSACTION_TAG changed CLI_VERBOSE: %q", got)
 		}
 	})
+}
+
+func TestResetStatementKeepTransactionAliveIsolation(t *testing.T) {
+	t.Parallel()
+	session := newSessionForResetTest(t)
+	ctx := t.Context()
+	if got := mustGetVar(t, session, "KEEP_TRANSACTION_ALIVE"); got != "TRUE" {
+		t.Fatalf("startup KEEP_TRANSACTION_ALIVE = %q, want TRUE", got)
+	}
+	if _, err := session.ExecuteStatement(ctx, &SetStatement{VarName: "KEEP_TRANSACTION_ALIVE", Value: "FALSE"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.ExecuteStatement(ctx, &SetStatement{VarName: "CLI_VERBOSE", Value: "TRUE"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.ExecuteStatement(ctx, &BeginStatement{Priority: sppb.RequestOptions_PRIORITY_UNSPECIFIED}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.ExecuteStatement(ctx, &SetLocalStatement{VarName: "CLI_FORMAT", Value: "'CSV'"}); err != nil {
+		t.Fatal(err)
+	}
+	if outstandingLocalUndo(session.txn) == 0 {
+		t.Fatal("expected unrelated LOCAL undo")
+	}
+
+	if _, err := session.ExecuteStatement(ctx, &ResetStatement{VarName: "KEEP_TRANSACTION_ALIVE"}); err != nil {
+		t.Fatalf("RESET KEEP_TRANSACTION_ALIVE during txn: %v", err)
+	}
+	if got := mustGetVar(t, session, "KEEP_TRANSACTION_ALIVE"); got != "TRUE" {
+		t.Errorf("KEEP_TRANSACTION_ALIVE = %q, want TRUE", got)
+	}
+	if got := mustGetVar(t, session, "CLI_VERBOSE"); got != "TRUE" {
+		t.Errorf("RESET KEEP_TRANSACTION_ALIVE changed CLI_VERBOSE: %q", got)
+	}
+	if got := mustGetVar(t, session, "CLI_FORMAT"); got != "CSV" {
+		t.Errorf("RESET KEEP_TRANSACTION_ALIVE changed LOCAL CLI_FORMAT: %q", got)
+	}
+	if outstandingLocalUndo(session.txn) == 0 {
+		t.Fatal("RESET KEEP_TRANSACTION_ALIVE retired unrelated LOCAL undo")
+	}
 }

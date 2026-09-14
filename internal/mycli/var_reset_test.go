@@ -37,6 +37,9 @@ func TestCaptureStartupSnapshotsRequiresPrepareSupport(t *testing.T) {
 	if _, ok := sv.startupSnapshots["CLI_VERBOSE"]; !ok {
 		t.Fatal("CLI_VERBOSE missing from startup snapshots")
 	}
+	if got := sv.startupSnapshots["KEEP_TRANSACTION_ALIVE"]; got != "TRUE" {
+		t.Fatalf("captured KEEP_TRANSACTION_ALIVE = %q, want TRUE", got)
+	}
 	for _, excluded := range []string{
 		"PROTO_DESCRIPTORS_FILE_PATH",
 		protoDescriptorsVarName,
@@ -265,6 +268,23 @@ func TestResetDirectedReadWhenIdle(t *testing.T) {
 	}
 	if got, _ := sv.Registry.Get("DIRECTED_READ"); got != "" {
 		t.Errorf("DIRECTED_READ = %q, want empty", got)
+	}
+}
+
+func TestResetKeepTransactionAlive(t *testing.T) {
+	t.Parallel()
+	sv := newSystemVariablesWithDefaultsForTest()
+	if err := sv.CaptureStartupSnapshots(); err != nil {
+		t.Fatal(err)
+	}
+	if err := sv.SetFromSimple("KEEP_TRANSACTION_ALIVE", "FALSE"); err != nil {
+		t.Fatal(err)
+	}
+	if err := sv.Reset("KEEP_TRANSACTION_ALIVE"); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := sv.Registry.Get("KEEP_TRANSACTION_ALIVE"); got != "TRUE" {
+		t.Errorf("KEEP_TRANSACTION_ALIVE = %q, want TRUE", got)
 	}
 }
 
