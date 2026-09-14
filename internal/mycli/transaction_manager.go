@@ -153,6 +153,28 @@ type TransactionManager struct {
 	heartbeatBeforeAcquire func()
 	heartbeatAfterAttempt  func()
 
+	// nowFunc, if set, replaces time.Now for TRANSACTION_TIMEOUT arming.
+	// timeoutAfterExpire runs after a matching owner is retired by expiry,
+	// still under tm.mu.
+	nowFunc            func() time.Time
+	timeoutAfterExpire func(*transactionContext)
+	// afterEntryRestore runs after ExecuteStatement drains detached SET LOCAL
+	// undo and before the statement-safe retirement barrier. Tests use it to
+	// expire an owner at that exact boundary. Production remains nil. The
+	// hook must not call Registry.Set.
+	afterEntryRestore func()
+	// afterLeaveRestore runs after any pre-leave drain and before the
+	// atomic final-frame depth transition. Tests use it to expire an
+	// owner at that exact gap. Production remains nil. The hook must
+	// not call Registry.Set.
+	afterLeaveRestore func()
+
+	// statementDepth is the number of ExecuteStatement frames on this
+	// manager. While it is positive, expiry marks expirePending instead of
+	// detaching undo, so a later barrier can restore before registry reads
+	// or writes. It is not a lock and is not held across RPCs.
+	statementDepth int
+
 	// savepointEnabled is a private capture switch for owner-journal
 	// integration tests. Public CLI_SAVEPOINT_SUPPORT also enables capture.
 	savepointEnabled bool
@@ -350,13 +372,105 @@ func (tm *TransactionManager) retireLocalVarUndo(canonical string) {
 	})
 }
 
+// pendingRestoreBlocksNewOwnerLocked reports that an expired owner left
+// detached SET LOCAL undo and no live owner exists. Caller must hold tm.mu.
+func (tm *TransactionManager) pendingRestoreBlocksNewOwnerLocked() bool {
+	return tm.tc == nil && len(tm.pendingLocalVarRestore) > 0
+}
+
+func (tm *TransactionManager) expirePendingBlocksLocked() bool {
+	return tm.tc != nil && tm.tc.expirePending
+}
+
+// enterStatement marks an ExecuteStatement frame so expiry defers undo
+// detach. It does not take a statement lock and must not be held across
+// an RPC as a mutex.
+func (tm *TransactionManager) enterStatement() {
+	if tm == nil {
+		return
+	}
+	tm.mu.Lock()
+	tm.statementDepth++
+	tm.mu.Unlock()
+}
+
+// leaveStatement drops one ExecuteStatement frame. The final-frame
+// depth transition and the decision to retire an expire-pending owner
+// share one tm.mu critical section so a timeout callback cannot observe
+// depth>0, mark expirePending, and then be left at depth 0 with no
+// watcher. Nested frames only decrement. Registry restore stays outside
+// the lock; timer callbacks never call Registry.Set.
+func (tm *TransactionManager) leaveStatement() {
+	if tm == nil {
+		return
+	}
+	if tm.afterLeaveRestore != nil {
+		tm.afterLeaveRestore()
+	}
+	tm.mu.Lock()
+	if tm.statementDepth > 0 {
+		tm.statementDepth--
+	}
+	if tm.statementDepth == 0 && tm.expirePendingBlocksLocked() {
+		tm.retireTransactionContextLocked()
+	}
+	tm.mu.Unlock()
+	tm.restoreLocalVarsIfIdle()
+}
+
+// syncExpiredOwnerRestore is the owner-aware statement/retirement barrier.
+// An expire-pending owner is retired under tm.mu, then detached SET LOCAL
+// undo is restored outside the lock. Call this before reading statement
+// defaults, applying ordinary SET/RESET, or installing a replacement
+// owner. Timer goroutines never call Registry.Set.
+func (tm *TransactionManager) syncExpiredOwnerRestore() {
+	if tm == nil {
+		return
+	}
+	tm.mu.Lock()
+	if tm.expirePendingBlocksLocked() {
+		tm.retireTransactionContextLocked()
+	}
+	tm.mu.Unlock()
+	tm.restoreLocalVarsIfIdle()
+}
+
+// withOwnerInstallAfterRestore restores detached SET LOCAL undo, then runs
+// fn under tm.mu only when a new owner would not snapshot unrestored LOCAL
+// values. Replay stays outside tm.mu because setters may inspect transaction
+// state. Expiry during a statement marks expirePending; this loop retires
+// that owner and restores before fn reads defaults or installs. A naked
+// inExec flag without owner-aware restore is not this protocol.
+func (tm *TransactionManager) withOwnerInstallAfterRestore(fn func() error) error {
+	for {
+		tm.syncExpiredOwnerRestore()
+		var retry bool
+		err := tm.withTransactionContextWithLock(func(**transactionContext) error {
+			if tm.expirePendingBlocksLocked() || tm.pendingRestoreBlocksNewOwnerLocked() {
+				retry = true
+				return nil
+			}
+			return fn()
+		})
+		if retry {
+			continue
+		}
+		return err
+	}
+}
+
 // restoreLocalVarsIfIdle replays detached SET LOCAL undo once no transaction
-// context remains. SET LOCAL values revert on commit, rollback, and close
-// alike, so instead of hooking every transaction-ending site (including automatic
-// rollback on statement error), this runs after each statement execution and
-// acts only when idle. Replay happens outside the lock because variable
-// setters may themselves inspect transaction state. Nested ExecuteStatement
-// does not restore while a transaction is still active.
+// context remains. This is the serialized session/CLI safe point: timer
+// goroutines never call Registry.Set. Session.ExecuteStatement and
+// syncExpiredOwnerRestore drain pending undo here before reading execution
+// defaults, applying SET/RESET, or creating a new owner, and again after
+// the statement (including an in-flight operation that returns after
+// cancellation). Owner-install paths also drain via
+// withOwnerInstallAfterRestore. Session.Close also drains. Direct manager
+// calls do not acquire a new automatic restoration contract. Replay happens
+// outside tm.mu because variable setters may themselves inspect transaction
+// state. Nested ExecuteStatement does not restore while a live (not
+// expire-pending) transaction is still active.
 func (tm *TransactionManager) restoreLocalVarsIfIdle() {
 	var entries []savedLocalVar
 	_ = tm.withTransactionContextWithLock(func(tcPtr **transactionContext) error {
@@ -654,23 +768,25 @@ func transactionOptions(vars *systemVariables, priority sppb.RequestOptions_Prio
 // BeginPendingTransaction starts pending transaction.
 // The actual start of the transaction is delayed until the first operation in the transaction is executed.
 func (tm *TransactionManager) BeginPendingTransaction(ctx context.Context, isolationLevel sppb.TransactionOptions_IsolationLevel, priority sppb.RequestOptions_Priority) error {
-	resolvedIsolationLevel := tm.resolveTransactionIsolationLevel(isolationLevel)
-	resolvedPriority := tm.resolveTransactionPriority(priority)
-
-	tm.mu.Lock()
-	defer tm.mu.Unlock()
-	if tm.tc != nil {
-		return fmt.Errorf("%s transaction is already running", tm.tc.attrs.mode)
-	}
-	tm.tc = &transactionContext{
-		attrs: transactionAttributes{
-			mode:           transactionModePending,
-			priority:       resolvedPriority,
-			isolationLevel: resolvedIsolationLevel,
-		},
-	}
-	tm.ensureReplayLocked()
-	return nil
+	return tm.withOwnerInstallAfterRestore(func() error {
+		if tm.tc != nil {
+			return fmt.Errorf("%s transaction is already running", tm.tc.attrs.mode)
+		}
+		// Resolve after the restore barrier so an expired owner's LOCAL
+		// priority/isolation cannot freeze into the replacement.
+		resolvedIsolationLevel := tm.resolveTransactionIsolationLevel(isolationLevel)
+		resolvedPriority := tm.resolveTransactionPriority(priority)
+		tm.tc = &transactionContext{
+			attrs: transactionAttributes{
+				mode:           transactionModePending,
+				priority:       resolvedPriority,
+				isolationLevel: resolvedIsolationLevel,
+			},
+		}
+		snapshotTransactionTimeoutLocked(tm.tc, tm.sysVars)
+		tm.ensureReplayLocked()
+		return nil
+	})
 }
 
 // DetermineTransactionLocked determines the type of transaction to start based on the pending transaction
@@ -754,15 +870,33 @@ func (tm *TransactionManager) BeginReadWriteTransactionLocked(ctx context.Contex
 	opts := transactionOptions(tm.sysVars, resolvedPriority, resolvedIsolationLevel, tag)
 
 	// Check for existing transaction
+	createdOwner := false
 	if tm.tc != nil && tm.tc.attrs.mode != transactionModePending {
 		return fmt.Errorf("%s transaction is already running", tm.tc.attrs.mode)
 	}
+	if tm.tc == nil {
+		tm.tc = &transactionContext{}
+		snapshotTransactionTimeoutLocked(tm.tc, tm.sysVars)
+		createdOwner = true
+	}
 
-	// Construct/validate the SDK handle before mutating the pending object.
-	// Failure retains identity, SET LOCAL undo, and the next-owner tag slot.
+	// Start the logical budget before constructor BeginTransaction. Merely
+	// allocating the owner or taking a multiplexed session is not enough;
+	// the statement-based SDK constructor issues an explicit BeginTransaction
+	// RPC (v1.95.0 ReadWriteStmtBasedTransaction.isDefaultInlinedBegin=false).
+	ctx, cancelDeadline := tm.armAndBindDeadlineLocked(ctx)
+	defer cancelDeadline()
+
+	// Construct/validate the SDK handle before mutating pending attributes.
+	// Failure retains pending identity, SET LOCAL undo, the next-owner tag
+	// slot, and an already-armed budget. A freshly allocated idle owner is
+	// discarded so failed construction still leaves no transaction.
 	txn, err := spanner.NewReadWriteStmtBasedTransactionWithOptions(ctx, tm.client, opts)
 	if err != nil {
-		return err
+		if createdOwner {
+			tm.retireTransactionContextLocked()
+		}
+		return annotateTransactionTimeout(err, tm.tc)
 	}
 	if tm.sysVars != nil {
 		tm.sysVars.Transaction.TransactionTag = ""
@@ -789,7 +923,7 @@ func (tm *TransactionManager) BeginReadWriteTransactionLocked(ctx context.Contex
 
 // BeginReadWriteTransaction starts read-write transaction.
 func (tm *TransactionManager) BeginReadWriteTransaction(ctx context.Context, isolationLevel sppb.TransactionOptions_IsolationLevel, priority sppb.RequestOptions_Priority) error {
-	return tm.withTransactionContextWithLock(func(tcPtr **transactionContext) error {
+	return tm.withOwnerInstallAfterRestore(func() error {
 		if err := tm.BeginReadWriteTransactionLocked(ctx, isolationLevel, priority); err != nil {
 			return err
 		}
@@ -816,8 +950,12 @@ func (tm *TransactionManager) CommitReadWriteTransactionLocked(ctx context.Conte
 		return spanner.CommitResponse{}, ErrNotInReadWriteTransaction
 	}
 
+	ctx, cancelDeadline := tm.armAndBindDeadlineLocked(ctx)
+	defer cancelDeadline()
+	owner := tm.tc
+
 	if _, _, err := tm.flushAutomaticDMLLocked(ctx); err != nil {
-		return spanner.CommitResponse{}, err
+		return spanner.CommitResponse{}, annotateTransactionTimeout(err, owner)
 	}
 
 	var resp spanner.CommitResponse
@@ -828,6 +966,7 @@ func (tm *TransactionManager) CommitReadWriteTransactionLocked(ctx context.Conte
 	} else {
 		resp, err = rwTxn.CommitWithReturnResp(ctx)
 	}
+	err = annotateTransactionTimeout(err, owner)
 
 	// Always retire the transaction context after commit attempt.
 	// A failed commit invalidates the transaction on the server,
@@ -946,7 +1085,7 @@ func (tm *TransactionManager) BeginReadOnlyTransactionLocked(ctx context.Context
 // BeginReadOnlyTransaction starts read-only transaction and returns the snapshot timestamp for the transaction if successful.
 func (tm *TransactionManager) BeginReadOnlyTransaction(ctx context.Context, typ timestampBoundType, staleness time.Duration, timestamp time.Time, priority sppb.RequestOptions_Priority) (time.Time, error) {
 	var resultTimestamp time.Time
-	err := tm.withTransactionContextWithLock(func(tcPtr **transactionContext) error {
+	err := tm.withOwnerInstallAfterRestore(func() error {
 		ts, err := tm.BeginReadOnlyTransactionLocked(ctx, typ, staleness, timestamp, priority)
 		if err != nil {
 			return err
@@ -1018,6 +1157,8 @@ func (tm *TransactionManager) ClosePendingTransaction() error {
 func (tm *TransactionManager) runQueryWithStatsOnTransaction(ctx context.Context, tx transaction, stmt spanner.Statement, implicit bool) *spanner.RowIterator {
 	opts := tm.queryOptionsLocked(sppb.ExecuteSqlRequest_PROFILE.Enum())
 	opts.LastStatement = implicit
+	// Iterator outlives this helper; parent ctx + owner deadline bound it.
+	ctx, _ = tm.armAndBindDeadlineLocked(ctx)
 	return tx.QueryWithOptions(ctx, stmt, opts)
 }
 
@@ -1033,9 +1174,11 @@ func (tm *TransactionManager) runAnalyzeQueryOnTransaction(ctx context.Context, 
 	if opts.Options == nil {
 		opts.Options = &sppb.ExecuteSqlRequest_QueryOptions{}
 	}
+	ctx, cancelDeadline := tm.armAndBindDeadlineLocked(ctx)
+	defer cancelDeadline()
 	iter := tx.QueryWithOptions(ctx, stmt, opts)
 	_, _, metadata, plan, err := consumeRowIterDiscard(iter)
-	return plan, metadata, err
+	return plan, metadata, annotateTransactionTimeout(err, tm.tc)
 }
 
 // runUpdateOnTransaction executes an update statement on a transaction.
@@ -1065,6 +1208,9 @@ func (tm *TransactionManager) runUpdateOnTransaction(ctx context.Context, tx *sp
 		return nil, admitError(err)
 	}
 
+	ctx, cancelDeadline := tm.armAndBindDeadlineLocked(ctx)
+	defer cancelDeadline()
+
 	// Capture the raw typed THEN RETURN rows (identity transform); display
 	// formatting is deferred to renderDMLReturnedRows so the value types are
 	// preserved for the active CLI_FORMAT (issue #738 PR2).
@@ -1073,6 +1219,7 @@ func (tm *TransactionManager) runUpdateOnTransaction(ctx context.Context, tx *sp
 		func(r *spanner.Row) (*spanner.Row, error) { return r, nil },
 		capture.receipt(),
 	)
+	err = annotateTransactionTimeout(err, tm.tc)
 	if err2 := tm.finishDMLCaptureLocked(capture, count, err); err == nil {
 		err = err2
 	}
@@ -1248,6 +1395,9 @@ func (tm *TransactionManager) tryQueryInTransaction(ctx context.Context, stmt sp
 	} else {
 		opts.DirectedReadOptions = tm.sysVars.Query.DirectedRead
 	}
+
+	// Iterator outlives this helper; parent ctx + owner deadline bound it.
+	ctx, _ = tm.armAndBindDeadlineLocked(ctx)
 
 	// Execute query on the transaction
 	iter := tm.tc.txn.QueryWithOptions(ctx, stmt, opts)
@@ -1466,12 +1616,17 @@ func (tm *TransactionManager) RunInNewOrExistRwTxLocked(ctx context.Context,
 		return nil, ErrNotInReadWriteTransaction
 	}
 
+	ctx, cancelDeadline := tm.armAndBindDeadlineLocked(ctx)
+	defer cancelDeadline()
+	owner := tm.tc
+
 	var affected int64
 	var plan *sppb.QueryPlan
 	var metadata *sppb.ResultSetMetadata
 
 	// Execute the function
 	affected, plan, metadata, err = f(txn, implicitRWTx)
+	err = annotateTransactionTimeout(err, owner)
 
 	// Enable heartbeat after any operation (success or failure)
 	// Even failed operations start the abort countdown
@@ -1514,11 +1669,17 @@ func (tm *TransactionManager) RunInNewOrExistRwTxLocked(ctx context.Context,
 func (tm *TransactionManager) RunInNewOrExistRwTx(ctx context.Context,
 	f func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error),
 ) (*DMLResult, error) {
-	// Use a single lock acquisition for the entire operation
-	tm.mu.Lock()
-	defer tm.mu.Unlock()
-
-	return tm.RunInNewOrExistRwTxLocked(ctx, f)
+	for {
+		tm.syncExpiredOwnerRestore()
+		tm.mu.Lock()
+		if tm.expirePendingBlocksLocked() || tm.pendingRestoreBlocksNewOwnerLocked() {
+			tm.mu.Unlock()
+			continue
+		}
+		result, err := tm.RunInNewOrExistRwTxLocked(ctx, f)
+		tm.mu.Unlock()
+		return result, err
+	}
 }
 
 // RunPartitionQuery runs a partition query.

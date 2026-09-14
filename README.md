@@ -202,6 +202,12 @@ Flags:
                                                embedded runtime container lifecycle logs. SQL SET CLI_LOG_LEVEL does not
                                                change those container logs.
       --log-grpc                               Show gRPC logs
+      --spanner-metrics-exporter="off"         Opt-in caller-owned Spanner client metrics exporter: off (default,
+                                               no provider) or otlp (OTLP HTTP/protobuf). OTEL_* environment variables
+                                               alone do not enable export. SQL SET cannot change this.
+      --spanner-metrics-endpoint=STRING        Absolute http/https collector URL for --spanner-metrics-exporter=otlp.
+                                               Host required; no userinfo, query, or fragment. Missing/root path becomes
+                                               /v1/metrics. Required with otlp; forbidden with off.
       --query-mode=QUERY-MODE                  Mode in which the query must be processed. Allowed values: NORMAL, PLAN,
                                                PROFILE, WITH_STATS, WITH_PLAN_AND_STATS.
       --strong                                 Perform a strong query.
@@ -862,7 +868,9 @@ Note that transaction-level priority takes precedence over command-level priorit
 
 `COMMIT_PRIORITY` overrides only the Commit RPC. `HIGH`, `MEDIUM`, and `LOW` set that override. `UNSPECIFIED` (the default) inherits the resolved transaction RPC priority, matching previous mycli behavior. That is not the go-sql-spanner default: the Go driver's unset `commit_priority` is `UNSPECIFIED` and does not inherit RPC priority. The effective commit priority is frozen when the physical read-write attempt is constructed, including SAVEPOINT reconstruction. Changing the session default does not alter an active attempt. Query, DML, heartbeat, partitioned DML, read-only, and Admin RPCs keep using their existing priority fields. `SET LOCAL COMMIT_PRIORITY` is not supported.
 
-`KEEP_TRANSACTION_ALIVE` controls whether an explicit read-write owner schedules keepalive heartbeats after the first user SQL. `TRUE` (the default) preserves existing mycli behavior. `FALSE` prevents heartbeat scheduling for that owner without changing user SQL, COMMIT, ROLLBACK, or cancellation. Java `KEEP_TRANSACTION_ALIVE` defaults to false; this CLI default is intentionally true. The policy is frozen on the logical owner with the constructor snapshot, including SAVEPOINT reconstruction. Changing the session default does not alter an active owner. Idle-deadline and `TRANSACTION_TIMEOUT` are not implemented; they are separate follow-up work and are not implied by this variable. `SET LOCAL KEEP_TRANSACTION_ALIVE` is not supported.
+`KEEP_TRANSACTION_ALIVE` controls whether an explicit read-write owner schedules keepalive heartbeats after the first user SQL. `TRUE` (the default) preserves existing mycli behavior. `FALSE` prevents heartbeat scheduling for that owner without changing user SQL, COMMIT, ROLLBACK, or cancellation. Java `KEEP_TRANSACTION_ALIVE` defaults to false; this CLI default is intentionally true. The policy is frozen on the logical owner with the constructor snapshot, including SAVEPOINT reconstruction. Changing the session default does not alter an active owner. Idle-deadline (#357) is not implemented. `TRANSACTION_TIMEOUT` is a separate logical-owner budget and is not implied by this variable. `SET LOCAL KEEP_TRANSACTION_ALIVE` is not supported.
+
+`TRANSACTION_TIMEOUT` is a logical read/write deadline (`10s`, `5m`, or `NULL`). `NULL` or `0` means no additional transaction deadline. The duration is captured for the logical owner. The single total budget starts at the first real database RPC, including the statement-based constructor `BeginTransaction`, and is preserved across physical reconstruction (`ROLLBACK TO`). Client-only `BEGIN`/`SHOW` and buffering automatic DML without a transaction RPC do not start it. A pending `SET LOCAL` may select the duration before the first RPC; changing it after the budget starts is rejected. Session `SET` or `RESET` after `BEGIN` applies to a later owner. Every SQL, Batch DML, commit, and replay RPC receives the remaining budget together with the caller and `STATEMENT_TIMEOUT` deadlines. Expiry cancels in-flight RPCs without waiting for the transaction mutex, retires only the matching owner, stops its heartbeat, and restores `SET LOCAL` at the next session safe point (start/end of `ExecuteStatement`, or `Close`). This is not user-idle expiry (#357). ABORTED retries (#293) are not implemented; a later retry path must reuse the remaining budget.
 
 ## Transaction Tags and Request Tags
 
@@ -1037,6 +1045,7 @@ For how these and other connection properties map to the official Spanner driver
 | MAX_PARTITIONED_PARALLELISM     | READ_WRITE | `4`                                                 |
 | DEFAULT_ISOLATION_LEVEL         | READ_WRITE | `REPEATABLE_READ`                                    |
 | STATEMENT_TIMEOUT               | READ_WRITE | `"10m"`                                             |
+| TRANSACTION_TIMEOUT             | READ_WRITE | `"5m"`                                              |
 | DDL_EXECUTION_MODE              | READ_WRITE | `"SYNC"`                                            |
 | DDL_ASYNC_WAIT_TIMEOUT          | READ_WRITE | `"10s"`                                             |
 | DEFAULT_SEQUENCE_KIND           | READ_WRITE | `"bit_reversed_positive"`                           |
@@ -1066,6 +1075,8 @@ For how these and other connection properties map to the official Spanner driver
 | CLI_CLIENT_CERT_FILE       | READ_ONLY  | `"/path/to/client.pem"`                        |
 | CLI_CLIENT_CERT_KEY        | READ_ONLY  | `"/path/to/client.key"`                        |
 | CLI_WITHOUT_AUTHENTICATION | READ_ONLY  | `"FALSE"`                                      |
+| CLI_SPANNER_METRICS_EXPORTER | READ_ONLY | `"off"`                                        |
+| CLI_SPANNER_METRICS_ENDPOINT | READ_ONLY | `"http://127.0.0.1:4318/v1/metrics"`           |
 | CLI_QUERY_MODE             | READ_WRITE | `"PROFILE"`                                    |
 | CLI_LINT_PLAN              | READ_WRITE | `"TRUE"`                                       |
 | CLI_EXPLAIN_HANGING_INDENT | READ_WRITE | `"TRUE"`                                       |
@@ -1085,6 +1096,8 @@ For how these and other connection properties map to the official Spanner driver
 | CLI_BIGQUERY_MAX_BYTES_BILLED | READ_WRITE | `1000000000`                                |
 
 > **Note**: `CLI_BIGQUERY_PROJECT` defaults to `CLI_PROJECT` when empty. `CLI_BIGQUERY_LOCATION` and `CLI_BIGQUERY_MAX_BYTES_BILLED` are optional BigQuery job settings.
+
+> **Note**: `CLI_SPANNER_METRICS_EXPORTER` defaults to `off` and does not start a MeterProvider. `OTEL_*` environment variables alone do not enable export. `otlp` requires `CLI_SPANNER_METRICS_ENDPOINT` (absolute `http`/`https` URL; missing/root path becomes `/v1/metrics`). After explicit opt-in, other standard OTLP HTTP exporter settings may still apply; destination, path, and scheme come only from the CLI URL. `SPANNER_EMULATOR_HOST` suppresses SDK caller-owned client metrics. Native Cloud Monitoring stays disabled. There is no `SHOW METRICS`.
 
 > **Note**: `CLI_FORMAT` accepts the following values:
 > - `TABLE` - ASCII table with borders (default for both interactive and batch modes)

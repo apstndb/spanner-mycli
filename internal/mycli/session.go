@@ -156,6 +156,10 @@ type Session struct {
 	// safety SCC before the row-presence query. Tests only.
 	dumpCyclePreflightProbe func(id tableID, txn *spanner.ReadOnlyTransaction) error
 
+	// closed makes Close idempotent so runWithOutput cleanup can follow
+	// handleExit / ExitOnError without double-closing clients.
+	closed atomic.Bool
+
 	// databaseExistsOverride replaces DatabaseExists in tests.
 	databaseExistsOverride func(context.Context) (bool, error)
 
@@ -389,6 +393,7 @@ func clientConfigForIdentity(sysVars *systemVariables, identity ConnectionVars) 
 	clientConfig := clientConfigForSystemVariables(sysVars)
 	clientConfig.DatabaseRole = identity.Role
 	forceNilDirectedReadOnCopiedClientConfig(&clientConfig)
+	overlayClientMetricsProvider(&clientConfig, sysVars)
 	return clientConfig
 }
 
@@ -608,6 +613,10 @@ func (s *Session) GetDatabaseSchema(ctx context.Context) ([]string, *descriptorp
 }
 
 func (s *Session) Close() {
+	if s == nil || !s.closed.CompareAndSwap(false, true) {
+		return
+	}
+
 	// Close any active transaction context (which stops heartbeat)
 	if s.txn != nil {
 		s.txn.clearTransactionContext()
@@ -616,12 +625,14 @@ func (s *Session) Close() {
 
 	if s.client != nil {
 		s.client.Close()
+		s.client = nil
 	}
 	if s.adminClient != nil {
 		err := s.adminClient.Close()
 		if err != nil {
 			slog.Error("error on adminClient.Close()", "err", err)
 		}
+		s.adminClient = nil
 	}
 
 	// Feature-seam state closes last (after the core clients above), in reverse
@@ -857,6 +868,21 @@ func (s *Session) ExecuteStatement(ctx context.Context, stmt Statement) (*Result
 }
 
 func (s *Session) executeStatement(ctx context.Context, stmt Statement, out OperationOutput) (result *Result, err error) {
+	// Owner-aware deferred retirement: enter the statement frame so a
+	// timeout callback can only mark expirePending, then drain any
+	// already-detached undo, run the test seam, and apply the barrier
+	// before statement-timeout defaults are read. Timer goroutines never
+	// call Registry.Set. Nested ExecuteStatement increments depth.
+	if s.txn != nil {
+		s.txn.enterStatement()
+		defer s.txn.leaveStatement()
+		s.txn.restoreLocalVarsIfIdle()
+		if s.txn.afterEntryRestore != nil {
+			s.txn.afterEntryRestore()
+		}
+		s.txn.syncExpiredOwnerRestore()
+	}
+
 	// Validate statement compatibility with current session mode
 	if err := s.ValidateStatementExecution(stmt); err != nil {
 		return nil, err

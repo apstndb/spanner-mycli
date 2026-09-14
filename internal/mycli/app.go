@@ -191,6 +191,7 @@ func runWithOutput(ctx context.Context, opts *spannerOptions, stdout io.Writer, 
 	if err != nil {
 		return err
 	}
+	applyMetricsRunTestSysVars(sysVars)
 
 	var cred []byte
 	if opts.Credential != "" {
@@ -355,7 +356,7 @@ func runWithOutput(ctx context.Context, opts *spannerOptions, stdout io.Writer, 
 	// TTY detection has been moved to StreamManager.
 
 	// Setup output streams
-	var errStream io.Writer = os.Stderr // Error stream is not affected by --tee
+	errStream := runWithOutputErrStream(os.Stderr) // Error stream is not affected by --tee
 
 	// Determine the original output stream
 	// Always use os.Stdout as the original output for actual data
@@ -389,7 +390,16 @@ func runWithOutput(ctx context.Context, opts *spannerOptions, stdout io.Writer, 
 		}
 	}
 
-	cli, err := NewCli(ctx, cred, sysVars)
+	metrics, err := startSpannerMetrics(sysVars)
+	if err != nil {
+		return err
+	}
+	var cli *Cli
+	defer func() {
+		releaseOwnedClientsAndMetrics(cli, metrics, errStream)
+	}()
+
+	cli, err = NewCli(ctx, cred, sysVars)
 	if err != nil {
 		return fmt.Errorf("failed to connect to Spanner: %w", err)
 	}
