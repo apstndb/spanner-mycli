@@ -1002,14 +1002,23 @@ func Test_parseParams(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "identical case aliases are kept",
+			name: "identical case aliases collapse to the sorted spelling",
 			params: map[string]string{
 				"MixedCase": "1",
 				"mixedcase": "1",
 			},
 			want: map[string]ast.Node{
 				"MixedCase": lo.Must(memefish.ParseExpr("", "1")),
-				"mixedcase": lo.Must(memefish.ParseExpr("", "1")),
+			},
+		},
+		{
+			name: "identical type aliases collapse to the sorted spelling",
+			params: map[string]string{
+				"MixedType": "INT64",
+				"mixedtype": "INT64",
+			},
+			want: map[string]ast.Node{
+				"MixedType": lo.Must(memefish.ParseType("", "INT64")),
 			},
 		},
 		{
@@ -1111,7 +1120,7 @@ func Test_initializeSystemVariables_paramCaseAliases(t *testing.T) {
 		}
 	})
 
-	t.Run("identical opts.Param aliases initialize and bind", func(t *testing.T) {
+	t.Run("identical opts.Param aliases collapse to one stored spelling", func(t *testing.T) {
 		t.Parallel()
 		sv, err := initializeSystemVariables(&spannerOptions{
 			Param: map[string]string{
@@ -1125,8 +1134,8 @@ func Test_initializeSystemVariables_paramCaseAliases(t *testing.T) {
 		if _, ok := sv.Params["MixedCase"]; !ok {
 			t.Fatalf("missing MixedCase: %v", sv.Params)
 		}
-		if _, ok := sv.Params["mixedcase"]; !ok {
-			t.Fatalf("missing mixedcase: %v", sv.Params)
+		if _, ok := sv.Params["mixedcase"]; ok {
+			t.Fatalf("identical alias was not collapsed: %v", sv.Params)
 		}
 		stmt, err := newStatement("SELECT @MIXEDCASE", sv.Params, false)
 		if err != nil {

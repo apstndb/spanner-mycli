@@ -1275,7 +1275,7 @@ func TestParseFlagsParamCaseIdentity(t *testing.T) {
 		}
 	})
 
-	t.Run("identical differently cased --param keys initialize as aliases", func(t *testing.T) {
+	t.Run("identical differently cased --param keys collapse to one SHOW PARAMS row", func(t *testing.T) {
 		t.Parallel()
 		gopts, err := parseAndValidate(withRequiredFlags("--param", "MixedCase=1", "--param", "mixedcase=1"))
 		if err != nil {
@@ -1287,6 +1287,9 @@ func TestParseFlagsParamCaseIdentity(t *testing.T) {
 		}
 		if err := checkParamMapAmbiguity(sv.Params); err != nil {
 			t.Fatal(err)
+		}
+		if len(sv.Params) != 1 {
+			t.Fatalf("initialized Params = %v, want one stored spelling", sv.Params)
 		}
 		stmt, err := newStatement("SELECT @mixedcase", sv.Params, false)
 		if err != nil {

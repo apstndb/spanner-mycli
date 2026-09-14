@@ -1185,7 +1185,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `Show query parameters`,
 				Syntax: `SHOW PARAMS`,
-				Note:   `Displays the stored spelling of each parameter.`,
+				Note:   `Displays the stored spelling of each logical parameter.`,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^SHOW\s+PARAMS$`),

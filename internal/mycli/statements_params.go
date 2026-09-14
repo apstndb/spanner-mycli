@@ -179,6 +179,26 @@ func checkParamMapAmbiguity(params map[string]ast.Node) error {
 	return nil
 }
 
+// collapseIdenticalParamAliases keeps one stored spelling per logical name.
+// The kept spelling is the lexicographically first alias because Go maps and
+// Kong's map[string]string do not retain input order. Conflicting aliases
+// must already have been rejected; this function does not re-check identity.
+func collapseIdenticalParamAliases(params map[string]ast.Node) {
+	seen := make(map[string]struct{}, len(params))
+	for _, name := range slices.Sorted(maps.Keys(params)) {
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		aliases := paramAliases(params, name)
+		for _, alias := range aliases {
+			seen[alias] = struct{}{}
+		}
+		for _, alias := range aliases[1:] {
+			delete(params, alias)
+		}
+	}
+}
+
 // lookupParam resolves one logical parameter for name. Identical aliases
 // share a value; conflicting aliases are an error. ok is false when name is
 // unknown.

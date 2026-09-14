@@ -248,3 +248,85 @@ func TestCheckParamMapAmbiguityDeterministic(t *testing.T) {
 		t.Fatalf("Aliases mismatch (-want +got):\n%s", diff)
 	}
 }
+
+func TestCollapseIdenticalParamAliasesKeepsSortedSpelling(t *testing.T) {
+	t.Parallel()
+	params := map[string]ast.Node{
+		"mixedcase": intParam("1"),
+		"MixedCase": intParam("1"),
+		"other":     intParam("2"),
+	}
+	collapseIdenticalParamAliases(params)
+	if diff := cmp.Diff([]string{"MixedCase", "other"}, slices.Sorted(maps.Keys(params))); diff != "" {
+		t.Fatalf("keys mismatch (-want +got):\n%s", diff)
+	}
+	if params["MixedCase"].SQL() != "1" {
+		t.Fatalf("MixedCase SQL() = %q, want 1", params["MixedCase"].SQL())
+	}
+}
+
+func TestShowParamsCollapsesIdenticalStartupAliases(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name      string
+		flagArgs  []string
+		wantName  string
+		wantKind  string
+		wantValue string
+	}{
+		{
+			name:      "value",
+			flagArgs:  []string{"--param", "MixedCase=1", "--param", "mixedcase=1"},
+			wantName:  "MixedCase",
+			wantKind:  "VALUE",
+			wantValue: "1",
+		},
+		{
+			name:      "type-only",
+			flagArgs:  []string{"--param", "MixedType=INT64", "--param", "mixedtype=INT64"},
+			wantName:  "MixedType",
+			wantKind:  "TYPE",
+			wantValue: "INT64",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			gopts, err := parseAndValidate(withRequiredFlags(tt.flagArgs...))
+			if err != nil {
+				t.Fatal(err)
+			}
+			sv, err := initializeSystemVariables(&gopts.Spanner)
+			if err != nil {
+				t.Fatal(err)
+			}
+			session := &Session{systemVariables: sv}
+			result, err := (&ShowParamsStatement{}).Execute(t.Context(), session, OperationOutput{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			typed := result.typedPayload()
+			if typed == nil {
+				t.Fatal("SHOW PARAMS returned no typed rows")
+			}
+			if len(typed.Rows) != 1 {
+				t.Fatalf("SHOW PARAMS rows = %d, want 1", len(typed.Rows))
+			}
+			var name, kind, value string
+			if err := typed.Rows[0].Column(0, &name); err != nil {
+				t.Fatal(err)
+			}
+			if err := typed.Rows[0].Column(1, &kind); err != nil {
+				t.Fatal(err)
+			}
+			if err := typed.Rows[0].Column(2, &value); err != nil {
+				t.Fatal(err)
+			}
+			got := paramRow{Name: name, Kind: kind, Value: value}
+			want := paramRow{Name: tt.wantName, Kind: tt.wantKind, Value: tt.wantValue}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Fatalf("SHOW PARAMS row mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
