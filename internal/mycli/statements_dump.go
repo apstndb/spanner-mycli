@@ -21,7 +21,7 @@ import (
 type DumpDatabaseStatement struct{}
 
 func (s *DumpDatabaseStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
-	return executeDump(ctx, session, dumpModeDatabase, nil, out)
+	return executeDump(ctx, session, dumpModeDatabase, nil, nil, out)
 }
 
 // DumpSchemaStatement represents DUMP SCHEMA statement
@@ -29,17 +29,21 @@ func (s *DumpDatabaseStatement) Execute(ctx context.Context, session *Session, o
 type DumpSchemaStatement struct{}
 
 func (s *DumpSchemaStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
-	return executeDump(ctx, session, dumpModeSchema, nil, out)
+	return executeDump(ctx, session, dumpModeSchema, nil, nil, out)
 }
 
 // DumpTablesStatement represents DUMP TABLES statement
 // It exports data only for specified tables (no DDL)
 type DumpTablesStatement struct {
-	Tables []tableID
+	Tables   []tableID
+	Selector *dumpTableSelector
 }
 
 func (s *DumpTablesStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
-	return executeDump(ctx, session, dumpModeTables, s.Tables, out)
+	if s.Selector != nil && len(s.Tables) > 0 {
+		return nil, errDumpTablesMixedSelector
+	}
+	return executeDump(ctx, session, dumpModeTables, s.Tables, s.Selector, out)
 }
 
 // dumpMode represents the type of dump operation
@@ -74,7 +78,7 @@ type dumpDataPlan struct {
 	Empty  bool
 }
 
-func executeDump(ctx context.Context, session *Session, mode dumpMode, specificTables []tableID, out OperationOutput) (*Result, error) {
+func executeDump(ctx context.Context, session *Session, mode dumpMode, specificTables []tableID, selector *dumpTableSelector, out OperationOutput) (*Result, error) {
 	// Direct Execute tests often pass a zero OperationOutput after swapping
 	// StreamManager. Resolve here so a nil writer still uses StreamManager,
 	// without mutating Session. Caller-provided writers still win.
@@ -98,7 +102,21 @@ func executeDump(ctx context.Context, session *Session, mode dumpMode, specificT
 	dro := cloneDirectedRead(session.systemVariables.Query.DirectedRead)
 	var result *Result
 	err := session.txn.withReadOnlyTransactionOrStart(ctx, func(txn *spanner.ReadOnlyTransaction) error {
-		plan, err := prepareDumpWithTxn(ctx, session, mode, specificTables, txn, dro)
+		selected := specificTables
+		if selector != nil {
+			ids, err := resolveDumpTableSelector(ctx, txn, selector, dro)
+			if err != nil {
+				return err
+			}
+			selected = ids
+			if session.dumpReadTxnProbe != nil {
+				session.dumpReadTxnProbe("selector", txn)
+			}
+		}
+		if mode == dumpModeTables && selected == nil {
+			return errDumpTablesMissingSelection
+		}
+		plan, err := prepareDumpWithTxn(ctx, session, mode, selected, txn, dro)
 		if err != nil {
 			return err
 		}
