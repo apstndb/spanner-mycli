@@ -137,6 +137,56 @@ func TestBeginPendingTransactionResolvesOptions(t *testing.T) {
 	}
 }
 
+func TestTransactionOptionsCommitPriority(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name           string
+		rpcPriority    sppb.RequestOptions_Priority
+		commitPriority sppb.RequestOptions_Priority
+		txnPriority    sppb.RequestOptions_Priority
+		want           sppb.RequestOptions_Priority
+	}{
+		{
+			name:           "unspecified inherits resolved transaction priority",
+			rpcPriority:    sppb.RequestOptions_PRIORITY_MEDIUM,
+			commitPriority: sppb.RequestOptions_PRIORITY_UNSPECIFIED,
+			txnPriority:    sppb.RequestOptions_PRIORITY_HIGH,
+			want:           sppb.RequestOptions_PRIORITY_HIGH,
+		},
+		{
+			name:           "explicit override is independent of transaction priority",
+			rpcPriority:    sppb.RequestOptions_PRIORITY_HIGH,
+			commitPriority: sppb.RequestOptions_PRIORITY_LOW,
+			txnPriority:    sppb.RequestOptions_PRIORITY_HIGH,
+			want:           sppb.RequestOptions_PRIORITY_LOW,
+		},
+		{
+			name:           "inherit does not re-read session RPC_PRIORITY",
+			rpcPriority:    sppb.RequestOptions_PRIORITY_MEDIUM,
+			commitPriority: sppb.RequestOptions_PRIORITY_UNSPECIFIED,
+			txnPriority:    sppb.RequestOptions_PRIORITY_LOW,
+			want:           sppb.RequestOptions_PRIORITY_LOW,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			vars := &systemVariables{
+				Query:       QueryVars{RPCPriority: tt.rpcPriority},
+				Transaction: TransactionVars{CommitPriority: tt.commitPriority},
+			}
+			opts := transactionOptions(vars, tt.txnPriority, sppb.TransactionOptions_SERIALIZABLE, "tag")
+			if opts.CommitPriority != tt.want {
+				t.Fatalf("CommitPriority = %v, want %v", opts.CommitPriority, tt.want)
+			}
+			vars.Query.RPCPriority = sppb.RequestOptions_PRIORITY_HIGH
+			vars.Transaction.CommitPriority = sppb.RequestOptions_PRIORITY_MEDIUM
+			frozen := freezeTxnCtor(opts)
+			if frozen.CommitPriority != tt.want {
+				t.Fatalf("frozen CommitPriority = %v, want %v", frozen.CommitPriority, tt.want)
+			}
+		})
+	}
+}
+
 func TestClearTransactionContext(t *testing.T) {
 	t.Parallel()
 	tm := &TransactionManager{

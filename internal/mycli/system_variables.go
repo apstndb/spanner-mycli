@@ -188,6 +188,7 @@ type TransactionVars struct {
 	ReturnCommitStats           bool                                           // RETURN_COMMIT_STATS
 	DefaultIsolationLevel       sppb.TransactionOptions_IsolationLevel         // DEFAULT_ISOLATION_LEVEL
 	ReadLockMode                sppb.TransactionOptions_ReadWrite_ReadLockMode // READ_LOCK_MODE
+	CommitPriority              sppb.RequestOptions_Priority                   // COMMIT_PRIORITY
 	SavepointSupport            enums.SavepointSupport                         // CLI_SAVEPOINT_SUPPORT
 
 	// Unimplemented variables (kept for compatibility)

@@ -501,6 +501,13 @@ var varDefs = []varDef{
 		bind:  func(sv *systemVariables) Variable { return RPCPriorityVar(&sv.Query.RPCPriority) },
 	},
 	{
+		name:    "COMMIT_PRIORITY",
+		desc:    "Commit RPC priority for read-write transactions (HIGH, MEDIUM, LOW). UNSPECIFIED (default) inherits the resolved transaction RPC priority, which is the existing mycli behavior. That differs from go-sql-spanner, where default UNSPECIFIED is the Go driver's CommitPriority default and does not inherit RPC_PRIORITY. The effective value is frozen in the constructor snapshot reused across physical attempts, including SAVEPOINT reconstruction. SET LOCAL is not supported. Not applied to query, DML, heartbeat, partitioned DML, read-only, or Admin RPCs.",
+		scope:   scopeSession,
+		noLocal: true,
+		bind:    func(sv *systemVariables) Variable { return RPCPriorityVar(&sv.Transaction.CommitPriority) },
+	},
+	{
 		name:  "DEFAULT_ISOLATION_LEVEL",
 		desc:  "The transaction isolation level that is used by default for read/write transactions.",
 		scope: scopeSession,
