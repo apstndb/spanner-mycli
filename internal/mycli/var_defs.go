@@ -289,6 +289,12 @@ var varDefs = []varDef{
 		},
 	},
 	{
+		name:  "DEFAULT_SEQUENCE_KIND",
+		desc:  "Opt-in default sequence kind used only to repair a precise missing-kind SYNC DDL failure. Empty/NULL (default) disables repair. The only accepted non-empty value is bit_reversed_positive. When enabled, a matching InvalidArgument failure may submit one extra ALTER DATABASE to set the database option default_sequence_kind (a database-wide schema mutation; requires the existing Spanner DDL update permission) and then retry only the metadata-proven unfinished suffix. Repair does not run in ASYNC, ASYNC_WAIT, or SHOW OPERATION.",
+		scope: scopeSession,
+		bind:  func(sv *systemVariables) Variable { return DefaultSequenceKindVar(&sv.Feature.DefaultSequenceKind) },
+	},
+	{
 		// Read-only: this is a security feature (--skip-system-command /
 		// --system-command=OFF); if it were settable, a user in a restricted
 		// environment could re-enable shell access with a single SET.
@@ -570,7 +576,7 @@ var varDefs = []varDef{
 	},
 	{
 		name:  "CLI_DDL_IN_TRANSACTION_MODE",
-		desc:  "How DDL interacts with an existing logical transaction. FAIL (default) rejects DDL while any owner exists. ALLOW_IN_EMPTY_TRANSACTION retires an empty pending or constructor-only RW owner without Commit, then runs DDL; nonempty RW, RO, recovery, and manual DML batch are rejected. AUTO_COMMIT_TRANSACTION no-op-retires empty pending, Commits constructor-only or nonempty RW (flushing eligible automatic DML first), then runs DDL; RO, recovery, and manual DML batch are rejected. The policy is captured on the logical owner at creation, including pending BEGIN. Session SET after BEGIN applies to a later owner. SET LOCAL may change this owner's captured policy only before user work. DDL is never SAVEPOINT-rollbackable. Empty BulkDdl is a no-op and does not commit. START BATCH DDL is admitted before batch state changes; RUN BATCH rechecks. CreateDatabase is out of scope. EOF/EXIT/Close never auto-commit because of this variable. Default FAIL intentionally differs from Java ALLOW_IN_EMPTY_TRANSACTION. Default-sequence repair (#963) is not implemented here.",
+		desc:  "How DDL interacts with an existing logical transaction. FAIL (default) rejects DDL while any owner exists. ALLOW_IN_EMPTY_TRANSACTION retires an empty pending or constructor-only RW owner without Commit, then runs DDL; nonempty RW, RO, recovery, and manual DML batch are rejected. AUTO_COMMIT_TRANSACTION no-op-retires empty pending, Commits constructor-only or nonempty RW (flushing eligible automatic DML first), then runs DDL; RO, recovery, and manual DML batch are rejected. The policy is captured on the logical owner at creation, including pending BEGIN. Session SET after BEGIN applies to a later owner. SET LOCAL may change this owner's captured policy only before user work. DDL is never SAVEPOINT-rollbackable. Empty BulkDdl is a no-op and does not commit. START BATCH DDL is admitted before batch state changes; RUN BATCH validates descriptors and rechecks admission before Commit, then carries that preparation receipt through Admin. CreateDatabase is out of scope. EOF/EXIT/Close never auto-commit because of this variable. Default FAIL intentionally differs from Java ALLOW_IN_EMPTY_TRANSACTION. SYNC default-sequence repair is DEFAULT_SEQUENCE_KIND (#984), not this variable.",
 		scope: scopeSession,
 		bind: func(sv *systemVariables) Variable {
 			return DdlInTransactionModeVar(&sv.Transaction.DdlInTransactionMode)

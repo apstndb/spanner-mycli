@@ -231,6 +231,7 @@ type FeatureVars struct {
 	EchoInput              bool                       // CLI_ECHO_INPUT
 	DDLExecutionMode       enums.DDLExecutionMode     // DDL_EXECUTION_MODE
 	DDLAsyncWaitTimeout    time.Duration              // DDL_ASYNC_WAIT_TIMEOUT
+	DefaultSequenceKind    string                     // DEFAULT_SEQUENCE_KIND (empty = disabled)
 	AutoConnectAfterCreate bool                       // CLI_AUTO_CONNECT_AFTER_CREATE
 	LogLevel               slog.Level                 // CLI_LOG_LEVEL (session-reported; runtime threshold is runtimeLogLevel when bound)
 	DatabaseDialect        databasepb.DatabaseDialect // CLI_DATABASE_DIALECT

@@ -54,14 +54,14 @@ says otherwise; `java-spanner` versions are given where known.
 | `data_boost_enabled` | yes | yes | `DATA_BOOST_ENABLED` implemented |
 | `max_partitioned_parallelism` | yes | yes | `MAX_PARTITIONED_PARALLELISM` implemented |
 | `max_partitions` | yes | yes | not implemented (candidate gap) |
-| `default_sequence_kind` + auto-set on DDL failure | yes (v1.26.0) | JDBC/PGAdapter auto-set v6.88.0; `CREATE SEQUENCE` v6.102.0 | not implemented (candidate gap; both reference drivers converged) |
+| `default_sequence_kind` + auto-set on DDL failure | yes (v1.26.0) | JDBC/PGAdapter auto-set v6.88.0; `CREATE SEQUENCE` v6.102.0 | `DEFAULT_SEQUENCE_KIND` (empty/NULL default = disabled; only `bit_reversed_positive` is accepted). SYNC-only: after `InvalidArgument` plus the pinned missing-kind sentence, one `ALTER DATABASE` sets the database option, then only a metadata-proven unfinished suffix is retried. Any ALTER failure stops without a suffix retry. ASYNC, ASYNC_WAIT, and SHOW OPERATION do not repair. |
 | `max_commit_delay` | yes | yes | `MAX_COMMIT_DELAY` implemented |
 | `commit_priority` (`HIGH`/`MEDIUM`/`LOW`/`UNSPECIFIED`) | yes | n/a | `COMMIT_PRIORITY` implemented. Default `UNSPECIFIED` inherits the resolved transaction RPC priority (existing mycli behavior). go-sql-spanner's default `UNSPECIFIED` is the Go driver's `CommitPriority` default and does not inherit `RPC_PRIORITY`. The effective value is frozen in the constructor snapshot reused across physical attempts, including SAVEPOINT reconstruction. `SET LOCAL` is not supported. Not applied to query, DML, heartbeat, partitioned DML, read-only, or Admin RPCs. |
 | `keep_transaction_alive` | n/a | yes (`KEEP_TRANSACTION_ALIVE`, default `false`) | `KEEP_TRANSACTION_ALIVE` implemented. Default `TRUE` preserves existing mycli heartbeat after the first user SQL on an explicit read-write owner. Java defaults to `false`; this CLI default is intentionally `TRUE`. The policy is frozen on the logical owner with the constructor snapshot reused across physical attempts, including SAVEPOINT reconstruction. `SET LOCAL` is not supported. Idle-deadline (#357) is not implemented. `TRANSACTION_TIMEOUT` is a separate logical-owner budget and is not implied by this variable. |
 | `proto_descriptors` / `proto_descriptors_file_path` | via properties | java-spanner properties | `PROTO_DESCRIPTORS` (inline base64 graph) and `PROTO_DESCRIPTORS_FILE_PATH` (SET/SHOW plus ADD, source compilation and HTTP(S) extensions) implemented; session-persistent graph, not full Java lifecycle parity. Neither supports SET LOCAL. |
 | `ca_cert_file` / `client_cert_file` / `client_cert_key` | yes (experimental/Omni host) | client-certificate / key connection properties | Startup-only `--ca-cert-file` / `--client-cert-file` / `--client-cert-key` (`CLI_CA_CERT_FILE`, `CLI_CLIENT_CERT_FILE`, `CLI_CLIENT_CERT_KEY`). Requires an explicit `--endpoint` or `--host`. Custom CA replaces system roots. Client cert and key are a mandatory pair. Transport is `omni.ConnectionOptions` applied to data, database admin, instance admin, USE/DETACH, and RecreateClient. Not SET-able. Does not set `ClientConfig.Type=OMNI` or Omni username/password. `--without-authentication` (`CLI_WITHOUT_AUTHENTICATION`) is an explicit opt-out of Google bearer credentials for the Spanner endpoint only; it is not inferred from TLS files, is not plaintext, and does not apply to feature AuthOptions (BigQuery/Gemini). |
 | `disable_native_metrics` / native Cloud Monitoring | yes (`disable_native_metrics`) | yes | mycli keeps native Cloud Monitoring disabled (`DisableNativeMetrics: true`) and does not expose the JDBC property name. Opt-in caller-owned SDK `spanner/client/*` metrics use startup-only `--spanner-metrics-exporter=off\|otlp` (default `off`) and `--spanner-metrics-endpoint` (`CLI_SPANNER_METRICS_EXPORTER` / `CLI_SPANNER_METRICS_ENDPOINT`, #663). One OTLP HTTP/protobuf sink, no global MeterProvider, reused across USE/DETACH/`RecreateClient`. `OTEL_*` env vars alone do not enable export. `SPANNER_EMULATOR_HOST` suppresses SDK caller metrics. No `SHOW METRICS` or legacy pool statistics. End-to-end tracing is independent (#967). |
-| `ddlInTransactionMode` | — | java-spanner property (`FAIL` / `ALLOW_IN_EMPTY_TRANSACTION` / `AUTO_COMMIT_TRANSACTION`) | `CLI_DDL_IN_TRANSACTION_MODE` implemented (#402). Default `FAIL` intentionally differs from Java `ALLOW_IN_EMPTY_TRANSACTION`. Policy is captured on the logical owner at creation, including pending `BEGIN`. Session `SET` after `BEGIN` applies to a later owner. `SET LOCAL` may change this owner only before user work. Empty pending is retired without an SDK constructor/`Commit`. Constructor-only empty RW is rolled back (`ALLOW`) or committed (`AUTO_COMMIT`) before DDL. Nonempty RW is rejected except `AUTO_COMMIT`, which flushes eligible automatic DML and `Commit`s first. Manual DML batch, RO, and SAVEPOINT recovery reject with zero Admin. Empty BulkDdl is a no-op and does not commit. `START BATCH DDL` is admitted before batch state changes; `RUN BATCH` rechecks. `CreateDatabase` is out of scope. EOF/EXIT/Close never auto-commit because of this variable. Default-sequence repair (#963) is not implemented here. |
+| `ddlInTransactionMode` | — | java-spanner property (`FAIL` / `ALLOW_IN_EMPTY_TRANSACTION` / `AUTO_COMMIT_TRANSACTION`) | `CLI_DDL_IN_TRANSACTION_MODE` implemented (#402). Default `FAIL` intentionally differs from Java `ALLOW_IN_EMPTY_TRANSACTION`. Policy is captured on the logical owner at creation, including pending `BEGIN`. Session `SET` after `BEGIN` applies to a later owner. `SET LOCAL` may change this owner only before user work. Empty pending is retired without an SDK constructor/`Commit`. Constructor-only empty RW is rolled back (`ALLOW`) or committed (`AUTO_COMMIT`) before DDL. Nonempty RW is rejected except `AUTO_COMMIT`, which flushes eligible automatic DML and `Commit`s first. Manual DML batch, RO, and SAVEPOINT recovery reject with zero Admin. Empty BulkDdl is a no-op and does not commit. `START BATCH DDL` is admitted before batch state changes; `RUN BATCH` validates descriptors and rechecks admission before `Commit`, then carries that preparation receipt through Admin. `CreateDatabase` is out of scope. EOF/EXIT/Close never auto-commit because of this variable. SYNC default-sequence repair is `DEFAULT_SEQUENCE_KIND` (#984), not this variable. |
 | Inactive-transaction action | — | java-spanner property | not implemented, tracked #403 |
 | Statement-scoped connection state (`SET LOCAL`-style) | yes (v1.22.0) | JDBC `SET LOCAL` | implemented (see `SET LOCAL` below, #691) |
 
@@ -76,13 +76,19 @@ says otherwise; `java-spanner` versions are given where known.
 | `SAVEPOINT` / `RELEASE` / `ROLLBACK TO` | not in the go driver | java-spanner Connection API since 2023 | `CLI_SAVEPOINT_SUPPORT` (`DISABLED` default, `ENABLED`). Client-emulated replay with result validation; not native Spanner savepoints. Deltas vs Java: disabled by default, synchronous reconstruction, no `FAIL_AFTER_ROLLBACK`, exact-case identifier names, 128 code-point CLI limit. See [docs/savepoint.md](savepoint.md). |
 | `SHOW TRANSACTION ISOLATION LEVEL` / `SHOW TRANSACTION READ ONLY` | yes (v1.26.0) | `SHOW DEFAULT_TRANSACTION_ISOLATION` v6.106.0 | `SHOW TRANSACTION ISOLATION LEVEL` and `SHOW TRANSACTION READ ONLY` implemented (#959). Side-effect-free inspection of the current logical owner (pending, active RO/RW, SAVEPOINT recovery). Idle sessions report next-transaction `DEFAULT_ISOLATION_LEVEL` / `READONLY`. `UNSPECIFIED` isolation means the database default; it is not a guessed server isolation. PostgreSQL `DEFERRABLE` / `SHOW TRANSACTION <var>` aliases are tracked with #230. |
 | `RUN PARTITIONED QUERY <select>` | yes (v1.24.0) | — | `RUN PARTITIONED QUERY` implemented |
-| `RUN PARTITION '<token>'` | not at SQL level in the go driver | JDBC `RUN PARTITION '<token>'` | token form tracked #45 (see note below) |
+| `RUN PARTITION '<token>'` | not at SQL level in the go driver | JDBC `RUN PARTITION '<token>'` | experimental native Go envelope (#45). Not JDBC/Java wire compatible. |
 
-> Note on `RUN PARTITION '<token>'`: a matching pattern and a
-> `RunPartitionStatement` handler exist in
-> `internal/mycli/client_side_statement_def.go`, but the statement's help/usage
-> is commented out and annotated "This statement is currently unimplemented", so
-> it is not exposed as a supported statement. Completing it is tracked in #45.
+> Note on `RUN PARTITION '<token>'`: `PARTITION` now exports
+> `smycli-part/1/<base64url(JSON)>` complete native tokens (pinned
+> `cloud.google.com/go/spanner` v1.95.0 `MarshalBinary` payloads plus database
+> and RFC3339Nano UTC timestamps). Older bare `GetPartitionToken` values are
+> unsupported. Client-side validity is one hour with a one-minute
+> forward-clock tolerance; this is not authentication or remote cleanup.
+> `RUN PARTITION` requires an idle session (no live logical owner or manual
+> batch). A decoder-only inspector of the pinned gob/protobuf layout checks
+> native consistency before SDK Unmarshal/Execute. `Cleanup`/`Close` in
+> v1.95.0 are local and do not `DeleteSession`. Managed-service retention and
+> cross-principal behavior are unverified. `RUN PARTITIONED QUERY` is unchanged.
 
 ## Candidate gaps (no issue yet)
 
@@ -92,8 +98,6 @@ tracking issue. They are listed here so the gap is not lost:
 - `SHOW TRANSACTION` PostgreSQL-only aliases (`DEFERRABLE`, `transaction_isolation`,
   arbitrary `SHOW TRANSACTION <var>`) — isolation level and read-only inspection
   landed in #959; remaining aliases are tracked with #230.
-- `default_sequence_kind` (with auto-set on DDL failure) — both reference drivers
-  converged on it.
 - `max_partitions` connection property.
 - `transaction_isolation` PG alias for `isolation_level`.
 
