@@ -79,6 +79,14 @@ type StartupConfig struct {
 	SpannerMetricsExporter string // CLI_SPANNER_METRICS_EXPORTER
 	SpannerMetricsEndpoint string // CLI_SPANNER_METRICS_ENDPOINT
 
+	// SpannerTracesExporter, SpannerTracesEndpoint, and
+	// SpannerTracesSampleRatio are startup-only process-owned client-trace
+	// settings. Empty exporter is treated as off. Off mode must not change
+	// the global TracerProvider or environment.
+	SpannerTracesExporter    string  // CLI_SPANNER_TRACES_EXPORTER
+	SpannerTracesEndpoint    string  // CLI_SPANNER_TRACES_ENDPOINT
+	SpannerTracesSampleRatio float64 // CLI_SPANNER_TRACES_SAMPLE_RATIO
+
 	// ClientMetricsProvider is the process-owned or test-injected meter
 	// provider. Not a registered variable. Off mode must not clear a
 	// preexisting injected value.
@@ -410,9 +418,11 @@ const defaultDDLAsyncWaitTimeout = 10 * time.Second
 func newSystemVariablesWithDefaults() systemVariables {
 	sv := systemVariables{
 		Config: StartupConfig{
-			EnableADCPlus:          true,
-			EmbeddedLogLevel:       slog.LevelWarn,
-			SpannerMetricsExporter: spannerMetricsExporterOff,
+			EnableADCPlus:            true,
+			EmbeddedLogLevel:         slog.LevelWarn,
+			SpannerMetricsExporter:   spannerMetricsExporterOff,
+			SpannerTracesExporter:    spannerTracesExporterOff,
+			SpannerTracesSampleRatio: spannerTracesDefaultSampleRatio,
 		},
 		Display: DisplayVars{
 			DumpCyclicMode:             enums.DumpCyclicModeReject,

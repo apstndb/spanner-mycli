@@ -638,7 +638,9 @@ func TestFakeHTTPOTLPExportAndCLIURLWins(t *testing.T) {
 	closeCliClients(&Cli{SessionHandler: NewSessionHandler(session)})
 	var stderr bytes.Buffer
 	started := time.Now()
-	owner.Shutdown(&stderr)
+	if err := owner.Shutdown(context.Background()); err != nil {
+		t.Fatalf("Shutdown: %v", err)
+	}
 	if elapsed := time.Since(started); elapsed > spannerMetricsCleanupBound {
 		t.Fatalf("Shutdown used %s, bound is %s; cancelled ctx = %v", elapsed, spannerMetricsCleanupBound, cmdCtx.Err())
 	}
@@ -671,7 +673,7 @@ func TestFakeHTTPOTLPExportAndCLIURLWins(t *testing.T) {
 	if sink.count() != after {
 		t.Fatal("Shutdown did not stop the PeriodicReader")
 	}
-	owner.Shutdown(io.Discard)
+	_ = owner.Shutdown(context.Background())
 }
 
 func TestCloseCliClientsNilSafe(t *testing.T) {
@@ -679,8 +681,8 @@ func TestCloseCliClientsNilSafe(t *testing.T) {
 	closeCliClients(nil)
 	closeCliClients(&Cli{})
 	releaseOwnedClientsAndMetrics(nil, nil, io.Discard)
-	(*metricsOwner)(nil).Shutdown(io.Discard)
-	(&metricsOwner{}).Shutdown(io.Discard)
+	_ = (*metricsOwner)(nil).Shutdown(context.Background())
+	_ = (&metricsOwner{}).Shutdown(context.Background())
 }
 
 func requireOTLPMetricsRequest(t *testing.T, body []byte) *colmetricpb.ExportMetricsServiceRequest {
@@ -714,6 +716,7 @@ type otlpPost struct {
 	method      string
 	path        string
 	contentType string
+	encoding    string
 	body        []byte
 }
 
@@ -731,6 +734,7 @@ func (s *otlpSink) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		method:      r.Method,
 		path:        r.URL.Path,
 		contentType: r.Header.Get("Content-Type"),
+		encoding:    r.Header.Get("Content-Encoding"),
 		body:        body,
 	})
 	s.mu.Unlock()

@@ -394,10 +394,15 @@ func runWithOutput(ctx context.Context, opts *spannerOptions, stdout io.Writer, 
 	if err != nil {
 		return err
 	}
+	var traces *tracesOwner
 	var cli *Cli
 	defer func() {
-		releaseOwnedClientsAndMetrics(cli, metrics, errStream)
+		releaseOwnedClientsAndTelemetry(cli, metrics, traces, errStream)
 	}()
+	traces, err = startSpannerTraces(sysVars)
+	if err != nil {
+		return err
+	}
 
 	cli, err = NewCli(ctx, cred, sysVars)
 	if err != nil {

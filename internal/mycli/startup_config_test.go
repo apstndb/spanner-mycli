@@ -74,6 +74,9 @@ func TestStartupConfigVariablesAreReadOnly(t *testing.T) {
 		{varName: "CLI_SKIP_SYSTEM_COMMAND", value: "FALSE"},
 		{varName: "CLI_SPANNER_METRICS_EXPORTER", value: "otlp"},
 		{varName: "CLI_SPANNER_METRICS_ENDPOINT", value: "http://127.0.0.1:4318/v1/metrics"},
+		{varName: "CLI_SPANNER_TRACES_EXPORTER", value: "otlp"},
+		{varName: "CLI_SPANNER_TRACES_ENDPOINT", value: "http://127.0.0.1:4318/v1/traces"},
+		{varName: "CLI_SPANNER_TRACES_SAMPLE_RATIO", value: "1"},
 	} {
 		t.Run(tt.varName, func(t *testing.T) {
 			t.Parallel()
