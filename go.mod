@@ -53,6 +53,7 @@ require (
 	github.com/testcontainers/testcontainers-go v0.44.0
 	github.com/vbauerster/mpb/v8 v8.16.1
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.44.0
+	go.opentelemetry.io/proto/otlp v1.10.0
 	go.uber.org/zap v1.28.0
 	golang.org/x/term v0.46.0
 	golang.org/x/time v0.16.0
@@ -65,7 +66,6 @@ require (
 require (
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
-	go.opentelemetry.io/proto/otlp v1.10.0 // indirect
 )
 
 require (

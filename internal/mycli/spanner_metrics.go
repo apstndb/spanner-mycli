@@ -20,6 +20,7 @@ import (
 	"io"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"cloud.google.com/go/spanner"
@@ -72,7 +73,7 @@ func parseSpannerMetricsEndpoint(raw string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("invalid --spanner-metrics-endpoint %q: %w", raw, err)
 	}
-	if !u.IsAbs() || u.Opaque != "" || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+	if !u.IsAbs() || u.Opaque != "" || u.Hostname() == "" || (u.Scheme != "http" && u.Scheme != "https") {
 		return "", fmt.Errorf("invalid --spanner-metrics-endpoint %q: must be an absolute http or https URL with a host", raw)
 	}
 	if u.User != nil || u.RawQuery != "" || u.Fragment != "" {
@@ -134,6 +135,38 @@ func closeCliClients(cli *Cli) {
 	if cli != nil && cli.SessionHandler != nil {
 		cli.SessionHandler.Close()
 	}
+}
+
+// metricsRunTestHooks is a process-local test seam for runWithOutput.
+// Production leaves the pointer nil. Tests store and clear it with
+// atomic.Pointer so parallel package tests do not race on the hook.
+type metricsRunTestHooks struct {
+	errStream io.Writer
+	adjust    func(*systemVariables)
+}
+
+var metricsRunTest atomic.Pointer[metricsRunTestHooks]
+
+func applyMetricsRunTestSysVars(sysVars *systemVariables) {
+	if hooks := metricsRunTest.Load(); hooks != nil && hooks.adjust != nil {
+		hooks.adjust(sysVars)
+	}
+}
+
+func runWithOutputErrStream(fallback io.Writer) io.Writer {
+	if hooks := metricsRunTest.Load(); hooks != nil && hooks.errStream != nil {
+		return hooks.errStream
+	}
+	return fallback
+}
+
+// releaseOwnedClientsAndMetrics is the runWithOutput cleanup seam: close
+// owned CLI clients first, then flush/stop the process-level metrics owner
+// with one fresh five-second budget. Shutdown diagnostics go to errw and
+// must not replace the caller's original result.
+func releaseOwnedClientsAndMetrics(cli *Cli, metrics *metricsOwner, errw io.Writer) {
+	closeCliClients(cli)
+	metrics.Shutdown(errw)
 }
 
 func overlayClientMetricsProvider(cfg *spanner.ClientConfig, sysVars *systemVariables) {

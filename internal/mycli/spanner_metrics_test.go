@@ -36,9 +36,11 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+	colmetricpb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -48,6 +50,7 @@ const metricsTestSQL = "SELECT secret_col FROM t WHERE id = @p"
 
 type fakeMetricsSpanner struct {
 	sppb.UnimplementedSpannerServer
+	queryStarted chan<- struct{}
 }
 
 func (s *fakeMetricsSpanner) CreateSession(_ context.Context, r *sppb.CreateSessionRequest) (*sppb.Session, error) {
@@ -79,6 +82,14 @@ func (s *fakeMetricsSpanner) BeginTransaction(context.Context, *sppb.BeginTransa
 }
 
 func (s *fakeMetricsSpanner) ExecuteStreamingSql(_ *sppb.ExecuteSqlRequest, stream sppb.Spanner_ExecuteStreamingSqlServer) error {
+	if s.queryStarted != nil {
+		select {
+		case s.queryStarted <- struct{}{}:
+		default:
+		}
+		<-stream.Context().Done()
+		return stream.Context().Err()
+	}
 	return stream.Send(&sppb.PartialResultSet{
 		Metadata: &sppb.ResultSetMetadata{
 			RowType: &sppb.StructType{Fields: []*sppb.StructType_Field{
@@ -92,12 +103,17 @@ func (s *fakeMetricsSpanner) ExecuteStreamingSql(_ *sppb.ExecuteSqlRequest, stre
 
 func startFakeMetricsSpanner(t *testing.T) (host string, port int, stop func()) {
 	t.Helper()
+	return startFakeMetricsSpannerServer(t, &fakeMetricsSpanner{})
+}
+
+func startFakeMetricsSpannerServer(t *testing.T, srv sppb.SpannerServer) (host string, port int, stop func()) {
+	t.Helper()
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	grpcServer := grpc.NewServer()
-	sppb.RegisterSpannerServer(grpcServer, &fakeMetricsSpanner{})
+	sppb.RegisterSpannerServer(grpcServer, srv)
 	go func() {
 		if err := grpcServer.Serve(lis); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
 			t.Errorf("serve: %v", err)
@@ -228,6 +244,8 @@ func TestNormalizeSpannerMetricsOptions(t *testing.T) {
 		{desc: "otlp fills default path", exporter: "otlp", endpoint: "http://127.0.0.1:4318", wantExporter: "otlp", wantEndpoint: "http://127.0.0.1:4318/v1/metrics"},
 		{desc: "otlp root path becomes default", exporter: "otlp", endpoint: "https://collector.example/", wantExporter: "otlp", wantEndpoint: "https://collector.example/v1/metrics"},
 		{desc: "otlp preserves explicit path", exporter: "otlp", endpoint: "http://127.0.0.1:4318/otlp/v1/metrics", wantExporter: "otlp", wantEndpoint: "http://127.0.0.1:4318/otlp/v1/metrics"},
+		{desc: "otlp accepts IPv6 host", exporter: "otlp", endpoint: "http://[::1]:4318", wantExporter: "otlp", wantEndpoint: "http://[::1]:4318/v1/metrics"},
+		{desc: "port-only authority rejected", exporter: "otlp", endpoint: "http://:4318/v1/metrics", errContains: "absolute http or https"},
 		{desc: "relative url rejected", exporter: "otlp", endpoint: "/v1/metrics", errContains: "absolute http or https"},
 		{desc: "missing scheme rejected", exporter: "otlp", endpoint: "127.0.0.1:4318/v1/metrics", errContains: "invalid --spanner-metrics-endpoint"},
 		{desc: "userinfo rejected", exporter: "otlp", endpoint: "http://user:pass@127.0.0.1:4318/v1/metrics", errContains: "userinfo"},
@@ -275,6 +293,16 @@ func TestValidateSpannerOptionsMetricsCombos(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "invalid combination") {
 		t.Fatalf("off plus endpoint: %v", err)
+	}
+	err = ValidateSpannerOptions(&spannerOptions{
+		ProjectId:              "p",
+		InstanceId:             "i",
+		DatabaseId:             "d",
+		SpannerMetricsExporter: "otlp",
+		SpannerMetricsEndpoint: "http://:4318/v1/metrics",
+	})
+	if err == nil || !strings.Contains(err.Error(), "absolute http or https") {
+		t.Fatalf("port-only host: %v", err)
 	}
 }
 
@@ -632,12 +660,7 @@ func TestFakeHTTPOTLPExportAndCLIURLWins(t *testing.T) {
 		if !strings.Contains(p.contentType, "protobuf") {
 			t.Fatalf("content-type = %q, want protobuf", p.contentType)
 		}
-		if !bytes.Contains(p.body, []byte("spanner/client")) {
-			t.Fatalf("protobuf body missing spanner/client metrics; len=%d", len(p.body))
-		}
-		if bytes.Contains(p.body, []byte(metricsTestSQL)) || bytes.Contains(p.body, []byte("secret_col")) {
-			t.Fatal("encoded export contained SQL text")
-		}
+		requireOTLPMetricsRequest(t, p.body)
 	}
 	if decoy.count() != 0 {
 		t.Fatalf("conflicting OTEL endpoint received %d posts; CLI URL must win", decoy.count())
@@ -655,8 +678,36 @@ func TestCloseCliClientsNilSafe(t *testing.T) {
 	t.Parallel()
 	closeCliClients(nil)
 	closeCliClients(&Cli{})
+	releaseOwnedClientsAndMetrics(nil, nil, io.Discard)
 	(*metricsOwner)(nil).Shutdown(io.Discard)
 	(&metricsOwner{}).Shutdown(io.Discard)
+}
+
+func requireOTLPMetricsRequest(t *testing.T, body []byte) *colmetricpb.ExportMetricsServiceRequest {
+	t.Helper()
+	var req colmetricpb.ExportMetricsServiceRequest
+	if err := proto.Unmarshal(body, &req); err != nil {
+		t.Fatalf("unmarshal ExportMetricsServiceRequest: %v", err)
+	}
+	var names []string
+	found := false
+	for _, rm := range req.GetResourceMetrics() {
+		for _, sm := range rm.GetScopeMetrics() {
+			for _, m := range sm.GetMetrics() {
+				names = append(names, m.GetName())
+				if strings.HasPrefix(m.GetName(), "spanner/client") {
+					found = true
+				}
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("ExportMetricsServiceRequest has no spanner/client metric; names=%v", names)
+	}
+	if bytes.Contains(body, []byte(metricsTestSQL)) || bytes.Contains(body, []byte("secret_col")) {
+		t.Fatal("encoded export contained SQL text")
+	}
+	return &req
 }
 
 type otlpPost struct {
