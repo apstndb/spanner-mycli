@@ -17,6 +17,7 @@ package mycli
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -46,6 +47,12 @@ func ownerDeadline(tm *TransactionManager) time.Time {
 		return time.Time{}
 	}
 	return tm.tc.deadline
+}
+
+func ownerFirstUse(tm *TransactionManager) bool {
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+	return tm.tc != nil && tm.tc.firstUse
 }
 
 func requireOwner(t *testing.T, tm *TransactionManager) *transactionContext {
@@ -452,6 +459,13 @@ func TestTransactionTimeoutZeroAndNullDoNotArm(t *testing.T) {
 			if armed {
 				t.Fatal("NULL/0 budget was armed")
 			}
+			if !ownerFirstUse(h.tm) {
+				t.Fatal("NULL/0 first database use was not recorded")
+			}
+			_, err := execSQL(t, ctx, session, "SET LOCAL TRANSACTION_TIMEOUT = '1h'")
+			if err == nil || !errors.Is(err, errTransactionTimeoutFrozen) {
+				t.Fatalf("SET LOCAL after NULL/0 first use: %v", err)
+			}
 		})
 	}
 }
@@ -543,6 +557,428 @@ func TestTransactionTimeoutConstructorCancelWhileMutexHeld(t *testing.T) {
 	waitChan(t, expired, "matching pending owner retire after constructor cancel")
 	if txnContext(h.tm) != nil {
 		t.Fatal("constructor expiry left a stale owner")
+	}
+}
+
+func TestTransactionTimeoutNullZeroFreezeAfterConstructor(t *testing.T) {
+	t.Parallel()
+	for _, value := range []string{"NULL", "'0s'"} {
+		t.Run(value, func(t *testing.T) {
+			t.Parallel()
+			h := newHeartbeatHarness(t)
+			ctx := t.Context()
+			session := sessionForTM(t, h.tm)
+			mustExec(t, ctx, session, "SET TRANSACTION_TIMEOUT = "+value)
+			if err := h.tm.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+				t.Fatal(err)
+			}
+			if len(h.server.beginObservations()) == 0 {
+				t.Fatal("constructor did not issue BeginTransaction")
+			}
+			_, _, armed := ownerTimeout(h.tm)
+			if armed {
+				t.Fatal("NULL/0 constructor started a timer")
+			}
+			if !ownerFirstUse(h.tm) {
+				t.Fatal("NULL/0 constructor did not record first use")
+			}
+			_, err := execSQL(t, ctx, session, "SET LOCAL TRANSACTION_TIMEOUT = '1h'")
+			if err == nil || !errors.Is(err, errTransactionTimeoutFrozen) {
+				t.Fatalf("SET LOCAL after constructor BeginTransaction: %v", err)
+			}
+			if got := mustGetVar(t, session, "TRANSACTION_TIMEOUT"); got != "NULL" && got != "0s" {
+				t.Fatalf("rejected LOCAL leaked: %s", got)
+			}
+		})
+	}
+}
+
+func TestTransactionTimeoutFailedConstructorPreservesNullFirstUse(t *testing.T) {
+	t.Parallel()
+	for _, value := range []string{"NULL", "'0s'"} {
+		t.Run(value, func(t *testing.T) {
+			t.Parallel()
+			h := newHeartbeatHarness(t)
+			ctx := t.Context()
+			session := sessionForTM(t, h.tm)
+			mustExec(t, ctx, session, "SET TRANSACTION_TIMEOUT = "+value)
+			mustExec(t, ctx, session, "BEGIN")
+			mustExec(t, ctx, session, "SET LOCAL CLI_VERBOSE = TRUE")
+			pending := requireOwner(t, h.tm)
+			if ownerFirstUse(h.tm) {
+				t.Fatal("pending BEGIN recorded first use")
+			}
+			injected := status.Error(codes.PermissionDenied, "injected constructor failure")
+			h.server.failBegin = injected
+			err := h.tm.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED)
+			if err == nil || !strings.Contains(err.Error(), "injected constructor failure") {
+				t.Fatalf("constructor: %v", err)
+			}
+			if txnContext(h.tm) != pending {
+				t.Fatal("failed constructor replaced the pending owner")
+			}
+			if !ownerFirstUse(h.tm) {
+				t.Fatal("failed constructor dropped first-use")
+			}
+			_, _, armed := ownerTimeout(h.tm)
+			if armed {
+				t.Fatal("NULL/0 failed constructor started a timer")
+			}
+			_, localErr := execSQL(t, ctx, session, "SET LOCAL TRANSACTION_TIMEOUT = '45s'")
+			if localErr == nil || !errors.Is(localErr, errTransactionTimeoutFrozen) {
+				t.Fatalf("SET LOCAL after failed constructor first-use: %v", localErr)
+			}
+			h.server.failBegin = nil
+			if err := h.tm.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+				t.Fatal(err)
+			}
+			if txnContext(h.tm) != pending {
+				t.Fatal("retry replaced the pending owner")
+			}
+			if !ownerFirstUse(h.tm) {
+				t.Fatal("retry dropped first-use")
+			}
+		})
+	}
+}
+
+func TestTransactionTimeoutBatchDMLBindsRemainingDeadline(t *testing.T) {
+	t.Parallel()
+	const txnBudget = 2 * time.Second
+	const callerBudget = 20 * time.Second
+	dml := "INSERT INTO T (id) VALUES (1)"
+
+	tests := []struct {
+		name string
+		run  func(t *testing.T, ctx context.Context, h *heartbeatHarness, session *Session)
+	}{
+		{
+			name: "manual BatchUpdate",
+			run: func(t *testing.T, ctx context.Context, h *heartbeatHarness, session *Session) {
+				if err := h.tm.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := executeBatchDML(ctx, session, []spanner.Statement{spanner.NewStatement(dml)}); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "RUN BATCH",
+			run: func(t *testing.T, ctx context.Context, h *heartbeatHarness, session *Session) {
+				mustExec(t, ctx, session, "BEGIN RW")
+				mustExec(t, ctx, session, "START BATCH DML")
+				mustExec(t, ctx, session, dml)
+				mustExec(t, ctx, session, "RUN BATCH")
+			},
+		},
+		{
+			name: "FlushAutomaticDML",
+			run: func(t *testing.T, ctx context.Context, h *heartbeatHarness, session *Session) {
+				mustExec(t, t.Context(), session, "SET AUTO_BATCH_DML = TRUE")
+				mustExec(t, ctx, session, "BEGIN RW")
+				res := mustExec(t, ctx, session, dml)
+				if res.IsExecutedDML || !h.tm.HasAutomaticDML() {
+					t.Fatalf("expected queued automatic DML: executed=%v queued=%v", res.IsExecutedDML, h.tm.HasAutomaticDML())
+				}
+				if _, err := h.tm.FlushAutomaticDML(ctx); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "flush-before-read",
+			run: func(t *testing.T, ctx context.Context, h *heartbeatHarness, session *Session) {
+				mustExec(t, t.Context(), session, "SET AUTO_BATCH_DML = TRUE")
+				mustExec(t, ctx, session, "BEGIN RW")
+				res := mustExec(t, ctx, session, dml)
+				if res.IsExecutedDML || !h.tm.HasAutomaticDML() {
+					t.Fatalf("expected queued automatic DML: executed=%v queued=%v", res.IsExecutedDML, h.tm.HasAutomaticDML())
+				}
+				if _, err := executeSQLImplWithVars(ctx, session, "SELECT 1 AS after_flush", session.systemVariables, OperationOutput{w: io.Discard}); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			h := newHeartbeatHarness(t)
+			session := sessionForTM(t, h.tm)
+			h.attachSessionClient(session)
+			mustExec(t, t.Context(), session, "SET TRANSACTION_TIMEOUT = '2s'")
+			caller, cancel := context.WithTimeout(t.Context(), callerBudget)
+			defer cancel()
+			tc.run(t, caller, h, session)
+			obs := h.server.batchObservations()
+			if len(obs) == 0 {
+				t.Fatal("expected a Batch DML RPC")
+			}
+			last := obs[len(obs)-1]
+			if !last.hasDeadline {
+				t.Fatal("Batch DML RPC had no context deadline")
+			}
+			assertApproxDeadline(t, last.deadlineRemaining, txnBudget)
+			if last.deadlineRemaining > 5*time.Second {
+				t.Fatalf("Batch DML used caller/statement deadline remaining=%s", last.deadlineRemaining)
+			}
+		})
+	}
+}
+
+func TestTransactionTimeoutBatchDMLCancelsWhileMutexHeld(t *testing.T) {
+	t.Parallel()
+	dml := "INSERT INTO T (id) VALUES (1)"
+	tests := []struct {
+		name string
+		run  func(t *testing.T, ctx context.Context, h *heartbeatHarness, session *Session) error
+	}{
+		{
+			name: "manual BatchUpdate",
+			run: func(t *testing.T, ctx context.Context, h *heartbeatHarness, session *Session) error {
+				if err := h.tm.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+					return err
+				}
+				_, err := executeBatchDML(ctx, session, []spanner.Statement{spanner.NewStatement(dml)})
+				return err
+			},
+		},
+		{
+			name: "RUN BATCH",
+			run: func(t *testing.T, ctx context.Context, h *heartbeatHarness, session *Session) error {
+				if err := h.tm.BeginReadWriteTransaction(t.Context(), sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+					return err
+				}
+				mustExec(t, t.Context(), session, "START BATCH DML")
+				mustExec(t, t.Context(), session, dml)
+				_, err := execSQL(t, ctx, session, "RUN BATCH")
+				return err
+			},
+		},
+		{
+			name: "FlushAutomaticDML",
+			run: func(t *testing.T, ctx context.Context, h *heartbeatHarness, session *Session) error {
+				mustExec(t, t.Context(), session, "SET AUTO_BATCH_DML = TRUE")
+				if err := h.tm.BeginReadWriteTransaction(t.Context(), sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+					return err
+				}
+				res := mustExec(t, t.Context(), session, dml)
+				if res.IsExecutedDML || !h.tm.HasAutomaticDML() {
+					t.Fatalf("expected queued automatic DML: executed=%v queued=%v", res.IsExecutedDML, h.tm.HasAutomaticDML())
+				}
+				_, err := h.tm.FlushAutomaticDML(ctx)
+				return err
+			},
+		},
+		{
+			name: "flush-before-read",
+			run: func(t *testing.T, ctx context.Context, h *heartbeatHarness, session *Session) error {
+				mustExec(t, t.Context(), session, "SET AUTO_BATCH_DML = TRUE")
+				if err := h.tm.BeginReadWriteTransaction(t.Context(), sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+					return err
+				}
+				res := mustExec(t, t.Context(), session, dml)
+				if res.IsExecutedDML || !h.tm.HasAutomaticDML() {
+					t.Fatalf("expected queued automatic DML: executed=%v queued=%v", res.IsExecutedDML, h.tm.HasAutomaticDML())
+				}
+				_, err := executeSQLImplWithVars(ctx, session, "SELECT 1 AS after_flush", session.systemVariables, OperationOutput{w: io.Discard})
+				return err
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			h := newHeartbeatHarness(t)
+			ctx := t.Context()
+			session := sessionForTM(t, h.tm)
+			h.attachSessionClient(session)
+			mustExec(t, ctx, session, "SET TRANSACTION_TIMEOUT = '30ms'")
+			ownerReady := make(chan *transactionContext, 1)
+			// Arm via constructor before blocking Batch DML so first-use is the
+			// BeginTransaction RPC, then expire during the mutex-held batch RPC.
+			if err := h.tm.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+				t.Fatal(err)
+			}
+			owner := requireOwner(t, h.tm)
+			ownerReady <- owner
+			expired := make(chan struct{})
+			h.tm.timeoutAfterExpire = func(got *transactionContext) {
+				if got == owner {
+					close(expired)
+				}
+			}
+			block := make(chan struct{})
+			inFlight := make(chan struct{})
+			h.server.setBlockBatchDML(block)
+			h.server.setBatchBlocked(func() { close(inFlight) })
+
+			errCh := make(chan error, 1)
+			go func() {
+				// Routes that begin themselves would re-enter an active txn.
+				// Reuse the already-started owner and only issue the batch RPC.
+				switch tc.name {
+				case "manual BatchUpdate":
+					_, err := executeBatchDML(ctx, session, []spanner.Statement{spanner.NewStatement(dml)})
+					errCh <- err
+				case "RUN BATCH":
+					mustExec(t, ctx, session, "START BATCH DML")
+					mustExec(t, ctx, session, dml)
+					_, err := execSQL(t, ctx, session, "RUN BATCH")
+					errCh <- err
+				case "FlushAutomaticDML":
+					mustExec(t, ctx, session, "SET AUTO_BATCH_DML = TRUE")
+					res := mustExec(t, ctx, session, dml)
+					if res.IsExecutedDML || !h.tm.HasAutomaticDML() {
+						errCh <- fmt.Errorf("expected queued automatic DML: executed=%v queued=%v", res.IsExecutedDML, h.tm.HasAutomaticDML())
+						return
+					}
+					_, err := h.tm.FlushAutomaticDML(ctx)
+					errCh <- err
+				case "flush-before-read":
+					mustExec(t, ctx, session, "SET AUTO_BATCH_DML = TRUE")
+					res := mustExec(t, ctx, session, dml)
+					if res.IsExecutedDML || !h.tm.HasAutomaticDML() {
+						errCh <- fmt.Errorf("expected queued automatic DML: executed=%v queued=%v", res.IsExecutedDML, h.tm.HasAutomaticDML())
+						return
+					}
+					_, err := executeSQLImplWithVars(ctx, session, "SELECT 1 AS after_flush", session.systemVariables, OperationOutput{w: io.Discard})
+					errCh <- err
+				default:
+					errCh <- tc.run(t, ctx, h, session)
+				}
+			}()
+			_ = ownerReady
+			waitChan(t, inFlight, "Batch DML RPC while transaction mutex held")
+			err := waitTimeoutErr(t, errCh, "cancelled Batch DML")
+			if !isTimeoutish(err) {
+				t.Fatalf("held-mutex Batch DML cancel: %v", err)
+			}
+			// The expiry watcher or handleOwnerFailure rollback may retire
+			// the owner. Rollback closes the deadline context with Canceled,
+			// so timeoutAfterExpire is not always invoked.
+			select {
+			case <-expired:
+			case <-time.After(2 * time.Second):
+			}
+			if txnContext(h.tm) != nil {
+				t.Fatal("expiry left a replacement or stale owner")
+			}
+		})
+	}
+}
+
+func TestTransactionTimeoutExpiryAfterEntryRestoreBeforeBegin(t *testing.T) {
+	t.Parallel()
+	h := newHeartbeatHarness(t)
+	ctx := t.Context()
+	session := sessionForTM(t, h.tm)
+	h.attachSessionClient(session)
+	mustExec(t, ctx, session, "SET TRANSACTION_TIMEOUT = '1h'")
+	mustExec(t, ctx, session, "BEGIN")
+	mustExec(t, ctx, session, "SET LOCAL TRANSACTION_TIMEOUT = '2h'")
+	mustExec(t, ctx, session, "SET LOCAL CLI_VERBOSE = TRUE")
+	if err := h.tm.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+		t.Fatal(err)
+	}
+	ownerA := requireOwner(t, h.tm)
+	h.tm.afterEntryRestore = func() {
+		h.tm.retireMatchingOwner(ownerA)
+	}
+	mustExec(t, ctx, session, "BEGIN")
+	if txnContext(h.tm) == ownerA {
+		t.Fatal("BEGIN reused expired owner A")
+	}
+	if got := mustGetVar(t, session, "CLI_VERBOSE"); got != "FALSE" {
+		t.Fatalf("B inherited A's LOCAL verbose: %s", got)
+	}
+	if got := mustGetVar(t, session, "TRANSACTION_TIMEOUT"); got != time.Hour.String() {
+		t.Fatalf("B inherited A's LOCAL timeout: %s", got)
+	}
+	d, captured, armed := ownerTimeout(h.tm)
+	if !captured || d != time.Hour || armed {
+		t.Fatalf("B snapshot d=%s captured=%v armed=%v, want restored 1h pending", d, captured, armed)
+	}
+}
+
+func TestTransactionTimeoutExpiryBeforeEntryRestore(t *testing.T) {
+	t.Parallel()
+	h := newHeartbeatHarness(t)
+	ctx := t.Context()
+	session := sessionForTM(t, h.tm)
+	h.attachSessionClient(session)
+	mustExec(t, ctx, session, "SET TRANSACTION_TIMEOUT = '1h'")
+	mustExec(t, ctx, session, "BEGIN")
+	mustExec(t, ctx, session, "SET LOCAL TRANSACTION_TIMEOUT = '2h'")
+	mustExec(t, ctx, session, "SET LOCAL CLI_VERBOSE = TRUE")
+	if err := h.tm.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+		t.Fatal(err)
+	}
+	ownerA := requireOwner(t, h.tm)
+	h.tm.retireMatchingOwner(ownerA)
+	if txnContext(h.tm) != nil {
+		t.Fatal("pre-entry expiry left owner A")
+	}
+	mustExec(t, ctx, session, "BEGIN")
+	if got := mustGetVar(t, session, "CLI_VERBOSE"); got != "FALSE" {
+		t.Fatalf("entry restore missed LOCAL verbose: %s", got)
+	}
+	if got := mustGetVar(t, session, "TRANSACTION_TIMEOUT"); got != time.Hour.String() {
+		t.Fatalf("entry restore missed LOCAL timeout: %s", got)
+	}
+	d, captured, armed := ownerTimeout(h.tm)
+	if !captured || d != time.Hour || armed {
+		t.Fatalf("B snapshot d=%s captured=%v armed=%v, want restored 1h pending", d, captured, armed)
+	}
+}
+
+func TestTransactionTimeoutInFlightCancelRestoresLocalBeforeNextOwner(t *testing.T) {
+	t.Parallel()
+	h := newHeartbeatHarness(t)
+	ctx := t.Context()
+	session := sessionForTM(t, h.tm)
+	h.attachSessionClient(session)
+	mustExec(t, ctx, session, "SET TRANSACTION_TIMEOUT = '1h'")
+	mustExec(t, ctx, session, "BEGIN")
+	mustExec(t, ctx, session, "SET LOCAL CLI_VERBOSE = TRUE")
+	mustExec(t, ctx, session, "SET LOCAL TRANSACTION_TIMEOUT = '30ms'")
+	ownerA := requireOwner(t, h.tm)
+	expired := make(chan struct{})
+	h.tm.timeoutAfterExpire = func(got *transactionContext) {
+		if got == ownerA {
+			close(expired)
+		}
+	}
+	block := make(chan struct{})
+	inFlight := make(chan struct{})
+	h.server.blockBegin = block
+	h.server.beginBlocked = sync.OnceFunc(func() { close(inFlight) })
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- h.tm.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED)
+	}()
+	waitChan(t, inFlight, "constructor BeginTransaction while LOCAL timeout armed")
+	err := waitTimeoutErr(t, errCh, "cancelled constructor")
+	if !isTimeoutish(err) {
+		t.Fatalf("in-flight constructor cancel: %v", err)
+	}
+	waitChan(t, expired, "owner A retire after in-flight cancel")
+	mustExec(t, ctx, session, "BEGIN")
+	if txnContext(h.tm) == ownerA {
+		t.Fatal("next BEGIN reused expired owner A")
+	}
+	if got := mustGetVar(t, session, "CLI_VERBOSE"); got != "FALSE" {
+		t.Fatalf("next owner inherited expired LOCAL verbose: %s", got)
+	}
+	if got := mustGetVar(t, session, "TRANSACTION_TIMEOUT"); got != time.Hour.String() {
+		t.Fatalf("next owner inherited expired LOCAL timeout: %s", got)
+	}
+	d, captured, armed := ownerTimeout(h.tm)
+	if !captured || d != time.Hour || armed {
+		t.Fatalf("next owner snapshot d=%s captured=%v armed=%v, want restored 1h pending", d, captured, armed)
 	}
 }
 

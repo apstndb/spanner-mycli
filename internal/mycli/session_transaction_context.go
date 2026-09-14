@@ -68,12 +68,18 @@ type transactionContext struct {
 	// an explicit zero from an uninitialized ad-hoc test owner.
 	timeout         time.Duration
 	timeoutCaptured bool
-	deadline        time.Time
-	deadlineCtx     context.Context
-	deadlineCancel  context.CancelFunc
-	attempt         uint64
-	inFlight        int
-	pending         *captureToken
+	// firstUse is set at the first real read/write database RPC for this
+	// logical owner, including constructor BeginTransaction. It is
+	// independent of whether a timer exists: NULL/0 still freezes SET LOCAL
+	// after first use. Failed construction and physical replacement keep
+	// this owner pointer, so firstUse is preserved with it.
+	firstUse       bool
+	deadline       time.Time
+	deadlineCtx    context.Context
+	deadlineCancel context.CancelFunc
+	attempt        uint64
+	inFlight       int
+	pending        *captureToken
 	// replacing is true while ROLLBACK TO is replacing the physical RW handle.
 	replacing bool
 }

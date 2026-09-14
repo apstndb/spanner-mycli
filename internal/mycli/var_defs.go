@@ -561,7 +561,7 @@ var varDefs = []varDef{
 	},
 	{
 		name:  "TRANSACTION_TIMEOUT",
-		desc:  "Logical read/write transaction deadline (duration or NULL). NULL or 0 means no additional transaction deadline. The duration is captured for the logical owner; the single total budget starts at the first real database RPC (including constructor BeginTransaction) and is preserved across physical reconstruction. Pending SET LOCAL may select the duration before the first RPC; changing it after the budget starts is rejected. Session SET after BEGIN applies to a later owner. Distinct from STATEMENT_TIMEOUT and from unimplemented user-idle expiry (#357). ABORTED retries (#293) are not implemented; a later retry path must reuse the remaining budget.",
+		desc:  "Logical read/write transaction deadline (duration or NULL). NULL or 0 means no additional transaction deadline. The duration is captured for the logical owner; the single total budget starts at the first real database RPC (including constructor BeginTransaction) and is preserved across physical reconstruction. Pending SET LOCAL may select the duration before the first RPC; changing it after first real database use is rejected, including when the selected duration is NULL or 0 and no timer exists. Session SET after BEGIN applies to a later owner. Distinct from STATEMENT_TIMEOUT and from unimplemented user-idle expiry (#357). ABORTED retries (#293) are not implemented; a later retry path must reuse the remaining budget.",
 		scope: scopeSession,
 		bind: func(sv *systemVariables) Variable {
 			return NullableDurationVar(&sv.Transaction.TransactionTimeout).

@@ -158,6 +158,17 @@ type TransactionManager struct {
 	// still under tm.mu.
 	nowFunc            func() time.Time
 	timeoutAfterExpire func(*transactionContext)
+	// afterEntryRestore runs after ExecuteStatement drains detached SET LOCAL
+	// undo and before the statement reads defaults or installs a new owner.
+	// Tests use it to retire an expired owner at that exact boundary.
+	// Production remains nil. The hook must not call Registry.Set.
+	afterEntryRestore func()
+
+	// lifeMu is the statement-lifecycle lock. Outermost ExecuteStatement
+	// holds it from entry restore through exit restore so expiry retirement
+	// cannot hand a new owner the previous owner's unrestored LOCAL values.
+	// Timer goroutines do not take this lock and never call Registry.Set.
+	lifeMu sync.Mutex
 
 	// savepointEnabled is a private capture switch for owner-journal
 	// integration tests. Public CLI_SAVEPOINT_SUPPORT also enables capture.
@@ -356,16 +367,47 @@ func (tm *TransactionManager) retireLocalVarUndo(canonical string) {
 	})
 }
 
+// pendingRestoreBlocksNewOwnerLocked reports that an expired owner left
+// detached SET LOCAL undo and no live owner exists. Caller must hold tm.mu.
+func (tm *TransactionManager) pendingRestoreBlocksNewOwnerLocked() bool {
+	return tm.tc == nil && len(tm.pendingLocalVarRestore) > 0
+}
+
+// withOwnerInstallAfterRestore restores detached SET LOCAL undo, then runs
+// fn under tm.mu only when a new owner would not snapshot unrestored LOCAL
+// values. Replay stays outside tm.mu because setters may inspect transaction
+// state. This is the atomic handoff with retireTransactionContextLocked:
+// retirement detaches undo under tm.mu; install refuses to proceed while
+// that undo is still outstanding. A naked inExec flag is not this protocol.
+func (tm *TransactionManager) withOwnerInstallAfterRestore(fn func() error) error {
+	for {
+		tm.restoreLocalVarsIfIdle()
+		var retry bool
+		err := tm.withTransactionContextWithLock(func(**transactionContext) error {
+			if tm.pendingRestoreBlocksNewOwnerLocked() {
+				retry = true
+				return nil
+			}
+			return fn()
+		})
+		if retry {
+			continue
+		}
+		return err
+	}
+}
+
 // restoreLocalVarsIfIdle replays detached SET LOCAL undo once no transaction
 // context remains. This is the serialized session/CLI safe point: timer
-// goroutines never call Registry.Set. Session.ExecuteStatement drains pending
-// undo here before reading execution defaults or creating a new owner, and
-// again after the statement (including an in-flight operation that returns
-// after cancellation). Session.Close also drains. Direct manager calls do
-// not acquire a new automatic restoration contract. Replay happens outside
-// the lock because variable setters may themselves inspect transaction
-// state. Nested ExecuteStatement does not restore while a transaction is
-// still active. A naked inExec flag is not this protocol.
+// goroutines never call Registry.Set. Session.ExecuteStatement holds lifeMu
+// and drains pending undo here before reading execution defaults or creating
+// a new owner, and again after the statement (including an in-flight
+// operation that returns after cancellation). Owner-install paths also
+// drain via withOwnerInstallAfterRestore. Session.Close also drains. Direct
+// manager calls do not acquire a new automatic restoration contract. Replay
+// happens outside tm.mu because variable setters may themselves inspect
+// transaction state. Nested ExecuteStatement does not restore while a
+// transaction is still active.
 func (tm *TransactionManager) restoreLocalVarsIfIdle() {
 	var entries []savedLocalVar
 	_ = tm.withTransactionContextWithLock(func(tcPtr **transactionContext) error {
@@ -666,21 +708,21 @@ func (tm *TransactionManager) BeginPendingTransaction(ctx context.Context, isola
 	resolvedIsolationLevel := tm.resolveTransactionIsolationLevel(isolationLevel)
 	resolvedPriority := tm.resolveTransactionPriority(priority)
 
-	tm.mu.Lock()
-	defer tm.mu.Unlock()
-	if tm.tc != nil {
-		return fmt.Errorf("%s transaction is already running", tm.tc.attrs.mode)
-	}
-	tm.tc = &transactionContext{
-		attrs: transactionAttributes{
-			mode:           transactionModePending,
-			priority:       resolvedPriority,
-			isolationLevel: resolvedIsolationLevel,
-		},
-	}
-	snapshotTransactionTimeoutLocked(tm.tc, tm.sysVars)
-	tm.ensureReplayLocked()
-	return nil
+	return tm.withOwnerInstallAfterRestore(func() error {
+		if tm.tc != nil {
+			return fmt.Errorf("%s transaction is already running", tm.tc.attrs.mode)
+		}
+		tm.tc = &transactionContext{
+			attrs: transactionAttributes{
+				mode:           transactionModePending,
+				priority:       resolvedPriority,
+				isolationLevel: resolvedIsolationLevel,
+			},
+		}
+		snapshotTransactionTimeoutLocked(tm.tc, tm.sysVars)
+		tm.ensureReplayLocked()
+		return nil
+	})
 }
 
 // DetermineTransactionLocked determines the type of transaction to start based on the pending transaction
@@ -817,7 +859,7 @@ func (tm *TransactionManager) BeginReadWriteTransactionLocked(ctx context.Contex
 
 // BeginReadWriteTransaction starts read-write transaction.
 func (tm *TransactionManager) BeginReadWriteTransaction(ctx context.Context, isolationLevel sppb.TransactionOptions_IsolationLevel, priority sppb.RequestOptions_Priority) error {
-	return tm.withTransactionContextWithLock(func(tcPtr **transactionContext) error {
+	return tm.withOwnerInstallAfterRestore(func() error {
 		if err := tm.BeginReadWriteTransactionLocked(ctx, isolationLevel, priority); err != nil {
 			return err
 		}
@@ -979,7 +1021,7 @@ func (tm *TransactionManager) BeginReadOnlyTransactionLocked(ctx context.Context
 // BeginReadOnlyTransaction starts read-only transaction and returns the snapshot timestamp for the transaction if successful.
 func (tm *TransactionManager) BeginReadOnlyTransaction(ctx context.Context, typ timestampBoundType, staleness time.Duration, timestamp time.Time, priority sppb.RequestOptions_Priority) (time.Time, error) {
 	var resultTimestamp time.Time
-	err := tm.withTransactionContextWithLock(func(tcPtr **transactionContext) error {
+	err := tm.withOwnerInstallAfterRestore(func() error {
 		ts, err := tm.BeginReadOnlyTransactionLocked(ctx, typ, staleness, timestamp, priority)
 		if err != nil {
 			return err
@@ -1563,11 +1605,17 @@ func (tm *TransactionManager) RunInNewOrExistRwTxLocked(ctx context.Context,
 func (tm *TransactionManager) RunInNewOrExistRwTx(ctx context.Context,
 	f func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error),
 ) (*DMLResult, error) {
-	// Use a single lock acquisition for the entire operation
-	tm.mu.Lock()
-	defer tm.mu.Unlock()
-
-	return tm.RunInNewOrExistRwTxLocked(ctx, f)
+	for {
+		tm.restoreLocalVarsIfIdle()
+		tm.mu.Lock()
+		if tm.pendingRestoreBlocksNewOwnerLocked() {
+			tm.mu.Unlock()
+			continue
+		}
+		result, err := tm.RunInNewOrExistRwTxLocked(ctx, f)
+		tm.mu.Unlock()
+		return result, err
+	}
 }
 
 // RunPartitionQuery runs a partition query.

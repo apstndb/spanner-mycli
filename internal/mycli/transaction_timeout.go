@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"time"
 
+	"cloud.google.com/go/spanner"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -60,15 +61,16 @@ func snapshotTransactionTimeoutLocked(tc *transactionContext, vars *systemVariab
 }
 
 // applyLocalTransactionTimeout updates the logical owner's captured duration
-// when SET LOCAL happens before the first database RPC. After the budget is
-// armed, only an identical value is accepted.
+// when SET LOCAL happens before the first database RPC. After first real
+// database use, only an identical value is accepted, including when the
+// selected duration is NULL/0 and no timer exists.
 func (tm *TransactionManager) applyLocalTransactionTimeout(d time.Duration) error {
 	return tm.withTransactionContextWithLock(func(tcPtr **transactionContext) error {
 		if *tcPtr == nil {
 			return ErrNoTransaction
 		}
 		owner := *tcPtr
-		if !owner.deadline.IsZero() && owner.timeout != d {
+		if owner.firstUse && owner.timeout != d {
 			return errTransactionTimeoutFrozen
 		}
 		owner.timeout = d
@@ -77,17 +79,22 @@ func (tm *TransactionManager) applyLocalTransactionTimeout(d time.Duration) erro
 	})
 }
 
-// armTransactionDeadlineLocked starts the single total budget at the first
-// real read/write transaction RPC. Caller must hold tm.mu. Pending BEGIN,
-// SHOW, multiplexed session take, and DML buffering do not call this.
-// Read-only owners never arm. Re-arming is a no-op so SAVEPOINT
-// reconstruction and later statements keep the original deadline.
+// armTransactionDeadlineLocked records first real read/write database use
+// and starts the single total budget when the captured duration is
+// positive. Caller must hold tm.mu. Pending BEGIN, SHOW, multiplexed
+// session take, and DML buffering do not call this. Read-only owners
+// never mark first use. Re-entry is a no-op so SAVEPOINT reconstruction
+// and later statements keep the original first-use / deadline.
 func (tm *TransactionManager) armTransactionDeadlineLocked() {
 	owner := tm.tc
-	if owner == nil || owner.timeout <= 0 || !owner.deadline.IsZero() {
+	if owner == nil {
 		return
 	}
 	if owner.attrs.mode == transactionModeReadOnly {
+		return
+	}
+	owner.firstUse = true
+	if owner.timeout <= 0 || !owner.deadline.IsZero() {
 		return
 	}
 	deadline := tm.now().Add(owner.timeout)
@@ -126,15 +133,36 @@ func (tm *TransactionManager) bindTransactionDeadline(ctx context.Context) (cont
 	return tm.bindDeadlineLocked(ctx)
 }
 
+// batchUpdateWithRemainingDeadline binds the remaining TRANSACTION_TIMEOUT
+// at the actual Batch DML RPC. Caller must hold tm.mu. Every BatchUpdate
+// route (manual batch, RUN BATCH, FlushAutomaticDML, flush-before-read,
+// SAVEPOINT replay) must go through this helper so a captured caller
+// context cannot bypass the owner budget. Mutex-held Batch DML observes
+// the bound deadline and can cancel without waiting for tm.mu.
+func (tm *TransactionManager) batchUpdateWithRemainingDeadline(ctx context.Context, tx *spanner.ReadWriteStmtBasedTransaction, dmls []spanner.Statement, opts spanner.QueryOptions) ([]int64, error) {
+	ctx, cancel := tm.armAndBindDeadlineLocked(ctx)
+	defer cancel()
+	return tx.BatchUpdateWithOptions(ctx, dmls, opts)
+}
+
 // watchTransactionDeadline cancels in-flight RPCs via the already-armed
-// deadline context (no mutex) and then retires only the matching logical
-// owner under tm.mu. It never calls Registry.Set; SET LOCAL undo is
-// detached for the session/CLI safe point.
+// deadline context (no lifecycle lock, no tm.mu) and then retires only
+// the matching logical owner under tm.mu. It never calls Registry.Set;
+// SET LOCAL undo is detached for the session/CLI safe point, which
+// restores under lifeMu before the next statement reads defaults.
 func (tm *TransactionManager) watchTransactionDeadline(owner *transactionContext, ctx context.Context) {
 	<-ctx.Done()
 	if !errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		return
 	}
+	tm.retireMatchingOwner(owner)
+}
+
+// retireMatchingOwner retires only the matching logical owner under tm.mu
+// and detaches SET LOCAL undo. It does not take lifeMu or call Registry.Set.
+// ExecuteStatement / withOwnerInstallAfterRestore restore that undo before
+// another statement reads defaults or installs a replacement owner.
+func (tm *TransactionManager) retireMatchingOwner(owner *transactionContext) {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
 	if tm.tc != owner {
