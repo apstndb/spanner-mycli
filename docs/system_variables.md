@@ -41,24 +41,24 @@ See [configuration sources](#configuration-sources-and-precedence). Interactive
 
 ## Configuration sources and precedence
 
-Built-in defaults are created first (`newSystemVariablesWithDefaults`). Dedicated
-flag / TOML / env values are then resolved by Kong (command-line flags beat
-environment variables, which beat current-directory `.spanner_mycli.toml`, which
-beats home `.spanner_mycli.toml`). Those resolved flags, plus feature
-`ApplyFlags`, are applied to the registry. `--set NAME=VALUE` runs **after**
-that mapping and overrides the same name.
+Built-in defaults apply first. For a dedicated flag, config-file key, or
+environment alias, a later source overrides an earlier one: home
+`.spanner_mycli.toml`, then current-directory `.spanner_mycli.toml`, then
+environment variables, then command-line flags. `--set NAME=VALUE` is applied
+after those dedicated sources and overrides the same name.
 
 `RESET` / `RESET ALL` restore the snapshot captured **after** defaults, config,
 flags, and `--set`, and **before** `--init-command` / `--init-command-add`.
 Init SQL is ordinary `SET` and is resettable. `RESET LOCAL` and `SET x=DEFAULT`
 are not supported.
 
-Not every variable can be set from every source. Many registry names have no
-flag, TOML key, or environment variable. Some flags are presence-dependent:
-omitting `--timeout` leaves `STATEMENT_TIMEOUT` as `NULL`;
-omitting `--idle-transaction-timeout` leaves `CLI_IDLE_TRANSACTION_TIMEOUT` as
-`NULL`; `--enable-partitioned-dml` maps `AUTOCOMMIT_DML_MODE` only when given. Do not
-assume a TOML key exists for every `CLI_*` name; use `--set` or SQL `SET`.
+Not every variable can be set from every source. Many system-variable names have
+no flag, TOML key, or environment variable. Some flags are presence-dependent:
+`--enable-partitioned-dml` sets `AUTOCOMMIT_DML_MODE` only when given. Omitting
+`--timeout` leaves `STATEMENT_TIMEOUT` as `NULL` only when the timeout config
+key and `--set STATEMENT_TIMEOUT` also omit a value. The same rule applies to
+`--idle-transaction-timeout` / `CLI_IDLE_TRANSACTION_TIMEOUT`. Do not assume a
+TOML key exists for every `CLI_*` name; use `--set` or SQL `SET`.
 README: [Config file](../README.md#config-file) and
 [Configuration Precedence](../README.md#configuration-precedence).
 
@@ -68,12 +68,17 @@ Keep these layers distinct:
 
 | Layer | What `SHOW VARIABLE` / `RESET` see | Example |
 |-------|------------------------------------|---------|
-| Stored / registered | The value in the session registry | Omitted `--timeout` → `STATEMENT_TIMEOUT` is `NULL` |
+| Stored / registered | The value in the session | `STATEMENT_TIMEOUT` is `NULL` when `--timeout`, config, and `--set` all omit a value |
 | Startup snapshot | Value captured after flags and `--set` | `RESET STATEMENT_TIMEOUT` restores that snapshot, not `10m` |
 | Current session | Ordinary `SET` (survives `COMMIT` / `ROLLBACK`) | `SET STATEMENT_TIMEOUT = '2m'` |
 | `SET LOCAL` | Reverts when the current transaction ends, unless a later ordinary `SET` superseded it | `SET LOCAL CLI_FORMAT = 'TAB'` |
-| Owner-captured policy | Frozen on the logical transaction at creation | `TRANSACTION_TIMEOUT`, `CLI_IDLE_TRANSACTION_TIMEOUT`, `COMMIT_PRIORITY`, `KEEP_TRANSACTION_ALIVE`, `CLI_DDL_IN_TRANSACTION_MODE` |
+| Owner initial capture | Copied onto the logical transaction when that owner is created | `TRANSACTION_TIMEOUT`, `CLI_IDLE_TRANSACTION_TIMEOUT`, `COMMIT_PRIORITY`, `KEEP_TRANSACTION_ALIVE`, `CLI_DDL_IN_TRANSACTION_MODE` |
+| `SET LOCAL` before admitted work | On some owner-captured variables, updates this owner and then freezes; see each variable | `SET LOCAL CLI_IDLE_TRANSACTION_TIMEOUT = '60s'` before work |
+| Session `SET` / `RESET` after `BEGIN` | Changes the session value for a later owner, not the current one | `SET TRANSACTION_TIMEOUT = '5m'` after `BEGIN` |
 | Execution fallback | Used only when the stored value is unset; **not** a stored default | `NULL` `STATEMENT_TIMEOUT` → 10m ordinary / 24h partitioned DML |
+
+Owner-captured values are not all immutable at `BEGIN`. Each variable's notes
+say whether `SET LOCAL` can still change this owner before admitted work.
 
 `CLI_CURRENT_WIDTH` is the current TTY width (or `NULL` if not a terminal); it
 is not a stored default. `CLI_HISTORY_FILE` follows the process home directory
@@ -277,13 +282,15 @@ documented with examples in:
 
 #### STATEMENT_TIMEOUT
 - **Type**: duration or `NULL`
-- **Stored default**: `NULL` when `--timeout` is omitted
+- **Stored default**: `NULL` when `--timeout`, the timeout config key, and
+  `--set STATEMENT_TIMEOUT` all omit a value
 - **Access**: Read/Write. `SET LOCAL` is supported.
 - **Description**: Stored statement deadline. This is a CLI policy, not a
   server-required deadline.
 - **Notes**:
-  - `SHOW VARIABLE STATEMENT_TIMEOUT` reports the stored value. Omitted
-    `--timeout` stores `NULL`.
+  - `SHOW VARIABLE STATEMENT_TIMEOUT` reports the stored value. Omitting
+    `--timeout` stores `NULL` only when the timeout config key and
+    `--set STATEMENT_TIMEOUT` also omit a value.
   - When the stored value is `NULL`, execution uses 10 minutes for ordinary
     statements and 24 hours for partitioned DML. Those fallbacks are **not**
     the stored default and are **not** what `RESET` restores unless the startup

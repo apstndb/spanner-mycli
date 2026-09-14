@@ -400,18 +400,19 @@ $ spanner-mycli --timeout 30s -p myproject -i myinstance -d mydb -e 'SELECT * FR
 # Set 5 minute timeout for partitioned DML
 $ spanner-mycli --timeout 5m --enable-partitioned-dml -p myproject -i myinstance -d mydb -e 'UPDATE large_table SET status = "active";'
 
-# Omit --timeout to leave STATEMENT_TIMEOUT stored as NULL.
+# Omit --timeout, and any timeout config / --set, to leave STATEMENT_TIMEOUT stored as NULL.
 # Execution then uses 10 minutes for ordinary statements and 24 hours for partitioned DML.
 $ spanner-mycli -p myproject -i myinstance -d mydb -e 'SELECT * FROM users;'
 ```
 
 `--idle-transaction-timeout` sets `CLI_IDLE_TRANSACTION_TIMEOUT` using the same
-duration strings (`60s`, `5m`). Omit the flag to leave idle expiry stored as
-`NULL` (disabled).
+duration strings (`60s`, `5m`). Omit the flag, and any matching config / `--set`,
+to leave idle expiry stored as `NULL` (disabled).
 
 You can also configure the stored statement timeout interactively using
-`STATEMENT_TIMEOUT`. `NULL` is the omitted-`--timeout` default; `10m` / `24h`
-are execution fallbacks, not the stored value. See
+`STATEMENT_TIMEOUT`. `NULL` is the default when `--timeout`, the timeout config
+key, and `--set STATEMENT_TIMEOUT` all omit a value; `10m` / `24h` are
+execution fallbacks, not the stored value. See
 [docs/system_variables.md](docs/system_variables.md#statement_timeout).
 
 ```sql
@@ -861,24 +862,26 @@ prompt = "[%p:%i:%d]%t> "
 ## Configuration Precedence
 
 For a **dedicated flag / TOML key / env alias** (for example `--project`,
-`SPANNER_PROJECT_ID`, `project` in `.spanner_mycli.toml`), later sources win:
+`SPANNER_PROJECT_ID`, `project` in `.spanner_mycli.toml`), sources are listed
+in descending priority:
 
-1. Command-line flags (highest among those sources)
+1. Command-line flags
 2. Environment variables (`SPANNER_*` and flag-mapped env)
 3. `.spanner_mycli.toml` in the current directory
 4. `.spanner_mycli.toml` in the home directory
-5. Built-in / flag defaults (lowest)
+5. Built-in / flag defaults
 
-`--set NAME=VALUE` is applied **after** those resolved flags and feature
-`ApplyFlags` mappings, so it overrides the same registry name. `--init-command`
-and `--init-command-add` then run as ordinary SQL **after** the RESET startup
-snapshot is captured; `RESET` / `RESET ALL` can undo those init assignments.
+`--set NAME=VALUE` overrides the same system-variable name after those dedicated
+sources. `--init-command` and `--init-command-add` then run as ordinary SQL
+**after** the RESET startup snapshot is captured; `RESET` / `RESET ALL` can undo
+those init assignments.
 
 Not every system variable has a flag, TOML key, or environment variable. Names
-that exist only in the registry are set with `--set` or SQL `SET`. Some flags
-are presence-dependent (for example `--enable-partitioned-dml` maps
-`AUTOCOMMIT_DML_MODE` only when given; omitting `--timeout` or
-`--idle-transaction-timeout` leaves the matching timeout stored as `NULL`). See
+that exist only as system variables are set with `--set` or SQL `SET`. Some flags
+are presence-dependent (for example `--enable-partitioned-dml` sets
+`AUTOCOMMIT_DML_MODE` only when given). Omitting `--timeout` or
+`--idle-transaction-timeout` leaves the matching timeout stored as `NULL` only
+when the corresponding config key and `--set` also omit a value. See
 [docs/system_variables.md](docs/system_variables.md#configuration-sources-and-precedence).
 
 ## Request Priority
@@ -1096,8 +1099,8 @@ Parser-valid samples (not defaults):
 |------|---------|
 | `CLI_FORMAT` | `'TABLE'` |
 | `CLI_DATABASE_DIALECT` | `'GOOGLE_STANDARD_SQL'` (`POSTGRESQL` and `DATABASE_DIALECT_UNSPECIFIED` are also accepted; `TRUE` is not) |
-| `STATEMENT_TIMEOUT` | `'2m'` or `NULL` (omitted `--timeout` stores `NULL`) |
-| `CLI_IDLE_TRANSACTION_TIMEOUT` | `'60s'` or `NULL` (omitted `--idle-transaction-timeout` stores `NULL`) |
+| `STATEMENT_TIMEOUT` | `'2m'` or `NULL` (`NULL` when `--timeout`, config, and `--set` all omit a value) |
+| `CLI_IDLE_TRANSACTION_TIMEOUT` | `'60s'` or `NULL` (`NULL` when `--idle-transaction-timeout`, config, and `--set` all omit a value) |
 | `RPC_PRIORITY` | `'HIGH'` (`MEDIUM`, `LOW`; prefer the short form) |
 | `READ_ONLY_STALENESS` | `'STRONG'` |
 | `CLI_QUERY_MODE` | `'PLAN'` |
