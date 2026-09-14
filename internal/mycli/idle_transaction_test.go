@@ -802,3 +802,109 @@ func TestIdleTransactionTimeoutManualBufferedDMLRearms(t *testing.T) {
 		t.Fatal("rejected DML input rearmed idle")
 	}
 }
+
+func TestIdleTransactionTimeoutCLIShowRestoresLocalAtCompletion(t *testing.T) {
+	t.Parallel()
+	h := newHeartbeatHarness(t)
+	ctx := t.Context()
+	session := sessionForTM(t, h.tm)
+	owner := armIdleOwner(t, h, session, true)
+	mustExec(t, ctx, session, "SET CLI_VERBOSE = FALSE")
+	mustExec(t, ctx, session, "SET LOCAL CLI_VERBOSE = TRUE")
+	if got := mustGetVar(t, session, "CLI_VERBOSE"); got != "TRUE" {
+		t.Fatalf("SET LOCAL CLI_VERBOSE = %q", got)
+	}
+
+	expired := make(chan struct{})
+	h.tm.idleAfterExpire = func(got *transactionContext) {
+		if got == owner {
+			close(expired)
+		}
+	}
+	w := &idleLocalFireWriter{tm: h.tm, session: session}
+	cli := &Cli{SessionHandler: NewSessionHandler(session), SystemVariables: session.systemVariables}
+	if _, err := cli.executeStatement(ctx, &ShowVariableStatement{VarName: "CLI_IDLE_TRANSACTION_TIMEOUT"}, false, "SHOW VARIABLE CLI_IDLE_TRANSACTION_TIMEOUT", w); err != nil {
+		t.Fatal(err)
+	}
+	if !w.wrote {
+		t.Fatal("expected SHOW result output")
+	}
+	if !w.live || w.verbose != "TRUE" {
+		t.Fatalf("during output live=%v CLI_VERBOSE=%q", w.live, w.verbose)
+	}
+	waitIdleExpire(t, expired, "idle expire after LOCAL SHOW")
+	if txnContext(h.tm) != nil {
+		t.Fatal("SHOW crossing the old deadline left an owner")
+	}
+	if got := mustGetVar(t, session, "CLI_VERBOSE"); got != "FALSE" {
+		t.Fatalf("after CLI completion CLI_VERBOSE=%q, want FALSE", got)
+	}
+	if outstandingLocalUndo(h.tm) != 0 {
+		t.Fatalf("pending LOCAL undo after CLI completion: %d", outstandingLocalUndo(h.tm))
+	}
+}
+
+type idleLocalFireWriter struct {
+	tm      *TransactionManager
+	session *Session
+	once    sync.Once
+	buf     bytes.Buffer
+	wrote   bool
+	live    bool
+	verbose string
+}
+
+func (w *idleLocalFireWriter) Write(p []byte) (int, error) {
+	w.once.Do(func() {
+		w.wrote = true
+		w.live = txnContext(w.tm) != nil
+		w.verbose = mustGetVarFromSession(w.session, "CLI_VERBOSE")
+		fireIdleNow(w.tm)
+	})
+	return w.buf.Write(p)
+}
+
+func TestIdleTransactionTimeoutProfileSelectRearmsWithoutCapture(t *testing.T) {
+	t.Parallel()
+	h := newHeartbeatHarness(t)
+	ctx := t.Context()
+	session := sessionForTM(t, h.tm)
+	armIdleOwner(t, h, session, true)
+	if got := mustGetVar(t, session, "CLI_SAVEPOINT_SUPPORT"); got != "DISABLED" {
+		t.Fatalf("CLI_SAVEPOINT_SUPPORT = %q, want DISABLED", got)
+	}
+
+	gen := ownerIdleGen(h.tm)
+	_, err := execSQL(t, ctx, session, "EXPLAIN ANALYZE SELECT 1")
+	if err != nil && !errors.Is(err, errExplainAnalyzeUnsupportedOnEmulator) {
+		t.Fatalf("EXPLAIN ANALYZE SELECT: %v", err)
+	}
+	if ownerIdleGen(h.tm) == gen {
+		t.Fatal("EXPLAIN ANALYZE SELECT did not rearm idle")
+	}
+
+	mustExec(t, ctx, session, "SET CLI_QUERY_MODE = 'PROFILE'")
+	gen = ownerIdleGen(h.tm)
+	_, err = execSQL(t, ctx, session, "SELECT 1")
+	if err != nil && !errors.Is(err, errExplainAnalyzeUnsupportedOnEmulator) {
+		t.Fatalf("PROFILE SELECT: %v", err)
+	}
+	if ownerIdleGen(h.tm) == gen {
+		t.Fatal("PROFILE SELECT did not rearm idle")
+	}
+
+	gen = ownerIdleGen(h.tm)
+	_, err = session.ExecuteStatement(ctx, &ExplainAnalyzeStatement{Query: "SELECT '"})
+	if err == nil {
+		t.Fatal("rejected EXPLAIN ANALYZE input succeeded")
+	}
+	if ownerIdleGen(h.tm) != gen {
+		t.Fatal("rejected EXPLAIN ANALYZE admission rearmed idle")
+	}
+
+	mustExec(t, ctx, session, "SHOW VARIABLE CLI_IDLE_TRANSACTION_TIMEOUT")
+	mustExec(t, ctx, session, "SET CLI_VERBOSE = TRUE")
+	if ownerIdleGen(h.tm) != gen {
+		t.Fatal("SHOW/SET rearmed idle after PROFILE")
+	}
+}

@@ -120,6 +120,31 @@ func (tm *TransactionManager) endIdleResultHold() {
 		tm.maybeRearmOrExpireIdleLocked(tm.tc)
 	}
 	tm.mu.Unlock()
+	// Serialized CLI completion barrier after pager/error cleanup.
+	// Timer goroutines never call Registry.Set; restore detached SET LOCAL
+	// undo here once no owner remains.
+	tm.restoreLocalVarsIfIdle()
+}
+
+// completeAdmittedQuery finishes optional SAVEPOINT capture and counts
+// completed admitted query work even when no replay token exists. Call this
+// after the query RPC/iterator has run. Rejected local admission should
+// return before this hook. A surviving owner still counts a server/result
+// error as activity.
+func (tm *TransactionManager) completeAdmittedQuery(tok *captureToken, consumeErr error) error {
+	if tm == nil {
+		return consumeErr
+	}
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+	err := tm.finishQueryCaptureLocked(tok, consumeErr)
+	if tm.tc != nil {
+		tm.noteIdleUserWorkLocked(true)
+	}
+	if consumeErr != nil {
+		return consumeErr
+	}
+	return err
 }
 
 func (tm *TransactionManager) noteIdleUserWorkLocked(survived bool) {
