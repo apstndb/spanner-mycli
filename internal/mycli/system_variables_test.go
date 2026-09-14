@@ -1189,8 +1189,8 @@ func TestCommitResponseVariableInfo(t *testing.T) {
 // CLI_OUTPUT_TEMPLATE_FILE to an empty string (or NULL) must restore the
 // built-in default template (defaultOutputFormat), not nil, and it must match
 // the startup state produced when no --output-template flag is given. This
-	// Get/Set empty-path round-trip keeps SET and startup in sync. RESET ALL
-	// excludes CLI_OUTPUT_TEMPLATE_FILE (file-backed template reload).
+// Get/Set empty-path round-trip keeps SET and startup in sync. RESET ALL
+// excludes CLI_OUTPUT_TEMPLATE_FILE (file-backed template reload).
 func TestOutputTemplateFileEmptyRestoresDefault(t *testing.T) {
 	t.Parallel()
 
