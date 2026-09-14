@@ -163,6 +163,11 @@ type TransactionManager struct {
 	// expire an owner at that exact boundary. Production remains nil. The
 	// hook must not call Registry.Set.
 	afterEntryRestore func()
+	// afterLeaveRestore runs after any pre-leave drain and before the
+	// atomic final-frame depth transition. Tests use it to expire an
+	// owner at that exact gap. Production remains nil. The hook must
+	// not call Registry.Set.
+	afterLeaveRestore func()
 
 	// statementDepth is the number of ExecuteStatement frames on this
 	// manager. While it is positive, expiry marks expirePending instead of
@@ -389,18 +394,28 @@ func (tm *TransactionManager) enterStatement() {
 	tm.mu.Unlock()
 }
 
-// leaveStatement applies deferred expiry at the end of ExecuteStatement
-// and then drops one statement frame.
+// leaveStatement drops one ExecuteStatement frame. The final-frame
+// depth transition and the decision to retire an expire-pending owner
+// share one tm.mu critical section so a timeout callback cannot observe
+// depth>0, mark expirePending, and then be left at depth 0 with no
+// watcher. Nested frames only decrement. Registry restore stays outside
+// the lock; timer callbacks never call Registry.Set.
 func (tm *TransactionManager) leaveStatement() {
 	if tm == nil {
 		return
 	}
-	tm.syncExpiredOwnerRestore()
+	if tm.afterLeaveRestore != nil {
+		tm.afterLeaveRestore()
+	}
 	tm.mu.Lock()
 	if tm.statementDepth > 0 {
 		tm.statementDepth--
 	}
+	if tm.statementDepth == 0 && tm.expirePendingBlocksLocked() {
+		tm.retireTransactionContextLocked()
+	}
 	tm.mu.Unlock()
+	tm.restoreLocalVarsIfIdle()
 }
 
 // syncExpiredOwnerRestore is the owner-aware statement/retirement barrier.

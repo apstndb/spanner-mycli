@@ -1113,8 +1113,126 @@ func (s *nestedSetTimeoutStatement) Execute(ctx context.Context, session *Sessio
 	return session.ExecuteStatement(ctx, &SetStatement{VarName: "TRANSACTION_TIMEOUT", Value: s.value})
 }
 
+func TestTransactionTimeoutExpiryAfterLeaveRestoreBeforeDepthDecrement(t *testing.T) {
+	t.Parallel()
+	h := newHeartbeatHarness(t)
+	ctx := t.Context()
+	session := sessionForTM(t, h.tm)
+	h.attachSessionClient(session)
+	mustExec(t, ctx, session, "BEGIN")
+	mustExec(t, ctx, session, "SET LOCAL CLI_VERBOSE = TRUE")
+	if err := h.tm.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+		t.Fatal(err)
+	}
+	ownerA := requireOwner(t, h.tm)
+	expireOwnerAfterLeaveRestore(h.tm, ownerA)
+	mustExec(t, ctx, session, "SHOW VARIABLE CLI_VERBOSE")
+	if got := statementDepth(h.tm); got != 0 {
+		t.Fatalf("depth after final frame = %d, want 0", got)
+	}
+	if owner := txnContext(h.tm); owner != nil {
+		t.Fatalf("final-frame expiry left owner expirePending=%v", owner.expirePending)
+	}
+	if got := mustGetVar(t, session, "CLI_VERBOSE"); got != "FALSE" {
+		t.Fatalf("CLI_VERBOSE after final-frame expiry = %s, want FALSE", got)
+	}
+}
+
+func TestTransactionTimeoutNestedLeaveDoesNotRestoreUntilOuterFrame(t *testing.T) {
+	t.Parallel()
+	h := newHeartbeatHarness(t)
+	ctx := t.Context()
+	session := sessionForTM(t, h.tm)
+	h.attachSessionClient(session)
+	mustExec(t, ctx, session, "BEGIN")
+	mustExec(t, ctx, session, "SET LOCAL CLI_VERBOSE = TRUE")
+	if err := h.tm.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+		t.Fatal(err)
+	}
+	ownerA := requireOwner(t, h.tm)
+	probe := &nestedLeaveExpiryProbe{owner: ownerA}
+	if _, err := session.ExecuteStatement(ctx, probe); err != nil {
+		t.Fatal(err)
+	}
+	if !probe.sawInner {
+		t.Fatal("inner leave hook did not run")
+	}
+	if probe.afterInnerDepth != 1 {
+		t.Fatalf("depth after inner leave = %d, want 1", probe.afterInnerDepth)
+	}
+	if !probe.afterInnerPending || !probe.afterInnerOwner {
+		t.Fatalf("inner leave retired A: pending=%v owner=%v", probe.afterInnerPending, probe.afterInnerOwner)
+	}
+	if probe.afterInnerVerbose != "TRUE" {
+		t.Fatalf("inner leave restored LOCAL verbose: %s", probe.afterInnerVerbose)
+	}
+	if got := statementDepth(h.tm); got != 0 {
+		t.Fatalf("depth after outer frame = %d, want 0", got)
+	}
+	if txnContext(h.tm) != nil {
+		t.Fatal("outer leave left expired owner A")
+	}
+	if got := mustGetVar(t, session, "CLI_VERBOSE"); got != "FALSE" {
+		t.Fatalf("CLI_VERBOSE after outer leave = %s, want FALSE", got)
+	}
+}
+
+type nestedLeaveExpiryProbe struct {
+	owner             *transactionContext
+	sawInner          bool
+	afterInnerDepth   int
+	afterInnerPending bool
+	afterInnerOwner   bool
+	afterInnerVerbose string
+}
+
+func (s *nestedLeaveExpiryProbe) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
+	session.txn.afterLeaveRestore = func() {
+		if statementDepth(session.txn) == 2 {
+			s.sawInner = true
+			session.txn.watchTransactionDeadline(s.owner, expiredContext())
+		}
+	}
+	if _, err := session.ExecuteStatement(ctx, &ShowVariableStatement{VarName: "CLI_VERBOSE"}); err != nil {
+		return nil, err
+	}
+	s.afterInnerDepth = statementDepth(session.txn)
+	s.afterInnerPending, s.afterInnerOwner = ownerExpirePending(session.txn)
+	s.afterInnerVerbose = mustGetVarFromSession(session, "CLI_VERBOSE")
+	return &Result{KeepVariables: true}, nil
+}
+
+func mustGetVarFromSession(session *Session, name string) string {
+	value, err := session.systemVariables.Registry.Get(name)
+	if err != nil {
+		return err.Error()
+	}
+	return value
+}
+
+func statementDepth(tm *TransactionManager) int {
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+	return tm.statementDepth
+}
+
+func ownerExpirePending(tm *TransactionManager) (pending, live bool) {
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+	if tm.tc == nil {
+		return false, false
+	}
+	return tm.tc.expirePending, true
+}
+
 func expireOwnerAfterEntryRestore(tm *TransactionManager, owner *transactionContext) {
 	tm.afterEntryRestore = func() {
+		tm.watchTransactionDeadline(owner, expiredContext())
+	}
+}
+
+func expireOwnerAfterLeaveRestore(tm *TransactionManager, owner *transactionContext) {
+	tm.afterLeaveRestore = func() {
 		tm.watchTransactionDeadline(owner, expiredContext())
 	}
 }
