@@ -115,9 +115,15 @@ type transactionContext struct {
 	idleHold        int
 	idleLastUser    time.Time
 	idleCancel      context.CancelFunc
-	attempt         uint64
-	inFlight        int
-	pending         *captureToken
+	// retryAborts is the RETRY_ABORTS_INTERNALLY policy captured for this
+	// logical owner. retryAbortsCaptured distinguishes an explicit FALSE
+	// snapshot from an uninitialized ad-hoc test owner. Ordinary session
+	// SET/RESET must not change this field.
+	retryAborts         bool
+	retryAbortsCaptured bool
+	attempt             uint64
+	inFlight            int
+	pending             *captureToken
 	// replacing is true while ROLLBACK TO is replacing the physical RW handle.
 	replacing bool
 }

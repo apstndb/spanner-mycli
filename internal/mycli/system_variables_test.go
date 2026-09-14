@@ -106,26 +106,6 @@ func testReadOnlyVariable(t *testing.T, setFunc func(*systemVariables, string, s
 	}
 }
 
-// testUnimplementedVariable tests variables that have neither setter nor getter implemented
-func testUnimplementedVariable(t *testing.T, setFunc func(*systemVariables, string, string) error, name string) {
-	t.Helper()
-	sysVars := newSystemVariablesWithDefaultsForTest()
-
-	// Verify setter is unimplemented
-	err := setFunc(sysVars, name, "dummy")
-	var e errSetterUnimplemented
-	if !errors.As(err, &e) && !errors.Is(err, errSetterReadOnly) {
-		t.Errorf("sysVars setter for %s is skipped, but implemented: %v", name, err)
-	}
-
-	// Verify getter is unimplemented
-	_, err = sysVars.Get(name)
-	var eg errGetterUnimplemented
-	if !errors.As(err, &eg) {
-		t.Errorf("sysVars getter for %s is skipped, but implemented: %v", name, err)
-	}
-}
-
 // testSpecialVariable tests variables that need custom setup or validation
 func testSpecialVariable(t *testing.T, setFunc func(*systemVariables, string, string) error, desc, name, value string, sysVars *systemVariables, want map[string]string) {
 	t.Helper()
@@ -1031,7 +1011,7 @@ func TestSystemVariables_SetGetOperations(t *testing.T) {
 			"READONLY", "AUTOCOMMIT", "AUTO_PARTITION_MODE", "EXCLUDE_TXN_FROM_CHANGE_STREAMS",
 			"AUTO_BATCH_DML", "AUTO_BATCH_DML_UPDATE_COUNT_VERIFICATION",
 			"DATA_BOOST_ENABLED", "RETURN_COMMIT_STATS",
-			"KEEP_TRANSACTION_ALIVE",
+			"KEEP_TRANSACTION_ALIVE", "RETRY_ABORTS_INTERNALLY",
 			"CLI_VERBOSE", "CLI_ECHO_EXECUTED_DDL", "CLI_ECHO_INPUT", "CLI_USE_PAGER",
 			"CLI_AUTOWRAP", "CLI_ENABLE_HIGHLIGHT", "CLI_PROTOTEXT_MULTILINE",
 			"CLI_MARKDOWN_CODEBLOCK", "CLI_LINT_PLAN", "CLI_SKIP_COLUMN_NAMES",
@@ -1189,15 +1169,6 @@ func TestSystemVariables_SetGetOperations(t *testing.T) {
 			t.Run(test.name, func(t *testing.T) {
 				t.Parallel()
 				testReadOnlyVariable(t, setFunc, test.name, test.sysVars, test.want)
-			})
-		}
-
-		// Unimplemented variables
-		unimplementedVars := []string{"RETRY_ABORTS_INTERNALLY"}
-		for _, name := range unimplementedVars {
-			t.Run(name, func(t *testing.T) {
-				t.Parallel()
-				testUnimplementedVariable(t, setFunc, name)
 			})
 		}
 	})

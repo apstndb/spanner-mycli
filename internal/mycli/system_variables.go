@@ -226,7 +226,7 @@ type TransactionVars struct {
 	SavepointSupport                    enums.SavepointSupport                         // CLI_SAVEPOINT_SUPPORT
 
 	Autocommit            bool // AUTOCOMMIT
-	RetryAbortsInternally bool // RETRY_ABORTS_INTERNALLY (unimplemented)
+	RetryAbortsInternally bool // RETRY_ABORTS_INTERNALLY (default FALSE)
 }
 
 // FeatureVars holds feature flags and experimental configuration.

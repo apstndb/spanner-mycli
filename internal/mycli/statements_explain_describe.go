@@ -770,10 +770,10 @@ func runAnalyzeQuery(ctx context.Context, session *Session, stmt spanner.Stateme
 		return queryPlan, time.Time{}, metadata, err
 	}
 
-	result, err := session.txn.RunInNewOrExistRwTx(ctx, func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (int64, *sppb.QueryPlan, *sppb.ResultSetMetadata, error) {
+	result, _, err := session.txn.runInNewOrExistRwTxPolicy(ctx, func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (int64, *sppb.QueryPlan, *sppb.ResultSetMetadata, error) {
 		plan, metadata, err := session.txn.runAnalyzeQueryOnTransaction(ctx, tx, stmt)
 		return 0, plan, metadata, err
-	})
+	}, implicitAbortRetryDisabled)
 	if err != nil {
 		return nil, time.Time{}, nil, err
 	}

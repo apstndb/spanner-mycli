@@ -43,11 +43,13 @@ func TestCaptureStartupSnapshotsRequiresPrepareSupport(t *testing.T) {
 	if got := sv.startupSnapshots["AUTOCOMMIT"]; got != "TRUE" {
 		t.Fatalf("captured AUTOCOMMIT = %q, want TRUE", got)
 	}
+	if got := sv.startupSnapshots["RETRY_ABORTS_INTERNALLY"]; got != "FALSE" {
+		t.Fatalf("captured RETRY_ABORTS_INTERNALLY = %q, want FALSE", got)
+	}
 	for _, excluded := range []string{
 		"PROTO_DESCRIPTORS_FILE_PATH",
 		protoDescriptorsVarName,
 		"CLI_OUTPUT_TEMPLATE_FILE",
-		"RETRY_ABORTS_INTERNALLY",
 		"CLI_PROJECT",
 		"CLI_ENABLE_ADC_PLUS",
 		"CLI_CA_CERT_FILE",
@@ -142,7 +144,7 @@ func TestResetNameCaseAndUnknown(t *testing.T) {
 	if !errors.As(err, &unknown) {
 		t.Fatalf("Reset unknown: %v, want ErrUnknownVariable", err)
 	}
-	for _, name := range []string{"RETRY_ABORTS_INTERNALLY", "CLI_VERSION", "CLI_ENABLE_ADC_PLUS", "PROTO_DESCRIPTORS_FILE_PATH"} {
+	for _, name := range []string{"CLI_VERSION", "CLI_ENABLE_ADC_PLUS", "PROTO_DESCRIPTORS_FILE_PATH"} {
 		err := sv.Reset(name)
 		if err == nil || !strings.Contains(err.Error(), "does not support RESET") {
 			t.Errorf("Reset(%s) = %v, want does not support RESET", name, err)

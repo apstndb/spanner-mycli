@@ -582,7 +582,7 @@ var varDefs = []varDef{
 	},
 	{
 		name:  "TRANSACTION_TIMEOUT",
-		desc:  "Logical read/write transaction deadline (duration or NULL). NULL or 0 means no additional transaction deadline. The duration is captured for the logical owner; the single total budget starts at the first real database RPC (including constructor BeginTransaction) and is preserved across physical reconstruction. Pending SET LOCAL may select the duration before the first RPC; changing it after first real database use is rejected, including when the selected duration is NULL or 0 and no timer exists. Session SET after BEGIN applies to a later owner. Distinct from STATEMENT_TIMEOUT and from CLI_IDLE_TRANSACTION_TIMEOUT (#357). ABORTED retries (#293) are not implemented; a later retry path must reuse the remaining budget.",
+		desc:  "Logical read/write transaction deadline (duration or NULL). NULL or 0 means no additional transaction deadline. The duration is captured for the logical owner; the single total budget starts at the first real database RPC (including constructor BeginTransaction) and is preserved across physical reconstruction. Pending SET LOCAL may select the duration before the first RPC; changing it after first real database use is rejected, including when the selected duration is NULL or 0 and no timer exists. Session SET after BEGIN applies to a later owner. Distinct from STATEMENT_TIMEOUT and from CLI_IDLE_TRANSACTION_TIMEOUT (#357). Implicit ABORTED retry (#994) reuses the remaining budget, including during backoff, and never restarts it. Explicit journal replay remains #293.",
 		scope: scopeSession,
 		bind: func(sv *systemVariables) Variable {
 			return NullableDurationVar(&sv.Transaction.TransactionTimeout).
@@ -1098,12 +1098,11 @@ var varDefs = []varDef{
 		bind:  func(sv *systemVariables) Variable { return Float64Var(&sv.Config.SpannerTracesSampleRatio) },
 	},
 
-	// === Unimplemented variables ===
 	{
 		name:    "RETRY_ABORTS_INTERNALLY",
-		desc:    "A boolean indicating whether the connection automatically retries aborted transactions. The default is true.",
+		desc:    "Opt-in BOOL (default FALSE) enabling bounded ABORTED retries for one implicit autocommit read-write operation. Java/Go drivers default TRUE. This is application logical retry only, not SDK gRPC/gax/stream retries. At most 50 attempts including the first, using the original caller cancellation and TRANSACTION_TIMEOUT budget. Session SET/RESET applies to later owners; SHOW is the session value; RESET restores the startup snapshot. SET LOCAL is unsupported in this phase (TRUE and FALSE). Newly created explicit and pending read-write owners, including AUTOCOMMIT=false, are rejected while TRUE. Activating a pending owner uses that owner's captured policy: captured TRUE is rejected before the RW constructor; captured FALSE is allowed after a later session SET TRUE. Explicit journal replay remains #293.",
 		scope:   scopeSession,
-		noReset: true,
-		bind:    func(sv *systemVariables) Variable { return &UnimplementedVar{name: "RETRY_ABORTS_INTERNALLY"} },
+		noLocal: true,
+		bind:    func(sv *systemVariables) Variable { return BoolVar(&sv.Transaction.RetryAbortsInternally) },
 	},
 }
