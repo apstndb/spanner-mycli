@@ -815,7 +815,7 @@ func (s *heartbeatRPCServer) resultSet(txnID []byte, readTs *timestamppb.Timesta
 			}},
 			Transaction: &sppb.Transaction{Id: txnID, ReadTimestamp: readTs},
 		},
-		Rows: rows,
+		Rows:  rows,
 		Stats: stats,
 	}
 }
