@@ -11,6 +11,7 @@ import (
 	"cloud.google.com/go/spanner"
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"github.com/apstndb/go-tabwrap"
+	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spanner-mycli/internal/mycli/iterutil"
 	"github.com/samber/lo"
 	"github.com/vbauerster/mpb/v8"
@@ -109,14 +110,30 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 		return nil, fmt.Errorf("error on create op: %w", err)
 	}
 
-	// If async mode is enabled, return operation info immediately
-	// This allows the client to continue without waiting for the DDL operation to complete.
-	// In async DDL, errors are reported when polling, not immediately available.
-	if session.systemVariables.Feature.AsyncDDL {
+	mode := session.systemVariables.Feature.DDLExecutionMode
+	if mode == enums.DDLExecutionModeAsync {
 		session.IncrementSchemaGeneration()
 		return formatAsyncDdlResult(op)
 	}
 
+	var waitBudget <-chan time.Time
+	if mode == enums.DDLExecutionModeAsyncWait {
+		timeout := session.systemVariables.Feature.DDLAsyncWaitTimeout
+		timer := time.NewTimer(timeout)
+		defer timer.Stop()
+		waitBudget = timer.C
+	}
+
+	return waitForDdlOperation(ctx, session, op, ddls, p, bars, teardown, waitBudget)
+}
+
+// waitForDdlOperation is the single DDL wait helper. SYNC passes a nil wait
+// budget and blocks until the LRO finishes. ASYNC_WAIT uses a separate timer
+// that is not the caller context: budget expiry is a successful handoff with
+// the still-running operation ID and does not cancel the server operation.
+// Caller/statement cancellation remains an error with that operation ID.
+// A completed failing LRO remains a failure.
+func waitForDdlOperation(ctx context.Context, session *Session, op *adminapi.UpdateDatabaseDdlOperation, ddls []string, p *mpb.Progress, bars []*mpb.Bar, teardown func(), waitBudget <-chan time.Time) (*Result, error) {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
@@ -133,50 +150,33 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 		teardown()
 		return nil, handleDdlWaitError(session, op, err)
 	}
+	updateDdlProgressBars(bars, metadata)
 
-	if metadata != nil && bars != nil {
-		progresses := metadata.GetProgress()
-		for i, progress := range progresses {
-			if i >= len(bars) {
-				break
-			}
-			bar := bars[i]
-			if bar.Completed() {
-				continue
-			}
-			progressPercent := int64(progress.ProgressPercent)
-			bar.SetCurrent(progressPercent)
-		}
-	}
-
-	for !op.Done() {
-		select {
-		case <-ticker.C:
-			// continue
-		case <-ctx.Done():
+	if !op.Done() {
+		if waitBudgetExpired(waitBudget) {
 			teardown()
-			return nil, handleDdlWaitError(session, op, ctx.Err())
+			session.IncrementSchemaGeneration()
+			return formatAsyncDdlResult(op)
 		}
 
-		metadata, err = pollDdl()
-		if err != nil {
-			teardown()
-			return nil, handleDdlWaitError(session, op, err)
-		}
-
-		if metadata != nil && bars != nil {
-			progresses := metadata.GetProgress()
-			for i, progress := range progresses {
-				if i >= len(bars) {
-					break
-				}
-				bar := bars[i]
-				if bar.Completed() {
-					continue
-				}
-				progressPercent := int64(progress.ProgressPercent)
-				bar.SetCurrent(progressPercent)
+		for !op.Done() {
+			select {
+			case <-ticker.C:
+			case <-waitBudget:
+				teardown()
+				session.IncrementSchemaGeneration()
+				return formatAsyncDdlResult(op)
+			case <-ctx.Done():
+				teardown()
+				return nil, handleDdlWaitError(session, op, ctx.Err())
 			}
+
+			metadata, err = pollDdl()
+			if err != nil {
+				teardown()
+				return nil, handleDdlWaitError(session, op, err)
+			}
+			updateDdlProgressBars(bars, metadata)
 		}
 	}
 
@@ -211,6 +211,35 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 	}
 
 	return result, nil
+}
+
+func updateDdlProgressBars(bars []*mpb.Bar, metadata *databasepb.UpdateDatabaseDdlMetadata) {
+	if metadata == nil || bars == nil {
+		return
+	}
+	progresses := metadata.GetProgress()
+	for i, progress := range progresses {
+		if i >= len(bars) {
+			break
+		}
+		bar := bars[i]
+		if bar.Completed() {
+			continue
+		}
+		bar.SetCurrent(int64(progress.ProgressPercent))
+	}
+}
+
+func waitBudgetExpired(waitBudget <-chan time.Time) bool {
+	if waitBudget == nil {
+		return false
+	}
+	select {
+	case <-waitBudget:
+		return true
+	default:
+		return false
+	}
 }
 
 // handleDdlWaitError post-processes an error that terminated the synchronous DDL wait loop,

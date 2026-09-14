@@ -43,7 +43,7 @@ says otherwise; `java-spanner` versions are given where known.
 | `autocommit_dml_mode` (`Transactional`/`PartitionedNonAtomic`) | yes | yes | `AUTOCOMMIT_DML_MODE` implemented |
 | `auto_batch_dml` | yes | yes | `AUTO_BATCH_DML` implemented |
 | `auto_batch_dml_update_count` / `auto_batch_dml_update_count_verification` | yes (v1.11.0) | yes | not implemented, tracked #401 |
-| `ddl_execution_mode` (`SYNC`/`ASYNC`/`ASYNC_WAIT`) + `ddl_async_wait_timeout` | yes (v1.24.0) | n/a | `CLI_ASYNC_DDL` (bool) approximates; enum rename tracked #485 |
+| `ddl_execution_mode` (`SYNC`/`ASYNC`/`ASYNC_WAIT`) + `ddl_async_wait_timeout` | yes (v1.24.0) | n/a | `DDL_EXECUTION_MODE` (`SYNC` default / `ASYNC` / `ASYNC_WAIT`) + `DDL_ASYNC_WAIT_TIMEOUT` (default 10s). `--async` selects `ASYNC`. Wait-budget expiry is a successful handoff of the still-running operation ID and does not cancel the server operation; caller/statement cancellation remains an error with that ID; a completed failing LRO remains a failure. `CLI_ASYNC_DDL` was removed (#485). |
 | `directed_read` | yes (v1.26.0) | Connection API Directed Read since the 6.52.x era | `DIRECTED_READ` (session SET/SHOW, location[:READ_ONLY\|READ_WRITE] shorthand plus DirectedReadOptions protobuf JSON, empty clears). SHOW uses shorthand when lossless. SET rejected while a transaction is pending or active. Not applied to RW/DML/heartbeat/PDML. |
 | `transaction_timeout` | yes (v1.22.0) | v6.101.0 | not implemented, tracked #482 |
 | `statement_timeout` | yes (v1.22.0) | connection URL support v6.102.0 | `STATEMENT_TIMEOUT` implemented |

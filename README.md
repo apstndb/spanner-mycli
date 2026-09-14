@@ -29,7 +29,7 @@ There are differences between spanner-mycli and spanner-cli that include not onl
   * GenAI support(`GEMINI` statement).
   * BigQuery support (`BIGQUERY` statement).
   * Interactive DDL batching
-  * Async DDL execution support (`--async` flag and `CLI_ASYNC_DDL` system variable)
+  * Async DDL execution support (`--async` flag and `DDL_EXECUTION_MODE` / `DDL_ASYNC_WAIT_TIMEOUT` system variables)
   * Experimental Cassandra interface support as `CQL <cql>` statement.
   * Support split points.
   * Run as MCP (Model Context Protocol) server (EXPERIMENTAL, `--mcp`). See [Model Context Protocol](https://modelcontextprotocol.io/introduction) for more information.
@@ -1019,6 +1019,8 @@ For how these and other connection properties map to the official Spanner driver
 | MAX_PARTITIONED_PARALLELISM     | READ_WRITE | `4`                                                 |
 | DEFAULT_ISOLATION_LEVEL         | READ_WRITE | `REPEATABLE_READ`                                    |
 | STATEMENT_TIMEOUT               | READ_WRITE | `"10m"`                                             |
+| DDL_EXECUTION_MODE              | READ_WRITE | `"SYNC"`                                            |
+| DDL_ASYNC_WAIT_TIMEOUT          | READ_WRITE | `"10s"`                                             |
 | DIRECTED_READ                   | READ_WRITE | `"us-central1:READ_ONLY"`                           |
 | PROTO_DESCRIPTORS_FILE_PATH      | READ_WRITE | `"order_descriptors.pb"`                             |
 

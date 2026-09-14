@@ -456,7 +456,9 @@ func createSystemVariablesFromOptions(opts *spannerOptions, features ...Feature)
 	sysVars.Feature.LogLevel = l
 	sysVars.Config.ImpersonateServiceAccount = opts.ImpersonateServiceAccount
 	// --vertexai-project application moved to the GEMINI feature's ApplyFlags (#778).
-	sysVars.Feature.AsyncDDL = opts.Async
+	if opts.Async {
+		sysVars.Feature.DDLExecutionMode = enums.DDLExecutionModeAsync
+	}
 
 	// Handle system command options
 	// Priority: --skip-system-command takes precedence over --system-command

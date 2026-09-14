@@ -22,6 +22,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"cloud.google.com/go/spanner"
 	"github.com/apstndb/spanner-mycli/internal/mycli/streamio"
@@ -196,6 +197,22 @@ func TestExecuteDdlStatementsEmpty(t *testing.T) {
 			t.Fatalf("Rows = %v, want empty", got.presentationRows())
 		}
 	})
+}
+
+func TestWaitBudgetExpired(t *testing.T) {
+	t.Parallel()
+	if waitBudgetExpired(nil) {
+		t.Fatal("nil wait budget expired")
+	}
+	ready := make(chan time.Time)
+	close(ready)
+	if !waitBudgetExpired(ready) {
+		t.Fatal("closed wait budget should be expired")
+	}
+	pending := make(chan time.Time)
+	if waitBudgetExpired(pending) {
+		t.Fatal("open wait budget should not be expired")
+	}
 }
 
 func TestNewProgressWithTTY(t *testing.T) {
