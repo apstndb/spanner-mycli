@@ -24,6 +24,7 @@ import (
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -32,6 +33,7 @@ const (
 	autoDMLCountSQLA = "INSERT INTO AutoCount (id) VALUES (1)"
 	autoDMLCountSQLB = "INSERT INTO AutoCount (id) VALUES (2)"
 	autoDMLCountSQLC = "UPDATE AutoCount SET flag = TRUE WHERE id > 0"
+	autoDMLCountSQLD = "INSERT INTO AutoCount (id) VALUES (3)"
 )
 
 func TestVerifyAutomaticDMLCounts(t *testing.T) {
@@ -549,5 +551,206 @@ func TestAutomaticDMLEnqueueDoesNotReportExpectedCountAsAffectedRows(t *testing.
 	}
 	if !session.txn.HasAutomaticDML() {
 		t.Fatal("AUTO_BATCH_DML did not enqueue")
+	}
+}
+
+func TestAutomaticDMLExpectedCountPartialBatchUpdatePreserved(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	// Prefix actual 0 differs from the enabled expectation 1 so a mistaken
+	// verifyAutomaticDMLCounts call would replace the statement error.
+	partial := &statuspb.Status{
+		Code:    int32(codes.AlreadyExists),
+		Message: "injected partial batch statement failure",
+	}
+
+	t.Run("no-marker", func(t *testing.T) {
+		t.Parallel()
+		h := newHeartbeatHarness(t)
+		h.tm.sysVars.Transaction.AutoBatchDMLUpdateCountVerification = true
+		if err := h.tm.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+			t.Fatal(err)
+		}
+		if ok, err := h.tm.TryEnqueueAutomaticDML(spanner.NewStatement(autoDMLCountSQLA)); err != nil || !ok {
+			t.Fatalf("enqueue A: ok=%v err=%v", ok, err)
+		}
+		if ok, err := h.tm.TryEnqueueAutomaticDML(spanner.NewStatement(autoDMLCountSQLB)); err != nil || !ok {
+			t.Fatalf("enqueue B: ok=%v err=%v", ok, err)
+		}
+		h.server.setPartialBatchDML(0, partial)
+		_, err := h.tm.FlushAutomaticDML(ctx)
+		assertPartialBatchUpdatePreserved(t, h, err)
+		if h.tm.InTransaction() {
+			t.Fatal("partial BatchUpdate left the owner")
+		}
+		if h.tm.NeedsRecovery() {
+			t.Fatal("partial BatchUpdate without a marker entered recovery")
+		}
+	})
+
+	t.Run("valid-marker", func(t *testing.T) {
+		t.Parallel()
+		h := newHeartbeatHarness(t)
+		h.tm.enableSavepointCaptureForTest()
+		h.tm.sysVars.Transaction.AutoBatchDMLUpdateCountVerification = true
+		if err := h.tm.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+			t.Fatal(err)
+		}
+		if err := h.tm.CreateSavepoint(ctx, "keep"); err != nil {
+			t.Fatal(err)
+		}
+		if ok, err := h.tm.TryEnqueueAutomaticDML(spanner.NewStatement(autoDMLCountSQLA)); err != nil || !ok {
+			t.Fatalf("enqueue A: ok=%v err=%v", ok, err)
+		}
+		if ok, err := h.tm.TryEnqueueAutomaticDML(spanner.NewStatement(autoDMLCountSQLB)); err != nil || !ok {
+			t.Fatalf("enqueue B: ok=%v err=%v", ok, err)
+		}
+		h.server.setPartialBatchDML(0, partial)
+		_, err := h.tm.FlushAutomaticDML(ctx)
+		assertPartialBatchUpdatePreserved(t, h, err)
+		if !h.tm.NeedsRecovery() {
+			t.Fatal("partial BatchUpdate after a valid marker did not enter recovery")
+		}
+		if _, err := h.tm.CommitReadWriteTransaction(ctx); !errors.Is(err, errSavepointRecovery) {
+			t.Fatalf("COMMIT after partial BatchUpdate: %v", err)
+		}
+		if got := replayJournal(h.tm); len(got) != 0 {
+			t.Fatalf("partial BatchUpdate journaled a successful receipt: %+v", got)
+		}
+		if err := h.tm.RollbackToSavepoint(ctx, "keep"); err != nil {
+			t.Fatal(err)
+		}
+		if h.tm.NeedsRecovery() {
+			t.Fatal("ROLLBACK TO did not clear recovery-required")
+		}
+		if _, err := h.tm.CommitReadWriteTransaction(ctx); err != nil {
+			t.Fatalf("COMMIT after ROLLBACK TO: %v", err)
+		}
+	})
+}
+
+func assertPartialBatchUpdatePreserved(t *testing.T, h *heartbeatHarness, err error) {
+	t.Helper()
+	if err == nil {
+		t.Fatal("flush succeeded")
+	}
+	if !strings.Contains(err.Error(), "injected partial batch statement failure") {
+		t.Fatalf("flush error = %v, want original statement cause", err)
+	}
+	if got := spanner.ErrCode(err); got != codes.AlreadyExists {
+		t.Fatalf("flush error code = %v, want AlreadyExists: %v", got, err)
+	}
+	if errors.Is(err, errAutomaticDMLCountMismatch) {
+		t.Fatalf("partial BatchUpdate was replaced with count mismatch: %v", err)
+	}
+	if h.tm.HasAutomaticDML() {
+		t.Fatal("partial BatchUpdate left replayable automatic DML")
+	}
+	if got := replayJournal(h.tm); len(got) != 0 {
+		t.Fatalf("partial BatchUpdate journaled a successful receipt: %+v", got)
+	}
+	if len(h.server.commitIDs()) != 0 {
+		t.Fatalf("partial BatchUpdate committed: %v", h.server.commitIDs())
+	}
+}
+
+func TestAutomaticDMLExpectedCountPolicyViaSetResetPaths(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	h := newHeartbeatHarness(t)
+	session := sessionForTM(t, h.tm)
+	if err := session.systemVariables.CaptureStartupSnapshots(); err != nil {
+		t.Fatalf("CaptureStartupSnapshots: %v", err)
+	}
+
+	mustExecStmt(t, ctx, session, &SetStatement{VarName: "AUTO_BATCH_DML_UPDATE_COUNT_VERIFICATION", Value: "TRUE"})
+	if err := h.tm.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+		t.Fatal(err)
+	}
+
+	if ok, err := h.tm.TryEnqueueAutomaticDML(spanner.NewStatement(autoDMLCountSQLA)); err != nil || !ok {
+		t.Fatalf("enqueue A: ok=%v err=%v", ok, err)
+	}
+	mustExecStmt(t, ctx, session, &SetLocalStatement{VarName: "AUTO_BATCH_DML_UPDATE_COUNT", Value: "0"})
+	if ok, err := h.tm.TryEnqueueAutomaticDML(spanner.NewStatement(autoDMLCountSQLB)); err != nil || !ok {
+		t.Fatalf("enqueue B: ok=%v err=%v", ok, err)
+	}
+
+	mustExecStmt(t, ctx, session, &ResetAllStatement{})
+	if got := mustGetVar(t, session, "AUTO_BATCH_DML_UPDATE_COUNT"); got != "1" {
+		t.Fatalf("after RESET ALL count = %q, want 1", got)
+	}
+	if got := mustGetVar(t, session, "AUTO_BATCH_DML_UPDATE_COUNT_VERIFICATION"); got != "FALSE" {
+		t.Fatalf("after RESET ALL verification = %q, want FALSE", got)
+	}
+
+	mustExecStmt(t, ctx, session, &SetStatement{VarName: "AUTO_BATCH_DML_UPDATE_COUNT", Value: "5"})
+	if err := session.systemVariables.Reset("AUTO_BATCH_DML_UPDATE_COUNT"); err != nil {
+		t.Fatalf("RESET AUTO_BATCH_DML_UPDATE_COUNT: %v", err)
+	}
+	if got := mustGetVar(t, session, "AUTO_BATCH_DML_UPDATE_COUNT"); got != "1" {
+		t.Fatalf("after single-var RESET count = %q, want 1", got)
+	}
+	if ok, err := h.tm.TryEnqueueAutomaticDML(spanner.NewStatement(autoDMLCountSQLC)); err != nil || !ok {
+		t.Fatalf("enqueue C: ok=%v err=%v", ok, err)
+	}
+
+	mustExecStmt(t, ctx, session, &SetStatement{VarName: "AUTO_BATCH_DML_UPDATE_COUNT", Value: "2"})
+	mustExecStmt(t, ctx, session, &SetStatement{VarName: "AUTO_BATCH_DML_UPDATE_COUNT_VERIFICATION", Value: "TRUE"})
+	if ok, err := h.tm.TryEnqueueAutomaticDML(spanner.NewStatement(autoDMLCountSQLD)); err != nil || !ok {
+		t.Fatalf("enqueue D: ok=%v err=%v", ok, err)
+	}
+
+	mustExecStmt(t, ctx, session, &SetStatement{VarName: "AUTO_BATCH_DML_UPDATE_COUNT", Value: "99"})
+	mustExecStmt(t, ctx, session, &SetStatement{VarName: "AUTO_BATCH_DML_UPDATE_COUNT_VERIFICATION", Value: "FALSE"})
+
+	h.tm.mu.RLock()
+	queued := append([]automaticDMLEntry(nil), h.tm.tc.autoDML...)
+	h.tm.mu.RUnlock()
+	if len(queued) != 4 {
+		t.Fatalf("queued = %d, want 4", len(queued))
+	}
+	want := []automaticDMLEntry{
+		{expected: 1, verify: true},
+		{expected: 0, verify: true},
+		{expected: 1, verify: false},
+		{expected: 2, verify: true},
+	}
+	for i, e := range want {
+		if queued[i].expected != e.expected || queued[i].verify != e.verify {
+			t.Fatalf("entry %d = {expected:%d verify:%v}, want {expected:%d verify:%v}",
+				i, queued[i].expected, queued[i].verify, e.expected, e.verify)
+		}
+	}
+
+	h.server.setSQLRowCount(autoDMLCountSQLA, 1)
+	h.server.setSQLRowCount(autoDMLCountSQLB, 0)
+	h.server.setSQLRowCount(autoDMLCountSQLC, 7)
+	h.server.setSQLRowCount(autoDMLCountSQLD, 2)
+	res, err := h.tm.FlushAutomaticDML(ctx)
+	if err != nil {
+		t.Fatalf("flush mixed frozen SET/RESET policy: %v", err)
+	}
+	if res == nil || !res.IsExecutedDML || res.AffectedRows != 10 {
+		t.Fatalf("flush result: %+v, want affected 10", res)
+	}
+
+	mustExecStmt(t, ctx, session, &SetLocalStatement{VarName: "AUTO_BATCH_DML_UPDATE_COUNT", Value: "7"})
+	if got := mustGetVar(t, session, "AUTO_BATCH_DML_UPDATE_COUNT"); got != "7" {
+		t.Fatalf("during LOCAL count = %q, want 7", got)
+	}
+	mustExecStmt(t, ctx, session, &RollbackStatement{})
+	if got := mustGetVar(t, session, "AUTO_BATCH_DML_UPDATE_COUNT"); got != "99" {
+		t.Fatalf("after ROLLBACK count = %q, want 99", got)
+	}
+	if got := mustGetVar(t, session, "AUTO_BATCH_DML_UPDATE_COUNT_VERIFICATION"); got != "FALSE" {
+		t.Fatalf("after ROLLBACK verification = %q, want FALSE", got)
+	}
+}
+
+func mustExecStmt(t *testing.T, ctx context.Context, session *Session, stmt Statement) {
+	t.Helper()
+	if _, err := session.ExecuteStatement(ctx, stmt); err != nil {
+		t.Fatalf("%T: %v", stmt, err)
 	}
 }
