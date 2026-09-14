@@ -164,6 +164,9 @@ func initializeSession(ctx context.Context, clients *spanemuboost.Clients) (sess
 			RPCPriority:      sppb.RequestOptions_PRIORITY_UNSPECIFIED,
 			StatementTimeout: lo.ToPtr(1 * time.Hour), // Long timeout for integration tests
 		},
+		Transaction: TransactionVars{
+			KeepTransactionAlive: true,
+		},
 		Params: make(map[string]ast.Node),
 	}
 	// Parse the default type styles to populate typeStyles/nullStyle
@@ -257,6 +260,9 @@ func initializeAdminSession(t *testing.T) (clients *spanemuboost.Clients, sessio
 		},
 		Query: QueryVars{
 			StatementTimeout: lo.ToPtr(1 * time.Hour), // Long timeout for integration tests
+		},
+		Transaction: TransactionVars{
+			KeepTransactionAlive: true,
 		},
 	}
 	// Parse the default type styles to populate typeStyles/nullStyle
