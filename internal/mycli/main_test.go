@@ -149,6 +149,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 					ReturnCommitStats:       true,
 					AutoBatchDMLUpdateCount: 1,
 					KeepTransactionAlive:    true,
+					Autocommit:              true,
 					AutocommitDMLMode:       enums.AutocommitDMLModePartitionedNonAtomic,
 					ReadOnly:                true,
 				},
@@ -211,6 +212,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 					ReturnCommitStats:       true,
 					AutoBatchDMLUpdateCount: 1,
 					KeepTransactionAlive:    true,
+					Autocommit:              true,
 				},
 				Feature: FeatureVars{
 					LogLevel:            slog.LevelWarn,
@@ -271,6 +273,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 					ReturnCommitStats:       true,
 					AutoBatchDMLUpdateCount: 1,
 					KeepTransactionAlive:    true,
+					Autocommit:              true,
 				},
 				Feature: FeatureVars{
 					LogLevel:            slog.LevelWarn,
@@ -316,6 +319,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 					ReturnCommitStats:       true,
 					AutoBatchDMLUpdateCount: 1,
 					KeepTransactionAlive:    true,
+					Autocommit:              true,
 				},
 				Feature: FeatureVars{
 					LogLevel:            slog.LevelWarn,
@@ -360,6 +364,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 					ReturnCommitStats:       true,
 					AutoBatchDMLUpdateCount: 1,
 					KeepTransactionAlive:    true,
+					Autocommit:              true,
 				},
 				Feature: FeatureVars{
 					LogLevel:            slog.LevelWarn,
@@ -404,6 +409,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 					ReturnCommitStats:       true,
 					AutoBatchDMLUpdateCount: 1,
 					KeepTransactionAlive:    true,
+					Autocommit:              true,
 				},
 				Feature: FeatureVars{
 					LogLevel:            slog.LevelWarn,
@@ -467,6 +473,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 					ReturnCommitStats:       true,
 					AutoBatchDMLUpdateCount: 1,
 					KeepTransactionAlive:    true,
+					Autocommit:              true,
 				},
 				Feature: FeatureVars{
 					LogLevel:            slog.LevelWarn,
@@ -538,6 +545,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 					ReturnCommitStats:       true,
 					AutoBatchDMLUpdateCount: 1,
 					KeepTransactionAlive:    true,
+					Autocommit:              true,
 				},
 				Feature: FeatureVars{
 					LogLevel:            slog.LevelWarn,
@@ -586,6 +594,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 					ReturnCommitStats:       true,
 					AutoBatchDMLUpdateCount: 1,
 					KeepTransactionAlive:    true,
+					Autocommit:              true,
 				},
 				Feature: FeatureVars{
 					LogLevel:            slog.LevelWarn,
@@ -635,6 +644,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 					ReturnCommitStats:       true,
 					AutoBatchDMLUpdateCount: 1,
 					KeepTransactionAlive:    true,
+					Autocommit:              true,
 				},
 				Feature: FeatureVars{
 					LogLevel:            slog.LevelWarn,
@@ -683,6 +693,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 					ReturnCommitStats:       true,
 					AutoBatchDMLUpdateCount: 1,
 					KeepTransactionAlive:    true,
+					Autocommit:              true,
 				},
 				Feature: FeatureVars{
 					LogLevel:            slog.LevelWarn,
@@ -732,6 +743,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 					ReturnCommitStats:       true,
 					AutoBatchDMLUpdateCount: 1,
 					KeepTransactionAlive:    true,
+					Autocommit:              true,
 				},
 				Feature: FeatureVars{
 					LogLevel:            slog.LevelWarn,
@@ -776,6 +788,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 					ReturnCommitStats:       true,
 					AutoBatchDMLUpdateCount: 1,
 					KeepTransactionAlive:    true,
+					Autocommit:              true,
 				},
 				Feature: FeatureVars{
 					LogLevel:            slog.LevelWarn,
@@ -818,6 +831,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 					ReturnCommitStats:       true,
 					AutoBatchDMLUpdateCount: 1,
 					KeepTransactionAlive:    true,
+					Autocommit:              true,
 				},
 				Feature: FeatureVars{
 					LogLevel:            slog.LevelWarn,
@@ -862,6 +876,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 					ReturnCommitStats:       true,
 					AutoBatchDMLUpdateCount: 1,
 					KeepTransactionAlive:    true,
+					Autocommit:              true,
 				},
 				Feature: FeatureVars{
 					LogLevel:            slog.LevelWarn,
@@ -906,6 +921,7 @@ func Test_initializeSystemVariables(t *testing.T) {
 					ReturnCommitStats:       true,
 					AutoBatchDMLUpdateCount: 1,
 					KeepTransactionAlive:    true,
+					Autocommit:              true,
 				},
 				Feature: FeatureVars{
 					LogLevel:            slog.LevelWarn,
@@ -1028,6 +1044,7 @@ func Test_newSystemVariablesWithDefaults(t *testing.T) {
 			ReturnCommitStats:       true,
 			AutoBatchDMLUpdateCount: 1,
 			KeepTransactionAlive:    true,
+			Autocommit:              true,
 		},
 		Feature: FeatureVars{
 			LogLevel:            slog.LevelWarn,

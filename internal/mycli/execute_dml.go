@@ -30,7 +30,9 @@ func isInsert(sql string) bool {
 
 // autocommitUsesPartitionedDML reports whether autocommit DML sql would be
 // executed as partitioned DML. Pending transactions count as in-transaction,
-// matching GetTransactionFlagsWithLock in bufferOrExecuteDML.
+// matching GetTransactionFlagsWithLock in bufferOrExecuteDML. AUTOCOMMIT=false
+// installs that pending owner before ordinary DML, so PARTITIONED_NON_ATOMIC
+// and mutation-limit fallback cannot bypass grouping.
 func autocommitUsesPartitionedDML(session *Session, sql string) bool {
 	if session == nil || session.txn == nil || session.systemVariables == nil {
 		return false

@@ -224,8 +224,7 @@ type TransactionVars struct {
 	DdlInTransactionMode                enums.DdlInTransactionMode                     // CLI_DDL_IN_TRANSACTION_MODE
 	SavepointSupport                    enums.SavepointSupport                         // CLI_SAVEPOINT_SUPPORT
 
-	// Unimplemented variables (kept for compatibility)
-	Autocommit            bool // AUTOCOMMIT (unimplemented)
+	Autocommit            bool // AUTOCOMMIT
 	RetryAbortsInternally bool // RETRY_ABORTS_INTERNALLY (unimplemented)
 }
 
@@ -449,6 +448,7 @@ func newSystemVariablesWithDefaults() systemVariables {
 			ReturnCommitStats:       true,
 			AutoBatchDMLUpdateCount: 1,
 			KeepTransactionAlive:    true,
+			Autocommit:              true,
 		},
 		Feature: FeatureVars{
 			LogLevel:            slog.LevelWarn,
