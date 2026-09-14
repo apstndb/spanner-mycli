@@ -143,9 +143,10 @@ func Test_initializeSystemVariables(t *testing.T) {
 					TablePreviewRows: 50,
 				},
 				Transaction: TransactionVars{
-					ReturnCommitStats: true,
-					AutocommitDMLMode: enums.AutocommitDMLModePartitionedNonAtomic,
-					ReadOnly:          true,
+					ReturnCommitStats:    true,
+					KeepTransactionAlive: true,
+					AutocommitDMLMode:    enums.AutocommitDMLModePartitionedNonAtomic,
+					ReadOnly:             true,
 				},
 				Feature: FeatureVars{
 					LogLevel:            slog.LevelInfo,
@@ -200,7 +201,8 @@ func Test_initializeSystemVariables(t *testing.T) {
 					TablePreviewRows:  50,
 				},
 				Transaction: TransactionVars{
-					ReturnCommitStats: true,
+					ReturnCommitStats:    true,
+					KeepTransactionAlive: true,
 				},
 				Feature: FeatureVars{
 					LogLevel:            slog.LevelWarn,
@@ -255,7 +257,8 @@ func Test_initializeSystemVariables(t *testing.T) {
 					TablePreviewRows: 50,
 				},
 				Transaction: TransactionVars{
-					ReturnCommitStats: true,
+					ReturnCommitStats:    true,
+					KeepTransactionAlive: true,
 				},
 				Feature: FeatureVars{
 					LogLevel:            slog.LevelWarn,
@@ -295,7 +298,8 @@ func Test_initializeSystemVariables(t *testing.T) {
 					TablePreviewRows: 50,
 				},
 				Transaction: TransactionVars{
-					ReturnCommitStats: true,
+					ReturnCommitStats:    true,
+					KeepTransactionAlive: true,
 				},
 				Feature: FeatureVars{
 					LogLevel:            slog.LevelWarn,
@@ -334,7 +338,8 @@ func Test_initializeSystemVariables(t *testing.T) {
 					TablePreviewRows: 50,
 				},
 				Transaction: TransactionVars{
-					ReturnCommitStats: true,
+					ReturnCommitStats:    true,
+					KeepTransactionAlive: true,
 				},
 				Feature: FeatureVars{
 					LogLevel:            slog.LevelWarn,
@@ -373,7 +378,8 @@ func Test_initializeSystemVariables(t *testing.T) {
 					TablePreviewRows: 50,
 				},
 				Transaction: TransactionVars{
-					ReturnCommitStats: true,
+					ReturnCommitStats:    true,
+					KeepTransactionAlive: true,
 				},
 				Feature: FeatureVars{
 					LogLevel:            slog.LevelWarn,
@@ -431,7 +437,8 @@ func Test_initializeSystemVariables(t *testing.T) {
 					TablePreviewRows: 50,
 				},
 				Transaction: TransactionVars{
-					ReturnCommitStats: true,
+					ReturnCommitStats:    true,
+					KeepTransactionAlive: true,
 				},
 				Feature: FeatureVars{
 					LogLevel:            slog.LevelWarn,
@@ -497,7 +504,8 @@ func Test_initializeSystemVariables(t *testing.T) {
 					TablePreviewRows: 50,
 				},
 				Transaction: TransactionVars{
-					ReturnCommitStats: true,
+					ReturnCommitStats:    true,
+					KeepTransactionAlive: true,
 				},
 				Feature: FeatureVars{
 					LogLevel:            slog.LevelWarn,
@@ -540,7 +548,8 @@ func Test_initializeSystemVariables(t *testing.T) {
 					TablePreviewRows: 50,
 				},
 				Transaction: TransactionVars{
-					ReturnCommitStats: true,
+					ReturnCommitStats:    true,
+					KeepTransactionAlive: true,
 				},
 				Feature: FeatureVars{
 					LogLevel:            slog.LevelWarn,
@@ -584,7 +593,8 @@ func Test_initializeSystemVariables(t *testing.T) {
 					TablePreviewRows: 50,
 				},
 				Transaction: TransactionVars{
-					ReturnCommitStats: true,
+					ReturnCommitStats:    true,
+					KeepTransactionAlive: true,
 				},
 				Feature: FeatureVars{
 					LogLevel:            slog.LevelWarn,
@@ -627,7 +637,8 @@ func Test_initializeSystemVariables(t *testing.T) {
 					TablePreviewRows: 50,
 				},
 				Transaction: TransactionVars{
-					ReturnCommitStats: true,
+					ReturnCommitStats:    true,
+					KeepTransactionAlive: true,
 				},
 				Feature: FeatureVars{
 					LogLevel:            slog.LevelWarn,
@@ -671,7 +682,8 @@ func Test_initializeSystemVariables(t *testing.T) {
 					TablePreviewRows: 50,
 				},
 				Transaction: TransactionVars{
-					ReturnCommitStats: true,
+					ReturnCommitStats:    true,
+					KeepTransactionAlive: true,
 				},
 				Feature: FeatureVars{
 					LogLevel:            slog.LevelWarn,
@@ -710,7 +722,8 @@ func Test_initializeSystemVariables(t *testing.T) {
 					TablePreviewRows: 50,
 				},
 				Transaction: TransactionVars{
-					ReturnCommitStats: true,
+					ReturnCommitStats:    true,
+					KeepTransactionAlive: true,
 				},
 				Feature: FeatureVars{
 					LogLevel:            slog.LevelWarn,
@@ -747,7 +760,8 @@ func Test_initializeSystemVariables(t *testing.T) {
 					TablePreviewRows: 50,
 				},
 				Transaction: TransactionVars{
-					ReturnCommitStats: true,
+					ReturnCommitStats:    true,
+					KeepTransactionAlive: true,
 				},
 				Feature: FeatureVars{
 					LogLevel:            slog.LevelWarn,
@@ -786,7 +800,8 @@ func Test_initializeSystemVariables(t *testing.T) {
 					TablePreviewRows: 50,
 				},
 				Transaction: TransactionVars{
-					ReturnCommitStats: true,
+					ReturnCommitStats:    true,
+					KeepTransactionAlive: true,
 				},
 				Feature: FeatureVars{
 					LogLevel:            slog.LevelWarn,
@@ -825,7 +840,8 @@ func Test_initializeSystemVariables(t *testing.T) {
 					TablePreviewRows: 50,
 				},
 				Transaction: TransactionVars{
-					ReturnCommitStats: true,
+					ReturnCommitStats:    true,
+					KeepTransactionAlive: true,
 				},
 				Feature: FeatureVars{
 					LogLevel:            slog.LevelWarn,
@@ -942,7 +958,8 @@ func Test_newSystemVariablesWithDefaults(t *testing.T) {
 			TablePreviewRows: 50,
 		},
 		Transaction: TransactionVars{
-			ReturnCommitStats: true,
+			ReturnCommitStats:    true,
+			KeepTransactionAlive: true,
 		},
 		Feature: FeatureVars{
 			LogLevel:            slog.LevelWarn,

@@ -55,25 +55,33 @@ type transactionContext struct {
 	replay *replayState
 	// ctorOpts is the frozen NewReadWriteStmtBasedTransactionWithOptions input.
 	ctorOpts spanner.TransactionOptions
-	attempt  uint64
-	inFlight int
-	pending  *captureToken
+	// keepAliveDisabled is the inverted KEEP_TRANSACTION_ALIVE snapshot captured
+	// with ctorOpts. The zero value means enabled so ad-hoc test owners keep the
+	// existing heartbeat-after-first-SQL behavior. BeginReadWriteTransactionLocked
+	// sets it from the session variable before any user SQL.
+	keepAliveDisabled bool
+	attempt           uint64
+	inFlight          int
+	pending           *captureToken
 	// replacing is true while ROLLBACK TO is replacing the physical RW handle.
 	replacing bool
 }
 
 // EnableHeartbeat enables sending periodic heartbeats for this transaction.
-// This method provides encapsulation for the sendHeartbeat field.
+// A frozen KEEP_TRANSACTION_ALIVE=FALSE owner does not schedule a goroutine
+// and does not mark sendHeartbeat, so SAVEPOINT reconstruction cannot revive
+// keepalive for that owner.
 func (tc *transactionContext) EnableHeartbeat() {
-	if tc != nil && tc.attrs.mode == transactionModeReadWrite {
-		tc.attrs.sendHeartbeat = true
-		// Start heartbeat goroutine if not already started
-		if tc.heartbeatCancel == nil && tc.heartbeatFunc != nil {
-			startedAttempt := tc.attempt
-			ctx, cancel := context.WithCancel(context.Background())
-			tc.heartbeatCancel = cancel
-			go tc.heartbeatFunc(ctx, startedAttempt)
-		}
+	if tc == nil || tc.attrs.mode != transactionModeReadWrite || tc.keepAliveDisabled {
+		return
+	}
+	tc.attrs.sendHeartbeat = true
+	// Start heartbeat goroutine if not already started
+	if tc.heartbeatCancel == nil && tc.heartbeatFunc != nil {
+		startedAttempt := tc.attempt
+		ctx, cancel := context.WithCancel(context.Background())
+		tc.heartbeatCancel = cancel
+		go tc.heartbeatFunc(ctx, startedAttempt)
 	}
 }
 
