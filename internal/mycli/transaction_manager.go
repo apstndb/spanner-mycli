@@ -979,21 +979,22 @@ func (tm *TransactionManager) BeginReadWriteTransaction(ctx context.Context, iso
 }
 
 // commitReadWritePhysicalLocked issues Commit without retiring the owner.
-// Caller must hold tm.mu. Early admission/type errors leave the owner attached.
-func (tm *TransactionManager) commitReadWritePhysicalLocked(ctx context.Context) (spanner.CommitResponse, error) {
+// attempted is true only after a Commit RPC or commitOverride. Caller must
+// hold tm.mu. Early admission, recovery, or flush errors leave the owner attached.
+func (tm *TransactionManager) commitReadWritePhysicalLocked(ctx context.Context) (resp spanner.CommitResponse, err error, attempted bool) {
 	if tm.tc == nil || tm.tc.attrs.mode != transactionModeReadWrite {
-		return spanner.CommitResponse{}, ErrNotInReadWriteTransaction
+		return spanner.CommitResponse{}, ErrNotInReadWriteTransaction, false
 	}
 	if err := tm.rejectIfRecoveringLocked(); err != nil {
-		return spanner.CommitResponse{}, err
+		return spanner.CommitResponse{}, err, false
 	}
 	if tm.tc.txn == nil {
-		return spanner.CommitResponse{}, ErrNotInReadWriteTransaction
+		return spanner.CommitResponse{}, ErrNotInReadWriteTransaction, false
 	}
 
 	rwTxn, ok := tm.tc.txn.(*spanner.ReadWriteStmtBasedTransaction)
 	if !ok {
-		return spanner.CommitResponse{}, ErrNotInReadWriteTransaction
+		return spanner.CommitResponse{}, ErrNotInReadWriteTransaction, false
 	}
 
 	ctx, cancelDeadline := tm.armAndBindDeadlineLocked(ctx)
@@ -1001,11 +1002,9 @@ func (tm *TransactionManager) commitReadWritePhysicalLocked(ctx context.Context)
 	owner := tm.tc
 
 	if _, _, err := tm.flushAutomaticDMLLocked(ctx); err != nil {
-		return spanner.CommitResponse{}, annotateTransactionTimeout(err, owner)
+		return spanner.CommitResponse{}, annotateTransactionTimeout(err, owner), false
 	}
 
-	var resp spanner.CommitResponse
-	var err error
 	if tm.commitOverride != nil {
 		// Simulated call result, not an observed Commit RPC failure.
 		resp, err = tm.commitOverride(ctx, rwTxn)
@@ -1013,15 +1012,15 @@ func (tm *TransactionManager) commitReadWritePhysicalLocked(ctx context.Context)
 		resp, err = rwTxn.CommitWithReturnResp(ctx)
 	}
 	err = annotateTransactionTimeout(err, owner)
-	return resp, err
+	return resp, err, true
 }
 
-// CommitReadWriteTransactionLocked commits the current read-write transaction
-// and always retires the logical owner. A failed commit invalidates the
-// transaction on the server, so retirement happens regardless of the outcome.
+// CommitReadWriteTransactionLocked commits the current read-write transaction.
+// A Commit RPC attempt invalidates the server transaction, so the owner is
+// retired after that attempt. Recovery/flush admission errors do not retire.
 func (tm *TransactionManager) CommitReadWriteTransactionLocked(ctx context.Context) (spanner.CommitResponse, error) {
-	resp, err := tm.commitReadWritePhysicalLocked(ctx)
-	if tm.tc != nil {
+	resp, err, attempted := tm.commitReadWritePhysicalLocked(ctx)
+	if attempted && tm.tc != nil {
 		tm.retireTransactionContextLocked()
 	}
 	return resp, err
@@ -1793,12 +1792,12 @@ func (tm *TransactionManager) executeRwTxAttemptLocked(ctx context.Context,
 	// Commit is a distinct phase. Fallback must never treat a Commit
 	// failure as SQL-phase proof, even when Help metadata matches.
 	info.phase = dmlAttemptPhaseCommit
-	resp, err := tm.commitReadWritePhysicalLocked(ctx)
+	resp, err, attempted := tm.commitReadWritePhysicalLocked(ctx)
 	if err != nil {
 		if isAbortedErr(err) && owner != nil && owner.retryAborts {
 			return nil, info, err
 		}
-		if tm.tc != nil {
+		if attempted && tm.tc != nil {
 			tm.retireTransactionContextLocked()
 		}
 		return nil, info, err

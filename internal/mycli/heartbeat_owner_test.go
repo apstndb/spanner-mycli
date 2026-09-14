@@ -606,7 +606,7 @@ func (s *heartbeatRPCServer) ExecuteSql(ctx context.Context, r *sppb.ExecuteSqlR
 	if fail != nil {
 		return nil, fail
 	}
-	return s.resultSet(txnID, readTs, r.GetSql(), r.GetQueryMode()), nil
+	return s.resultSet(txnID, readTs, r.GetSql()), nil
 }
 
 func (s *heartbeatRPCServer) ExecuteStreamingSql(r *sppb.ExecuteSqlRequest, stream sppb.Spanner_ExecuteStreamingSqlServer) error {
@@ -620,7 +620,7 @@ func (s *heartbeatRPCServer) ExecuteStreamingSql(r *sppb.ExecuteSqlRequest, stre
 	if fail != nil && r.GetRequestOptions().GetRequestTag() != "spanner_mycli_heartbeat" {
 		return fail
 	}
-	rs := s.resultSet(txnID, readTs, r.GetSql(), r.GetQueryMode())
+	rs := s.resultSet(txnID, readTs, r.GetSql())
 	if len(rs.Rows) == 0 {
 		return stream.Send(&sppb.PartialResultSet{Metadata: rs.Metadata, Stats: rs.Stats})
 	}
@@ -747,7 +747,7 @@ func (s *heartbeatRPCServer) waitHeartbeatIfNeeded(ctx context.Context, r *sppb.
 	}
 }
 
-func (s *heartbeatRPCServer) resultSet(txnID []byte, readTs *timestamppb.Timestamp, sql string, mode sppb.ExecuteSqlRequest_QueryMode) *sppb.ResultSet {
+func (s *heartbeatRPCServer) resultSet(txnID []byte, readTs *timestamppb.Timestamp, sql string) *sppb.ResultSet {
 	s.mu.Lock()
 	count := s.rowCountLocked(sql)
 	values := s.rowValuesLocked(sql)
@@ -756,16 +756,6 @@ func (s *heartbeatRPCServer) resultSet(txnID []byte, readTs *timestamppb.Timesta
 	for i, value := range values {
 		rows[i] = &structpb.ListValue{Values: []*structpb.Value{structpb.NewStringValue(value)}}
 	}
-	stats := &sppb.ResultSetStats{
-		RowCount: &sppb.ResultSetStats_RowCountExact{RowCountExact: count},
-	}
-	if mode == sppb.ExecuteSqlRequest_PROFILE || mode == sppb.ExecuteSqlRequest_PLAN || mode == sppb.ExecuteSqlRequest_WITH_PLAN_AND_STATS {
-		stats.QueryPlan = &sppb.QueryPlan{PlanNodes: []*sppb.PlanNode{{
-			Index:       0,
-			DisplayName: "Dummy",
-			Kind:        sppb.PlanNode_RELATIONAL,
-		}}}
-	}
 	return &sppb.ResultSet{
 		Metadata: &sppb.ResultSetMetadata{
 			RowType: &sppb.StructType{Fields: []*sppb.StructType_Field{
@@ -773,8 +763,10 @@ func (s *heartbeatRPCServer) resultSet(txnID []byte, readTs *timestamppb.Timesta
 			}},
 			Transaction: &sppb.Transaction{Id: txnID, ReadTimestamp: readTs},
 		},
-		Rows:  rows,
-		Stats: stats,
+		Rows: rows,
+		Stats: &sppb.ResultSetStats{
+			RowCount: &sppb.ResultSetStats_RowCountExact{RowCountExact: count},
+		},
 	}
 }
 
