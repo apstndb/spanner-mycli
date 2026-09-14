@@ -72,7 +72,9 @@ func bufferOrExecuteDML(ctx context.Context, session *Session, sql string) (*Res
 			}
 		}
 
-		if _, err := session.txn.FlushAutomaticDML(ctx); err != nil {
+		flushCtx, cancelFlush := session.txn.bindTransactionDeadline(ctx)
+		defer cancelFlush()
+		if _, err := session.txn.FlushAutomaticDML(flushCtx); err != nil {
 			return nil, err
 		}
 

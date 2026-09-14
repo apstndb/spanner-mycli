@@ -308,6 +308,9 @@ func (tm *TransactionManager) rollbackToSavepointLocked(ctx context.Context, nam
 	}()
 	tm.discardPhysicalLocked(ctx)
 
+	ctx, cancelDeadline := tm.bindDeadlineLocked(ctx)
+	defer cancelDeadline()
+
 	candidate, err := spanner.NewReadWriteStmtBasedTransactionWithOptions(ctx, tm.client, ctor)
 	if err != nil {
 		return tm.failReconstructionLocked(err)

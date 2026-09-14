@@ -857,6 +857,13 @@ func (s *Session) ExecuteStatement(ctx context.Context, stmt Statement) (*Result
 }
 
 func (s *Session) executeStatement(ctx context.Context, stmt Statement, out OperationOutput) (result *Result, err error) {
+	// Drain expired-owner SET LOCAL undo at the serialized session safe
+	// point before this statement reads execution defaults or creates a
+	// new owner. Timer goroutines never call Registry.Set.
+	if s.txn != nil {
+		s.txn.restoreLocalVarsIfIdle()
+	}
+
 	// Validate statement compatibility with current session mode
 	if err := s.ValidateStatementExecution(stmt); err != nil {
 		return nil, err

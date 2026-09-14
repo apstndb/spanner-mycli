@@ -153,6 +153,12 @@ type TransactionManager struct {
 	heartbeatBeforeAcquire func()
 	heartbeatAfterAttempt  func()
 
+	// nowFunc, if set, replaces time.Now for TRANSACTION_TIMEOUT arming.
+	// timeoutAfterExpire runs after a matching owner is retired by expiry,
+	// still under tm.mu.
+	nowFunc            func() time.Time
+	timeoutAfterExpire func(*transactionContext)
+
 	// savepointEnabled is a private capture switch for owner-journal
 	// integration tests. Public CLI_SAVEPOINT_SUPPORT also enables capture.
 	savepointEnabled bool
@@ -351,12 +357,15 @@ func (tm *TransactionManager) retireLocalVarUndo(canonical string) {
 }
 
 // restoreLocalVarsIfIdle replays detached SET LOCAL undo once no transaction
-// context remains. SET LOCAL values revert on commit, rollback, and close
-// alike, so instead of hooking every transaction-ending site (including automatic
-// rollback on statement error), this runs after each statement execution and
-// acts only when idle. Replay happens outside the lock because variable
-// setters may themselves inspect transaction state. Nested ExecuteStatement
-// does not restore while a transaction is still active.
+// context remains. This is the serialized session/CLI safe point: timer
+// goroutines never call Registry.Set. Session.ExecuteStatement drains pending
+// undo here before reading execution defaults or creating a new owner, and
+// again after the statement (including an in-flight operation that returns
+// after cancellation). Session.Close also drains. Direct manager calls do
+// not acquire a new automatic restoration contract. Replay happens outside
+// the lock because variable setters may themselves inspect transaction
+// state. Nested ExecuteStatement does not restore while a transaction is
+// still active. A naked inExec flag is not this protocol.
 func (tm *TransactionManager) restoreLocalVarsIfIdle() {
 	var entries []savedLocalVar
 	_ = tm.withTransactionContextWithLock(func(tcPtr **transactionContext) error {
@@ -669,6 +678,7 @@ func (tm *TransactionManager) BeginPendingTransaction(ctx context.Context, isola
 			isolationLevel: resolvedIsolationLevel,
 		},
 	}
+	snapshotTransactionTimeoutLocked(tm.tc, tm.sysVars)
 	tm.ensureReplayLocked()
 	return nil
 }
@@ -754,15 +764,33 @@ func (tm *TransactionManager) BeginReadWriteTransactionLocked(ctx context.Contex
 	opts := transactionOptions(tm.sysVars, resolvedPriority, resolvedIsolationLevel, tag)
 
 	// Check for existing transaction
+	createdOwner := false
 	if tm.tc != nil && tm.tc.attrs.mode != transactionModePending {
 		return fmt.Errorf("%s transaction is already running", tm.tc.attrs.mode)
 	}
+	if tm.tc == nil {
+		tm.tc = &transactionContext{}
+		snapshotTransactionTimeoutLocked(tm.tc, tm.sysVars)
+		createdOwner = true
+	}
 
-	// Construct/validate the SDK handle before mutating the pending object.
-	// Failure retains identity, SET LOCAL undo, and the next-owner tag slot.
+	// Start the logical budget before constructor BeginTransaction. Merely
+	// allocating the owner or taking a multiplexed session is not enough;
+	// the statement-based SDK constructor issues an explicit BeginTransaction
+	// RPC (v1.95.0 ReadWriteStmtBasedTransaction.isDefaultInlinedBegin=false).
+	ctx, cancelDeadline := tm.armAndBindDeadlineLocked(ctx)
+	defer cancelDeadline()
+
+	// Construct/validate the SDK handle before mutating pending attributes.
+	// Failure retains pending identity, SET LOCAL undo, the next-owner tag
+	// slot, and an already-armed budget. A freshly allocated idle owner is
+	// discarded so failed construction still leaves no transaction.
 	txn, err := spanner.NewReadWriteStmtBasedTransactionWithOptions(ctx, tm.client, opts)
 	if err != nil {
-		return err
+		if createdOwner {
+			tm.retireTransactionContextLocked()
+		}
+		return annotateTransactionTimeout(err, tm.tc)
 	}
 	if tm.sysVars != nil {
 		tm.sysVars.Transaction.TransactionTag = ""
@@ -816,8 +844,12 @@ func (tm *TransactionManager) CommitReadWriteTransactionLocked(ctx context.Conte
 		return spanner.CommitResponse{}, ErrNotInReadWriteTransaction
 	}
 
+	ctx, cancelDeadline := tm.armAndBindDeadlineLocked(ctx)
+	defer cancelDeadline()
+	owner := tm.tc
+
 	if _, _, err := tm.flushAutomaticDMLLocked(ctx); err != nil {
-		return spanner.CommitResponse{}, err
+		return spanner.CommitResponse{}, annotateTransactionTimeout(err, owner)
 	}
 
 	var resp spanner.CommitResponse
@@ -828,6 +860,7 @@ func (tm *TransactionManager) CommitReadWriteTransactionLocked(ctx context.Conte
 	} else {
 		resp, err = rwTxn.CommitWithReturnResp(ctx)
 	}
+	err = annotateTransactionTimeout(err, owner)
 
 	// Always retire the transaction context after commit attempt.
 	// A failed commit invalidates the transaction on the server,
@@ -1018,6 +1051,8 @@ func (tm *TransactionManager) ClosePendingTransaction() error {
 func (tm *TransactionManager) runQueryWithStatsOnTransaction(ctx context.Context, tx transaction, stmt spanner.Statement, implicit bool) *spanner.RowIterator {
 	opts := tm.queryOptionsLocked(sppb.ExecuteSqlRequest_PROFILE.Enum())
 	opts.LastStatement = implicit
+	// Iterator outlives this helper; parent ctx + owner deadline bound it.
+	ctx, _ = tm.armAndBindDeadlineLocked(ctx)
 	return tx.QueryWithOptions(ctx, stmt, opts)
 }
 
@@ -1033,9 +1068,11 @@ func (tm *TransactionManager) runAnalyzeQueryOnTransaction(ctx context.Context, 
 	if opts.Options == nil {
 		opts.Options = &sppb.ExecuteSqlRequest_QueryOptions{}
 	}
+	ctx, cancelDeadline := tm.armAndBindDeadlineLocked(ctx)
+	defer cancelDeadline()
 	iter := tx.QueryWithOptions(ctx, stmt, opts)
 	_, _, metadata, plan, err := consumeRowIterDiscard(iter)
-	return plan, metadata, err
+	return plan, metadata, annotateTransactionTimeout(err, tm.tc)
 }
 
 // runUpdateOnTransaction executes an update statement on a transaction.
@@ -1065,6 +1102,9 @@ func (tm *TransactionManager) runUpdateOnTransaction(ctx context.Context, tx *sp
 		return nil, admitError(err)
 	}
 
+	ctx, cancelDeadline := tm.armAndBindDeadlineLocked(ctx)
+	defer cancelDeadline()
+
 	// Capture the raw typed THEN RETURN rows (identity transform); display
 	// formatting is deferred to renderDMLReturnedRows so the value types are
 	// preserved for the active CLI_FORMAT (issue #738 PR2).
@@ -1073,6 +1113,7 @@ func (tm *TransactionManager) runUpdateOnTransaction(ctx context.Context, tx *sp
 		func(r *spanner.Row) (*spanner.Row, error) { return r, nil },
 		capture.receipt(),
 	)
+	err = annotateTransactionTimeout(err, tm.tc)
 	if err2 := tm.finishDMLCaptureLocked(capture, count, err); err == nil {
 		err = err2
 	}
@@ -1248,6 +1289,9 @@ func (tm *TransactionManager) tryQueryInTransaction(ctx context.Context, stmt sp
 	} else {
 		opts.DirectedReadOptions = tm.sysVars.Query.DirectedRead
 	}
+
+	// Iterator outlives this helper; parent ctx + owner deadline bound it.
+	ctx, _ = tm.armAndBindDeadlineLocked(ctx)
 
 	// Execute query on the transaction
 	iter := tm.tc.txn.QueryWithOptions(ctx, stmt, opts)
@@ -1466,12 +1510,17 @@ func (tm *TransactionManager) RunInNewOrExistRwTxLocked(ctx context.Context,
 		return nil, ErrNotInReadWriteTransaction
 	}
 
+	ctx, cancelDeadline := tm.armAndBindDeadlineLocked(ctx)
+	defer cancelDeadline()
+	owner := tm.tc
+
 	var affected int64
 	var plan *sppb.QueryPlan
 	var metadata *sppb.ResultSetMetadata
 
 	// Execute the function
 	affected, plan, metadata, err = f(txn, implicitRWTx)
+	err = annotateTransactionTimeout(err, owner)
 
 	// Enable heartbeat after any operation (success or failure)
 	// Even failed operations start the abort countdown

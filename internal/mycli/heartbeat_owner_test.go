@@ -91,6 +91,9 @@ type heartbeatRPCServer struct {
 	failROQuery  error
 	failSQL      error
 	failBatchDML error
+	failBegin    error
+	blockBegin   <-chan struct{}
+	beginBlocked func()
 	sqlRowCount  map[string]int64
 	sqlValue     map[string]string
 	sqlRows      map[string][]string
@@ -354,7 +357,25 @@ func (s *heartbeatRPCServer) setSQLBlocked(fn func()) {
 	s.sqlBlocked = fn
 }
 
-func (s *heartbeatRPCServer) BeginTransaction(_ context.Context, r *sppb.BeginTransactionRequest) (*sppb.Transaction, error) {
+func (s *heartbeatRPCServer) BeginTransaction(ctx context.Context, r *sppb.BeginTransactionRequest) (*sppb.Transaction, error) {
+	s.mu.Lock()
+	block := s.blockBegin
+	blocked := s.beginBlocked
+	fail := s.failBegin
+	s.mu.Unlock()
+	if blocked != nil {
+		blocked()
+	}
+	if block != nil {
+		select {
+		case <-block:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	if fail != nil {
+		return nil, fail
+	}
 	id := s.newTxnID()
 	txn := &sppb.Transaction{Id: id}
 	s.mu.Lock()
