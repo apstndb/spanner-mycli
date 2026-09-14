@@ -4,8 +4,10 @@ spanner-mycli behavior can be inspected and customized through system variables.
 There are two families:
 
 - **Spanner JDBC inspired variables** (no prefix, e.g. `READONLY`, `STATEMENT_TIMEOUT`):
-  they have almost the same semantics as the corresponding
+  names and some behaviors follow
   [Spanner JDBC connection properties](https://cloud.google.com/spanner/docs/jdbc-session-mgmt-commands).
+  This is not a claim that every property matches JDBC or go-sql-spanner.
+  See [spanner-driver-compatibility.md](spanner-driver-compatibility.md).
 - **spanner-mycli original variables** (`CLI_` prefix, e.g. `CLI_FORMAT`).
 
 They can be used with the following statements and flags:
@@ -15,6 +17,7 @@ SHOW VARIABLES;                 -- List all variables with their current values
 SHOW VARIABLE CLI_FORMAT;       -- Show a single variable
 SET CLI_FORMAT = 'VERTICAL';    -- Set a variable
 SET LOCAL CLI_FORMAT = 'TAB';   -- Set a variable only for the current transaction
+SET PROTO_DESCRIPTORS_FILE_PATH += 'order_descriptors.pb';  -- Append (addable vars only)
 RESET ALL;                      -- Restore resettable variables to their startup snapshots
 RESET CLI_FORMAT;               -- Restore one variable (canonical name or alias)
 -- Ordinary SET is session-durable through COMMIT and ROLLBACK, including after
@@ -33,6 +36,55 @@ HELP VARIABLES;                 -- Show the reference table below interactively
 ```
 
 Variables can also be set at startup with `--set NAME=VALUE` command-line flags.
+See [configuration sources](#configuration-sources-and-precedence). Interactive
+`HELP VARIABLES` uses the same three columns as the generated table below.
+
+## Configuration sources and precedence
+
+Built-in defaults are created first (`newSystemVariablesWithDefaults`). Dedicated
+flag / TOML / env values are then resolved by Kong (command-line flags beat
+environment variables, which beat current-directory `.spanner_mycli.toml`, which
+beats home `.spanner_mycli.toml`). Those resolved flags, plus feature
+`ApplyFlags`, are applied to the registry. `--set NAME=VALUE` runs **after**
+that mapping and overrides the same name.
+
+`RESET` / `RESET ALL` restore the snapshot captured **after** defaults, config,
+flags, and `--set`, and **before** `--init-command` / `--init-command-add`.
+Init SQL is ordinary `SET` and is resettable. `RESET LOCAL` and `SET x=DEFAULT`
+are not supported.
+
+Not every variable can be set from every source. Many registry names have no
+flag, TOML key, or environment variable. Some flags are presence-dependent:
+omitting `--timeout` leaves `STATEMENT_TIMEOUT` as `NULL`;
+`--enable-partitioned-dml` maps `AUTOCOMMIT_DML_MODE` only when given. Do not
+assume a TOML key exists for every `CLI_*` name; use `--set` or SQL `SET`.
+README: [Config file](../README.md#config-file) and
+[Configuration Precedence](../README.md#configuration-precedence).
+
+## Stored values, snapshots, and effective behavior
+
+Keep these layers distinct:
+
+| Layer | What `SHOW VARIABLE` / `RESET` see | Example |
+|-------|------------------------------------|---------|
+| Stored / registered | The value in the session registry | Omitted `--timeout` → `STATEMENT_TIMEOUT` is `NULL` |
+| Startup snapshot | Value captured after flags and `--set` | `RESET STATEMENT_TIMEOUT` restores that snapshot, not `10m` |
+| Current session | Ordinary `SET` (survives `COMMIT` / `ROLLBACK`) | `SET STATEMENT_TIMEOUT = '2m'` |
+| `SET LOCAL` | Reverts when the current transaction ends, unless a later ordinary `SET` superseded it | `SET LOCAL CLI_FORMAT = 'TAB'` |
+| Owner-captured policy | Frozen on the logical transaction at creation | `TRANSACTION_TIMEOUT`, `COMMIT_PRIORITY`, `KEEP_TRANSACTION_ALIVE`, `CLI_DDL_IN_TRANSACTION_MODE` |
+| Execution fallback | Used only when the stored value is unset; **not** a stored default | `NULL` `STATEMENT_TIMEOUT` → 10m ordinary / 24h partitioned DML |
+
+`CLI_CURRENT_WIDTH` is the current TTY width (or `NULL` if not a terminal); it
+is not a stored default. `CLI_HISTORY_FILE` follows the process home directory
+(`~/.spanner_mycli_history`) unless overridden. Read-only, init-only,
+unimplemented, file-backed descriptor/template, opaque-graph, connection-identity,
+and stream-handle variables are excluded from `RESET` as documented in the
+[reference](#reference) operations/descriptions.
+
+Normal CLI startup without `--priority` currently **stores** `RPC_PRIORITY=MEDIUM`
+(the `--priority` mapping fills `MEDIUM` when the flag is empty). That is the
+startup snapshot, not an execute-time-only substitute. `COMMIT_PRIORITY`
+`UNSPECIFIED` still inherits the resolved transaction RPC priority.
 
 ## Reference
 
@@ -167,7 +219,23 @@ both `SHOW` and `SET`.
 ## Detailed variable documentation
 
 This section provides extended documentation for selected variables that need
-more explanation than the reference table above.
+more explanation than the reference table above. Query-plan templates and
+inline stats live in [query_plan.md](query_plan.md); this file does not copy
+that reference.
+
+### Query plan display
+
+`CLI_ANALYZE_COLUMNS`, `CLI_INLINE_STATS`, `CLI_EXPLAIN_FORMAT`,
+`CLI_EXPLAIN_HANGING_INDENT`, `CLI_EXPLAIN_OPERATOR_HEADER`,
+`CLI_EXPLAIN_PRINT_SECTIONS`, `CLI_EXPLAIN_WRAP_WIDTH`, `CLI_LINT_PLAN`,
+`CLI_DIRECT_PLAN`, `CLI_AUTOWRAP`, and `CLI_OUTPUT_TEMPLATE_FILE` are listed in
+the [reference](#reference). How those templates and WIDTH wrapping behave is
+documented with examples in:
+
+- [Configurable EXPLAIN ANALYZE](query_plan.md#configurable-explain-analyze)
+- [Inline stats](query_plan.md#inline-stats)
+- [Wrapped plans](query_plan.md#wrapped-plans)
+- [Configuration options](query_plan.md#configuration-options)
 
 ### JDBC-inspired variables
 
@@ -204,6 +272,25 @@ more explanation than the reference table above.
   - `SET` during a pending transaction is applied when the owner is constructed.
   - Idle-deadline (#357) is not implemented. `TRANSACTION_TIMEOUT` is a separate logical-owner budget and is not implied by this variable.
   - The 5-second interval is unchanged; there is no interval-tuning surface.
+
+#### STATEMENT_TIMEOUT
+- **Type**: duration or `NULL`
+- **Stored default**: `NULL` when `--timeout` is omitted
+- **Access**: Read/Write. `SET LOCAL` is supported.
+- **Description**: Stored statement deadline. This is a CLI policy, not a
+  server-required deadline.
+- **Notes**:
+  - `SHOW VARIABLE STATEMENT_TIMEOUT` reports the stored value. Omitted
+    `--timeout` stores `NULL`.
+  - When the stored value is `NULL`, execution uses 10 minutes for ordinary
+    statements and 24 hours for partitioned DML. Those fallbacks are **not**
+    the stored default and are **not** what `RESET` restores unless the startup
+    snapshot itself was `10m` / `24h` (for example `--timeout 10m` or
+    `--set STATEMENT_TIMEOUT=10m`).
+  - `--set STATEMENT_TIMEOUT=...` overrides `--timeout` (see
+    [precedence](#configuration-sources-and-precedence)).
+  - Distinct from `TRANSACTION_TIMEOUT` (logical-owner budget) and from
+    unimplemented user-idle expiry (#357).
 
 #### TRANSACTION_TIMEOUT
 - **Type**: STRING (duration or `NULL`)
@@ -261,7 +348,7 @@ more explanation than the reference table above.
 - **Access**: Read-only
 - **Usage**: 
   ```sql
-  SHOW CLI_SKIP_SYSTEM_COMMAND;  -- Check if system commands are disabled
+  SHOW VARIABLE CLI_SKIP_SYSTEM_COMMAND;  -- Check if system commands are disabled
   ```
 - **Notes**:
   - This is a read-only variable that reflects the state set by command-line flags
@@ -461,7 +548,7 @@ more explanation than the reference table above.
   SET CLI_TYPE_STYLES = '';
 
   -- Check current setting
-  SHOW CLI_TYPE_STYLES;
+  SHOW VARIABLE CLI_TYPE_STYLES;
   ```
 - **Supported Types**:
   `BOOL`, `INT64`, `FLOAT32`, `FLOAT64`, `NUMERIC`, `STRING`, `BYTES`, `JSON`, `DATE`, `TIMESTAMP`, `ARRAY`, `STRUCT`, `PROTO`, `ENUM`, `INTERVAL`, `UUID`, `NULL`
