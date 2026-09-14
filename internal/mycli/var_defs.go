@@ -244,10 +244,19 @@ var varDefs = []varDef{
 		bind:  func(sv *systemVariables) Variable { return BoolVar(&sv.Display.EnableProgressBar) },
 	},
 	{
-		name:  "CLI_ASYNC_DDL",
-		desc:  "A boolean indicating whether DDL statements should be executed asynchronously. The default is false.",
+		name:  "DDL_EXECUTION_MODE",
+		desc:  "How DDL statements wait for the Admin long-running operation. SYNC (default) waits for the actual result. ASYNC returns the accepted operation ID immediately. ASYNC_WAIT waits up to DDL_ASYNC_WAIT_TIMEOUT and, on wait-budget expiry, returns the still-running operation ID as a successful asynchronous submission without canceling the server operation. --async selects ASYNC. Replaces CLI_ASYNC_DDL.",
 		scope: scopeSession,
-		bind:  func(sv *systemVariables) Variable { return BoolVar(&sv.Feature.AsyncDDL) },
+		bind:  func(sv *systemVariables) Variable { return DDLExecutionModeVar(&sv.Feature.DDLExecutionMode) },
+	},
+	{
+		name:  "DDL_ASYNC_WAIT_TIMEOUT",
+		desc:  "Maximum time ASYNC_WAIT spends waiting for a DDL operation before returning the still-running operation ID as a successful asynchronous submission. The remaining budget bounds in-flight GetOperation polls as well as the time between polls. Expiry cancels only the polling RPC and does not cancel the server operation. The default is 10s. Unused in SYNC and ASYNC modes.",
+		scope: scopeSession,
+		bind: func(sv *systemVariables) Variable {
+			return DurationVar(&sv.Feature.DDLAsyncWaitTimeout).
+				WithValidator(durationValueValidator(durationPtr(0), nil))
+		},
 	},
 	{
 		// Read-only: this is a security feature (--skip-system-command /

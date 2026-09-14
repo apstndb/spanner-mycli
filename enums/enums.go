@@ -109,6 +109,17 @@ const (
 	SavepointSupportEnabled
 )
 
+// DDLExecutionMode determines how DDL statements wait for the Admin LRO.
+//
+//go:generate go tool enumer -type=DDLExecutionMode -trimprefix=DDLExecutionMode -transform=snake_upper
+type DDLExecutionMode int
+
+const (
+	DDLExecutionModeSync DDLExecutionMode = iota
+	DDLExecutionModeAsync
+	DDLExecutionModeAsyncWait
+)
+
 // IsSQLExport returns true if the display mode is one of the SQL export formats
 func (d DisplayMode) IsSQLExport() bool {
 	return d == DisplayModeSQLInsert || d == DisplayModeSQLInsertOrUpdate || d == DisplayModeSQLInsertOrIgnore

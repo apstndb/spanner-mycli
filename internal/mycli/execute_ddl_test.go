@@ -22,6 +22,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"cloud.google.com/go/spanner"
 	"github.com/apstndb/spanner-mycli/internal/mycli/streamio"
@@ -194,6 +195,69 @@ func TestExecuteDdlStatementsEmpty(t *testing.T) {
 		}
 		if len(got.presentationRows()) != 0 {
 			t.Fatalf("Rows = %v, want empty", got.presentationRows())
+		}
+	})
+}
+
+func TestWaitDeadlineReached(t *testing.T) {
+	t.Parallel()
+	if waitDeadlineReached(time.Time{}) {
+		t.Fatal("zero deadline is SYNC (no budget), not reached")
+	}
+	if !waitDeadlineReached(time.Now().Add(-time.Millisecond)) {
+		t.Fatal("past deadline should be reached")
+	}
+	if waitDeadlineReached(time.Now().Add(time.Hour)) {
+		t.Fatal("future deadline should not be reached")
+	}
+}
+
+func TestAsyncWaitDeadline(t *testing.T) {
+	t.Parallel()
+	if !waitDeadlineReached(asyncWaitDeadline(0)) {
+		t.Fatal("zero timeout should be an already-reached deadline")
+	}
+	if !waitDeadlineReached(asyncWaitDeadline(-time.Second)) {
+		t.Fatal("negative timeout should be an already-reached deadline")
+	}
+	if waitDeadlineReached(asyncWaitDeadline(time.Hour)) {
+		t.Fatal("positive timeout should still have remaining budget")
+	}
+}
+
+func TestClassifyDdlWaitError(t *testing.T) {
+	t.Parallel()
+
+	t.Run("caller deadline wins over expired budget", func(t *testing.T) {
+		t.Parallel()
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+		got := classifyDdlWaitError(ctx, time.Now().Add(-time.Millisecond), context.DeadlineExceeded)
+		if errors.Is(got, errWaitBudgetExpired) {
+			t.Fatal("caller cancellation must take precedence over wait-budget expiry")
+		}
+		if !errors.Is(got, context.DeadlineExceeded) {
+			t.Fatalf("got %v, want caller DeadlineExceeded", got)
+		}
+	})
+
+	t.Run("budget expiry during in-flight cancel", func(t *testing.T) {
+		t.Parallel()
+		got := classifyDdlWaitError(t.Context(), time.Now().Add(-time.Millisecond), status.Error(codes.DeadlineExceeded, "context deadline exceeded"))
+		if !errors.Is(got, errWaitBudgetExpired) {
+			t.Fatalf("got %v, want wait-budget handoff", got)
+		}
+	})
+
+	t.Run("completed failing LRO stays a failure", func(t *testing.T) {
+		t.Parallel()
+		err := status.Error(codes.FailedPrecondition, "index already exists")
+		got := classifyDdlWaitError(t.Context(), time.Now().Add(-time.Millisecond), err)
+		if errors.Is(got, errWaitBudgetExpired) {
+			t.Fatal("completed LRO failure must not become a wait-budget handoff")
+		}
+		if status.Code(got) != codes.FailedPrecondition {
+			t.Fatalf("got %v, want FailedPrecondition", got)
 		}
 	})
 }

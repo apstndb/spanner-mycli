@@ -205,7 +205,8 @@ type FeatureVars struct {
 	// config struct in internal/mycli/feature/llm (#778).
 	EchoExecutedDDL        bool                       // CLI_ECHO_EXECUTED_DDL
 	EchoInput              bool                       // CLI_ECHO_INPUT
-	AsyncDDL               bool                       // CLI_ASYNC_DDL
+	DDLExecutionMode       enums.DDLExecutionMode     // DDL_EXECUTION_MODE
+	DDLAsyncWaitTimeout    time.Duration              // DDL_ASYNC_WAIT_TIMEOUT
 	AutoConnectAfterCreate bool                       // CLI_AUTO_CONNECT_AFTER_CREATE
 	LogLevel               slog.Level                 // CLI_LOG_LEVEL (session-reported; runtime threshold is runtimeLogLevel when bound)
 	DatabaseDialect        databasepb.DatabaseDialect // CLI_DATABASE_DIALECT
@@ -367,6 +368,9 @@ func (sv *systemVariables) ProjectPath() string {
 	return sv.Connection.ProjectPath()
 }
 
+// defaultDDLAsyncWaitTimeout is the ASYNC_WAIT budget when DDL_ASYNC_WAIT_TIMEOUT is unset.
+const defaultDDLAsyncWaitTimeout = 10 * time.Second
+
 // newSystemVariablesWithDefaults creates a new systemVariables instance with default values.
 // This function ensures consistency between initialization and test expectations.
 func newSystemVariablesWithDefaults() systemVariables {
@@ -399,8 +403,9 @@ func newSystemVariablesWithDefaults() systemVariables {
 			ReturnCommitStats: true,
 		},
 		Feature: FeatureVars{
-			LogLevel:       slog.LevelWarn,
-			FuzzyFinderKey: "C_T",
+			LogLevel:            slog.LevelWarn,
+			FuzzyFinderKey:      "C_T",
+			DDLAsyncWaitTimeout: defaultDDLAsyncWaitTimeout,
 		},
 
 		// Initialize empty maps to avoid nil

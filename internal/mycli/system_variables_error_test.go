@@ -116,6 +116,24 @@ func TestSystemVariables_Set_Errors(t *testing.T) {
 			value:     "INVALID_PRIORITY",
 			wantError: "invalid value \"INVALID_PRIORITY\", must be one of:",
 		},
+		{
+			name:      "invalid ddl execution mode",
+			varName:   "DDL_EXECUTION_MODE",
+			value:     "INVALID_MODE",
+			wantError: "invalid value \"INVALID_MODE\", must be one of:",
+		},
+		{
+			name:      "invalid ddl async wait timeout negative",
+			varName:   "DDL_ASYNC_WAIT_TIMEOUT",
+			value:     "-1s",
+			wantError: "less than minimum",
+		},
+		{
+			name:      "removed CLI_ASYNC_DDL is unknown",
+			varName:   "CLI_ASYNC_DDL",
+			value:     "true",
+			wantError: "unknown variable name: CLI_ASYNC_DDL",
+		},
 	}
 
 	for _, tt := range tests {
