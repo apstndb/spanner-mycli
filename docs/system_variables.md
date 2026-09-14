@@ -115,7 +115,7 @@ both `SHOW` and `SET`.
 | `COMMIT_RESPONSE`                 | read           | The most recent response for a read-write transaction. SHOW VARIABLE COMMIT_RESPONSE returns COMMIT_TIMESTAMP and MUTATION_COUNT columns; SHOW VARIABLES includes those values as COMMIT_TIMESTAMP and MUTATION_COUNT.                                                                                                                                                                                                                                                                                                                                                |
 | `COMMIT_TIMESTAMP`                | read           | The commit timestamp of the last read-write transaction that Spanner committed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | `DATA_BOOST_ENABLED`              | read,write     | A property of type BOOL indicating whether this connection should use Data Boost for partitioned queries. The default is false.                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `DDL_ASYNC_WAIT_TIMEOUT`          | read,write     | Maximum time ASYNC_WAIT spends waiting for a DDL operation before returning the still-running operation ID as a successful asynchronous submission. Does not cancel the server operation. The default is 10s. Unused in SYNC and ASYNC modes.                                                                                                                                                                                                                                                                                                                         |
+| `DDL_ASYNC_WAIT_TIMEOUT`          | read,write     | Maximum time ASYNC_WAIT spends waiting for a DDL operation before returning the still-running operation ID as a successful asynchronous submission. The remaining budget bounds in-flight GetOperation polls as well as the time between polls. Expiry cancels only the polling RPC and does not cancel the server operation. The default is 10s. Unused in SYNC and ASYNC modes.                                                                                                                                                                                     |
 | `DDL_EXECUTION_MODE`              | read,write     | How DDL statements wait for the Admin long-running operation. SYNC (default) waits for the actual result. ASYNC returns the accepted operation ID immediately. ASYNC_WAIT waits up to DDL_ASYNC_WAIT_TIMEOUT and, on wait-budget expiry, returns the still-running operation ID as a successful asynchronous submission without canceling the server operation. --async selects ASYNC. Replaces CLI_ASYNC_DDL.                                                                                                                                                        |
 | `DEFAULT_ISOLATION_LEVEL`         | read,write     | The transaction isolation level that is used by default for read/write transactions.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `DIRECTED_READ`                   | read,write     | Directed read options for supported read-only queries. Accepts replica_location or replica_location:READ_ONLY\|READ_WRITE shorthand, or DirectedReadOptions protobuf JSON. SHOW uses shorthand when that form is lossless; otherwise protobuf JSON. Empty string clears. SET is rejected while a transaction is pending or active; SET LOCAL is not supported. Not applied to read-write queries, DML, heartbeat, or partitioned DML.                                                                                                                                 |
@@ -422,11 +422,13 @@ type/behavior replacement for the removed boolean `CLI_ASYNC_DDL`.
     (including a completed failing LRO).
   - `ASYNC` returns the accepted operation ID immediately. Later DDL failure
     remains visible through `SHOW OPERATION`. `--async` selects this mode.
-  - `ASYNC_WAIT` waits until completion or `DDL_ASYNC_WAIT_TIMEOUT`. When that
-    separate wait budget expires, the still-running operation ID is returned as
-    a successful asynchronous submission. The server operation is not canceled.
-    Caller or `STATEMENT_TIMEOUT` cancellation remains an error that includes
-    the operation ID.
+  - `ASYNC_WAIT` waits until completion or `DDL_ASYNC_WAIT_TIMEOUT`. The
+    remaining wait budget bounds the initial GetOperation poll, later polls,
+    and the time between polls. When that separate wait budget expires, the
+    still-running operation ID is returned as a successful asynchronous
+    submission. Expiry cancels only the polling RPC; the server operation is
+    not canceled. Caller or `STATEMENT_TIMEOUT` cancellation remains an error
+    that includes the operation ID.
 - **Migration**: `SET CLI_ASYNC_DDL = TRUE` becomes
   `SET DDL_EXECUTION_MODE = 'ASYNC'`. `FALSE` is the `SYNC` default.
 
@@ -437,8 +439,9 @@ type/behavior replacement for the removed boolean `CLI_ASYNC_DDL`.
 - **Access**: Read/Write
 - **Description**: Maximum time `ASYNC_WAIT` spends waiting before handing off
   the still-running operation ID. Unused in `SYNC` and `ASYNC`. Must be >= 0.
-  Zero expires the wait budget immediately after the first poll if the LRO is
-  still running.
+  The remaining budget applies to in-flight GetOperation polls as well as the
+  between-poll wait. Zero expires the wait budget immediately, including
+  before the first poll.
 
 ### CLI_SAVEPOINT_SUPPORT
 

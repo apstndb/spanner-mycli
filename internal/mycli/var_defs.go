@@ -251,7 +251,7 @@ var varDefs = []varDef{
 	},
 	{
 		name:  "DDL_ASYNC_WAIT_TIMEOUT",
-		desc:  "Maximum time ASYNC_WAIT spends waiting for a DDL operation before returning the still-running operation ID as a successful asynchronous submission. Does not cancel the server operation. The default is 10s. Unused in SYNC and ASYNC modes.",
+		desc:  "Maximum time ASYNC_WAIT spends waiting for a DDL operation before returning the still-running operation ID as a successful asynchronous submission. The remaining budget bounds in-flight GetOperation polls as well as the time between polls. Expiry cancels only the polling RPC and does not cancel the server operation. The default is 10s. Unused in SYNC and ASYNC modes.",
 		scope: scopeSession,
 		bind: func(sv *systemVariables) Variable {
 			return DurationVar(&sv.Feature.DDLAsyncWaitTimeout).
