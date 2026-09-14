@@ -45,20 +45,13 @@ type syncProtoClause struct {
 type SyncProtoStatement struct {
 	UpsertPaths []string
 	DeletePaths []string
-	// clauses preserves per-clause RECURSIVE vs plain UPSERT order. It is
-	// unexported so existing cmp.Diff cases keep comparing listed paths only.
+	// clauses is the ordered per-clause form, including whether each UPSERT
+	// is RECURSIVE. Listed UpsertPaths/DeletePaths stay first-occurrence
+	// roots for compose and existing constructed statements.
 	clauses []syncProtoClause
 }
 
 func (SyncProtoStatement) isNonTransactionalMutationStatement() {}
-
-// Equal reports listed-path identity so existing cmp.Diff cases ignore clauses.
-func (s *SyncProtoStatement) Equal(o *SyncProtoStatement) bool {
-	if s == nil || o == nil {
-		return s == o
-	}
-	return slices.Equal(s.UpsertPaths, o.UpsertPaths) && slices.Equal(s.DeletePaths, o.DeletePaths)
-}
 
 func (s *SyncProtoStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	var local *descriptorpb.FileDescriptorSet

@@ -101,6 +101,10 @@ func TestSyncProtoBundleParserToComposer(t *testing.T) {
 	}
 }
 
+func syncProtoCmpOpts() []cmp.Option {
+	return []cmp.Option{cmp.AllowUnexported(SyncProtoStatement{}, syncProtoClause{})}
+}
+
 func TestSyncProtoBundleLexicalAndIdentity(t *testing.T) {
 	t.Parallel()
 	for _, tt := range []struct {
@@ -111,27 +115,54 @@ func TestSyncProtoBundleLexicalAndIdentity(t *testing.T) {
 		{
 			name: "comment with parentheses and DELETE keyword",
 			sql:  "SYNC PROTO BUNDLE UPSERT /* DELETE (examples.Hidden) */ (examples.A) DELETE (examples.B)",
-			want: &SyncProtoStatement{UpsertPaths: sliceOf("examples.A"), DeletePaths: sliceOf("examples.B")},
+			want: &SyncProtoStatement{
+				UpsertPaths: sliceOf("examples.A"),
+				DeletePaths: sliceOf("examples.B"),
+				clauses: []syncProtoClause{
+					{paths: sliceOf("examples.A")},
+					{delete: true, paths: sliceOf("examples.B")},
+				},
+			},
 		},
 		{
 			name: "quoted ident containing parentheses and DELETE",
 			sql:  "SYNC PROTO BUNDLE UPSERT (`foo) DELETE (`)",
-			want: &SyncProtoStatement{UpsertPaths: sliceOf("foo) DELETE (")},
+			want: &SyncProtoStatement{
+				UpsertPaths: sliceOf("foo) DELETE ("),
+				clauses:     []syncProtoClause{{paths: sliceOf("foo) DELETE (")}},
+			},
 		},
 		{
 			name: "repeated DELETE then interleaved UPSERT keeps first-occurrence order",
 			sql:  "SYNC PROTO BUNDLE DELETE (examples.A) UPSERT (examples.B) DELETE (examples.A, examples.C)",
-			want: &SyncProtoStatement{UpsertPaths: sliceOf("examples.B"), DeletePaths: sliceOf("examples.A", "examples.C")},
+			want: &SyncProtoStatement{
+				UpsertPaths: sliceOf("examples.B"),
+				DeletePaths: sliceOf("examples.A", "examples.C"),
+				clauses: []syncProtoClause{
+					{delete: true, paths: sliceOf("examples.A")},
+					{paths: sliceOf("examples.B")},
+					{delete: true, paths: sliceOf("examples.A", "examples.C")},
+				},
+			},
 		},
 		{
 			name: "repeated same-kind DELETE clauses unique in first-occurrence order",
 			sql:  "SYNC PROTO BUNDLE DELETE (examples.A, examples.B) DELETE (examples.B, examples.C)",
-			want: &SyncProtoStatement{DeletePaths: sliceOf("examples.A", "examples.B", "examples.C")},
+			want: &SyncProtoStatement{
+				DeletePaths: sliceOf("examples.A", "examples.B", "examples.C"),
+				clauses: []syncProtoClause{
+					{delete: true, paths: sliceOf("examples.A", "examples.B")},
+					{delete: true, paths: sliceOf("examples.B", "examples.C")},
+				},
+			},
 		},
 		{
 			name: "RECURSIVE UPSERT listed paths stay the requested roots",
 			sql:  "SYNC PROTO BUNDLE RECURSIVE UPSERT (examples.shipping.Order)",
-			want: &SyncProtoStatement{UpsertPaths: sliceOf("examples.shipping.Order")},
+			want: &SyncProtoStatement{
+				UpsertPaths: sliceOf("examples.shipping.Order"),
+				clauses:     []syncProtoClause{{recursive: true, paths: sliceOf("examples.shipping.Order")}},
+			},
 		},
 		{
 			name: "RECURSIVE modifies only the following UPSERT",
@@ -139,6 +170,11 @@ func TestSyncProtoBundleLexicalAndIdentity(t *testing.T) {
 			want: &SyncProtoStatement{
 				UpsertPaths: sliceOf("examples.shipping.Order", "examples.shipping.OrderHistory"),
 				DeletePaths: sliceOf("examples.Gone"),
+				clauses: []syncProtoClause{
+					{recursive: true, paths: sliceOf("examples.shipping.Order")},
+					{paths: sliceOf("examples.shipping.OrderHistory")},
+					{delete: true, paths: sliceOf("examples.Gone")},
+				},
 			},
 		},
 		{
@@ -147,17 +183,28 @@ func TestSyncProtoBundleLexicalAndIdentity(t *testing.T) {
 			want: &SyncProtoStatement{
 				UpsertPaths: sliceOf("examples.shipping.Order.Item", "examples.shipping.Order"),
 				DeletePaths: sliceOf("examples.Gone"),
+				clauses: []syncProtoClause{
+					{paths: sliceOf("examples.shipping.Order.Item")},
+					{recursive: true, paths: sliceOf("examples.shipping.Order")},
+					{delete: true, paths: sliceOf("examples.Gone")},
+				},
 			},
 		},
 		{
 			name: "comment between RECURSIVE and UPSERT",
 			sql:  "SYNC PROTO BUNDLE RECURSIVE /* DELETE (examples.Hidden) */ UPSERT (examples.A)",
-			want: &SyncProtoStatement{UpsertPaths: sliceOf("examples.A")},
+			want: &SyncProtoStatement{
+				UpsertPaths: sliceOf("examples.A"),
+				clauses:     []syncProtoClause{{recursive: true, paths: sliceOf("examples.A")}},
+			},
 		},
 		{
 			name: "quoted ident containing parentheses after RECURSIVE UPSERT",
 			sql:  "SYNC PROTO BUNDLE RECURSIVE UPSERT (`foo) DELETE (`)",
-			want: &SyncProtoStatement{UpsertPaths: sliceOf("foo) DELETE (")},
+			want: &SyncProtoStatement{
+				UpsertPaths: sliceOf("foo) DELETE ("),
+				clauses:     []syncProtoClause{{recursive: true, paths: sliceOf("foo) DELETE (")}},
+			},
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -166,10 +213,45 @@ func TestSyncProtoBundleLexicalAndIdentity(t *testing.T) {
 			if err != nil {
 				t.Fatalf("BuildStatement(%q) error = %v", tt.sql, err)
 			}
-			if diff := cmp.Diff(tt.want, got); diff != "" {
+			if diff := cmp.Diff(tt.want, got, syncProtoCmpOpts()...); diff != "" {
 				t.Errorf("BuildStatement(%q) mismatch (-want +got):\n%s", tt.sql, diff)
 			}
 		})
+	}
+}
+
+func TestSyncProtoBundleParserDistinguishesRecursive(t *testing.T) {
+	t.Parallel()
+	plain, err := BuildStatement("SYNC PROTO BUNDLE UPSERT (examples.shipping.Order)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	recursive, err := BuildStatement("SYNC PROTO BUNDLE RECURSIVE UPSERT (examples.shipping.Order)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cmp.Equal(plain, recursive, syncProtoCmpOpts()...) {
+		t.Fatal("parser equality hides RECURSIVE behavior difference")
+	}
+	if diff := cmp.Diff(
+		&SyncProtoStatement{
+			UpsertPaths: sliceOf("examples.shipping.Order"),
+			clauses:     []syncProtoClause{{paths: sliceOf("examples.shipping.Order")}},
+		},
+		plain,
+		syncProtoCmpOpts()...,
+	); diff != "" {
+		t.Errorf("plain UPSERT (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff(
+		&SyncProtoStatement{
+			UpsertPaths: sliceOf("examples.shipping.Order"),
+			clauses:     []syncProtoClause{{recursive: true, paths: sliceOf("examples.shipping.Order")}},
+		},
+		recursive,
+		syncProtoCmpOpts()...,
+	); diff != "" {
+		t.Errorf("RECURSIVE UPSERT (-want +got):\n%s", diff)
 	}
 }
 
