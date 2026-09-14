@@ -82,6 +82,11 @@ func bufferOrExecuteDML(ctx context.Context, session *Session, sql string) (*Res
 			return executePDML(ctx, session, sql)
 		}
 
+		if attempt := captureMutationLimitFallback(session, sql); attempt != nil {
+			result, info, err := executePreparedDML(ctx, session, attempt.stmt)
+			return finishMutationLimitFallback(ctx, session, attempt, result, info, err)
+		}
+
 		return executeDML(ctx, session, sql)
 	}
 }
@@ -176,13 +181,17 @@ func executeDML(ctx context.Context, session *Session, sql string) (*Result, err
 	if err != nil {
 		return nil, err
 	}
+	result, _, err := executePreparedDML(ctx, session, stmt)
+	return result, err
+}
 
+func executePreparedDML(ctx context.Context, session *Session, stmt spanner.Statement) (*Result, rwTxAttemptInfo, error) {
 	var renderedOutput []byte
 	var queryStats map[string]any
 	var tableHeader TableHeader
 	var capture *captureToken
 	mode := effectiveQueryMode(session.systemVariables.Query.QueryMode)
-	result, err := session.txn.RunInNewOrExistRwTx(ctx, func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
+	result, info, err := session.txn.runInNewOrExistRwTx(ctx, func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error) {
 		updateResult, err := session.txn.runUpdateOnTransaction(ctx, tx, stmt, implicit, mode)
 		if err != nil {
 			return 0, nil, nil, err
@@ -203,12 +212,12 @@ func executeDML(ctx context.Context, session *Session, sql string) (*Result, err
 		return updateResult.Count, updateResult.Plan, updateResult.Metadata, nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, info, err
 	}
 
 	stats, err := parseQueryStats(queryStats)
 	if err != nil {
-		return nil, err
+		return nil, info, err
 	}
 
 	session.systemVariables.LastResult.QueryCache = &LastQueryCache{
@@ -221,7 +230,7 @@ func executeDML(ctx context.Context, session *Session, sql string) (*Result, err
 	if out != nil {
 		out.capture = capture
 	}
-	return out, err
+	return out, info, err
 }
 
 // buildDMLResult assembles the final Result for a regular (non-batch) DML

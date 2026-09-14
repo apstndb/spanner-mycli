@@ -907,6 +907,21 @@ optimizer statistics: auto_20210829_05_22_28UTC
 			want:    "Query OK, at least 1000 rows affected (200 msec)\n",
 		},
 		{
+			desc: "Mutation-limit PDML fallback (lower bound plus non-atomic note)",
+			result: &Result{
+				TableHeader:           nil,
+				IsExecutedDML:         true,
+				AffectedRows:          1000,
+				AffectedRowsType:      rowCountTypeLowerBound,
+				MutationLimitFallback: true,
+				Stats: QueryStats{
+					ElapsedTime: "200 msec",
+				},
+			},
+			verbose: false,
+			want:    "Query OK, at least 1000 rows affected (non-atomic mutation-limit fallback) (200 msec)\n",
+		},
+		{
 			desc: "Batch DML (no result set, upper bound affected rows)",
 			result: &Result{
 				TableHeader:      nil,

@@ -30,6 +30,7 @@ type AutocommitDMLMode int
 const (
 	AutocommitDMLModeTransactional AutocommitDMLMode = iota
 	AutocommitDMLModePartitionedNonAtomic
+	AutocommitDMLModeTransactionalWithFallbackToPartitionedNonAtomic
 )
 
 // ParseMode represents statement parsing behavior

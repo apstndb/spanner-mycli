@@ -316,7 +316,13 @@ func executePDML(ctx context.Context, session *Session, sql string) (*Result, er
 		return nil, err
 	}
 
-	count, err := session.client.PartitionedUpdateWithOptions(ctx, stmt, spanner.QueryOptions{})
+	// Existing PARTITIONED_NON_ATOMIC behavior: empty QueryOptions. Mutation-limit
+	// fallback reuses executePartitionedUpdate with frozen options instead.
+	return executePartitionedUpdate(ctx, session, stmt, spanner.QueryOptions{})
+}
+
+func executePartitionedUpdate(ctx context.Context, session *Session, stmt spanner.Statement, opts spanner.QueryOptions) (*Result, error) {
+	count, err := session.client.PartitionedUpdateWithOptions(ctx, stmt, opts)
 	if err != nil {
 		return nil, err
 	}

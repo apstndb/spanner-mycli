@@ -277,6 +277,11 @@ type Result struct {
 	// IsExecutedDML indicates this is an executed DML statement (INSERT/UPDATE/DELETE) that can report affected rows
 	IsExecutedDML bool
 
+	// MutationLimitFallback is set when implicit transactional DML was retried
+	// as partitioned DML after a SQL-phase mutation-limit failure. The count
+	// is a lower bound and the write is non-atomic.
+	MutationLimitFallback bool
+
 	ReadTimestamp   time.Time // For SELECT/read-only transactions
 	CommitTimestamp time.Time // For COMMIT/DML operations
 	ForceVerbose    bool
