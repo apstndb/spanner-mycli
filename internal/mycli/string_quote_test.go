@@ -455,7 +455,6 @@ func TestCLIStringQuoteModeSQLExportFallbackKeepsExistingBytes(t *testing.T) {
 	}
 }
 
-
 func TestCLIStringQuoteModeThenReturnUsesTypedPolicy(t *testing.T) {
 	t.Parallel()
 	md, rawRows, header := mustStringQuoteTyped(t)
