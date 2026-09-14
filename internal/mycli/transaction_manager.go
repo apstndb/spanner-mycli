@@ -168,6 +168,11 @@ type TransactionManager struct {
 	// owner at that exact gap. Production remains nil. The hook must
 	// not call Registry.Set.
 	afterLeaveRestore func()
+	// afterMutationLimitBeforeFallback runs after a classified SQL-phase
+	// mutation-limit failure and original-owner retirement, immediately
+	// before leftover-budget checks. Tests use it to cancel the caller
+	// context or advance the transaction clock. Production remains nil.
+	afterMutationLimitBeforeFallback func()
 
 	// statementDepth is the number of ExecuteStatement frames on this
 	// manager. While it is positive, expiry marks expirePending instead of
@@ -1581,13 +1586,21 @@ func heartbeat(txn *spanner.ReadWriteStmtBasedTransaction, priority sppb.Request
 func (tm *TransactionManager) RunInNewOrExistRwTxLocked(ctx context.Context,
 	f func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error),
 ) (*DMLResult, error) {
+	result, _, err := tm.runInNewOrExistRwTxLocked(ctx, f)
+	return result, err
+}
+
+func (tm *TransactionManager) runInNewOrExistRwTxLocked(ctx context.Context,
+	f func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error),
+) (*DMLResult, rwTxAttemptInfo, error) {
+	var info rwTxAttemptInfo
 	// Determine transaction type (this may start a transaction)
 	_, err := tm.DetermineTransactionLocked(ctx)
 	if err != nil {
-		return nil, err
+		return nil, info, err
 	}
 	if err := tm.rejectIfRecoveringLocked(); err != nil {
-		return nil, err
+		return nil, info, err
 	}
 
 	// Check transaction state (no lock needed, we already hold it)
@@ -1601,24 +1614,27 @@ func (tm *TransactionManager) RunInNewOrExistRwTxLocked(ctx context.Context,
 		// Note: isolation level is not session level property so it is left as unspecified
 		priority := tm.currentPriorityLocked()
 		if err := tm.BeginReadWriteTransactionLocked(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, priority); err != nil {
-			return nil, err
+			return nil, info, err
 		}
 		implicitRWTx = true
 	}
 
 	// Now we have a read-write transaction
 	if tm.tc == nil || tm.tc.txn == nil {
-		return nil, ErrNotInReadWriteTransaction
+		return nil, info, ErrNotInReadWriteTransaction
 	}
 
 	txn, ok := tm.tc.txn.(*spanner.ReadWriteStmtBasedTransaction)
 	if !ok {
-		return nil, ErrNotInReadWriteTransaction
+		return nil, info, ErrNotInReadWriteTransaction
 	}
 
 	ctx, cancelDeadline := tm.armAndBindDeadlineLocked(ctx)
 	defer cancelDeadline()
 	owner := tm.tc
+	if owner != nil {
+		info.deadline = owner.deadline
+	}
 
 	var affected int64
 	var plan *sppb.QueryPlan
@@ -1636,11 +1652,12 @@ func (tm *TransactionManager) RunInNewOrExistRwTxLocked(ctx context.Context,
 	}
 
 	if err != nil {
+		info.phase = dmlAttemptPhaseUserSQL
 		if isAdmissionError(err) {
-			return nil, err
+			return nil, info, err
 		}
 		err = tm.handleOwnerFailureLocked(ctx, err)
-		return nil, fmt.Errorf("transaction was aborted: %w", err)
+		return nil, info, fmt.Errorf("transaction was aborted: %w", err)
 	}
 
 	result := &DMLResult{
@@ -1650,17 +1667,19 @@ func (tm *TransactionManager) RunInNewOrExistRwTxLocked(ctx context.Context,
 	}
 
 	if !implicitRWTx {
-		return result, nil
+		return result, info, nil
 	}
 
-	// For implicit transactions, commit immediately while holding the lock
+	// Commit is a distinct phase. Fallback must never treat a Commit
+	// failure as SQL-phase proof, even when Help metadata matches.
+	info.phase = dmlAttemptPhaseCommit
 	resp, err := tm.CommitReadWriteTransactionLocked(ctx)
 	if err != nil {
-		return nil, err
+		return nil, info, err
 	}
 
 	result.CommitResponse = resp
-	return result, nil
+	return result, info, nil
 }
 
 // RunInNewOrExistRwTx is a helper function for DML execution.
@@ -1669,6 +1688,13 @@ func (tm *TransactionManager) RunInNewOrExistRwTxLocked(ctx context.Context,
 func (tm *TransactionManager) RunInNewOrExistRwTx(ctx context.Context,
 	f func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error),
 ) (*DMLResult, error) {
+	result, _, err := tm.runInNewOrExistRwTx(ctx, f)
+	return result, err
+}
+
+func (tm *TransactionManager) runInNewOrExistRwTx(ctx context.Context,
+	f func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error),
+) (*DMLResult, rwTxAttemptInfo, error) {
 	for {
 		tm.syncExpiredOwnerRestore()
 		tm.mu.Lock()
@@ -1676,9 +1702,9 @@ func (tm *TransactionManager) RunInNewOrExistRwTx(ctx context.Context,
 			tm.mu.Unlock()
 			continue
 		}
-		result, err := tm.RunInNewOrExistRwTxLocked(ctx, f)
+		result, info, err := tm.runInNewOrExistRwTxLocked(ctx, f)
 		tm.mu.Unlock()
-		return result, err
+		return result, info, err
 	}
 }
 
