@@ -16,10 +16,23 @@ package mycli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"cloud.google.com/go/spanner"
 )
+
+// automaticDMLEntry is one owner-owned automatic DML queue item. expected and
+// verify are frozen at enqueue so a later SET cannot reinterpret this entry.
+type automaticDMLEntry struct {
+	stmt     spanner.Statement
+	expected int64
+	verify   bool
+}
+
+// errAutomaticDMLCountMismatch is the cause when an enabled automatic DML
+// entry's actual BatchUpdate count does not match the count captured at enqueue.
+var errAutomaticDMLCountMismatch = errors.New("automatic DML update count mismatch")
 
 func (tm *TransactionManager) discardAutomaticDMLLocked() {
 	if tm.tc != nil {
@@ -73,7 +86,7 @@ func (tm *TransactionManager) TryEnqueueAutomaticDML(stmt spanner.Statement) (bo
 		if err := tm.enqueueFrozenAutomaticDMLLocked(stmt); err != nil {
 			return err
 		}
-		tm.tc.autoDML = append(tm.tc.autoDML, stmt)
+		tm.tc.autoDML = append(tm.tc.autoDML, tm.newAutomaticDMLEntry(stmt))
 		// Queued automatic DML is uncommitted work on an already-started RW
 		// owner. Enable the existing keepalive now; waiting until flush is too
 		// late to cover the think/paste interval before COMMIT or a read.
@@ -115,8 +128,9 @@ func (tm *TransactionManager) flushAutomaticDMLLocked(ctx context.Context) ([]sp
 	if owner == nil || len(owner.autoDML) == 0 {
 		return nil, nil, nil
 	}
-	dmls := owner.autoDML
+	queued := owner.autoDML
 	owner.autoDML = nil
+	dmls := automaticDMLStatements(queued)
 
 	if owner != tm.tc || owner.txn == nil || owner.attrs.mode != transactionModeReadWrite {
 		return nil, nil, nil
@@ -127,6 +141,11 @@ func (tm *TransactionManager) flushAutomaticDMLLocked(ctx context.Context) ([]sp
 	}
 
 	counts, err := rwTxn.BatchUpdateWithOptions(ctx, dmls, spanner.QueryOptions{LastStatement: false})
+	if err == nil {
+		// Compare each enabled entry before a successful journal receipt.
+		// RPC or partial BatchUpdate errors keep their original cause.
+		err = verifyAutomaticDMLCounts(queued, counts)
+	}
 	if _, recErr := tm.completeBatchDMLLocked(counts, err); err == nil {
 		err = recErr
 	}
@@ -154,4 +173,41 @@ func (tm *TransactionManager) invokeQueryAfterCollectHook() error {
 		return nil
 	}
 	return hook()
+}
+
+func (tm *TransactionManager) newAutomaticDMLEntry(stmt spanner.Statement) automaticDMLEntry {
+	e := automaticDMLEntry{stmt: stmt, expected: 1}
+	if tm.sysVars != nil {
+		e.expected = tm.sysVars.Transaction.AutoBatchDMLUpdateCount
+		e.verify = tm.sysVars.Transaction.AutoBatchDMLUpdateCountVerification
+	}
+	return e
+}
+
+func automaticDMLStatements(queued []automaticDMLEntry) []spanner.Statement {
+	dmls := make([]spanner.Statement, len(queued))
+	for i, e := range queued {
+		dmls[i] = e.stmt
+	}
+	return dmls
+}
+
+// verifyAutomaticDMLCounts compares each enabled entry's captured expectation
+// with the corresponding actual count. Aggregate equality is not enough.
+// Disabled entries are skipped. Missing actual counts are not fabricated.
+func verifyAutomaticDMLCounts(queued []automaticDMLEntry, counts []int64) error {
+	for i, e := range queued {
+		if !e.verify {
+			continue
+		}
+		if i >= len(counts) {
+			return fmt.Errorf("%w at statement %d: expected %d, actual count missing",
+				errAutomaticDMLCountMismatch, i+1, e.expected)
+		}
+		if counts[i] != e.expected {
+			return fmt.Errorf("%w at statement %d: expected %d, actual %d",
+				errAutomaticDMLCountMismatch, i+1, e.expected, counts[i])
+		}
+	}
+	return nil
 }

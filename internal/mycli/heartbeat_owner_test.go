@@ -29,6 +29,7 @@ import (
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"google.golang.org/api/option"
+	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
@@ -76,27 +77,29 @@ type commitObservation struct {
 type heartbeatRPCServer struct {
 	sppb.UnimplementedSpannerServer
 
-	mu           sync.Mutex
-	next         atomic.Uint64
-	sqlTxn       map[string]string
-	roIDs        map[string]struct{}
-	rwIDs        map[string]struct{}
-	heartbeats   []heartbeatRecord
-	sqlObs       []sqlObservation
-	batchObs     []batchDMLObservation
-	begins       []beginObservation
-	rollbacks    []string
-	commits      []string
-	commitObs    []commitObservation
-	failROQuery  error
-	failSQL      error
-	failBatchDML error
-	failBegin    error
-	blockBegin   <-chan struct{}
-	beginBlocked func()
-	sqlRowCount  map[string]int64
-	sqlValue     map[string]string
-	sqlRows      map[string][]string
+	mu                    sync.Mutex
+	next                  atomic.Uint64
+	sqlTxn                map[string]string
+	roIDs                 map[string]struct{}
+	rwIDs                 map[string]struct{}
+	heartbeats            []heartbeatRecord
+	sqlObs                []sqlObservation
+	batchObs              []batchDMLObservation
+	begins                []beginObservation
+	rollbacks             []string
+	commits               []string
+	commitObs             []commitObservation
+	failROQuery           error
+	failSQL               error
+	failBatchDML          error
+	failBegin             error
+	blockBegin            <-chan struct{}
+	beginBlocked          func()
+	partialBatchDMLCount  int64
+	partialBatchDMLStatus *statuspb.Status
+	sqlRowCount           map[string]int64
+	sqlValue              map[string]string
+	sqlRows               map[string][]string
 
 	heartbeatStarted     chan struct{}
 	heartbeatStartedOnce sync.Once
@@ -227,6 +230,17 @@ func (s *heartbeatRPCServer) setFailBatchDML(err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.failBatchDML = err
+}
+
+// setPartialBatchDML fakes a successful prefix ResultSet plus a non-OK
+// embedded ExecuteBatchDmlResponse.Status. The Go client returns the prefix
+// counts with a statement error; this is not a transport-level RPC failure.
+func (s *heartbeatRPCServer) setPartialBatchDML(prefixRowCount int64, st *statuspb.Status) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.partialBatchDMLCount = prefixRowCount
+	s.partialBatchDMLStatus = st
+	s.failBatchDML = nil
 }
 
 func (s *heartbeatRPCServer) batchObservations() []batchDMLObservation {
@@ -432,6 +446,16 @@ func (s *heartbeatRPCServer) ExecuteBatchDml(_ context.Context, r *sppb.ExecuteB
 	s.batchObs = append(s.batchObs, batchDMLObservation{txnID: string(id), sqls: sqls})
 	if s.failBatchDML != nil {
 		return nil, s.failBatchDML
+	}
+	if s.partialBatchDMLStatus != nil {
+		return &sppb.ExecuteBatchDmlResponse{
+			ResultSets: []*sppb.ResultSet{{
+				Stats: &sppb.ResultSetStats{
+					RowCount: &sppb.ResultSetStats_RowCountExact{RowCountExact: s.partialBatchDMLCount},
+				},
+			}},
+			Status: s.partialBatchDMLStatus,
+		}, nil
 	}
 	results := make([]*sppb.ResultSet, len(r.GetStatements()))
 	for i := range results {

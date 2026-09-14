@@ -981,7 +981,8 @@ func TestSystemVariables_SetGetOperations(t *testing.T) {
 		// Boolean variables - test both TRUE and FALSE automatically
 		boolVars := []string{
 			"READONLY", "AUTO_PARTITION_MODE", "EXCLUDE_TXN_FROM_CHANGE_STREAMS",
-			"AUTO_BATCH_DML", "DATA_BOOST_ENABLED", "RETURN_COMMIT_STATS",
+			"AUTO_BATCH_DML", "AUTO_BATCH_DML_UPDATE_COUNT_VERIFICATION",
+			"DATA_BOOST_ENABLED", "RETURN_COMMIT_STATS",
 			"KEEP_TRANSACTION_ALIVE",
 			"CLI_VERBOSE", "CLI_ECHO_EXECUTED_DDL", "CLI_ECHO_INPUT", "CLI_USE_PAGER",
 			"CLI_AUTOWRAP", "CLI_ENABLE_HIGHLIGHT", "CLI_PROTOTEXT_MULTILINE",
@@ -1016,6 +1017,7 @@ func TestSystemVariables_SetGetOperations(t *testing.T) {
 			"STATEMENT_TIMEOUT":            "30s",
 			"TRANSACTION_TIMEOUT":          "45s",
 			"MAX_PARTITIONED_PARALLELISM":  "10",
+			"AUTO_BATCH_DML_UPDATE_COUNT":  "3",
 			"CLI_TAB_WIDTH":                "4",
 			"AUTOCOMMIT_DML_MODE":          "TRANSACTIONAL",
 			"DEFAULT_ISOLATION_LEVEL":      "SERIALIZABLE",
@@ -1346,6 +1348,52 @@ func TestOutputTemplateFileRejectsUnsafeReads(t *testing.T) {
 			t.Fatalf("error = %v, want size rejection", err)
 		}
 	})
+}
+
+func TestAutoBatchDMLUpdateCountDefaultsAndRejectsNegative(t *testing.T) {
+	t.Parallel()
+
+	sv := newSystemVariablesWithDefaultsForTest()
+	got, err := sv.Get("AUTO_BATCH_DML_UPDATE_COUNT")
+	if err != nil {
+		t.Fatalf("Get(AUTO_BATCH_DML_UPDATE_COUNT): %v", err)
+	}
+	if diff := cmp.Diff(singletonMap("AUTO_BATCH_DML_UPDATE_COUNT", "1"), got); diff != "" {
+		t.Errorf("default AUTO_BATCH_DML_UPDATE_COUNT mismatch (-want +got):\n%s", diff)
+	}
+	got, err = sv.Get("AUTO_BATCH_DML_UPDATE_COUNT_VERIFICATION")
+	if err != nil {
+		t.Fatalf("Get(AUTO_BATCH_DML_UPDATE_COUNT_VERIFICATION): %v", err)
+	}
+	if diff := cmp.Diff(singletonMap("AUTO_BATCH_DML_UPDATE_COUNT_VERIFICATION", "FALSE"), got); diff != "" {
+		t.Errorf("default AUTO_BATCH_DML_UPDATE_COUNT_VERIFICATION mismatch (-want +got):\n%s", diff)
+	}
+
+	if err := sv.SetFromSimple("AUTO_BATCH_DML_UPDATE_COUNT", "0"); err != nil {
+		t.Fatalf("SET AUTO_BATCH_DML_UPDATE_COUNT=0: %v", err)
+	}
+	got, err = sv.Get("AUTO_BATCH_DML_UPDATE_COUNT")
+	if err != nil {
+		t.Fatalf("Get after SET 0: %v", err)
+	}
+	if diff := cmp.Diff(singletonMap("AUTO_BATCH_DML_UPDATE_COUNT", "0"), got); diff != "" {
+		t.Errorf("SET 0 mismatch (-want +got):\n%s", diff)
+	}
+
+	err = sv.SetFromSimple("AUTO_BATCH_DML_UPDATE_COUNT", "-1")
+	if err == nil {
+		t.Fatal("SET AUTO_BATCH_DML_UPDATE_COUNT=-1 succeeded, want error")
+	}
+	if !strings.Contains(err.Error(), "must be non-negative") {
+		t.Fatalf("error = %v, want non-negative rejection", err)
+	}
+	got, err = sv.Get("AUTO_BATCH_DML_UPDATE_COUNT")
+	if err != nil {
+		t.Fatalf("Get after rejected SET: %v", err)
+	}
+	if diff := cmp.Diff(singletonMap("AUTO_BATCH_DML_UPDATE_COUNT", "0"), got); diff != "" {
+		t.Errorf("rejected SET mutated count (-want +got):\n%s", diff)
+	}
 }
 
 func TestMaxPartitionedParallelismRejectsNegative(t *testing.T) {

@@ -1022,6 +1022,8 @@ For how these and other connection properties map to the official Spanner driver
 | STATEMENT_TAG                   | READ_WRITE | `"app=concert,env=dev,action=update,request=fetch"` |
 | DATA_BOOST_ENABLED              | READ_WRITE | `TRUE`                                              |
 | AUTO_BATCH_DML                  | READ_WRITE | `TRUE`                                              |
+| AUTO_BATCH_DML_UPDATE_COUNT     | READ_WRITE | `1`                                                 |
+| AUTO_BATCH_DML_UPDATE_COUNT_VERIFICATION | READ_WRITE | `FALSE`                                      |
 | EXCLUDE_TXN_FROM_CHANGE_STREAMS | READ_WRITE | `TRUE`                                              |
 | MAX_COMMIT_DELAY                | READ_WRITE | `"500ms"`                                           |
 | AUTOCOMMIT_DML_MODE             | READ_WRITE | `"PARTITIONED_NON_ATOMIC"`                          |

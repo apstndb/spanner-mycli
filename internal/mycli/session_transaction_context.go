@@ -49,7 +49,9 @@ type transactionContext struct {
 	localVarUndo []savedLocalVar
 	// autoDML is this transaction's automatic DML queue. Access it only under
 	// tm.mu. Manual START/RUN/ABORT BATCH state stays on Session.batch.
-	autoDML []spanner.Statement
+	// Each entry freezes expected-count policy at enqueue so a later SET
+	// cannot reinterpret already buffered statements.
+	autoDML []automaticDMLEntry
 	// replay is the optional SAVEPOINT journal. Nil unless capture was
 	// enabled at explicit BEGIN via CLI_SAVEPOINT_SUPPORT=ENABLED or the
 	// private test hook.

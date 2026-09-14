@@ -178,20 +178,22 @@ type QueryVars struct {
 
 // TransactionVars holds transaction-related configuration.
 type TransactionVars struct {
-	TransactionTag              string                                         // TRANSACTION_TAG
-	RequestTag                  string                                         // STATEMENT_TAG
-	ReadOnly                    bool                                           // READONLY
-	ExcludeTxnFromChangeStreams bool                                           // EXCLUDE_TXN_FROM_CHANGE_STREAMS
-	MaxCommitDelay              *time.Duration                                 // MAX_COMMIT_DELAY
-	AutoBatchDML                bool                                           // AUTO_BATCH_DML
-	AutocommitDMLMode           enums.AutocommitDMLMode                        // AUTOCOMMIT_DML_MODE
-	ReturnCommitStats           bool                                           // RETURN_COMMIT_STATS
-	DefaultIsolationLevel       sppb.TransactionOptions_IsolationLevel         // DEFAULT_ISOLATION_LEVEL
-	ReadLockMode                sppb.TransactionOptions_ReadWrite_ReadLockMode // READ_LOCK_MODE
-	CommitPriority              sppb.RequestOptions_Priority                   // COMMIT_PRIORITY
-	KeepTransactionAlive        bool                                           // KEEP_TRANSACTION_ALIVE
-	TransactionTimeout          *time.Duration                                 // TRANSACTION_TIMEOUT
-	SavepointSupport            enums.SavepointSupport                         // CLI_SAVEPOINT_SUPPORT
+	TransactionTag                      string                                         // TRANSACTION_TAG
+	RequestTag                          string                                         // STATEMENT_TAG
+	ReadOnly                            bool                                           // READONLY
+	ExcludeTxnFromChangeStreams         bool                                           // EXCLUDE_TXN_FROM_CHANGE_STREAMS
+	MaxCommitDelay                      *time.Duration                                 // MAX_COMMIT_DELAY
+	AutoBatchDML                        bool                                           // AUTO_BATCH_DML
+	AutoBatchDMLUpdateCount             int64                                          // AUTO_BATCH_DML_UPDATE_COUNT
+	AutoBatchDMLUpdateCountVerification bool                                           // AUTO_BATCH_DML_UPDATE_COUNT_VERIFICATION
+	AutocommitDMLMode                   enums.AutocommitDMLMode                        // AUTOCOMMIT_DML_MODE
+	ReturnCommitStats                   bool                                           // RETURN_COMMIT_STATS
+	DefaultIsolationLevel               sppb.TransactionOptions_IsolationLevel         // DEFAULT_ISOLATION_LEVEL
+	ReadLockMode                        sppb.TransactionOptions_ReadWrite_ReadLockMode // READ_LOCK_MODE
+	CommitPriority                      sppb.RequestOptions_Priority                   // COMMIT_PRIORITY
+	KeepTransactionAlive                bool                                           // KEEP_TRANSACTION_ALIVE
+	TransactionTimeout                  *time.Duration                                 // TRANSACTION_TIMEOUT
+	SavepointSupport                    enums.SavepointSupport                         // CLI_SAVEPOINT_SUPPORT
 
 	// Unimplemented variables (kept for compatibility)
 	Autocommit            bool // AUTOCOMMIT (unimplemented)
@@ -411,8 +413,9 @@ func newSystemVariablesWithDefaults() systemVariables {
 			TablePreviewRows: 50,                      // Default to 50 rows - enough to fit on one screen while prioritizing proper table formatting
 		},
 		Transaction: TransactionVars{
-			ReturnCommitStats:    true,
-			KeepTransactionAlive: true,
+			ReturnCommitStats:       true,
+			AutoBatchDMLUpdateCount: 1,
+			KeepTransactionAlive:    true,
 		},
 		Feature: FeatureVars{
 			LogLevel:            slog.LevelWarn,

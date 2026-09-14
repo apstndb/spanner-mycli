@@ -162,6 +162,28 @@ var varDefs = []varDef{
 		bind:  func(sv *systemVariables) Variable { return BoolVar(&sv.Transaction.AutoBatchDML) },
 	},
 	{
+		name:  "AUTO_BATCH_DML_UPDATE_COUNT",
+		desc:  "A nonnegative INT64 expected update count captured for each newly buffered automatic DML statement. The default is 1. Zero is a valid explicit expectation. This value is an expectation only; it is never reported as observed affected rows. SET, SET LOCAL, RESET, and transaction-end restoration change the policy for future enqueues only.",
+		scope: scopeSession,
+		bind: func(sv *systemVariables) Variable {
+			return IntVar(&sv.Transaction.AutoBatchDMLUpdateCount).
+				WithValidator(func(value int64) error {
+					if value < 0 {
+						return fmt.Errorf("AUTO_BATCH_DML_UPDATE_COUNT must be non-negative, got %d", value)
+					}
+					return nil
+				})
+		},
+	},
+	{
+		name:  "AUTO_BATCH_DML_UPDATE_COUNT_VERIFICATION",
+		desc:  "A BOOL indicating whether flush compares each captured expected count with the actual BatchUpdate count before accepting a successful automatic DML receipt. The default is false so existing arbitrary UPDATE/DELETE statements keep succeeding until verification is enabled. SET, SET LOCAL, RESET, and transaction-end restoration change the policy for future enqueues only. Replay still validates journaled actual counts when this is false.",
+		scope: scopeSession,
+		bind: func(sv *systemVariables) Variable {
+			return BoolVar(&sv.Transaction.AutoBatchDMLUpdateCountVerification)
+		},
+	},
+	{
 		name:  "EXCLUDE_TXN_FROM_CHANGE_STREAMS",
 		desc:  "Controls whether to exclude recording modifications in current transaction from the allowed tracking change streams(with DDL option allow_txn_exclusion=true).",
 		scope: scopeSession,
