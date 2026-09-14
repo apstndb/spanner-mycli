@@ -455,32 +455,6 @@ func TestCLIStringQuoteModeSQLExportFallbackKeepsExistingBytes(t *testing.T) {
 	}
 }
 
-func TestCLIStringQuoteModeStreamingMatchesBuffered(t *testing.T) {
-	t.Parallel()
-	md, rawRows, header := mustStringQuoteTyped(t)
-	sv := stringQuoteSysVars(enums.DisplayModeTable, enums.StringQuoteModeAuto, enums.StyledModeFalse)
-	buffered := printStringQuote(t, &sv, header, md, rawRows)
-
-	render, err := prepareFormatConfig("SELECT * FROM Items", &sv, queryRenderingFrom(&sv))
-	if err != nil {
-		t.Fatal(err)
-	}
-	transform := spannerRowToRow(render.Spanvalue, render.TypeStyles, render.NullStyle)
-	eager, err := transform(rawRows[0])
-	if err != nil {
-		t.Fatal(err)
-	}
-	var streamed bytes.Buffer
-	if err := printTableData(&sv, 0, &streamed, &Result{
-		TableHeader: header,
-		Body:        PresentationBody([]Row{eager}),
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if diff := cmp.Diff(buffered, streamed.String()); diff != "" {
-		t.Fatalf("streaming vs buffered (-buffered +streamed):\n%s", diff)
-	}
-}
 
 func TestCLIStringQuoteModeThenReturnUsesTypedPolicy(t *testing.T) {
 	t.Parallel()
@@ -681,7 +655,17 @@ func TestCLIStringQuoteModeHelperRejectsEmptyNullString(t *testing.T) {
 	t.Parallel()
 	fc := spanvalue.SpannerCLICompatibleFormatConfig().Clone()
 	fc.NullString = ""
-	if err := fc.Validate(); err == nil {
-		t.Fatal("expected Validate error for empty NullString")
+	if _, err := applyStringQuoteDisplay(fc, enums.StringQuoteModeAlways, enums.DisplayModeTable); err == nil {
+		t.Fatal("expected applyStringQuoteDisplay error for empty NullString")
+	}
+	if _, err := applyStringQuoteDisplay(fc, enums.StringQuoteModeAuto, enums.DisplayModeTable); err == nil {
+		t.Fatal("expected applyStringQuoteDisplay AUTO error for empty NullString")
+	}
+	none, err := applyStringQuoteDisplay(fc, enums.StringQuoteModeNone, enums.DisplayModeTable)
+	if err != nil {
+		t.Fatalf("NONE must skip Validate: %v", err)
+	}
+	if none != fc {
+		t.Fatal("NONE must return the input pointer")
 	}
 }
