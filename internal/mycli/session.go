@@ -996,6 +996,10 @@ func createClientOptions(ctx context.Context, credential []byte, sysVars *system
 		opts = append(opts, option.WithEndpoint(endpoint))
 	}
 
+	if len(sysVars.Config.TLSClientOptions) > 0 {
+		opts = append(opts, sysVars.Config.TLSClientOptions...)
+	}
+
 	authOpts, err := createAuthClientOptions(ctx, credential, sysVars, true)
 	if err != nil {
 		return nil, err
