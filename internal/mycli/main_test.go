@@ -994,6 +994,7 @@ func Test_newSystemVariablesWithDefaults(t *testing.T) {
 			ReturnCommitStats:       true,
 			AutoBatchDMLUpdateCount: 1,
 			KeepTransactionAlive:    true,
+			Autocommit:              true,
 		},
 		Feature: FeatureVars{
 			LogLevel:            slog.LevelWarn,

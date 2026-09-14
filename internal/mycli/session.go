@@ -901,6 +901,10 @@ func (s *Session) executeStatement(ctx context.Context, stmt Statement, out Oper
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
+	if err := s.ensureLazyAutocommitOwner(ctx, stmt); err != nil {
+		return nil, err
+	}
+
 	defer func() {
 		if result != nil {
 			result.BatchInfo = s.pendingBatchInfo()

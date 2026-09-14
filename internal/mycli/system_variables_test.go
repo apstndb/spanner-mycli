@@ -980,7 +980,7 @@ func TestSystemVariables_SetGetOperations(t *testing.T) {
 
 		// Boolean variables - test both TRUE and FALSE automatically
 		boolVars := []string{
-			"READONLY", "AUTO_PARTITION_MODE", "EXCLUDE_TXN_FROM_CHANGE_STREAMS",
+			"READONLY", "AUTOCOMMIT", "AUTO_PARTITION_MODE", "EXCLUDE_TXN_FROM_CHANGE_STREAMS",
 			"AUTO_BATCH_DML", "AUTO_BATCH_DML_UPDATE_COUNT_VERIFICATION",
 			"DATA_BOOST_ENABLED", "RETURN_COMMIT_STATS",
 			"KEEP_TRANSACTION_ALIVE",
@@ -1144,7 +1144,7 @@ func TestSystemVariables_SetGetOperations(t *testing.T) {
 		}
 
 		// Unimplemented variables
-		unimplementedVars := []string{"AUTOCOMMIT", "RETRY_ABORTS_INTERNALLY"}
+		unimplementedVars := []string{"RETRY_ABORTS_INTERNALLY"}
 		for _, name := range unimplementedVars {
 			t.Run(name, func(t *testing.T) {
 				t.Parallel()

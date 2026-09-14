@@ -161,7 +161,7 @@ func TestResetStatementUnknownAndExcluded(t *testing.T) {
 		t.Errorf("unknown RESET mutated CLI_VERBOSE: %q", got)
 	}
 
-	for _, name := range []string{"AUTOCOMMIT", "CLI_VERSION", "CLI_ENABLE_ADC_PLUS", "PROTO_DESCRIPTORS_FILE_PATH"} {
+	for _, name := range []string{"RETRY_ABORTS_INTERNALLY", "CLI_VERSION", "CLI_ENABLE_ADC_PLUS", "PROTO_DESCRIPTORS_FILE_PATH"} {
 		_, err := session.ExecuteStatement(t.Context(), &ResetStatement{VarName: name})
 		if err == nil || !strings.Contains(err.Error(), "does not support RESET") {
 			t.Errorf("RESET %s: %v, want does not support RESET", name, err)
