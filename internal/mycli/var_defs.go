@@ -1017,6 +1017,35 @@ var varDefs = []varDef{
 		scope: scopeStartup,
 		bind:  func(sv *systemVariables) Variable { return StringVar(&sv.Config.SpannerMetricsEndpoint) },
 	},
+	{
+		name: "CLI_SPANNER_TRACES_EXPORTER",
+		desc: "Startup-only process-owned Spanner client traces exporter: off (default) or otlp. " +
+			"otlp uses official OTLP HTTP/protobuf to CLI_SPANNER_TRACES_ENDPOINT and installs one " +
+			"CLI-owned global TracerProvider. Off does not change the global provider or environment. " +
+			"Does not set a global MeterProvider. " +
+			"OTEL_* environment variables alone do not initialize export. " +
+			"SPANNER_ENABLE_END_TO_END_TRACING is still honored by the SDK when CLI traces are off. " +
+			"Shutdown of the pinned initial OTel proxy uses a no-op substitute; previously acquired " +
+			"proxy tracers cannot be restored. Not SET-able.",
+		scope: scopeStartup,
+		bind:  func(sv *systemVariables) Variable { return StringVar(&sv.Config.SpannerTracesExporter) },
+	},
+	{
+		name: "CLI_SPANNER_TRACES_ENDPOINT",
+		desc: "Startup-only absolute http/https URL of the OTLP traces collector used when " +
+			"CLI_SPANNER_TRACES_EXPORTER=otlp. Host required; no userinfo, query, or fragment. " +
+			"Missing or root path is /v1/traces. Empty when export is off. Not SET-able.",
+		scope: scopeStartup,
+		bind:  func(sv *systemVariables) Variable { return StringVar(&sv.Config.SpannerTracesEndpoint) },
+	},
+	{
+		name: "CLI_SPANNER_TRACES_SAMPLE_RATIO",
+		desc: "Startup-only root sampling ratio in [0,1] for CLI-owned traces when " +
+			"CLI_SPANNER_TRACES_EXPORTER=otlp. ParentBased: sampled parents are honored. " +
+			"Default 0.01. Not SET-able.",
+		scope: scopeStartup,
+		bind:  func(sv *systemVariables) Variable { return Float64Var(&sv.Config.SpannerTracesSampleRatio) },
+	},
 
 	// === Unimplemented variables ===
 	{
