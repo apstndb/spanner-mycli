@@ -654,6 +654,13 @@ func initializeSystemVariables(opts *spannerOptions, features ...Feature) (*syst
 		}
 	}
 
+	// Capture RESET baselines after defaults/config/flags/--set and before
+	// --init-command / --init-command-add. Init SQL is ordinary SQL that RESET
+	// ALL may later undo.
+	if err := sysVars.CaptureStartupSnapshots(); err != nil {
+		return nil, err
+	}
+
 	return sysVars, nil
 }
 

@@ -15,10 +15,18 @@ SHOW VARIABLES;                 -- List all variables with their current values
 SHOW VARIABLE CLI_FORMAT;       -- Show a single variable
 SET CLI_FORMAT = 'VERTICAL';    -- Set a variable
 SET LOCAL CLI_FORMAT = 'TAB';   -- Set a variable only for the current transaction
+RESET ALL;                      -- Restore resettable variables to their startup snapshots
 -- Ordinary SET is session-durable through COMMIT and ROLLBACK, including after
 -- SET LOCAL. This is not PostgreSQL transactional SET: ROLLBACK does not undo
 -- a successful SET. A later SET LOCAL in the same transaction saves the new
 -- session value and restores that value when the transaction ends.
+-- RESET ALL restores values captured after defaults, config, flags, and --set,
+-- before --init-command / --init-command-add. Init-command assignments are
+-- ordinary SQL and can be reset. File-backed descriptors/templates, opaque
+-- graphs, connection identity, stream handles, and unimplemented placeholders
+-- are excluded. After a successful RESET ALL, targeted LOCAL undo is retired
+-- (including equal-value resets); a rejected RESET ALL changes neither values
+-- nor undo.
 HELP VARIABLES;                 -- Show the reference table below interactively
 ```
 

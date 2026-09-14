@@ -255,11 +255,20 @@ type systemVariables struct {
 	// nil means no session has been created yet.
 	inManualBatch func() bool
 
-	// transactionTagView and setTransactionTagSlot are bound to the live
-	// TransactionManager. nil means no session has been created yet, so the
-	// TRANSACTION_TAG slot is accessed directly.
-	transactionTagView    func() string
-	setTransactionTagSlot func(string) error
+	// transactionTagView, transactionTagSlot, setTransactionTagSlot, and
+	// transactionTagWritable are bound to the live TransactionManager. nil
+	// means no session has been created yet, so the TRANSACTION_TAG slot is
+	// accessed directly. transactionTagSlot is the writable next-owner value
+	// RESET compares; transactionTagView is SHOW (applied RW tag or slot).
+	transactionTagView     func() string
+	transactionTagSlot     func() string
+	setTransactionTagSlot  func(string) error
+	transactionTagWritable func() error
+
+	// startupSnapshots holds explicit supported RESET baselines, keyed by
+	// canonical variable name. Captured after initializeSystemVariables
+	// (defaults/config/flags/--set) and before --init-command / --init-command-add.
+	startupSnapshots map[string]string
 
 	// StreamManager manages tee output functionality
 	StreamManager *streamio.StreamManager
