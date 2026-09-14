@@ -849,6 +849,8 @@ Note that transaction-level priority takes precedence over command-level priorit
 
 `COMMIT_PRIORITY` overrides only the Commit RPC. `HIGH`, `MEDIUM`, and `LOW` set that override. `UNSPECIFIED` (the default) inherits the resolved transaction RPC priority, matching previous mycli behavior. That is not the go-sql-spanner default: the Go driver's unset `commit_priority` is `UNSPECIFIED` and does not inherit RPC priority. The effective commit priority is frozen when the physical read-write attempt is constructed, including SAVEPOINT reconstruction. Changing the session default does not alter an active attempt. Query, DML, heartbeat, partitioned DML, read-only, and Admin RPCs keep using their existing priority fields. `SET LOCAL COMMIT_PRIORITY` is not supported.
 
+`KEEP_TRANSACTION_ALIVE` controls whether an explicit read-write owner schedules keepalive heartbeats after the first user SQL. `TRUE` (the default) preserves existing mycli behavior. `FALSE` prevents heartbeat scheduling for that owner without changing user SQL, COMMIT, ROLLBACK, or cancellation. Java `KEEP_TRANSACTION_ALIVE` defaults to false; this CLI default is intentionally true. The policy is frozen on the logical owner with the constructor snapshot, including SAVEPOINT reconstruction. Changing the session default does not alter an active owner. Disabling keepalive does not disable idle-deadline or `TRANSACTION_TIMEOUT` enforcement, and heartbeat traffic is not user activity. `SET LOCAL KEEP_TRANSACTION_ALIVE` is not supported.
+
 ## Transaction Tags and Request Tags
 
 You can set transaction tag using `SET TRANSACTION_TAG = "<tag>"`, and request tag using `SET STATEMENT_TAG = "<tag>"`.
@@ -1007,6 +1009,7 @@ For how these and other connection properties map to the official Spanner driver
 | OPTIMIZER_STATISTICS_PACKAGE    | READ_WRITE | `"7"`                                               |
 | RPC_PRIORITY                    | READ_WRITE | `"MEDIUM"`                                          |
 | COMMIT_PRIORITY                 | READ_WRITE | `"UNSPECIFIED"`                                     |
+| KEEP_TRANSACTION_ALIVE          | READ_WRITE | `TRUE`                                              |
 | READ_TIMESTAMP                  | READ_ONLY  | `"2024-11-01T05:28:58.943332+09:00"`                |
 | COMMIT_RESPONSE                 | READ_ONLY  | `"2024-11-01T05:31:11.311894+09:00"`                |
 | TRANSACTION_TAG                 | READ_WRITE | `"app=concert,env=dev,action=update"`               |

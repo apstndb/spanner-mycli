@@ -926,7 +926,8 @@ func Test_newSystemVariablesWithDefaults(t *testing.T) {
 			TablePreviewRows: 50,
 		},
 		Transaction: TransactionVars{
-			ReturnCommitStats: true,
+			ReturnCommitStats:    true,
+			KeepTransactionAlive: true,
 		},
 		Feature: FeatureVars{
 			LogLevel:       slog.LevelWarn,

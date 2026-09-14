@@ -189,6 +189,7 @@ type TransactionVars struct {
 	DefaultIsolationLevel       sppb.TransactionOptions_IsolationLevel         // DEFAULT_ISOLATION_LEVEL
 	ReadLockMode                sppb.TransactionOptions_ReadWrite_ReadLockMode // READ_LOCK_MODE
 	CommitPriority              sppb.RequestOptions_Priority                   // COMMIT_PRIORITY
+	KeepTransactionAlive        bool                                           // KEEP_TRANSACTION_ALIVE
 	SavepointSupport            enums.SavepointSupport                         // CLI_SAVEPOINT_SUPPORT
 
 	// Unimplemented variables (kept for compatibility)
@@ -396,7 +397,8 @@ func newSystemVariablesWithDefaults() systemVariables {
 			TablePreviewRows: 50,                      // Default to 50 rows - enough to fit on one screen while prioritizing proper table formatting
 		},
 		Transaction: TransactionVars{
-			ReturnCommitStats: true,
+			ReturnCommitStats:    true,
+			KeepTransactionAlive: true,
 		},
 		Feature: FeatureVars{
 			LogLevel:       slog.LevelWarn,

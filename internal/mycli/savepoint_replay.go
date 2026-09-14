@@ -321,6 +321,8 @@ func (tm *TransactionManager) rollbackToSavepointLocked(ctx context.Context, nam
 	tm.tc.publishPhysical(candidate)
 	tm.tc.replay.rollbackToMarker(idx)
 	tm.tc.replay.recoveryRequired = nil
+	// Restart keepalive only when this owner already scheduled it. EnableHeartbeat
+	// still honors the frozen KEEP_TRANSACTION_ALIVE snapshot and the new attempt.
 	if tm.tc.attrs.sendHeartbeat {
 		tm.tc.EnableHeartbeat()
 	}

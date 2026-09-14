@@ -610,6 +610,12 @@ func effectiveCommitPriority(vars *systemVariables, txnPriority sppb.RequestOpti
 	return txnPriority
 }
 
+// keepTransactionAlive reports the session keepalive policy. A nil vars
+// pointer preserves the historical enabled default.
+func keepTransactionAlive(vars *systemVariables) bool {
+	return vars == nil || vars.Transaction.KeepTransactionAlive
+}
+
 func transactionOptions(vars *systemVariables, priority sppb.RequestOptions_Priority, isolationLevel sppb.TransactionOptions_IsolationLevel, tag string) spanner.TransactionOptions {
 	return spanner.TransactionOptions{
 		CommitOptions:               spanner.CommitOptions{ReturnCommitStats: vars.Transaction.ReturnCommitStats, MaxCommitDelay: vars.Transaction.MaxCommitDelay},
@@ -747,6 +753,7 @@ func (tm *TransactionManager) BeginReadWriteTransactionLocked(ctx context.Contex
 		isolationLevel: resolvedIsolationLevel,
 	}, txn)
 	owner.ctorOpts = freezeTxnCtor(opts)
+	owner.keepAliveDisabled = !keepTransactionAlive(tm.sysVars)
 	owner.heartbeatFunc = func(ctx context.Context, startedAttempt uint64) {
 		tm.startHeartbeat(ctx, owner, startedAttempt)
 	}
@@ -1348,7 +1355,7 @@ func (tm *TransactionManager) startHeartbeat(ctx context.Context, owner *transac
 				// startedAttempt is captured in EnableHeartbeat before go so a
 				// delayed startup cannot observe a later ROLLBACK TO attempt.
 				err := tm.withReadWriteTransactionContext(func(txn *spanner.ReadWriteStmtBasedTransaction, tc *transactionContext) error {
-					if ctx.Err() != nil || tc != owner || tc.replacing || tc.attempt != startedAttempt {
+					if ctx.Err() != nil || tc != owner || tc.replacing || tc.attempt != startedAttempt || tc.keepAliveDisabled {
 						return errHeartbeatOwnerReplaced
 					}
 					// Always use LOW priority for heartbeat to avoid interfering with real work
