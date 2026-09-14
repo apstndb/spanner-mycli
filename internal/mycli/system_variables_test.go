@@ -1031,7 +1031,7 @@ func TestSystemVariables_SetGetOperations(t *testing.T) {
 			"READONLY", "AUTOCOMMIT", "AUTO_PARTITION_MODE", "EXCLUDE_TXN_FROM_CHANGE_STREAMS",
 			"AUTO_BATCH_DML", "AUTO_BATCH_DML_UPDATE_COUNT_VERIFICATION",
 			"DATA_BOOST_ENABLED", "RETURN_COMMIT_STATS",
-			"KEEP_TRANSACTION_ALIVE",
+			"KEEP_TRANSACTION_ALIVE", "RETRY_ABORTS_INTERNALLY",
 			"CLI_VERBOSE", "CLI_ECHO_EXECUTED_DDL", "CLI_ECHO_INPUT", "CLI_USE_PAGER",
 			"CLI_AUTOWRAP", "CLI_ENABLE_HIGHLIGHT", "CLI_PROTOTEXT_MULTILINE",
 			"CLI_MARKDOWN_CODEBLOCK", "CLI_LINT_PLAN", "CLI_SKIP_COLUMN_NAMES",
@@ -1192,14 +1192,6 @@ func TestSystemVariables_SetGetOperations(t *testing.T) {
 			})
 		}
 
-		// Unimplemented variables
-		unimplementedVars := []string{"RETRY_ABORTS_INTERNALLY"}
-		for _, name := range unimplementedVars {
-			t.Run(name, func(t *testing.T) {
-				t.Parallel()
-				testUnimplementedVariable(t, setFunc, name)
-			})
-		}
 	})
 
 	t.Run("GoogleSQLMode", func(t *testing.T) {

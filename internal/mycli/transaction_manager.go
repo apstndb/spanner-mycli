@@ -143,6 +143,12 @@ type TransactionManager struct {
 	// attempt is unchanged.
 	queryAfterCollectHook func() error
 	commitOverride        func(context.Context, *spanner.ReadWriteStmtBasedTransaction) (spanner.CommitResponse, error)
+	// frozenQueryOpts snapshots STATEMENT_TAG and query options for the
+	// current implicit abort-retry operation. Cleared when that operation ends.
+	frozenQueryOpts *spanner.QueryOptions
+	// abortRetryWait, if set, replaces interruptible abort backoff. Tests use
+	// a deterministic seam; production remains nil.
+	abortRetryWait func(context.Context, time.Duration) error
 
 	// heartbeatTicks, if non-nil, replaces the production 5s ticker. Tests
 	// send on this channel to release one loop iteration. heartbeatBeforeAcquire
@@ -795,6 +801,9 @@ func (tm *TransactionManager) BeginPendingTransaction(ctx context.Context, isola
 		if tm.tc != nil {
 			return fmt.Errorf("%s transaction is already running", tm.tc.attrs.mode)
 		}
+		if err := tm.rejectExplicitRetryAbortsLocked(); err != nil {
+			return err
+		}
 		// Resolve after the restore barrier so an expired owner's LOCAL
 		// priority/isolation cannot freeze into the replacement.
 		resolvedIsolationLevel := tm.resolveTransactionIsolationLevel(isolationLevel)
@@ -809,6 +818,7 @@ func (tm *TransactionManager) BeginPendingTransaction(ctx context.Context, isola
 		snapshotTransactionTimeoutLocked(tm.tc, tm.sysVars)
 		snapshotIdleTimeoutLocked(tm.tc, tm.sysVars)
 		snapshotDdlInTransactionModeLocked(tm.tc, tm.sysVars)
+		snapshotRetryAbortsLocked(tm.tc, tm.sysVars)
 		tm.ensureReplayLocked()
 		return nil
 	})
@@ -904,6 +914,7 @@ func (tm *TransactionManager) BeginReadWriteTransactionLocked(ctx context.Contex
 		snapshotTransactionTimeoutLocked(tm.tc, tm.sysVars)
 		snapshotIdleTimeoutLocked(tm.tc, tm.sysVars)
 		snapshotDdlInTransactionModeLocked(tm.tc, tm.sysVars)
+		snapshotRetryAbortsLocked(tm.tc, tm.sysVars)
 		createdOwner = true
 	}
 
@@ -956,6 +967,9 @@ func (tm *TransactionManager) BeginReadWriteTransactionLocked(ctx context.Contex
 // BeginReadWriteTransaction starts read-write transaction.
 func (tm *TransactionManager) BeginReadWriteTransaction(ctx context.Context, isolationLevel sppb.TransactionOptions_IsolationLevel, priority sppb.RequestOptions_Priority) error {
 	return tm.withOwnerInstallAfterRestore(func() error {
+		if err := tm.rejectExplicitRetryAbortsLocked(); err != nil {
+			return err
+		}
 		if err := tm.BeginReadWriteTransactionLocked(ctx, isolationLevel, priority); err != nil {
 			return err
 		}
@@ -964,9 +978,9 @@ func (tm *TransactionManager) BeginReadWriteTransaction(ctx context.Context, iso
 	})
 }
 
-// CommitReadWriteTransactionLocked commits read-write transaction and returns commit timestamp if successful.
-// Caller must hold tm.mu.
-func (tm *TransactionManager) CommitReadWriteTransactionLocked(ctx context.Context) (spanner.CommitResponse, error) {
+// commitReadWritePhysicalLocked issues Commit without retiring the owner.
+// Caller must hold tm.mu. Early admission/type errors leave the owner attached.
+func (tm *TransactionManager) commitReadWritePhysicalLocked(ctx context.Context) (spanner.CommitResponse, error) {
 	if tm.tc == nil || tm.tc.attrs.mode != transactionModeReadWrite {
 		return spanner.CommitResponse{}, ErrNotInReadWriteTransaction
 	}
@@ -999,13 +1013,17 @@ func (tm *TransactionManager) CommitReadWriteTransactionLocked(ctx context.Conte
 		resp, err = rwTxn.CommitWithReturnResp(ctx)
 	}
 	err = annotateTransactionTimeout(err, owner)
+	return resp, err
+}
 
-	// Always retire the transaction context after commit attempt.
-	// A failed commit invalidates the transaction on the server,
-	// so we must retire regardless of the outcome.
-	tm.retireTransactionContextLocked()
-
-	// Return the response and error as-is, preserving any partial commit info
+// CommitReadWriteTransactionLocked commits the current read-write transaction
+// and always retires the logical owner. A failed commit invalidates the
+// transaction on the server, so retirement happens regardless of the outcome.
+func (tm *TransactionManager) CommitReadWriteTransactionLocked(ctx context.Context) (spanner.CommitResponse, error) {
+	resp, err := tm.commitReadWritePhysicalLocked(ctx)
+	if tm.tc != nil {
+		tm.retireTransactionContextLocked()
+	}
 	return resp, err
 }
 
@@ -1191,7 +1209,7 @@ func (tm *TransactionManager) ClosePendingTransaction() error {
 // PROFILE is intentionally hardcoded: this path serves EXPLAIN ANALYZE for DML,
 // which requires the query plan regardless of CLI_QUERY_MODE.
 func (tm *TransactionManager) runQueryWithStatsOnTransaction(ctx context.Context, tx transaction, stmt spanner.Statement, implicit bool) *spanner.RowIterator {
-	opts := tm.queryOptionsLocked(sppb.ExecuteSqlRequest_PROFILE.Enum())
+	opts := tm.freezeQueryOptionsLocked(sppb.ExecuteSqlRequest_PROFILE.Enum())
 	opts.LastStatement = implicit
 	// Iterator outlives this helper; parent ctx + owner deadline bound it.
 	ctx, _ = tm.armAndBindDeadlineLocked(ctx)
@@ -1233,11 +1251,8 @@ func (tm *TransactionManager) runAnalyzeQueryOnTransaction(ctx context.Context, 
 // Using non-locked versions of methods like TransactionAttrsWithLock() or currentPriorityWithLock()
 // here will cause a deadlock. Always use the *Locked variants.
 func (tm *TransactionManager) runUpdateOnTransaction(ctx context.Context, tx *spanner.ReadWriteStmtBasedTransaction, stmt spanner.Statement, implicit bool, mode sppb.ExecuteSqlRequest_QueryMode) (*UpdateResult, error) {
-	opts := tm.queryOptionsLocked(mode.Enum())
+	opts := tm.freezeQueryOptionsLocked(mode.Enum())
 	opts.LastStatement = implicit
-
-	// Reset STATEMENT_TAG
-	tm.sysVars.Transaction.RequestTag = ""
 
 	capture, err := tm.startOwnerSQLCaptureLocked(stmt, opts, true)
 	if err != nil {
@@ -1618,14 +1633,18 @@ func heartbeat(txn *spanner.ReadWriteStmtBasedTransaction, priority sppb.Request
 func (tm *TransactionManager) RunInNewOrExistRwTxLocked(ctx context.Context,
 	f func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error),
 ) (*DMLResult, error) {
-	result, _, err := tm.runInNewOrExistRwTxLocked(ctx, f)
+	result, _, err := tm.runInNewOrExistRwTxLocked(ctx, f, implicitAbortRetryIfEnabled)
 	return result, err
 }
 
 func (tm *TransactionManager) runInNewOrExistRwTxLocked(ctx context.Context,
 	f func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error),
+	policy implicitAbortRetryPolicy,
 ) (*DMLResult, rwTxAttemptInfo, error) {
 	var info rwTxAttemptInfo
+	tm.frozenQueryOpts = nil
+	defer func() { tm.frozenQueryOpts = nil }()
+
 	// Determine transaction type (this may start a transaction)
 	_, err := tm.DetermineTransactionLocked(ctx)
 	if err != nil {
@@ -1656,25 +1675,78 @@ func (tm *TransactionManager) runInNewOrExistRwTxLocked(ctx context.Context,
 		return nil, info, ErrNotInReadWriteTransaction
 	}
 
-	txn, ok := tm.tc.txn.(*spanner.ReadWriteStmtBasedTransaction)
-	if !ok {
-		return nil, info, ErrNotInReadWriteTransaction
-	}
-
-	ctx, cancelDeadline := tm.armAndBindDeadlineLocked(ctx)
-	defer cancelDeadline()
 	owner := tm.tc
 	if owner != nil {
 		info.deadline = owner.deadline
 	}
 
-	var affected int64
-	var plan *sppb.QueryPlan
-	var metadata *sppb.ResultSetMetadata
+	maxAttempts := 1
+	if implicitRWTx && policy == implicitAbortRetryIfEnabled && owner != nil && owner.retryAborts {
+		maxAttempts = maxImplicitAbortAttempts
+	}
 
-	// Execute the function
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		result, info, err := tm.executeRwTxAttemptLocked(ctx, f, implicitRWTx, owner)
+		if err == nil {
+			return result, info, nil
+		}
+		if !shouldRetryImplicitAbort(err, implicitRWTx, policy, owner, attempt, maxAttempts) {
+			if implicitRWTx && owner != nil && tm.tc == owner && isAbortedErr(err) && !isAdmissionError(err) {
+				return nil, info, tm.finalizeImplicitAbortLocked(ctx, info, err)
+			}
+			return nil, info, err
+		}
+		if recErr := tm.reconstructImplicitPhysicalLocked(ctx); recErr != nil {
+			return nil, info, recErr
+		}
+		delay := clampAbortRetryDelay(abortRetryDelay(err), tm.remainingAbortWaitBudget(ctx))
+		tm.mu.Unlock()
+		waitErr := tm.waitAbortRetry(ctx, delay)
+		tm.mu.Lock()
+		if waitErr != nil {
+			if tm.tc == owner {
+				tm.retireTransactionContextLocked()
+			}
+			return nil, info, waitErr
+		}
+		if tm.tc != owner || owner.txn == nil {
+			if tm.tc == owner {
+				tm.retireTransactionContextLocked()
+			}
+			return nil, info, errImplicitAbortRetryLostOwner
+		}
+		if owner != nil {
+			info.deadline = owner.deadline
+		}
+	}
+	return nil, info, tm.finalizeImplicitAbortLocked(ctx, info, fmt.Errorf("transaction was aborted: implicit abort retry exhausted"))
+}
+
+func (tm *TransactionManager) executeRwTxAttemptLocked(ctx context.Context,
+	f func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error),
+	implicitRWTx bool,
+	owner *transactionContext,
+) (*DMLResult, rwTxAttemptInfo, error) {
+	var info rwTxAttemptInfo
+	if owner != nil {
+		info.deadline = owner.deadline
+	}
+	if tm.tc == nil || tm.tc.txn == nil {
+		return nil, info, ErrNotInReadWriteTransaction
+	}
+	txn, ok := tm.tc.txn.(*spanner.ReadWriteStmtBasedTransaction)
+	if !ok {
+		return nil, info, ErrNotInReadWriteTransaction
+	}
+	if owner == nil {
+		return nil, info, ErrNotInReadWriteTransaction
+	}
+
+	ctx, cancelDeadline := tm.armAndBindDeadlineLocked(ctx)
+	defer cancelDeadline()
+
 	owner.idleHold++
-	affected, plan, metadata, err = f(txn, implicitRWTx)
+	affected, plan, metadata, err := f(txn, implicitRWTx)
 	if owner.idleHold > 0 {
 		owner.idleHold--
 	}
@@ -1695,11 +1767,14 @@ func (tm *TransactionManager) runInNewOrExistRwTxLocked(ctx context.Context,
 		if isAdmissionError(err) {
 			return nil, info, err
 		}
+		if implicitRWTx && isAbortedErr(err) && owner != nil && owner.retryAborts {
+			return nil, info, err
+		}
 		err = tm.handleOwnerFailureLocked(ctx, err)
 		if tm.tc != nil {
 			tm.noteIdleUserWorkLocked(true)
 		}
-		return nil, info, fmt.Errorf("transaction was aborted: %w", err)
+		return nil, info, wrapAbortedIfNeeded(err)
 	}
 	if !implicitRWTx && tm.tc != nil {
 		tm.noteIdleUserWorkLocked(true)
@@ -1718,11 +1793,19 @@ func (tm *TransactionManager) runInNewOrExistRwTxLocked(ctx context.Context,
 	// Commit is a distinct phase. Fallback must never treat a Commit
 	// failure as SQL-phase proof, even when Help metadata matches.
 	info.phase = dmlAttemptPhaseCommit
-	resp, err := tm.CommitReadWriteTransactionLocked(ctx)
+	resp, err := tm.commitReadWritePhysicalLocked(ctx)
 	if err != nil {
+		if isAbortedErr(err) && owner != nil && owner.retryAborts {
+			return nil, info, err
+		}
+		if tm.tc != nil {
+			tm.retireTransactionContextLocked()
+		}
 		return nil, info, err
 	}
-
+	if tm.tc != nil {
+		tm.retireTransactionContextLocked()
+	}
 	result.CommitResponse = resp
 	return result, info, nil
 }
@@ -1740,6 +1823,13 @@ func (tm *TransactionManager) RunInNewOrExistRwTx(ctx context.Context,
 func (tm *TransactionManager) runInNewOrExistRwTx(ctx context.Context,
 	f func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error),
 ) (*DMLResult, rwTxAttemptInfo, error) {
+	return tm.runInNewOrExistRwTxPolicy(ctx, f, implicitAbortRetryIfEnabled)
+}
+
+func (tm *TransactionManager) runInNewOrExistRwTxPolicy(ctx context.Context,
+	f func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error),
+	policy implicitAbortRetryPolicy,
+) (*DMLResult, rwTxAttemptInfo, error) {
 	for {
 		tm.syncExpiredOwnerRestore()
 		tm.mu.Lock()
@@ -1747,7 +1837,7 @@ func (tm *TransactionManager) runInNewOrExistRwTx(ctx context.Context,
 			tm.mu.Unlock()
 			continue
 		}
-		result, info, err := tm.runInNewOrExistRwTxLocked(ctx, f)
+		result, info, err := tm.runInNewOrExistRwTxLocked(ctx, f, policy)
 		tm.mu.Unlock()
 		return result, info, err
 	}
