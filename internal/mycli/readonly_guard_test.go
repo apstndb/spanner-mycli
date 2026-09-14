@@ -6,6 +6,7 @@ package mycli
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
 	"cloud.google.com/go/spanner"
@@ -18,8 +19,10 @@ func mustBuildMutate(t *testing.T, sql string) Statement {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := stmt.(MutationStatement); !ok {
-		t.Fatalf("%T is not MutationStatement", stmt)
+	_, mut := stmt.(MutationStatement)
+	_, nonTxn := stmt.(nonTransactionalMutationStatement)
+	if !mut && !nonTxn {
+		t.Fatalf("%T is not a mutation statement", stmt)
 	}
 	return stmt
 }
@@ -54,6 +57,25 @@ func TestReadOnlyGuardCoversBatchStatements(t *testing.T) {
 			_, err := session.ExecuteStatement(t.Context(), tt.stmt)
 			if !errors.Is(err, errReadOnly) {
 				t.Errorf("%s in READONLY mode: got error %v, want errReadOnly", tt.desc, err)
+			}
+		})
+	}
+}
+
+func TestDdlStatementsUseNonTransactionalMutationGuard(t *testing.T) {
+	t.Parallel()
+	for _, stmt := range []Statement{
+		&DdlStatement{Ddl: "CREATE TABLE t (id INT64) PRIMARY KEY (id)"},
+		&BulkDdlStatement{Ddls: []string{"CREATE TABLE t (id INT64) PRIMARY KEY (id)"}},
+		&SyncProtoStatement{UpsertPaths: []string{"examples.ProtoType"}},
+	} {
+		t.Run(fmt.Sprintf("%T", stmt), func(t *testing.T) {
+			t.Parallel()
+			if _, ok := stmt.(MutationStatement); ok {
+				t.Fatalf("%T must not determine a pending Spanner transaction", stmt)
+			}
+			if _, ok := stmt.(nonTransactionalMutationStatement); !ok {
+				t.Fatalf("%T must participate in the non-transactional READONLY guard", stmt)
 			}
 		})
 	}

@@ -27,16 +27,27 @@ import (
 func bufferOrExecuteDdlStatements(ctx context.Context, session *Session, ddls []string) (*Result, error) {
 	switch b := session.batch.Current().(type) {
 	case *BatchDMLStatement:
-		return nil, errors.New("there is active batch DML")
+		return nil, errDDLManualDMLBatch
 	case *BulkDdlStatement:
 		b.Ddls = append(b.Ddls, ddls...)
 		return &Result{}, nil
 	default:
-		if session.txn != nil && session.txn.HasAutomaticDML() {
-			return nil, errors.New("there is active batch DML")
-		}
 		return executeDdlStatements(ctx, session, ddls)
 	}
+}
+
+func marshalDDLProtoDescriptors(session *Session) ([]byte, error) {
+	if session == nil || session.systemVariables == nil {
+		return nil, nil
+	}
+	fds := session.systemVariables.Internal.ProtoDescriptor
+	if fds == nil {
+		return nil, nil
+	}
+	if err := proto.CheckInitialized(fds); err != nil {
+		return nil, fmt.Errorf("invalid proto descriptors: %w", err)
+	}
+	return proto.Marshal(fds)
 }
 
 // replacerForProgress replaces tabs and newlines to avoid breaking progress bars.
@@ -58,6 +69,7 @@ func newProgressWithTTY(ctx context.Context, session *Session) *mpb.Progress {
 
 func executeDdlStatements(ctx context.Context, session *Session, ddls []string) (*Result, error) {
 	if len(ddls) == 0 {
+		// Empty BulkDdl is a no-op and must not commit a transaction.
 		result := &Result{}
 		if session.systemVariables.Feature.EchoExecutedDDL {
 			result.TableHeader = toTableHeader("Executed", "Commit Timestamp")
@@ -66,11 +78,31 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 		return result, nil
 	}
 
-	b, err := proto.Marshal(session.systemVariables.Internal.ProtoDescriptor)
+	b, err := marshalDDLProtoDescriptors(session)
 	if err != nil {
 		return nil, err
 	}
 
+	prep, err := prepareDDLInTransaction(ctx, session)
+	if err != nil {
+		return nil, err
+	}
+
+	return executePreparedDdlStatements(ctx, session, ddls, prep, b)
+}
+
+// executePreparedDdlStatements submits already-validated descriptors with a
+// preparation receipt from prepareDDLInTransaction. RUN BATCH uses this so a
+// Commit that happens before Admin is not discarded.
+func executePreparedDdlStatements(ctx context.Context, session *Session, ddls []string, prep *ddlTxnPrep, descriptors []byte) (*Result, error) {
+	result, err := submitDdlStatements(ctx, session, ddls, descriptors)
+	if err != nil {
+		return result, annotateDDLAfterCommit(prep, err)
+	}
+	return result, nil
+}
+
+func submitDdlStatements(ctx context.Context, session *Session, ddls []string, protoDescriptors []byte) (*Result, error) {
 	var p *mpb.Progress
 	var bars []*mpb.Bar
 	teardown := func() {
@@ -108,11 +140,11 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 	op, err := session.adminClient.UpdateDatabaseDdl(ctx, &databasepb.UpdateDatabaseDdlRequest{
 		Database:         session.DatabasePath(),
 		Statements:       ddls,
-		ProtoDescriptors: b,
+		ProtoDescriptors: protoDescriptors,
 	})
 	if err != nil {
 		teardown()
-		if result, repairErr, ok := tryDefaultSequenceKindRepair(ctx, session, ddls, b, kind, nil, err); ok {
+		if result, repairErr, ok := tryDefaultSequenceKindRepair(ctx, session, ddls, protoDescriptors, kind, nil, err); ok {
 			return result, repairErr
 		}
 		return nil, fmt.Errorf("error on create op: %w", err)
@@ -132,7 +164,7 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 	if waitErr == nil || mode != enums.DDLExecutionModeSync {
 		return result, waitErr
 	}
-	if repaired, repairErr, ok := tryDefaultSequenceKindRepair(ctx, session, ddls, b, kind, op, waitErr); ok {
+	if repaired, repairErr, ok := tryDefaultSequenceKindRepair(ctx, session, ddls, protoDescriptors, kind, op, waitErr); ok {
 		return repaired, repairErr
 	}
 	return result, waitErr
