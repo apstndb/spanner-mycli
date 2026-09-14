@@ -202,6 +202,12 @@ Flags:
                                                embedded runtime container lifecycle logs. SQL SET CLI_LOG_LEVEL does not
                                                change those container logs.
       --log-grpc                               Show gRPC logs
+      --spanner-metrics-exporter="off"         Opt-in caller-owned Spanner client metrics exporter: off (default,
+                                               no provider) or otlp (OTLP HTTP/protobuf). OTEL_* environment variables
+                                               alone do not enable export. SQL SET cannot change this.
+      --spanner-metrics-endpoint=STRING        Absolute http/https collector URL for --spanner-metrics-exporter=otlp.
+                                               Host required; no userinfo, query, or fragment. Missing/root path becomes
+                                               /v1/metrics. Required with otlp; forbidden with off.
       --query-mode=QUERY-MODE                  Mode in which the query must be processed. Allowed values: NORMAL, PLAN,
                                                PROFILE, WITH_STATS, WITH_PLAN_AND_STATS.
       --strong                                 Perform a strong query.
@@ -1068,6 +1074,8 @@ For how these and other connection properties map to the official Spanner driver
 | CLI_CLIENT_CERT_FILE       | READ_ONLY  | `"/path/to/client.pem"`                        |
 | CLI_CLIENT_CERT_KEY        | READ_ONLY  | `"/path/to/client.key"`                        |
 | CLI_WITHOUT_AUTHENTICATION | READ_ONLY  | `"FALSE"`                                      |
+| CLI_SPANNER_METRICS_EXPORTER | READ_ONLY | `"off"`                                        |
+| CLI_SPANNER_METRICS_ENDPOINT | READ_ONLY | `"http://127.0.0.1:4318/v1/metrics"`           |
 | CLI_QUERY_MODE             | READ_WRITE | `"PROFILE"`                                    |
 | CLI_LINT_PLAN              | READ_WRITE | `"TRUE"`                                       |
 | CLI_EXPLAIN_HANGING_INDENT | READ_WRITE | `"TRUE"`                                       |
@@ -1087,6 +1095,8 @@ For how these and other connection properties map to the official Spanner driver
 | CLI_BIGQUERY_MAX_BYTES_BILLED | READ_WRITE | `1000000000`                                |
 
 > **Note**: `CLI_BIGQUERY_PROJECT` defaults to `CLI_PROJECT` when empty. `CLI_BIGQUERY_LOCATION` and `CLI_BIGQUERY_MAX_BYTES_BILLED` are optional BigQuery job settings.
+
+> **Note**: `CLI_SPANNER_METRICS_EXPORTER` defaults to `off` and does not start a MeterProvider. `OTEL_*` environment variables alone do not enable export. `otlp` requires `CLI_SPANNER_METRICS_ENDPOINT` (absolute `http`/`https` URL; missing/root path becomes `/v1/metrics`). After explicit opt-in, other standard OTLP HTTP exporter settings may still apply; destination, path, and scheme come only from the CLI URL. `SPANNER_EMULATOR_HOST` suppresses SDK caller-owned client metrics. Native Cloud Monitoring stays disabled. There is no `SHOW METRICS`.
 
 > **Note**: `CLI_FORMAT` accepts the following values:
 > - `TABLE` - ASCII table with borders (default for both interactive and batch modes)
