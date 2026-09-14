@@ -57,13 +57,20 @@ type StartupConfig struct {
 	Host                      string // CLI_HOST
 	Port                      int    // CLI_PORT
 	Insecure                  bool   // CLI_INSECURE
-	WithoutAuthentication     bool
+	WithoutAuthentication     bool   // CLI_WITHOUT_AUTHENTICATION
+	CaCertFile                string // CLI_CA_CERT_FILE
+	ClientCertFile            string // CLI_CLIENT_CERT_FILE
+	ClientCertKey             string // CLI_CLIENT_CERT_KEY
 	ImpersonateServiceAccount string // CLI_IMPERSONATE_SERVICE_ACCOUNT
-	EnableADCPlus             bool   // CLI_ENABLE_ADC_PLUS
-	EmulatorPlatform          string // CLI_EMULATOR_PLATFORM
-	LogGrpc                   bool   // CLI_LOG_GRPC
-	MCP                       bool   // CLI_MCP
-	SkipSystemCommand         bool   // CLI_SKIP_SYSTEM_COMMAND
+	// TLSClientOptions is the immutable custom-TLS transport captured once at
+	// startup via omni.ConnectionOptions. USE/DETACH/RecreateClient reuse
+	// Session.clientOpts and must not reread certificate files.
+	TLSClientOptions  []option.ClientOption
+	EnableADCPlus     bool   // CLI_ENABLE_ADC_PLUS
+	EmulatorPlatform  string // CLI_EMULATOR_PLATFORM
+	LogGrpc           bool   // CLI_LOG_GRPC
+	MCP               bool   // CLI_MCP
+	SkipSystemCommand bool   // CLI_SKIP_SYSTEM_COMMAND
 
 	// EmbeddedLogLevel is the --log-level value parsed at startup. It gates
 	// embedded runtime container lifecycle logs and is not CLI_LOG_LEVEL:

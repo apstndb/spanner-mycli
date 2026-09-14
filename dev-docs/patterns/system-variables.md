@@ -66,7 +66,7 @@ read-only), `scopeConnection` (connection identity, read-only), `scopeResult`
 
 // Read-only (StartupConfig-backed): a non-session scope makes it non-settable
 {
-	name: "CLI_INSECURE", desc: "Skip TLS certificate verification (insecure).",
+	name: "CLI_INSECURE", desc: "Permit plaintext gRPC (no TLS). Set by --insecure or --skip-tls-verify.",
 	scope: scopeStartup,
 	bind:  func(sv *systemVariables) Variable { return BoolVar(&sv.Config.Insecure) },
 },
