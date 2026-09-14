@@ -242,6 +242,8 @@ type systemVariables struct {
 	// Params is intentionally top-level, not inside QueryVars.
 	// Unlike grouped fields which use VarHandler[T]/Registry, Params is a dynamic map
 	// managed via dedicated SET/UNSET PARAM statements (statements_params.go).
+	// Names form one case-insensitive logical identity. Sequential SET PARAM
+	// keeps the first stored spelling; binding uses the spelling present in SQL.
 	Params map[string]ast.Node
 
 	// inTransaction reports whether there is an active transaction.
