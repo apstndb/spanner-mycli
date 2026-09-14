@@ -118,6 +118,29 @@ func TestTransactionTimeoutSessionSETAfterBeginDoesNotChangeOwner(t *testing.T) 
 	}
 }
 
+func TestTransactionTimeoutResetIsSessionOnly(t *testing.T) {
+	t.Parallel()
+	session := newSessionForLocalVarTest(t)
+	ctx := t.Context()
+	mustExec(t, ctx, session, "SET TRANSACTION_TIMEOUT = '10s'")
+	if err := session.systemVariables.CaptureStartupSnapshots(); err != nil {
+		t.Fatal(err)
+	}
+	mustExec(t, ctx, session, "SET TRANSACTION_TIMEOUT = '30s'")
+	mustExec(t, ctx, session, "BEGIN")
+	mustExec(t, ctx, session, "SET LOCAL TRANSACTION_TIMEOUT = '2m'")
+	if _, err := session.ExecuteStatement(ctx, &ResetStatement{VarName: "TRANSACTION_TIMEOUT"}); err != nil {
+		t.Fatalf("RESET TRANSACTION_TIMEOUT: %v", err)
+	}
+	if got := mustGetVar(t, session, "TRANSACTION_TIMEOUT"); got != "10s" {
+		t.Fatalf("RESET SHOW = %q, want 10s snapshot", got)
+	}
+	d, captured, armed := ownerTimeout(session.txn)
+	if !captured || d != 2*time.Minute || armed {
+		t.Fatalf("RESET mutated owner snapshot d=%s captured=%v armed=%v", d, captured, armed)
+	}
+}
+
 func TestTransactionTimeoutPendingLocalSelectsDuration(t *testing.T) {
 	t.Parallel()
 	h := newHeartbeatHarness(t)

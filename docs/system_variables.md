@@ -198,7 +198,7 @@ more explanation than the reference table above.
 - **Description**: Logical read/write transaction deadline, distinct from `STATEMENT_TIMEOUT` and from unimplemented user-idle expiry (#357).
 - **Notes**:
   - `NULL` or `0` means no additional transaction deadline.
-  - The duration is captured for the logical owner. Session `SET` after `BEGIN` applies to a later owner, not the current one.
+  - The duration is captured for the logical owner. Session `SET` or `RESET` after `BEGIN` applies to a later owner, not the current one.
   - A pending `SET LOCAL` may select the duration before the first database RPC. Changing the budget after it starts is rejected.
   - The single total budget starts at the first real database RPC, including constructor `BeginTransaction` for `ReadWriteStmtBasedTransaction`. Client-only `BEGIN`/`SHOW` and buffering automatic DML without a transaction RPC do not start it.
   - The deadline is preserved across physical reconstruction (`ROLLBACK TO`) and is not restarted by later statements.
