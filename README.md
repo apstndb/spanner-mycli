@@ -1039,6 +1039,7 @@ For how these and other connection properties map to the official Spanner driver
 | STATEMENT_TIMEOUT               | READ_WRITE | `"10m"`                                             |
 | DDL_EXECUTION_MODE              | READ_WRITE | `"SYNC"`                                            |
 | DDL_ASYNC_WAIT_TIMEOUT          | READ_WRITE | `"10s"`                                             |
+| DEFAULT_SEQUENCE_KIND           | READ_WRITE | `"bit_reversed_positive"`                           |
 | DIRECTED_READ                   | READ_WRITE | `"us-central1:READ_ONLY"`                           |
 | PROTO_DESCRIPTORS_FILE_PATH      | READ_WRITE | `"order_descriptors.pb"`                             |
 

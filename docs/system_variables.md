@@ -134,6 +134,7 @@ both `SHOW` and `SET`.
 | `DDL_ASYNC_WAIT_TIMEOUT`                   | read,write     | Maximum time ASYNC_WAIT spends waiting for a DDL operation before returning the still-running operation ID as a successful asynchronous submission. The remaining budget bounds in-flight GetOperation polls as well as the time between polls. Expiry cancels only the polling RPC and does not cancel the server operation. The default is 10s. Unused in SYNC and ASYNC modes.                                                                                                                                                                                                                                                                                                                                                             |
 | `DDL_EXECUTION_MODE`                       | read,write     | How DDL statements wait for the Admin long-running operation. SYNC (default) waits for the actual result. ASYNC returns the accepted operation ID immediately. ASYNC_WAIT waits up to DDL_ASYNC_WAIT_TIMEOUT and, on wait-budget expiry, returns the still-running operation ID as a successful asynchronous submission without canceling the server operation. --async selects ASYNC. Replaces CLI_ASYNC_DDL.                                                                                                                                                                                                                                                                                                                                |
 | `DEFAULT_ISOLATION_LEVEL`                  | read,write     | The transaction isolation level that is used by default for read/write transactions.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `DEFAULT_SEQUENCE_KIND`                    | read,write     | Opt-in default sequence kind used only to repair a precise missing-kind SYNC DDL failure. Empty/NULL (default) disables repair. The only accepted non-empty value is bit_reversed_positive. When enabled, a matching InvalidArgument failure may submit one extra ALTER DATABASE to set the database option default_sequence_kind (a database-wide schema mutation; requires the existing Spanner DDL update permission) and then retry only the metadata-proven unfinished suffix. Repair does not run in ASYNC, ASYNC_WAIT, or SHOW OPERATION.                                                                                                                                                                                              |
 | `DIRECTED_READ`                            | read,write     | Directed read options for supported read-only queries. Accepts replica_location or replica_location:READ_ONLY\|READ_WRITE shorthand, or DirectedReadOptions protobuf JSON. SHOW uses shorthand when that form is lossless; otherwise protobuf JSON. Empty string clears. SET is rejected while a transaction is pending or active; SET LOCAL is not supported. Not applied to read-write queries, DML, heartbeat, or partitioned DML.                                                                                                                                                                                                                                                                                                         |
 | `EXCLUDE_TXN_FROM_CHANGE_STREAMS`          | read,write     | Controls whether to exclude recording modifications in current transaction from the allowed tracking change streams(with DDL option allow_txn_exclusion=true).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `KEEP_TRANSACTION_ALIVE`                   | read,write     | Whether an explicit read-write owner schedules keepalive heartbeats after the first user SQL. TRUE (default) preserves existing mycli behavior. FALSE prevents heartbeat scheduling for that owner without changing user SQL, COMMIT, ROLLBACK, or cancellation. Java KEEP_TRANSACTION_ALIVE defaults to false; this CLI default is intentionally TRUE. The policy is frozen on the logical owner with the constructor snapshot reused across physical attempts, including SAVEPOINT reconstruction. Changing the session default does not alter an active owner. SET LOCAL is not supported. Idle-deadline (#357) and TRANSACTION_TIMEOUT (#482) are not implemented; they are separate follow-up work and are not implied by this variable. |
@@ -473,6 +474,32 @@ type/behavior replacement for the removed boolean `CLI_ASYNC_DDL`.
   still-pending operation, including before the first GetOperation poll. A
   terminal result already received from UpdateDatabaseDdl or a preceding poll
   is reported as-is.
+
+### DEFAULT_SEQUENCE_KIND
+
+Opt-in repair for SYNC DDL that failed because the database has no default
+sequence kind. This is not a server session option; it authorizes one extra
+database-wide `ALTER DATABASE`.
+
+- **Type**: STRING (`NULL` / empty, or `bit_reversed_positive`)
+- **Default**: `NULL` (disabled)
+- **Access**: Read/Write, including `SET LOCAL`
+- **Behavior**:
+  - Empty/`NULL` performs no extra DDL.
+  - `bit_reversed_positive` is the only accepted non-empty value.
+  - Repair runs only for `DDL_EXECUTION_MODE=SYNC` after `InvalidArgument`
+    plus the complete missing-default-sequence-kind sentence used by the
+    pinned Go/Java drivers.
+  - After a matching failure, mycli submits one dialect-correct
+    `ALTER DATABASE` (GoogleSQL `SET OPTIONS (default_sequence_kind = …)` or
+    PostgreSQL `SET spanner.default_sequence_kind = …`) and, only if that
+    ALTER succeeds, retries the unfinished suffix proven by matching terminal
+    `UpdateDatabaseDdl` metadata. Any ALTER create/wait error stops the
+    attempt.
+  - The extra mutation requires the existing Spanner DDL update permission
+    (`spanner.databases.update`). See
+    [primary-key defaults](https://docs.cloud.google.com/spanner/docs/primary-key-default-value#serial-auto-increment).
+  - `ASYNC`, `ASYNC_WAIT`, and `SHOW OPERATION` never repair.
 
 ### AUTO_BATCH_DML_UPDATE_COUNT
 

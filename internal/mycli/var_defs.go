@@ -289,6 +289,12 @@ var varDefs = []varDef{
 		},
 	},
 	{
+		name:  "DEFAULT_SEQUENCE_KIND",
+		desc:  "Opt-in default sequence kind used only to repair a precise missing-kind SYNC DDL failure. Empty/NULL (default) disables repair. The only accepted non-empty value is bit_reversed_positive. When enabled, a matching InvalidArgument failure may submit one extra ALTER DATABASE to set the database option default_sequence_kind (a database-wide schema mutation; requires the existing Spanner DDL update permission) and then retry only the metadata-proven unfinished suffix. Repair does not run in ASYNC, ASYNC_WAIT, or SHOW OPERATION.",
+		scope: scopeSession,
+		bind:  func(sv *systemVariables) Variable { return DefaultSequenceKindVar(&sv.Feature.DefaultSequenceKind) },
+	},
+	{
 		// Read-only: this is a security feature (--skip-system-command /
 		// --system-command=OFF); if it were settable, a user in a restricted
 		// environment could re-enable shell access with a single SET.

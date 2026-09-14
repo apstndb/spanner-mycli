@@ -54,7 +54,7 @@ says otherwise; `java-spanner` versions are given where known.
 | `data_boost_enabled` | yes | yes | `DATA_BOOST_ENABLED` implemented |
 | `max_partitioned_parallelism` | yes | yes | `MAX_PARTITIONED_PARALLELISM` implemented |
 | `max_partitions` | yes | yes | not implemented (candidate gap) |
-| `default_sequence_kind` + auto-set on DDL failure | yes (v1.26.0) | JDBC/PGAdapter auto-set v6.88.0; `CREATE SEQUENCE` v6.102.0 | not implemented (candidate gap; both reference drivers converged) |
+| `default_sequence_kind` + auto-set on DDL failure | yes (v1.26.0) | JDBC/PGAdapter auto-set v6.88.0; `CREATE SEQUENCE` v6.102.0 | `DEFAULT_SEQUENCE_KIND` (empty/NULL default = disabled; only `bit_reversed_positive` is accepted). SYNC-only: after `InvalidArgument` plus the pinned missing-kind sentence, one `ALTER DATABASE` sets the database option, then only a metadata-proven unfinished suffix is retried. Any ALTER failure stops without a suffix retry. ASYNC, ASYNC_WAIT, and SHOW OPERATION do not repair. |
 | `max_commit_delay` | yes | yes | `MAX_COMMIT_DELAY` implemented |
 | `commit_priority` (`HIGH`/`MEDIUM`/`LOW`/`UNSPECIFIED`) | yes | n/a | `COMMIT_PRIORITY` implemented. Default `UNSPECIFIED` inherits the resolved transaction RPC priority (existing mycli behavior). go-sql-spanner's default `UNSPECIFIED` is the Go driver's `CommitPriority` default and does not inherit `RPC_PRIORITY`. The effective value is frozen in the constructor snapshot reused across physical attempts, including SAVEPOINT reconstruction. `SET LOCAL` is not supported. Not applied to query, DML, heartbeat, partitioned DML, read-only, or Admin RPCs. |
 | `keep_transaction_alive` | n/a | yes (`KEEP_TRANSACTION_ALIVE`, default `false`) | `KEEP_TRANSACTION_ALIVE` implemented. Default `TRUE` preserves existing mycli heartbeat after the first user SQL on an explicit read-write owner. Java defaults to `false`; this CLI default is intentionally `TRUE`. The policy is frozen on the logical owner with the constructor snapshot reused across physical attempts, including SAVEPOINT reconstruction. `SET LOCAL` is not supported. Idle-deadline (#357) and `TRANSACTION_TIMEOUT` (#482) are not implemented; they remain separate follow-up work and are not implied by this variable. |
@@ -91,8 +91,6 @@ tracking issue. They are listed here so the gap is not lost:
 - `SHOW TRANSACTION` PostgreSQL-only aliases (`DEFERRABLE`, `transaction_isolation`,
   arbitrary `SHOW TRANSACTION <var>`) — isolation level and read-only inspection
   landed in #959; remaining aliases are tracked with #230.
-- `default_sequence_kind` (with auto-set on DDL failure) — both reference drivers
-  converged on it.
 - `max_partitions` connection property.
 - `transaction_isolation` PG alias for `isolation_level`.
 
