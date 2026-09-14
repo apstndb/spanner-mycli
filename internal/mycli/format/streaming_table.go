@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"fmt"
 	"io"
+	"math"
 	"regexp"
 	"slices"
 	"strings"
@@ -94,6 +95,13 @@ func (f *TableStreamingFormatter) InitFormat(columnNames []string, config Format
 
 	// Calculate optimal widths using preview rows
 	f.calculateWidths(columnNames, headerForWidth, previewRows)
+	if f.streaming && !constrainedScreen(f.screenWidth) {
+		// Unlimited/unknown screens still compute leftover MaxInt budgets.
+		// Lock wrap and tablewriter to the same natural preview/header
+		// widths so later rows wrap instead of being cut, without an
+		// unbounded border.
+		f.widths = naturalPreviewWidths(f.newCondition(), headerForWidth, previewRows)
+	}
 
 	// Determine output writer (buffer for comment modes)
 	tableOut := f.out
@@ -118,6 +126,12 @@ func (f *TableStreamingFormatter) InitFormat(columnNames []string, config Format
 			twConfig.Row.Alignment.PerColumn = f.params.ColumnAlign
 		}
 		twConfig.Row.Formatting.AutoWrap = tw.WrapNone
+		// Streaming locks column sizes at Start/Header. Pass the already
+		// calculated content widths so tablewriter does not re-derive them
+		// from the short header (Config.Widths; StreamConfig.Widths is deprecated).
+		if f.streaming {
+			applyCalculatedStreamWidths(twConfig, f.widths, f.newCondition())
+		}
 	})
 
 	// Start streaming if in streaming mode
@@ -243,6 +257,46 @@ func (f *TableStreamingFormatter) newCondition() *tabwrap.Condition {
 func (f *TableStreamingFormatter) calculateWidths(columns []string, headersForWidth []string, previewRows []Row) {
 	wc := &widthCalculator{Condition: f.newCondition()}
 	f.widths = CalculateWidthWithStrategy(f.config.WidthStrategy, columns, headersForWidth, wc, f.screenWidth, previewRows)
+}
+
+// applyCalculatedStreamWidths copies existing content widths onto
+// tablewriter.Config.Widths.PerColumn before Start. tablewriter treats those
+// values as total cell widths (content + padding), matching updateWidths.
+func applyCalculatedStreamWidths(twConfig *tablewriter.Config, contentWidths []int, wc *tabwrap.Condition) {
+	if twConfig == nil || len(contentWidths) == 0 {
+		return
+	}
+	if wc == nil {
+		wc = &tabwrap.Condition{}
+	}
+	pad := twConfig.Row.Padding.Global
+	extra := wc.StringWidth(pad.Left) + wc.StringWidth(pad.Right)
+	widths := tw.NewMapper[int, int]()
+	for i, w := range contentWidths {
+		widths.Set(i, w+extra)
+	}
+	twConfig.Widths.PerColumn = widths
+}
+
+func constrainedScreen(width int) bool {
+	return width > 0 && width < math.MaxInt/4
+}
+
+func naturalPreviewWidths(cond *tabwrap.Condition, headers []string, rows []Row) []int {
+	if cond == nil {
+		cond = &tabwrap.Condition{}
+	}
+	wc := &widthCalculator{Condition: cond}
+	out := make([]int, len(headers))
+	for i, h := range headers {
+		out[i] = max(1, wc.maxWidth(h))
+	}
+	for _, row := range rows {
+		for i := 0; i < len(out) && i < len(row); i++ {
+			out[i] = max(out[i], wc.maxWidth(row[i].RawText()))
+		}
+	}
+	return out
 }
 
 // wrapHeaders wraps headers according to calculated widths.
