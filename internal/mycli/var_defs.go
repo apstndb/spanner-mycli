@@ -1100,7 +1100,7 @@ var varDefs = []varDef{
 
 	{
 		name:    "RETRY_ABORTS_INTERNALLY",
-		desc:    "Opt-in BOOL (default FALSE) enabling bounded ABORTED retries for one implicit autocommit read-write operation. Java/Go drivers default TRUE. This is application logical retry only, not SDK gRPC/gax/stream retries. At most 50 attempts including the first, using the original caller cancellation and TRANSACTION_TIMEOUT budget. Session SET/RESET applies to later owners; SHOW is the session value; RESET restores the startup snapshot. SET LOCAL is unsupported in this phase (TRUE and FALSE). Newly created explicit and pending read-write owners, including AUTOCOMMIT=false, are rejected while TRUE. Activating a pending owner uses that owner's captured policy. Explicit journal replay remains #293.",
+		desc:    "Opt-in BOOL (default FALSE) enabling bounded ABORTED retries for one implicit autocommit read-write operation. Java/Go drivers default TRUE. This is application logical retry only, not SDK gRPC/gax/stream retries. At most 50 attempts including the first, using the original caller cancellation and TRANSACTION_TIMEOUT budget. Session SET/RESET applies to later owners; SHOW is the session value; RESET restores the startup snapshot. SET LOCAL is unsupported in this phase (TRUE and FALSE). Newly created explicit and pending read-write owners, including AUTOCOMMIT=false, are rejected while TRUE. Activating a pending owner uses that owner's captured policy: captured TRUE is rejected before the RW constructor; captured FALSE is allowed after a later session SET TRUE. Explicit journal replay remains #293.",
 		scope:   scopeSession,
 		noLocal: true,
 		bind:    func(sv *systemVariables) Variable { return BoolVar(&sv.Transaction.RetryAbortsInternally) },

@@ -844,6 +844,9 @@ func (tm *TransactionManager) DetermineTransactionLocked(ctx context.Context) (t
 		return tm.BeginReadOnlyTransactionLocked(ctx, timestampBoundUnspecified, 0, time.Time{}, priority)
 	}
 
+	if err := tm.rejectPendingRetryAbortsActivationLocked(); err != nil {
+		return zeroTime, err
+	}
 	// Start a read-write transaction with the pending transaction's isolation level and priority
 	return zeroTime, tm.BeginReadWriteTransactionLocked(ctx, isolationLevel, priority)
 }
@@ -968,13 +971,16 @@ func (tm *TransactionManager) BeginReadWriteTransactionLocked(ctx context.Contex
 func (tm *TransactionManager) BeginReadWriteTransaction(ctx context.Context, isolationLevel sppb.TransactionOptions_IsolationLevel, priority sppb.RequestOptions_Priority) error {
 	return tm.withOwnerInstallAfterRestore(func() error {
 		// Activating an existing pending owner uses that owner's captured
-		// RETRY_ABORTS_INTERNALLY snapshot. Reject only newly created
-		// explicit/pending TRUE owners.
-		activatingPending := tm.tc != nil && tm.tc.attrs.mode == transactionModePending
-		if !activatingPending {
-			if err := tm.rejectExplicitRetryAbortsLocked(); err != nil {
+		// RETRY_ABORTS_INTERNALLY snapshot: captured TRUE is rejected
+		// before the constructor RPC; captured FALSE is allowed even after
+		// a later session SET TRUE. Newly created explicit owners still
+		// follow the live session value.
+		if tm.tc != nil && tm.tc.attrs.mode == transactionModePending {
+			if err := tm.rejectPendingRetryAbortsActivationLocked(); err != nil {
 				return err
 			}
+		} else if err := tm.rejectExplicitRetryAbortsLocked(); err != nil {
+			return err
 		}
 		if err := tm.BeginReadWriteTransactionLocked(ctx, isolationLevel, priority); err != nil {
 			return err
@@ -1702,14 +1708,14 @@ func (tm *TransactionManager) runInNewOrExistRwTxLocked(ctx context.Context,
 			return nil, info, err
 		}
 		if remaining, unlimited := tm.abortWaitBudget(ctx); !unlimited && remaining <= 0 {
-			return tm.stopImplicitAbortForDeadlineLocked(owner, info)
+			return tm.stopImplicitAbortForDeadlineLocked(ctx, owner, info)
 		}
 		if recErr := tm.reconstructImplicitPhysicalLocked(ctx); recErr != nil {
 			return nil, info, recErr
 		}
 		remaining, unlimited := tm.abortWaitBudget(ctx)
 		if !unlimited && remaining <= 0 {
-			return tm.stopImplicitAbortForDeadlineLocked(owner, info)
+			return tm.stopImplicitAbortForDeadlineLocked(ctx, owner, info)
 		}
 		delay := clampAbortRetryDelay(abortRetryDelay(err), remaining, unlimited)
 		waitCtx, waitCancel := tm.bindDeadlineLocked(ctx)
@@ -1721,21 +1727,10 @@ func (tm *TransactionManager) runInNewOrExistRwTxLocked(ctx context.Context,
 			if tm.tc == owner {
 				tm.retireTransactionContextLocked()
 			}
-			if errors.Is(waitErr, context.Canceled) && ctx.Err() != nil && errors.Is(ctx.Err(), context.Canceled) {
-				return nil, info, waitErr
-			}
-			if ownerDeadlineExhausted(owner, tm.now()) || (errors.Is(waitErr, context.DeadlineExceeded) && owner != nil && !owner.deadline.IsZero() && !tm.now().Before(owner.deadline)) {
-				return nil, info, implicitAbortDeadlineErr(waitErr)
-			}
-			if errors.Is(waitErr, context.DeadlineExceeded) && owner != nil && !owner.deadline.IsZero() {
-				if annotated := annotateTransactionTimeout(waitErr, owner); errors.Is(annotated, errTransactionTimeout) {
-					return nil, info, annotated
-				}
-			}
-			return nil, info, waitErr
+			return nil, info, abortDeadlineCause(ctx, owner, tm.now(), waitErr)
 		}
 		if ownerDeadlineExhausted(owner, tm.now()) {
-			return tm.stopImplicitAbortForDeadlineLocked(owner, info)
+			return tm.stopImplicitAbortForDeadlineLocked(ctx, owner, info)
 		}
 		if tm.tc != owner || owner.txn == nil {
 			if tm.tc == owner {

@@ -510,6 +510,42 @@ func TestReview997PendingOwnerKeepsCapturedFalse(t *testing.T) {
 	}
 }
 
+func TestReview997PendingCapturedTrueRejectsRWActivation(t *testing.T) {
+	t.Parallel()
+	h := newHeartbeatHarness(t)
+	session := newRetryAbortsSession(t, h)
+	ctx := t.Context()
+	mustExec(t, ctx, session, "SET READONLY = TRUE")
+	mustExec(t, ctx, session, "SET RETRY_ABORTS_INTERNALLY = TRUE")
+	if _, err := execSQL(t, ctx, session, "BEGIN"); err != nil {
+		t.Fatalf("READONLY BEGIN: %v", err)
+	}
+	mustExec(t, ctx, session, "CLOSE")
+	if err := session.txn.BeginPendingTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+		t.Fatalf("READONLY pending: %v", err)
+	}
+	beginsBefore := len(h.server.beginObservations())
+	if _, err := execSQL(t, ctx, session, "SET TRANSACTION READ WRITE"); err == nil || !errors.Is(err, errRetryAbortsExplicitUnsupported) {
+		t.Fatalf("captured TRUE activation: %v", err)
+	}
+	if !session.txn.InPendingTransaction() {
+		t.Fatal("rejected activation retired the pending owner")
+	}
+	if got := len(h.server.beginObservations()); got != beginsBefore {
+		t.Fatalf("captured TRUE activation issued BeginTransaction: %d -> %d", beginsBefore, got)
+	}
+
+	// Ordinary SET READONLY is rejected while an owner exists; flip the
+	// session flag so DetermineTransaction takes the RW path on this owner.
+	session.systemVariables.Transaction.ReadOnly = false
+	if _, err := execSQL(t, ctx, session, "UPDATE T SET v = 1 WHERE TRUE"); err == nil || !errors.Is(err, errRetryAbortsExplicitUnsupported) {
+		t.Fatalf("captured TRUE Determine RW: %v", err)
+	}
+	if got := len(h.server.beginObservations()); got != beginsBefore {
+		t.Fatalf("Determine RW issued BeginTransaction: %d -> %d", beginsBefore, got)
+	}
+}
+
 func TestRetryAbortsExtractRetryDelayThroughSDK(t *testing.T) {
 	t.Parallel()
 	const want = 1234 * time.Millisecond
@@ -572,6 +608,41 @@ func TestRetryAbortsExtractRetryDelayThroughSDK(t *testing.T) {
 			t.Fatalf("commit ExtractRetryDelay wait = %s, want %s", seen, want)
 		}
 	})
+}
+
+func TestRetryAbortsCallerDeadlineKeepsCause(t *testing.T) {
+	t.Parallel()
+	h := newHeartbeatHarness(t)
+	session := newRetryAbortsSession(t, h)
+	start := time.Now()
+	ctx, cancel := context.WithDeadline(t.Context(), start.Add(time.Second))
+	t.Cleanup(cancel)
+	enableRetryAborts(t, ctx, session)
+	h.tm.nowFunc = func() time.Time {
+		if countRPC(userSQLObservations(h.server.sqlObservations()), "ExecuteStreamingSql", false) >= 1 {
+			return start.Add(2 * time.Second)
+		}
+		return start
+	}
+	var waited atomic.Bool
+	h.tm.abortRetryWait = func(context.Context, time.Duration) error {
+		waited.Store(true)
+		return nil
+	}
+	h.server.setFailStreamingSQLTimes(1, abortedStatus("sql aborted"))
+	_, err := execSQL(t, ctx, session, "UPDATE T SET v = 1 WHERE TRUE")
+	if err == nil || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("caller deadline: %v", err)
+	}
+	if errors.Is(err, errTransactionTimeout) {
+		t.Fatalf("caller deadline labeled TRANSACTION_TIMEOUT: %v", err)
+	}
+	if waited.Load() {
+		t.Fatal("exhausted caller deadline still entered backoff wait")
+	}
+	if got := countRPC(userSQLObservations(h.server.sqlObservations()), "ExecuteStreamingSql", false); got != 1 {
+		t.Fatalf("retried after caller deadline: %+v", h.server.sqlObservations())
+	}
 }
 
 func TestRetryAbortsCurrentOperationDeadlineStopsRetry(t *testing.T) {

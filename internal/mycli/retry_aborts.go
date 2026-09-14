@@ -78,6 +78,19 @@ func (tm *TransactionManager) rejectExplicitRetryAbortsLocked() error {
 	return errRetryAbortsExplicitUnsupported
 }
 
+// rejectPendingRetryAbortsActivationLocked rejects RW activation of a pending
+// owner whose captured RETRY_ABORTS_INTERNALLY snapshot is TRUE. Captured
+// FALSE still activates after a later session SET TRUE.
+func (tm *TransactionManager) rejectPendingRetryAbortsActivationLocked() error {
+	if tm == nil || tm.tc == nil || tm.tc.attrs.mode != transactionModePending {
+		return nil
+	}
+	if tm.tc.retryAborts {
+		return errRetryAbortsExplicitUnsupported
+	}
+	return nil
+}
+
 func abortRetryDelay(err error) time.Duration {
 	// ExtractRetryDelay unwraps *spanner.Error to the original status.
 	// GRPCStatus() rebuilds code/description and drops RetryInfo details.
@@ -248,11 +261,34 @@ func (tm *TransactionManager) reconstructImplicitPhysicalLocked(ctx context.Cont
 	return nil
 }
 
-func (tm *TransactionManager) stopImplicitAbortForDeadlineLocked(owner *transactionContext, info rwTxAttemptInfo) (*DMLResult, rwTxAttemptInfo, error) {
+func abortDeadlineCause(ctx context.Context, owner *transactionContext, now time.Time, waitErr error) error {
+	if waitErr != nil && errors.Is(waitErr, context.Canceled) && (ctx == nil || ctx.Err() == nil || errors.Is(ctx.Err(), context.Canceled)) {
+		return waitErr
+	}
+	if ownerDeadlineExhausted(owner, now) {
+		if waitErr == nil {
+			waitErr = context.DeadlineExceeded
+		}
+		return implicitAbortDeadlineErr(waitErr)
+	}
+	if waitErr != nil {
+		return waitErr
+	}
+	if ctx != nil && ctx.Err() != nil {
+		return ctx.Err()
+	}
+	return context.DeadlineExceeded
+}
+
+func (tm *TransactionManager) stopImplicitAbortForDeadlineLocked(ctx context.Context, owner *transactionContext, info rwTxAttemptInfo) (*DMLResult, rwTxAttemptInfo, error) {
 	if tm.tc == owner {
 		tm.retireTransactionContextLocked()
 	}
-	return nil, info, implicitAbortDeadlineErr(context.DeadlineExceeded)
+	now := time.Now()
+	if tm != nil {
+		now = tm.now()
+	}
+	return nil, info, abortDeadlineCause(ctx, owner, now, nil)
 }
 
 func (tm *TransactionManager) finalizeImplicitAbortLocked(ctx context.Context, info rwTxAttemptInfo, err error) error {

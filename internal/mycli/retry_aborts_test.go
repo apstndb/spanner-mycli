@@ -144,6 +144,29 @@ func TestAbortWaitBudgetDistinguishesNoDeadlineFromExhausted(t *testing.T) {
 	}
 }
 
+func TestAbortDeadlineCausePreservesCallerVsOwner(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 9, 14, 12, 0, 0, 0, time.UTC)
+	caller, cancel := context.WithDeadline(t.Context(), now.Add(-time.Millisecond))
+	t.Cleanup(cancel)
+
+	got := abortDeadlineCause(caller, &transactionContext{timeoutCaptured: true}, now, nil)
+	if !errors.Is(got, context.DeadlineExceeded) || errors.Is(got, errTransactionTimeout) {
+		t.Fatalf("caller-only exhausted: %v", got)
+	}
+
+	owner := &transactionContext{timeoutCaptured: true, deadline: now.Add(-time.Millisecond)}
+	got = abortDeadlineCause(t.Context(), owner, now, context.DeadlineExceeded)
+	if !errors.Is(got, errTransactionTimeout) {
+		t.Fatalf("owner exhausted: %v", got)
+	}
+
+	got = abortDeadlineCause(t.Context(), owner, now, context.Canceled)
+	if !errors.Is(got, context.Canceled) || errors.Is(got, errTransactionTimeout) {
+		t.Fatalf("caller cancel: %v", got)
+	}
+}
+
 func TestWaitAbortRetryHonorsCancel(t *testing.T) {
 	t.Parallel()
 	tm := &TransactionManager{}
