@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/spanner-mycli/enums"
@@ -72,6 +73,20 @@ func (d *varDef) localAllowed() bool {
 // opaque descriptor graphs, unimplemented placeholders, and connection identity.
 func (d *varDef) resettable() bool {
 	return d.settable() && !d.initOnly && !d.noReset
+}
+
+// parseExplainOperatorHeader trims surrounding whitespace at assignment.
+// Whitespace-only becomes empty (keep the WIDTH-dependent Operator header).
+// Nonempty values reject embedded control characters before any write.
+func parseExplainOperatorHeader(value string) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "", nil
+	}
+	if strings.ContainsFunc(trimmed, unicode.IsControl) {
+		return "", fmt.Errorf("CLI_EXPLAIN_OPERATOR_HEADER cannot contain control characters")
+	}
+	return trimmed, nil
 }
 
 // varDefs is the declarative table of all system variables. Order is not
@@ -693,6 +708,18 @@ var varDefs = []varDef{
 					var tmp enums.ExplainFormat
 					return ExplainFormatVar(&tmp).Set(value)
 				},
+			}
+		},
+	},
+	{
+		name:  "CLI_EXPLAIN_OPERATOR_HEADER",
+		desc:  "Literal Operator column header for EXPLAIN, EXPLAIN ANALYZE, LAST QUERY, and query-profile plan tables. Empty or whitespace-only keeps the existing WIDTH-dependent header. A nonempty value is trimmed of surrounding whitespace and used at every width. WIDTH wraps operator cell text only and does not truncate a deliberately long header. Ordinary Unicode is accepted. Embedded control characters (including NUL, CR, LF, tabs, and terminal escapes) are rejected.",
+		scope: scopeSession,
+		bind: func(sv *systemVariables) Variable {
+			return &VarHandler[string]{
+				ptr:    &sv.Display.ExplainOperatorHeader,
+				format: func(s string) string { return s },
+				parse:  parseExplainOperatorHeader,
 			}
 		},
 	},
