@@ -103,7 +103,7 @@ func TestSlimEntrypointKeepsCoreFlagAndStatements(t *testing.T) {
 	}
 
 	defs := mycli.MergedStatementDefs()
-	for _, input := range []string{"HELP", "SHOW VARIABLES", "RESET ALL", "SHOW TRANSACTION ISOLATION LEVEL", "SHOW TRANSACTION READ ONLY"} {
+	for _, input := range []string{"HELP", "SHOW VARIABLES", "RESET ALL", "RESET CLI_VERBOSE", "SHOW TRANSACTION ISOLATION LEVEL", "SHOW TRANSACTION READ ONLY"} {
 		if _, err := mycli.BuildStatementWithDefs(defs, input); err != nil {
 			t.Errorf("slim core statement %q: %v", input, err)
 		}

@@ -86,6 +86,32 @@ func TestInitializeSystemVariablesCapturesAfterSet(t *testing.T) {
 	}
 }
 
+func TestResetNameAliasResolves(t *testing.T) {
+	t.Parallel()
+	val := "init"
+	sv := newSystemVariablesWithDefaultsForTest()
+	sv.featureVarDefs = []varDef{{
+		name:    "CLI_TEST_RESET_VAR",
+		aliases: []string{"CLI_TEST_RESET_ALIAS"},
+		desc:    "test",
+		scope:   scopeSession,
+		bind:    func(*systemVariables) Variable { return StringVar(&val) },
+	}}
+	sv.Registry = NewVarRegistry(sv)
+	if err := sv.CaptureStartupSnapshots(); err != nil {
+		t.Fatal(err)
+	}
+	if err := sv.SetFromSimple("CLI_TEST_RESET_VAR", "changed"); err != nil {
+		t.Fatal(err)
+	}
+	if err := sv.Reset("CLI_TEST_RESET_ALIAS"); err != nil {
+		t.Fatalf("Reset(alias): %v", err)
+	}
+	if val != "init" {
+		t.Errorf("alias reset = %q, want init", val)
+	}
+}
+
 func TestResetNameCaseAndUnknown(t *testing.T) {
 	t.Parallel()
 	sv := newSystemVariablesWithDefaultsForTest()
