@@ -499,10 +499,10 @@ func TestMutationLimitFallbackRetainedHelpThroughSDK(t *testing.T) {
 	if !errors.As(err, &apiErr) {
 		t.Fatalf("live error has no *apierror.APIError: %T %v", err, err)
 	}
-	if st, ok := status.FromError(err); ok {
-		if _, isSpanner := err.(*spanner.Error); isSpanner && len(st.Details()) == 0 {
-			// Expected: GRPCStatus reconstruction drops Help. Classifier must
-			// still succeed via APIError unwrap, already checked above.
+	type grpcStatuser interface{ GRPCStatus() *status.Status }
+	if gs, ok := err.(grpcStatuser); ok {
+		if details := gs.GRPCStatus().Details(); len(details) != 0 {
+			t.Fatalf("GRPCStatus unexpectedly retained Help details: %#v", details)
 		}
 	}
 }
