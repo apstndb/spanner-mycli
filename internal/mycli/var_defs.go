@@ -111,7 +111,7 @@ var varDefs = []varDef{
 	},
 	{
 		name:     "DIRECTED_READ",
-		desc:     "Directed read options for supported read-only queries, as replica_location or replica_location:READ_ONLY|READ_WRITE. Empty string clears. SET is rejected while a transaction is pending or active; SET LOCAL is not supported. Not applied to read-write queries, DML, heartbeat, or partitioned DML. This is not JDBC protobuf JSON.",
+		desc:     "Directed read options for supported read-only queries. Accepts replica_location or replica_location:READ_ONLY|READ_WRITE shorthand, or DirectedReadOptions protobuf JSON. SHOW uses shorthand when that form is lossless; otherwise protobuf JSON. Empty string clears. SET is rejected while a transaction is pending or active; SET LOCAL is not supported. Not applied to read-write queries, DML, heartbeat, or partitioned DML.",
 		scope:    scopeSession,
 		txnGuard: true,
 		noLocal:  true,

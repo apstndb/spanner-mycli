@@ -793,6 +793,10 @@ func (s *Session) RecreateClient(ctx context.Context) error {
 }
 
 func parseDirectedReadOption(directedReadOptionText string) (*sppb.DirectedReadOptions, error) {
+	if trimmed := strings.TrimSpace(directedReadOptionText); strings.HasPrefix(trimmed, "{") {
+		return parseDirectedReadJSON(trimmed)
+	}
+
 	directedReadOption := strings.Split(directedReadOptionText, ":")
 	if len(directedReadOption) > 2 {
 		return nil, fmt.Errorf("directed read option must be in the form of <replica_location>:<replica_type>, but got %q", directedReadOptionText)

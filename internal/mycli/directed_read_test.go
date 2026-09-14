@@ -20,6 +20,7 @@ import (
 	"strings"
 	"testing"
 
+	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
@@ -180,8 +181,11 @@ func TestDirectedReadStartupFlagThenSet(t *testing.T) {
 		{name: "mixed case", args: []string{"--directed-read=us-east1:read_only"}, want: "us-east1:READ_ONLY"},
 		{name: "set overrides", args: []string{"--directed-read=us-east1:READ_ONLY", "--set=DIRECTED_READ=us-west1:READ_WRITE"}, want: "us-west1:READ_WRITE"},
 		{name: "set clears", args: []string{"--directed-read=us-east1", "--set=DIRECTED_READ="}},
+		{name: "json exclude", args: []string{`--directed-read={"excludeReplicas":{"replicaSelections":[{"location":"us-east1","type":"READ_WRITE"}]}}`}, want: `{"excludeReplicas":{"replicaSelections":[{"location":"us-east1","type":"READ_WRITE"}]}}`},
+		{name: "json set overrides shorthand", args: []string{"--directed-read=us-east1", `--set=DIRECTED_READ={"includeReplicas":{"replicaSelections":[{"location":"us-west1","type":"READ_ONLY"}],"autoFailoverDisabled":false}}`}, want: `{"includeReplicas":{"replicaSelections":[{"location":"us-west1","type":"READ_ONLY"}]}}`},
 		{name: "invalid flag", args: []string{"--directed-read=us-east1:NOPE"}, wantErr: true},
 		{name: "invalid set", args: []string{"--set=DIRECTED_READ=us-east1:READ_ONLY:extra"}, wantErr: true},
+		{name: "invalid json", args: []string{`--set=DIRECTED_READ={"notAField":true}`}, wantErr: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			opts, _, err := parseFlagsArgs(tt.args, "test", nil, io.Discard, io.Discard)
@@ -199,11 +203,31 @@ func TestDirectedReadStartupFlagThenSet(t *testing.T) {
 				t.Fatal(err)
 			}
 			got, err := vars.Get("DIRECTED_READ")
-			if err != nil || got["DIRECTED_READ"] != tt.want {
-				t.Fatalf("SHOW=%v error=%v want=%q", got, err, tt.want)
+			if err != nil {
+				t.Fatal(err)
 			}
-			if tt.want == "" && vars.Query.DirectedRead != nil {
-				t.Fatal("clear left nonnil selection")
+			if tt.want == "" {
+				if got["DIRECTED_READ"] != "" || vars.Query.DirectedRead != nil {
+					t.Fatalf("SHOW=%v directed=%v, want clear", got, vars.Query.DirectedRead)
+				}
+				return
+			}
+			wantDRO, err := parseDirectedReadOption(tt.want)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff(wantDRO, vars.Query.DirectedRead, protocmp.Transform()); diff != "" {
+				t.Fatalf("startup DirectedRead mismatch (-want +got):\n%s", diff)
+			}
+			showDRO, err := parseDirectedReadOption(got["DIRECTED_READ"])
+			if err != nil {
+				t.Fatalf("SHOW %q: %v", got["DIRECTED_READ"], err)
+			}
+			if diff := cmp.Diff(wantDRO, showDRO, protocmp.Transform()); diff != "" {
+				t.Fatalf("SHOW round-trip mismatch (-want +got):\n%s", diff)
+			}
+			if !strings.HasPrefix(strings.TrimSpace(tt.want), "{") && got["DIRECTED_READ"] != tt.want {
+				t.Fatalf("SHOW=%q want shorthand %q", got["DIRECTED_READ"], tt.want)
 			}
 		})
 	}
@@ -235,5 +259,256 @@ func TestDirectedReadHelpAndUnknownNames(t *testing.T) {
 	}
 	if !saw {
 		t.Fatal("DIRECTED_READ missing from HELP VARIABLES")
+	}
+}
+
+func replicaSel(location string, typ sppb.DirectedReadOptions_ReplicaSelection_Type) *sppb.DirectedReadOptions_ReplicaSelection {
+	return &sppb.DirectedReadOptions_ReplicaSelection{Location: location, Type: typ}
+}
+
+func includeDirectedRead(autoFailover bool, sels ...*sppb.DirectedReadOptions_ReplicaSelection) *sppb.DirectedReadOptions {
+	return &sppb.DirectedReadOptions{
+		Replicas: &sppb.DirectedReadOptions_IncludeReplicas_{
+			IncludeReplicas: &sppb.DirectedReadOptions_IncludeReplicas{
+				ReplicaSelections:    sels,
+				AutoFailoverDisabled: autoFailover,
+			},
+		},
+	}
+}
+
+func excludeDirectedRead(sels ...*sppb.DirectedReadOptions_ReplicaSelection) *sppb.DirectedReadOptions {
+	return &sppb.DirectedReadOptions{
+		Replicas: &sppb.DirectedReadOptions_ExcludeReplicas_{
+			ExcludeReplicas: &sppb.DirectedReadOptions_ExcludeReplicas{
+				ReplicaSelections: sels,
+			},
+		},
+	}
+}
+
+func TestParseFormatDirectedReadCompleteJSON(t *testing.T) {
+	t.Parallel()
+	type tc struct {
+		name      string
+		input     string
+		want      *sppb.DirectedReadOptions
+		wantShow  string
+		errSubstr string
+	}
+	cases := []tc{
+		{
+			name:     "include json lossless shorthand",
+			input:    `{"includeReplicas":{"replicaSelections":[{"location":"us-east1","type":"READ_ONLY"}],"autoFailoverDisabled":true}}`,
+			want:     includeDirectedRead(true, replicaSel("us-east1", sppb.DirectedReadOptions_ReplicaSelection_READ_ONLY)),
+			wantShow: "us-east1:READ_ONLY",
+		},
+		{
+			name:     "include json location only lossless shorthand",
+			input:    `{"includeReplicas":{"replicaSelections":[{"location":"us-east1"}],"autoFailoverDisabled":true}}`,
+			want:     includeDirectedRead(true, replicaSel("us-east1", sppb.DirectedReadOptions_ReplicaSelection_TYPE_UNSPECIFIED)),
+			wantShow: "us-east1",
+		},
+		{
+			name:  "include autoFailoverDisabled false",
+			input: `{"includeReplicas":{"replicaSelections":[{"location":"us-east1","type":"READ_ONLY"}],"autoFailoverDisabled":false}}`,
+			want:  includeDirectedRead(false, replicaSel("us-east1", sppb.DirectedReadOptions_ReplicaSelection_READ_ONLY)),
+		},
+		{
+			name:  "include autoFailoverDisabled omitted is false",
+			input: `{"includeReplicas":{"replicaSelections":[{"location":"us-east1","type":"READ_ONLY"}]}}`,
+			want:  includeDirectedRead(false, replicaSel("us-east1", sppb.DirectedReadOptions_ReplicaSelection_READ_ONLY)),
+		},
+		{
+			name:  "exclude single replica",
+			input: `{"excludeReplicas":{"replicaSelections":[{"location":"us-east1","type":"READ_WRITE"}]}}`,
+			want:  excludeDirectedRead(replicaSel("us-east1", sppb.DirectedReadOptions_ReplicaSelection_READ_WRITE)),
+		},
+		{
+			name: "multiple include selections",
+			input: `{"includeReplicas":{"replicaSelections":[` +
+				`{"location":"us-east1","type":"READ_ONLY"},` +
+				`{"location":"us-west1","type":"READ_WRITE"}` +
+				`],"autoFailoverDisabled":true}}`,
+			want: includeDirectedRead(true,
+				replicaSel("us-east1", sppb.DirectedReadOptions_ReplicaSelection_READ_ONLY),
+				replicaSel("us-west1", sppb.DirectedReadOptions_ReplicaSelection_READ_WRITE)),
+		},
+		{
+			name: "multiple exclude selections",
+			input: `{"excludeReplicas":{"replicaSelections":[` +
+				`{"location":"europe-west1","type":"READ_ONLY"},` +
+				`{"location":"asia-northeast1"}]}}`,
+			want: excludeDirectedRead(
+				replicaSel("europe-west1", sppb.DirectedReadOptions_ReplicaSelection_READ_ONLY),
+				replicaSel("asia-northeast1", sppb.DirectedReadOptions_ReplicaSelection_TYPE_UNSPECIFIED)),
+		},
+		{
+			name:  "empty object",
+			input: `{}`,
+			want:  &sppb.DirectedReadOptions{},
+		},
+		{
+			name:      "unknown field",
+			input:     `{"includeReplicas":{"replicaSelections":[{"location":"us-east1"}]},"notAField":true}`,
+			errSubstr: "invalid directed read protobuf JSON",
+		},
+		{
+			name:      "malformed json",
+			input:     `{"includeReplicas":`,
+			errSubstr: "invalid directed read protobuf JSON",
+		},
+		{
+			name:      "include and exclude together",
+			input:     `{"includeReplicas":{"replicaSelections":[{"location":"us-east1"}]},"excludeReplicas":{"replicaSelections":[{"location":"us-west1"}]}}`,
+			errSubstr: "invalid directed read protobuf JSON",
+		},
+		{
+			name:      "unknown enum",
+			input:     `{"includeReplicas":{"replicaSelections":[{"location":"us-east1","type":"NOT_A_TYPE"}]}}`,
+			errSubstr: "invalid directed read protobuf JSON",
+		},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := parseDirectedReadOption(tt.input)
+			if tt.errSubstr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.errSubstr) {
+					t.Fatalf("error=%v, want substring %q", err, tt.errSubstr)
+				}
+				if got != nil {
+					t.Fatal("parse returned a value on error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff(tt.want, got, protocmp.Transform()); diff != "" {
+				t.Fatalf("parse mismatch (-want +got):\n%s", diff)
+			}
+			show := formatDirectedReadOption(got)
+			if tt.wantShow != "" && show != tt.wantShow {
+				t.Fatalf("SHOW=%q want shorthand %q", show, tt.wantShow)
+			}
+			again, err := parseDirectedReadOption(show)
+			if err != nil {
+				t.Fatalf("reparse SHOW %q: %v", show, err)
+			}
+			if diff := cmp.Diff(got, again, protocmp.Transform()); diff != "" {
+				t.Fatalf("SHOW round-trip mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestDirectedReadCompleteJSONSetShowClearAndInvalidAtomic(t *testing.T) {
+	t.Parallel()
+	sysVars := newSystemVariablesWithDefaultsForTest()
+	sysVars.ensureRegistry()
+
+	excludeJSON := `{"excludeReplicas":{"replicaSelections":[{"location":"us-east1","type":"READ_WRITE"}]}}`
+	if err := sysVars.SetFromSimple("DIRECTED_READ", excludeJSON); err != nil {
+		t.Fatal(err)
+	}
+	wantExclude := excludeDirectedRead(replicaSel("us-east1", sppb.DirectedReadOptions_ReplicaSelection_READ_WRITE))
+	if diff := cmp.Diff(wantExclude, sysVars.Query.DirectedRead, protocmp.Transform()); diff != "" {
+		t.Fatalf("SET exclude mismatch (-want +got):\n%s", diff)
+	}
+	got, err := sysVars.Get("DIRECTED_READ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	show := got["DIRECTED_READ"]
+	if show == "" || !strings.Contains(show, "excludeReplicas") {
+		t.Fatalf("SHOW exclude = %q, want protobuf JSON", show)
+	}
+	again, err := parseDirectedReadOption(show)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff(wantExclude, again, protocmp.Transform()); diff != "" {
+		t.Fatalf("SHOW exclude round-trip mismatch (-want +got):\n%s", diff)
+	}
+
+	failoverFalse := `{"includeReplicas":{"replicaSelections":[{"location":"us-west1","type":"READ_ONLY"}],"autoFailoverDisabled":false}}`
+	if err := sysVars.SetFromGoogleSQL("DIRECTED_READ", "'"+failoverFalse+"'"); err != nil {
+		t.Fatalf("GoogleSQL SET JSON: %v", err)
+	}
+	wantFalse := includeDirectedRead(false, replicaSel("us-west1", sppb.DirectedReadOptions_ReplicaSelection_READ_ONLY))
+	if diff := cmp.Diff(wantFalse, sysVars.Query.DirectedRead, protocmp.Transform()); diff != "" {
+		t.Fatalf("SET failover false mismatch (-want +got):\n%s", diff)
+	}
+	got, err = sysVars.Get("DIRECTED_READ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["DIRECTED_READ"] == "us-west1:READ_ONLY" {
+		t.Fatal("SHOW used shorthand for autoFailoverDisabled false")
+	}
+
+	original := sysVars.Query.DirectedRead
+	originalValue := proto.CloneOf(original)
+	for _, invalid := range []string{
+		`{"notAField":1}`,
+		`{"includeReplicas":`,
+		`{"includeReplicas":{"replicaSelections":[{"location":"us-east1"}],"extra":true}}`,
+		`{"includeReplicas":{"replicaSelections":[{"location":"us-east1"}]},"excludeReplicas":{"replicaSelections":[{"location":"us-west1"}]}}`,
+	} {
+		if err := sysVars.SetFromSimple("DIRECTED_READ", invalid); err == nil {
+			t.Fatalf("invalid SET %q succeeded", invalid)
+		}
+		if sysVars.Query.DirectedRead != original {
+			t.Fatalf("invalid SET %q replaced the DirectedRead pointer", invalid)
+		}
+		if !proto.Equal(originalValue, original) {
+			t.Fatalf("invalid SET %q mutated the existing DirectedRead value", invalid)
+		}
+	}
+
+	if err := sysVars.SetFromSimple("DIRECTED_READ", ""); err != nil {
+		t.Fatal(err)
+	}
+	if sysVars.Query.DirectedRead != nil {
+		t.Fatal("empty SET left a non-nil selection")
+	}
+	got, err = sysVars.Get("DIRECTED_READ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["DIRECTED_READ"] != "" {
+		t.Fatalf("SHOW after clear = %q", got["DIRECTED_READ"])
+	}
+}
+
+func TestDirectedReadJSONShorthandIndependence(t *testing.T) {
+	t.Parallel()
+	a := newSystemVariablesWithDefaultsForTest()
+	a.ensureRegistry()
+	b := newSystemVariablesWithDefaultsForTest()
+	b.ensureRegistry()
+
+	excludeJSON := `{"excludeReplicas":{"replicaSelections":[{"location":"us-east1","type":"READ_WRITE"}]}}`
+	multiJSON := `{"includeReplicas":{"replicaSelections":[{"location":"us-east1","type":"READ_ONLY"},{"location":"us-west1","type":"READ_WRITE"}],"autoFailoverDisabled":false}}`
+	if err := a.SetFromSimple("DIRECTED_READ", excludeJSON); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.SetFromSimple("DIRECTED_READ", multiJSON); err != nil {
+		t.Fatal(err)
+	}
+	wantA := excludeDirectedRead(replicaSel("us-east1", sppb.DirectedReadOptions_ReplicaSelection_READ_WRITE))
+	wantB := includeDirectedRead(false,
+		replicaSel("us-east1", sppb.DirectedReadOptions_ReplicaSelection_READ_ONLY),
+		replicaSel("us-west1", sppb.DirectedReadOptions_ReplicaSelection_READ_WRITE))
+	if diff := cmp.Diff(wantA, a.Query.DirectedRead, protocmp.Transform()); diff != "" {
+		t.Fatalf("session A mismatch (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff(wantB, b.Query.DirectedRead, protocmp.Transform()); diff != "" {
+		t.Fatalf("session B mismatch (-want +got):\n%s", diff)
+	}
+	a.Query.DirectedRead.GetExcludeReplicas().ReplicaSelections[0].Location = "mutated"
+	if b.Query.DirectedRead.GetIncludeReplicas().GetReplicaSelections()[0].GetLocation() == "mutated" {
+		t.Fatal("sessions shared DirectedRead state")
 	}
 }

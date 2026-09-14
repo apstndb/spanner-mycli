@@ -614,3 +614,199 @@ func dumpSQLs(reqs []*sppb.ExecuteSqlRequest) []string {
 	}
 	return out
 }
+
+func TestDirectedReadCompleteJSONProductWire(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+	defer cancel()
+	srv, opts := startDirectedReadDial(t)
+
+	excludeJSON := `{"excludeReplicas":{"replicaSelections":[{"location":"us-east1","type":"READ_WRITE"}]}}`
+	multiFalseJSON := `{"includeReplicas":{"replicaSelections":[{"location":"us-east1","type":"READ_ONLY"},{"location":"us-west1","type":"READ_WRITE"}],"autoFailoverDisabled":false}}`
+	multiTrueJSON := `{"includeReplicas":{"replicaSelections":[{"location":"us-east1","type":"READ_ONLY"},{"location":"us-west1","type":"READ_WRITE"}],"autoFailoverDisabled":true}}`
+	exclude := mustParseDirectedRead(t, excludeJSON)
+	multiFalse := mustParseDirectedRead(t, multiFalseJSON)
+	multiTrue := mustParseDirectedRead(t, multiTrueJSON)
+
+	varsA := newDirectedReadVars(t)
+	sessionA, cfgA := newDirectedReadProductSession(t, opts, varsA)
+	if cfgA.DirectedReadOptions != nil {
+		t.Fatal("session A copied client DRO")
+	}
+	varsB := newDirectedReadVars(t)
+	sessionB, cfgB := newDirectedReadProductSession(t, opts, varsB)
+	if cfgB.DirectedReadOptions != nil {
+		t.Fatal("session B copied client DRO")
+	}
+
+	if err := varsA.SetFromSimple("DIRECTED_READ", excludeJSON); err != nil {
+		t.Fatal(err)
+	}
+	if err := varsB.SetFromSimple("DIRECTED_READ", multiFalseJSON); err != nil {
+		t.Fatal(err)
+	}
+	requireDirected(t, varsA.Query.DirectedRead, exclude)
+	requireDirected(t, varsB.Query.DirectedRead, multiFalse)
+
+	it, txn, err := sessionA.txn.RunQuery(ctx, spanner.Statement{SQL: "SELECT 'observed'"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	consumeDirectedReadRequest(t, srv, it, exclude)
+	if txn != nil {
+		txn.Close()
+	}
+
+	it, txn, err = sessionB.txn.RunQuery(ctx, spanner.Statement{SQL: "SELECT 'observed'"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	consumeDirectedReadRequest(t, srv, it, multiFalse)
+	if txn != nil {
+		txn.Close()
+	}
+
+	if err := varsA.SetFromSimple("DIRECTED_READ", multiTrueJSON); err != nil {
+		t.Fatal(err)
+	}
+	requireDirected(t, varsA.Query.DirectedRead, multiTrue)
+	got, err := varsA.Get("DIRECTED_READ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["DIRECTED_READ"] == "us-east1:READ_ONLY" || !strings.Contains(got["DIRECTED_READ"], "includeReplicas") {
+		t.Fatalf("SHOW multiple include = %q, want protobuf JSON", got["DIRECTED_READ"])
+	}
+	it, txn, err = sessionA.txn.RunQuery(ctx, spanner.Statement{SQL: "SELECT 'observed'"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	consumeDirectedReadRequest(t, srv, it, multiTrue)
+	if txn != nil {
+		txn.Close()
+	}
+	requireDirected(t, varsB.Query.DirectedRead, multiFalse)
+
+	originalB := varsB.Query.DirectedRead
+	originalBValue := proto.CloneOf(originalB)
+	if err := varsB.SetFromSimple("DIRECTED_READ", `{"unknownField":true}`); err == nil {
+		t.Fatal("unknown JSON succeeded")
+	}
+	if varsB.Query.DirectedRead != originalB || !proto.Equal(originalBValue, originalB) {
+		t.Fatal("unknown JSON mutated session B")
+	}
+
+	if _, err := sessionA.ExecuteStatement(ctx, &BeginRwStatement{}); err != nil {
+		t.Fatal(err)
+	}
+	srv.takeRequests()
+	it, _, err = sessionA.txn.RunQuery(ctx, spanner.Statement{SQL: "SELECT 'observed'"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rwSel := consumeDirectedReadRequest(t, srv, it, nil)
+	if rwSel.GetRequestOptions().GetRequestTag() == "spanner_mycli_heartbeat" {
+		t.Fatal("RW SELECT used heartbeat tag")
+	}
+	result, err := executeDML(ctx, sessionA, "UPDATE T SET V = 'changed' WHERE TRUE")
+	if err != nil || result.AffectedRows != 1 {
+		t.Fatalf("DML result=%v error=%v", result, err)
+	}
+	dmlReqs := srv.takeRequests()
+	if len(dmlReqs) != 1 {
+		t.Fatalf("DML requests=%v", dmlReqs)
+	}
+	requireDirected(t, dmlReqs[0].DirectedReadOptions, nil)
+	if _, err := sessionA.ExecuteStatement(ctx, &CommitStatement{}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := varsA.SetFromSimple("DIRECTED_READ", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := sessionA.RecreateClient(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if sessionA.clientConfig.DirectedReadOptions != nil || varsA.Query.DirectedRead != nil {
+		t.Fatal("clear then RecreateClient resurrected DIRECTED_READ")
+	}
+	srv.takeRequests()
+	it, txn, err = sessionA.txn.RunQuery(ctx, spanner.Statement{SQL: "SELECT 'observed'"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	consumeDirectedReadRequest(t, srv, it, nil)
+	if txn != nil {
+		txn.Close()
+	}
+	requireDirected(t, varsB.Query.DirectedRead, multiFalse)
+}
+
+func TestDirectedReadCompleteJSONStartupClearReconnect(t *testing.T) {
+	oldLogger, oldLevel := slog.Default(), cliLogLevel.Level()
+	t.Cleanup(func() { slog.SetDefault(oldLogger); cliLogLevel.Set(oldLevel) })
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+	defer cancel()
+	srv, opts := startDirectedReadDial(t)
+	excludeJSON := `{"excludeReplicas":{"replicaSelections":[{"location":"us-east1","type":"READ_WRITE"}]}}`
+	exclude := mustParseDirectedRead(t, excludeJSON)
+	embed := mustParseDirectedRead(t, "europe-west1:READ_ONLY")
+	embedCopy := proto.CloneOf(embed)
+
+	vars, err := initializeSystemVariables(&spannerOptions{
+		ProjectId:    "p",
+		InstanceId:   "i",
+		DatabaseId:   "db",
+		DirectedRead: excludeJSON,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	vars.StreamManager = streamio.NewStreamManager(io.NopCloser(strings.NewReader("")), io.Discard, io.Discard)
+	vars.Config.EmbeddedClientConfig = &spanner.ClientConfig{
+		DisableNativeMetrics: true,
+		UserAgent:            "json-startup-directed",
+		DirectedReadOptions:  embed,
+	}
+	session, cfg := newDirectedReadProductSession(t, opts, vars)
+	if cfg.DirectedReadOptions != nil {
+		t.Fatal("startup copied client DRO")
+	}
+	requireDirected(t, vars.Query.DirectedRead, exclude)
+
+	handler := NewSessionHandler(session)
+	if err := vars.SetFromSimple("DIRECTED_READ", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := handler.ExecuteStatement(ctx, &UseStatement{Database: vars.Connection.Database}); err != nil {
+		t.Fatalf("USE after clear: %v", err)
+	}
+	if vars.Query.DirectedRead != nil || handler.clientConfig.DirectedReadOptions != nil {
+		t.Fatal("USE resurrected startup JSON or embedded DRO")
+	}
+	if vars.Config.EmbeddedClientConfig.DirectedReadOptions != embed || !proto.Equal(embed, embedCopy) {
+		t.Fatal("USE mutated embedded DRO")
+	}
+	srv.takeRequests()
+	it, txn, err := handler.txn.RunQuery(ctx, spanner.Statement{SQL: "SELECT 'observed'"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	consumeDirectedReadRequest(t, srv, it, nil)
+	if txn != nil {
+		txn.Close()
+	}
+
+	if _, err := handler.ExecuteStatement(ctx, &DetachStatement{}); err != nil {
+		t.Fatalf("DETACH: %v", err)
+	}
+	if vars.Query.DirectedRead != nil {
+		t.Fatal("DETACH resurrected startup JSON")
+	}
+	if _, err := handler.ExecuteStatement(ctx, &UseStatement{Database: "db"}); err != nil {
+		t.Fatalf("attach: %v", err)
+	}
+	if vars.Query.DirectedRead != nil || handler.clientConfig.DirectedReadOptions != nil {
+		t.Fatal("reattach resurrected startup JSON or embedded DRO")
+	}
+}
