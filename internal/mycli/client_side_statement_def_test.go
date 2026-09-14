@@ -64,6 +64,7 @@ var syntaxPlaceholderValues = map[string]string{
 	"<table2>":               "t2",
 	"<schema>":               "myschema",
 	"<sql>":                  "SELECT 1",
+	"<string>":               "'User%'",
 	"<seconds>":              "10",
 	"<rfc3339_timestamp>":    "'2026-01-01T00:00:00Z'",
 	"<timestamp>":            "'2026-01-01T00:00:00Z'",

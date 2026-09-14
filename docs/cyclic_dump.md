@@ -72,8 +72,8 @@ keys. Inspect the target before choosing how to recover.
 
 ## Selection, schema, and values
 
-`DUMP TABLES` includes only the requested tables and never changes target
-constraints. Selecting only part of a cycle can leave ordinary INSERT output;
+`DUMP TABLES` includes only the requested tables (exact names or LIKE/EXCEPT
+matches) and never changes target constraints. Selecting only part of a cycle can leave ordinary INSERT output;
 omitted referenced tables, interleave parents, and prerequisite target rows are
 the caller's responsibility. Selection is not a promise of standalone replay.
 
