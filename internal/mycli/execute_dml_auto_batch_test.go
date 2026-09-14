@@ -525,7 +525,7 @@ func TestAutomaticDMLDiscardedOnClear(t *testing.T) {
 	tm := NewTransactionManager(nil, sysVars, spanner.ClientConfig{})
 	owner := &transactionContext{
 		attrs:   transactionAttributes{mode: transactionModeReadWrite},
-		autoDML: []spanner.Statement{{SQL: "INSERT INTO t (id) VALUES (1)"}},
+		autoDML: []automaticDMLEntry{{stmt: spanner.Statement{SQL: "INSERT INTO t (id) VALUES (1)"}, expected: 1}},
 	}
 	tm.tc = owner
 	tm.clearTransactionContext()

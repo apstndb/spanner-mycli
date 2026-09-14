@@ -157,7 +157,7 @@ func TestBufferOrExecuteDdlStatements(t *testing.T) {
 		t.Parallel()
 		session := newSessionForLocalVarTest(t)
 		session.txn.tc = &transactionContext{
-			autoDML: []spanner.Statement{{SQL: "INSERT INTO t (id) VALUES (1)"}},
+			autoDML: []automaticDMLEntry{{stmt: spanner.Statement{SQL: "INSERT INTO t (id) VALUES (1)"}, expected: 1}},
 		}
 		_, err := bufferOrExecuteDdlStatements(t.Context(), session, []string{"CREATE TABLE t (id INT64) PRIMARY KEY (id)"})
 		if err == nil || !strings.Contains(err.Error(), "active batch DML") {
