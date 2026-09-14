@@ -209,8 +209,14 @@ func (h *SessionHandler) ExecuteStatement(ctx context.Context, stmt Statement) (
 	// Handle session-changing statements
 	switch s := stmt.(type) {
 	case *UseStatement:
+		if h.txn != nil {
+			_ = h.txn.consumeIdleNotice(true)
+		}
 		return h.handleUse(ctx, s)
 	case *UseDatabaseMetaCommand:
+		if h.txn != nil {
+			_ = h.txn.consumeIdleNotice(true)
+		}
 		// Convert UseDatabaseMetaCommand to UseStatement and handle it
 		useStmt := &UseStatement{
 			Database: s.Database,
@@ -218,6 +224,9 @@ func (h *SessionHandler) ExecuteStatement(ctx context.Context, stmt Statement) (
 		}
 		return h.handleUse(ctx, useStmt)
 	case *DetachStatement:
+		if h.txn != nil {
+			_ = h.txn.consumeIdleNotice(true)
+		}
 		return h.handleDetach(ctx, s)
 	default:
 		// For regular statements, delegate to the embedded session
@@ -882,6 +891,9 @@ func (s *Session) executeStatement(ctx context.Context, stmt Statement, out Oper
 			s.txn.afterEntryRestore()
 		}
 		s.txn.syncExpiredOwnerRestore()
+		if err := s.txn.consumeIdleNotice(acksIdleNotice(stmt)); err != nil {
+			return nil, err
+		}
 	}
 
 	// Validate statement compatibility with current session mode

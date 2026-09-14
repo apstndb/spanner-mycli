@@ -221,6 +221,7 @@ type TransactionVars struct {
 	CommitPriority                      sppb.RequestOptions_Priority                   // COMMIT_PRIORITY
 	KeepTransactionAlive                bool                                           // KEEP_TRANSACTION_ALIVE
 	TransactionTimeout                  *time.Duration                                 // TRANSACTION_TIMEOUT
+	IdleTransactionTimeout              *time.Duration                                 // CLI_IDLE_TRANSACTION_TIMEOUT
 	DdlInTransactionMode                enums.DdlInTransactionMode                     // CLI_DDL_IN_TRANSACTION_MODE
 	SavepointSupport                    enums.SavepointSupport                         // CLI_SAVEPOINT_SUPPORT
 

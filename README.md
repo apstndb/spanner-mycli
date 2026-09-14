@@ -232,6 +232,8 @@ Flags:
       --enable-partitioned-dml                 Partitioned DML as default (AUTOCOMMIT_DML_MODE=PARTITIONED_NON_ATOMIC)
       --timeout=STRING                         Statement timeout (e.g., '10s', '5m', '1h'). Omit for 10m on ordinary
                                                statements and 24h on partitioned DML.
+      --idle-transaction-timeout=STRING        User-idle transaction timeout (e.g., '60s', '5m'). Omit or empty leaves
+                                               CLI_IDLE_TRANSACTION_TIMEOUT disabled (NULL).
       --async                                  Return immediately, without waiting for the operation in progress to
                                                complete
       --try-partition-query                    Test whether the query can be executed as partition query without
@@ -403,9 +405,14 @@ $ spanner-mycli --timeout 5m --enable-partitioned-dml -p myproject -i myinstance
 $ spanner-mycli -p myproject -i myinstance -d mydb -e 'SELECT * FROM users;'
 ```
 
-You can also configure the stored timeout interactively using `STATEMENT_TIMEOUT`.
-`NULL` is the omitted-flag default; `10m` / `24h` are execution fallbacks, not
-the stored value. See [docs/system_variables.md](docs/system_variables.md#statement_timeout).
+`--idle-transaction-timeout` sets `CLI_IDLE_TRANSACTION_TIMEOUT` using the same
+duration strings (`60s`, `5m`). Omit the flag to leave idle expiry stored as
+`NULL` (disabled).
+
+You can also configure the stored statement timeout interactively using
+`STATEMENT_TIMEOUT`. `NULL` is the omitted-`--timeout` default; `10m` / `24h`
+are execution fallbacks, not the stored value. See
+[docs/system_variables.md](docs/system_variables.md#statement_timeout).
 
 ```sql
 spanner> SET STATEMENT_TIMEOUT = '2m';
@@ -870,8 +877,8 @@ snapshot is captured; `RESET` / `RESET ALL` can undo those init assignments.
 Not every system variable has a flag, TOML key, or environment variable. Names
 that exist only in the registry are set with `--set` or SQL `SET`. Some flags
 are presence-dependent (for example `--enable-partitioned-dml` maps
-`AUTOCOMMIT_DML_MODE` only when given; omitting `--timeout` leaves
-`STATEMENT_TIMEOUT` stored as `NULL`). See
+`AUTOCOMMIT_DML_MODE` only when given; omitting `--timeout` or
+`--idle-transaction-timeout` leaves the matching timeout stored as `NULL`). See
 [docs/system_variables.md](docs/system_variables.md#configuration-sources-and-precedence).
 
 ## Request Priority
@@ -903,9 +910,11 @@ Note that transaction-level priority takes precedence over command-level priorit
 
 `COMMIT_PRIORITY` overrides only the Commit RPC. `HIGH`, `MEDIUM`, and `LOW` set that override. `UNSPECIFIED` (the default) inherits the resolved transaction RPC priority, matching previous mycli behavior. That is not the go-sql-spanner default: the Go driver's unset `commit_priority` is `UNSPECIFIED` and does not inherit RPC priority. The effective commit priority is frozen when the physical read-write attempt is constructed, including SAVEPOINT reconstruction. Changing the session default does not alter an active attempt. Query, DML, heartbeat, partitioned DML, read-only, and Admin RPCs keep using their existing priority fields. `SET LOCAL COMMIT_PRIORITY` is not supported.
 
-`KEEP_TRANSACTION_ALIVE` controls whether an explicit read-write owner schedules keepalive heartbeats after the first user SQL. `TRUE` (the default) preserves existing mycli behavior. `FALSE` prevents heartbeat scheduling for that owner without changing user SQL, COMMIT, ROLLBACK, or cancellation. Java `KEEP_TRANSACTION_ALIVE` defaults to false; this CLI default is intentionally true. The policy is frozen on the logical owner with the constructor snapshot, including SAVEPOINT reconstruction. Changing the session default does not alter an active owner. Idle-deadline (#357) is not implemented. `TRANSACTION_TIMEOUT` is a separate logical-owner budget and is not implied by this variable. `SET LOCAL KEEP_TRANSACTION_ALIVE` is not supported.
+`KEEP_TRANSACTION_ALIVE` controls whether an explicit read-write owner schedules keepalive heartbeats after the first user SQL. `TRUE` (the default) preserves existing mycli behavior. `FALSE` prevents heartbeat scheduling for that owner without changing user SQL, COMMIT, ROLLBACK, or cancellation. Java `KEEP_TRANSACTION_ALIVE` defaults to false; this CLI default is intentionally true. The policy is frozen on the logical owner with the constructor snapshot, including SAVEPOINT reconstruction. Changing the session default does not alter an active owner. `CLI_IDLE_TRANSACTION_TIMEOUT` is an independent user-idle quiet interval and still expires when keepalive is disabled. `TRANSACTION_TIMEOUT` is a separate logical-owner budget and is not implied by this variable. `SET LOCAL KEEP_TRANSACTION_ALIVE` is not supported.
 
-`TRANSACTION_TIMEOUT` is a logical read/write deadline (`10s`, `5m`, or `NULL`). `NULL` or `0` means no additional transaction deadline. The duration is captured for the logical owner. The single total budget starts at the first real database RPC, including the statement-based constructor `BeginTransaction`, and is preserved across physical reconstruction (`ROLLBACK TO`). Client-only `BEGIN`/`SHOW` and buffering automatic DML without a transaction RPC do not start it. A pending `SET LOCAL` may select the duration before the first RPC; changing it after the budget starts is rejected. Session `SET` or `RESET` after `BEGIN` applies to a later owner. Every SQL, Batch DML, commit, and replay RPC receives the remaining budget together with the caller and `STATEMENT_TIMEOUT` deadlines. Expiry cancels in-flight RPCs without waiting for the transaction mutex, retires only the matching owner, stops its heartbeat, and restores `SET LOCAL` at the next session safe point (start/end of `ExecuteStatement`, or `Close`). This is not user-idle expiry (#357). ABORTED retries (#293) are not implemented; a later retry path must reuse the remaining budget.
+`TRANSACTION_TIMEOUT` is a logical read/write deadline (`10s`, `5m`, or `NULL`). `NULL` or `0` means no additional transaction deadline. The duration is captured for the logical owner. The single total budget starts at the first real database RPC, including the statement-based constructor `BeginTransaction`, and is preserved across physical reconstruction (`ROLLBACK TO`). Client-only `BEGIN`/`SHOW` and buffering automatic DML without a transaction RPC do not start it. A pending `SET LOCAL` may select the duration before the first RPC; changing it after the budget starts is rejected. Session `SET` or `RESET` after `BEGIN` applies to a later owner. Every SQL, Batch DML, commit, and replay RPC receives the remaining budget together with the caller and `STATEMENT_TIMEOUT` deadlines. Expiry cancels in-flight RPCs without waiting for the transaction mutex, retires only the matching owner, stops its heartbeat, and restores `SET LOCAL` at the next session safe point (start/end of `ExecuteStatement`, or `Close`). Distinct from `CLI_IDLE_TRANSACTION_TIMEOUT` (#357). ABORTED retries (#293) are not implemented; a later retry path must reuse the remaining budget.
+
+`CLI_IDLE_TRANSACTION_TIMEOUT` is a sliding user-idle quiet interval (`60s`, `5m`, or `NULL`). `NULL` or `0` disables it; there is no default 60-second expiry. The duration is captured at `BEGIN`. Session `SET` or `RESET` after `BEGIN` applies to a later owner. `SET LOCAL` may change the captured duration before admitted user or database work and then freezes. Successful explicit `BEGIN RW` or `BEGIN RO` that acquired a server transaction starts the first quiet interval; a resource-free pending `BEGIN` does not arm until work. Completed admitted work rearms the interval, including successful buffered DML/`MUTATE` and successful `SAVEPOINT` / `RELEASE` / `ROLLBACK TO`. Heartbeat `SELECT 1` and client-only `SHOW` / `SET` / `RESET` do not reset it. Expiry holds through the user RPC, iterator consumption, and CLI result rendering or pager, and is not an RPC context deadline. The next ordinary command reports a one-shot error without executing; `ROLLBACK` / `CLOSE` / `BEGIN` / `USE` / `DETACH` acknowledge the notice. The timer runs even when `KEEP_TRANSACTION_ALIVE` is `FALSE`. `--idle-transaction-timeout` maps the same duration strings as `--timeout`.
 
 `CLI_DDL_IN_TRANSACTION_MODE` controls whether DDL may run while a logical transaction owner exists. `FAIL` (the default) rejects DDL while any owner exists and intentionally differs from Java `ALLOW_IN_EMPTY_TRANSACTION`. `ALLOW_IN_EMPTY_TRANSACTION` retires an empty pending owner without constructing or committing, or rolls back a constructor-only empty RW owner, then runs DDL. `AUTO_COMMIT_TRANSACTION` no-op-retires empty pending, or flushes eligible automatic DML and commits a RW owner, then runs DDL. The policy is captured on the logical owner at creation, including pending `BEGIN`. Session `SET` after `BEGIN` applies to a later owner. `SET LOCAL` may change this owner only before user work. Manual DML batch, read-only owners, and SAVEPOINT recovery reject with zero Admin RPCs. Empty BulkDdl is a no-op and does not commit. `START BATCH DDL` is admitted before batch state changes; `RUN BATCH` validates descriptors and rechecks admission before `Commit`, then carries that preparation receipt through Admin. After a successful commit, a later DDL failure cannot be rolled back. `CreateDatabase` is out of scope. EOF, `EXIT`, and `Close` never auto-commit because of this variable. SYNC default-sequence repair is `DEFAULT_SEQUENCE_KIND` (#984), not this variable.
 
@@ -1074,6 +1083,7 @@ SET CLI_FORMAT = 'VERTICAL';
 SET LOCAL CLI_FORMAT = 'TAB';
 SET CLI_DATABASE_DIALECT = 'GOOGLE_STANDARD_SQL';
 SET STATEMENT_TIMEOUT = '2m';
+SET CLI_IDLE_TRANSACTION_TIMEOUT = '60s';
 SET RPC_PRIORITY = 'HIGH';
 RESET STATEMENT_TIMEOUT;
 RESET ALL;
@@ -1087,6 +1097,7 @@ Parser-valid samples (not defaults):
 | `CLI_FORMAT` | `'TABLE'` |
 | `CLI_DATABASE_DIALECT` | `'GOOGLE_STANDARD_SQL'` (`POSTGRESQL` and `DATABASE_DIALECT_UNSPECIFIED` are also accepted; `TRUE` is not) |
 | `STATEMENT_TIMEOUT` | `'2m'` or `NULL` (omitted `--timeout` stores `NULL`) |
+| `CLI_IDLE_TRANSACTION_TIMEOUT` | `'60s'` or `NULL` (omitted `--idle-transaction-timeout` stores `NULL`) |
 | `RPC_PRIORITY` | `'HIGH'` (`MEDIUM`, `LOW`; prefer the short form) |
 | `READ_ONLY_STALENESS` | `'STRONG'` |
 | `CLI_QUERY_MODE` | `'PLAN'` |

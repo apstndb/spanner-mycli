@@ -382,7 +382,7 @@ func executeSQLImplWithQueryRunner(ctx context.Context, session *Session, sql st
 		Receipt:        tok.receipt(),
 	})
 	if session != nil && session.txn != nil {
-		if capErr := session.txn.finishQueryCapture(tok, err); err == nil {
+		if capErr := session.txn.completeAdmittedQuery(tok, err); err == nil {
 			err = capErr
 		}
 		if err == nil {
