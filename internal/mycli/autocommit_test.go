@@ -182,6 +182,9 @@ func TestLazyAutocommitEligibilityDispatch(t *testing.T) {
 	if lazyAutocommitEligible(session, &DdlStatement{Ddl: "CREATE TABLE T (id INT64) PRIMARY KEY (id)"}) {
 		t.Fatal("DDL must not be eligible")
 	}
+	if lazyAutocommitEligible(session, &SyncProtoStatement{}) {
+		t.Fatal("SYNC PROTO BUNDLE must not be eligible")
+	}
 
 	plan := sppb.ExecuteSqlRequest_PLAN
 	session.systemVariables.Query.QueryMode = &plan
