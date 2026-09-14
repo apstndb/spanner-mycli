@@ -400,13 +400,20 @@ $ spanner-mycli --timeout 30s -p myproject -i myinstance -d mydb -e 'SELECT * FR
 # Set 5 minute timeout for partitioned DML
 $ spanner-mycli --timeout 5m --enable-partitioned-dml -p myproject -i myinstance -d mydb -e 'UPDATE large_table SET status = "active";'
 
-# Use default timeout (10 minutes for queries, 24 hours for partitioned DML)
+# Omit --timeout, and any timeout config / --set, to leave STATEMENT_TIMEOUT stored as NULL.
+# Execution then uses 10 minutes for ordinary statements and 24 hours for partitioned DML.
 $ spanner-mycli -p myproject -i myinstance -d mydb -e 'SELECT * FROM users;'
 ```
 
-`--idle-transaction-timeout` sets `CLI_IDLE_TRANSACTION_TIMEOUT` using the same duration strings (`60s`, `5m`). Omit the flag to leave idle expiry disabled.
+`--idle-transaction-timeout` sets `CLI_IDLE_TRANSACTION_TIMEOUT` using the same
+duration strings (`60s`, `5m`). Omit the flag, and any matching config / `--set`,
+to leave idle expiry stored as `NULL` (disabled).
 
-You can also configure timeout interactively using the `STATEMENT_TIMEOUT` system variable:
+You can also configure the stored statement timeout interactively using
+`STATEMENT_TIMEOUT`. `NULL` is the default when `--timeout`, the timeout config
+key, and `--set STATEMENT_TIMEOUT` all omit a value; `10m` / `24h` are
+execution fallbacks, not the stored value. See
+[docs/system_variables.md](docs/system_variables.md#statement_timeout).
 
 ```sql
 spanner> SET STATEMENT_TIMEOUT = '2m';
@@ -548,6 +555,8 @@ spanner> SELECT 1 AS test;
 You can see query plan without query execution using the `EXPLAIN` client side statement.
 
 For advanced query plan features and configuration options, see [docs/query_plan.md](docs/query_plan.md).
+System-variable names for those options are listed in
+[docs/system_variables.md](docs/system_variables.md#query-plan-display).
 
 ```
 spanner> EXPLAIN
@@ -579,6 +588,8 @@ You can see query plan and execution profile using the `EXPLAIN ANALYZE` client 
 You should know that it requires executing the query.
 
 For advanced query plan features and configuration options, see [docs/query_plan.md](docs/query_plan.md).
+System-variable names for those options are listed in
+[docs/system_variables.md](docs/system_variables.md#query-plan-display).
 
 ```
 spanner> EXPLAIN ANALYZE
@@ -852,10 +863,28 @@ prompt = "[%p:%i:%d]%t> "
 
 ## Configuration Precedence
 
-1. Command line flags(highest)
-2. Environment variables
-3. `.spanner_mycli.toml` in current directory
-4. `.spanner_mycli.toml` in home directory(lowest)
+For a **dedicated flag / TOML key / env alias** (for example `--project`,
+`SPANNER_PROJECT_ID`, `project` in `.spanner_mycli.toml`), sources are listed
+in descending priority:
+
+1. Command-line flags
+2. Environment variables (`SPANNER_*` and flag-mapped env)
+3. `.spanner_mycli.toml` in the current directory
+4. `.spanner_mycli.toml` in the home directory
+5. Built-in / flag defaults
+
+`--set NAME=VALUE` overrides the same system-variable name after those dedicated
+sources. `--init-command` and `--init-command-add` then run as ordinary SQL
+**after** the RESET startup snapshot is captured; `RESET` / `RESET ALL` can undo
+those init assignments.
+
+Not every system variable has a flag, TOML key, or environment variable. Names
+that exist only as system variables are set with `--set` or SQL `SET`. Some flags
+are presence-dependent (for example `--enable-partitioned-dml` sets
+`AUTOCOMMIT_DML_MODE` only when given). Omitting `--timeout` or
+`--idle-transaction-timeout` leaves the matching timeout stored as `NULL` only
+when the corresponding config key and `--set` also omit a value. See
+[docs/system_variables.md](docs/system_variables.md#configuration-sources-and-precedence).
 
 ## Request Priority
 
@@ -1038,86 +1067,45 @@ This section describes some notable features of spanner-mycli, they are not appe
 
 ### System Variables
 
-#### Spanner JDBC inspired variables
+The generated Name / Operations / Description inventory is
+[docs/system_variables.md](docs/system_variables.md#reference)
+(`make docs-update` / `HELP VARIABLES`). That table is the reference; this
+README section is not a second inventory and the examples below are not stored
+defaults.
 
-They have almost same semantics with [Spanner JDBC properties](https://cloud.google.com/spanner/docs/jdbc-session-mgmt-commands?hl=en)
+Some names are inspired by
+[Spanner JDBC connection properties](https://cloud.google.com/spanner/docs/jdbc-session-mgmt-commands?hl=en).
+That is a convenience mapping, not a claim that every property matches JDBC or
+go-sql-spanner. Tracked deltas:
+[docs/spanner-driver-compatibility.md](docs/spanner-driver-compatibility.md).
+Startup order, `RESET` snapshots, and stored versus effective values:
+[docs/system_variables.md](docs/system_variables.md#configuration-sources-and-precedence).
 
-For how these and other connection properties map to the official Spanner drivers (Spanner JDBC and go-sql-spanner), including tracked and intentionally skipped deltas, see [docs/spanner-driver-compatibility.md](docs/spanner-driver-compatibility.md).
+```sql
+SHOW VARIABLES;
+SHOW VARIABLE CLI_FORMAT;
+SET CLI_FORMAT = 'VERTICAL';
+SET LOCAL CLI_FORMAT = 'TAB';
+SET CLI_DATABASE_DIALECT = 'GOOGLE_STANDARD_SQL';
+SET STATEMENT_TIMEOUT = '2m';
+SET CLI_IDLE_TRANSACTION_TIMEOUT = '60s';
+SET RPC_PRIORITY = 'HIGH';
+RESET STATEMENT_TIMEOUT;
+RESET ALL;
+HELP VARIABLES;
+```
 
-| Name                            | Type       | Example                                             |
-|---------------------------------|------------|-----------------------------------------------------|
-| READONLY                        | READ_WRITE | `TRUE`                                              |
-| READ_ONLY_STALENESS             | READ_WRITE | `"analyze_20241017_15_59_17UTC"`                    |
-| OPTIMIZER_VERSION               | READ_WRITE | `"7"`                                               |
-| OPTIMIZER_STATISTICS_PACKAGE    | READ_WRITE | `"7"`                                               |
-| RPC_PRIORITY                    | READ_WRITE | `"MEDIUM"`                                          |
-| COMMIT_PRIORITY                 | READ_WRITE | `"UNSPECIFIED"`                                     |
-| KEEP_TRANSACTION_ALIVE          | READ_WRITE | `TRUE`                                              |
-| READ_TIMESTAMP                  | READ_ONLY  | `"2024-11-01T05:28:58.943332+09:00"`                |
-| COMMIT_RESPONSE                 | READ_ONLY  | `"2024-11-01T05:31:11.311894+09:00"`                |
-| TRANSACTION_TAG                 | READ_WRITE | `"app=concert,env=dev,action=update"`               |
-| STATEMENT_TAG                   | READ_WRITE | `"app=concert,env=dev,action=update,request=fetch"` |
-| DATA_BOOST_ENABLED              | READ_WRITE | `TRUE`                                              |
-| AUTO_BATCH_DML                  | READ_WRITE | `TRUE`                                              |
-| AUTO_BATCH_DML_UPDATE_COUNT     | READ_WRITE | `1`                                                 |
-| AUTO_BATCH_DML_UPDATE_COUNT_VERIFICATION | READ_WRITE | `FALSE`                                      |
-| EXCLUDE_TXN_FROM_CHANGE_STREAMS | READ_WRITE | `TRUE`                                              |
-| MAX_COMMIT_DELAY                | READ_WRITE | `"500ms"`                                           |
-| AUTOCOMMIT_DML_MODE             | READ_WRITE | `"PARTITIONED_NON_ATOMIC"`                          |
-| MAX_PARTITIONED_PARALLELISM     | READ_WRITE | `4`                                                 |
-| DEFAULT_ISOLATION_LEVEL         | READ_WRITE | `REPEATABLE_READ`                                    |
-| STATEMENT_TIMEOUT               | READ_WRITE | `"10m"`                                             |
-| TRANSACTION_TIMEOUT             | READ_WRITE | `"5m"`                                              |
-| DDL_EXECUTION_MODE              | READ_WRITE | `"SYNC"`                                            |
-| DDL_ASYNC_WAIT_TIMEOUT          | READ_WRITE | `"10s"`                                             |
-| DEFAULT_SEQUENCE_KIND           | READ_WRITE | `"bit_reversed_positive"`                           |
-| DIRECTED_READ                   | READ_WRITE | `"us-central1:READ_ONLY"`                           |
-| PROTO_DESCRIPTORS_FILE_PATH      | READ_WRITE | `"order_descriptors.pb"`                             |
+Parser-valid samples (not defaults):
 
-#### spanner-mycli original variables
-
-| Name                       | READ/WRITE | Example                                        |
-|----------------------------|------------|------------------------------------------------|
-| CLI_PROJECT                | READ_ONLY  | `"myproject"`                                  |
-| CLI_INSTANCE               | READ_ONLY  | `"myinstance"`                                 |
-| CLI_DATABASE               | READ_ONLY  | `"mydb"`                                       |
-| CLI_ENDPOINT               | READ_ONLY  | `"spanner.me-central2.rep.googleapis.com:443"` |
-| CLI_FORMAT                 | READ_WRITE | `"TABLE"`                                      |
-| CLI_DUMP_CYCLIC_MODE       | READ_WRITE | `"MUTATE"`                                     |
-| CLI_DUMP_CYCLIC_MAX_BYTES  | READ_WRITE | `67108864`                                     |
-| CLI_HISTORY_FILE           | READ_ONLY  | `"~/.spanner_mycli_history"`                   |
-| CLI_PROMPT                 | READ_WRITE | `"spanner%t> "`                                |
-| CLI_PROMPT2                | READ_WRITE | `"%P%R> "`                                     |
-| CLI_ROLE                   | READ_ONLY  | `"spanner_info_reader"`                        |
-| CLI_VERBOSE                | READ_WRITE | `TRUE`                                         |
-| CLI_PARSE_MODE             | READ_WRITE | `"FALLBACK"`                                   |
-| CLI_SAVEPOINT_SUPPORT      | READ_WRITE | `"ENABLED"`                                    |
-| CLI_DDL_IN_TRANSACTION_MODE | READ_WRITE | `"ALLOW_IN_EMPTY_TRANSACTION"`                |
-| CLI_INSECURE               | READ_ONLY  | `"FALSE"`                                      |
-| CLI_CA_CERT_FILE           | READ_ONLY  | `"/path/to/ca.pem"`                            |
-| CLI_CLIENT_CERT_FILE       | READ_ONLY  | `"/path/to/client.pem"`                        |
-| CLI_CLIENT_CERT_KEY        | READ_ONLY  | `"/path/to/client.key"`                        |
-| CLI_WITHOUT_AUTHENTICATION | READ_ONLY  | `"FALSE"`                                      |
-| CLI_SPANNER_METRICS_EXPORTER | READ_ONLY | `"off"`                                        |
-| CLI_SPANNER_METRICS_ENDPOINT | READ_ONLY | `"http://127.0.0.1:4318/v1/metrics"`           |
-| CLI_QUERY_MODE             | READ_WRITE | `"PROFILE"`                                    |
-| CLI_LINT_PLAN              | READ_WRITE | `"TRUE"`                                       |
-| CLI_EXPLAIN_HANGING_INDENT | READ_WRITE | `"TRUE"`                                       |
-| CLI_EXPLAIN_OPERATOR_HEADER | READ_WRITE | `""`                                          |
-| CLI_USE_PAGER              | READ_WRITE | `"TRUE"`                                       |
-| CLI_AUTOWRAP               | READ_WRITE | `"TRUE"`                                       |
-| CLI_DATABASE_DIALECT       | READ_WRITE | `"TRUE"`                                       |
-| CLI_ENABLE_HIGHLIGHT       | READ_WRITE | `"TRUE"`                                       |
-| CLI_PROTOTEXT_MULTILINE    | READ_WRITE | `"TRUE"`                                       |
-| CLI_FIXED_WIDTH            | READ_WRITE | `80`                                           |
-| CLI_TABLE_STREAMING        | READ_WRITE | `"AUTO"`                                       |
-| CLI_TABLE_PREVIEW_ROWS     | READ_WRITE | `50`                                           |
-| CLI_FUZZY_FINDER_KEY       | READ_WRITE | `"C_T"`                                        |
-| CLI_FUZZY_FINDER_OPTIONS   | READ_WRITE | `""`                                           |
-| CLI_TYPE_STYLES            | READ_WRITE | `"NULL=dim"`                                   |
-| CLI_BIGQUERY_PROJECT       | READ_WRITE | `"my-gcp-project"`                             |
-| CLI_BIGQUERY_LOCATION      | READ_WRITE | `"US"`                                         |
-| CLI_BIGQUERY_MAX_BYTES_BILLED | READ_WRITE | `1000000000`                                |
+| Name | Example |
+|------|---------|
+| `CLI_FORMAT` | `'TABLE'` |
+| `CLI_DATABASE_DIALECT` | `'GOOGLE_STANDARD_SQL'` (`POSTGRESQL` and `DATABASE_DIALECT_UNSPECIFIED` are also accepted; `TRUE` is not) |
+| `STATEMENT_TIMEOUT` | `'2m'` or `NULL` (`NULL` when `--timeout`, config, and `--set` all omit a value) |
+| `CLI_IDLE_TRANSACTION_TIMEOUT` | `'60s'` or `NULL` (`NULL` when `--idle-transaction-timeout`, config, and `--set` all omit a value) |
+| `RPC_PRIORITY` | `'HIGH'` (`MEDIUM`, `LOW`; prefer the short form) |
+| `READ_ONLY_STALENESS` | `'STRONG'` |
+| `CLI_QUERY_MODE` | `'PLAN'` |
 
 > **Note**: `CLI_BIGQUERY_PROJECT` defaults to `CLI_PROJECT` when empty. `CLI_BIGQUERY_LOCATION` and `CLI_BIGQUERY_MAX_BYTES_BILLED` are optional BigQuery job settings.
 
