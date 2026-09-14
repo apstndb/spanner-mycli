@@ -427,7 +427,7 @@ func generateExplainResult(sysVars *systemVariables, queryPlan *sppb.QueryPlan, 
 	}
 
 	result := &Result{
-		TableHeader:  toTableHeader(explainBaseColumnNames(width)),
+		TableHeader:  toTableHeader(explainBaseColumnNames(sysVars.Display.ExplainOperatorHeader, width)),
 		ColumnAlign:  explainColumnAlign,
 		AffectedRows: len(rows),
 		Body:         PresentationBody(rows),
@@ -538,7 +538,7 @@ func buildExplainAnalyzeResult(sysVars *systemVariables, plan *sppb.QueryPlan, q
 		return nil, fmt.Errorf("failed to process query plan: %w", err)
 	}
 
-	columnNames, columnAlign := explainAnalyzeHeader(def, width)
+	columnNames, columnAlign := explainAnalyzeHeader(def, sysVars.Display.ExplainOperatorHeader, width)
 
 	var lintResults []string
 	if sysVars.Query.LintPlan {
@@ -562,14 +562,17 @@ func buildExplainAnalyzeResult(sysVars *systemVariables, plan *sppb.QueryPlan, q
 	return result, nil
 }
 
-func explainBaseColumnNames(width int64) []string {
-	// Keep the header from widening a wrapped operator column in either mode.
+func explainBaseColumnNames(operatorHeader string, width int64) []string {
+	if header := strings.TrimSpace(operatorHeader); header != "" {
+		return []string{"ID", header}
+	}
+	// Keep the default header from widening a wrapped operator column in either mode.
 	return lo.Ternary(width == 0 || width >= operatorColumnNameLength, explainColumnNames, explainColumnNamesShort)
 }
 
-func explainAnalyzeHeader(def []columnRenderDef, width int64) ([]string, []tw.Align) {
+func explainAnalyzeHeader(def []columnRenderDef, operatorHeader string, width int64) ([]string, []tw.Align) {
 	// Start with the base columns and alignments for EXPLAIN output.
-	baseNames := explainBaseColumnNames(width)
+	baseNames := explainBaseColumnNames(operatorHeader, width)
 	baseAlign := explainColumnAlign
 
 	// Extract the names and alignments from the custom column definitions.

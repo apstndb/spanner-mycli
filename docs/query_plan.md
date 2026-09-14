@@ -490,6 +490,14 @@ when the effective wrap width is narrower than the full header. The effective
 width comes from `WIDTH` or, when omitted or zero, `CLI_EXPLAIN_WRAP_WIDTH`.
 This controls the operator column, not the total table width.
 
+`CLI_EXPLAIN_OPERATOR_HEADER` overrides only that Operator presentation label.
+Empty or whitespace-only keeps the WIDTH-dependent header above. A nonempty
+value is trimmed of surrounding whitespace and used as the literal header at
+every width. `WIDTH` still wraps operator cell text only; it does not truncate
+a deliberately long header, which may widen the table. Ordinary Unicode labels
+are accepted. Embedded control characters are rejected. `CLI_ANALYZE_COLUMNS`
+still names the extra ANALYZE stats columns independently, and `ID` stays `ID`.
+
 For example, in the illustration below, by setting the width of the ASCII tree drawn in the Operator column to 39 characters,
 the entire output, including the ASCII table, can fit within 80 characters.
 
@@ -563,6 +571,7 @@ Empty set (0.00 sec)
 - `CLI_LINT_PLAN`: Enable heuristic query plan linter for EXPLAIN and EXPLAIN ANALYZE
 - `CLI_EXPLAIN_FORMAT`: Control EXPLAIN format (TRADITIONAL vs default concise format)
 - `CLI_EXPLAIN_HANGING_INDENT`: Use hanging indent for wrapped plan lines; default is `TRUE`, and `FALSE` restores tree-aligned wrapped continuation lines
+- `CLI_EXPLAIN_OPERATOR_HEADER`: Literal Operator column header; empty keeps the WIDTH-dependent name. WIDTH wraps operator cells and does not truncate a long header
 - `CLI_EXPLAIN_PRINT_SECTIONS`: Select query plan appendix preset or sections (`basic`, `enhanced`, `full`, `none`, or comma-separated `predicates`, `ordering`, `aggregate`, `typed`, `full`)
 
 ### Statement Options

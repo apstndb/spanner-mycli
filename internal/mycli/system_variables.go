@@ -166,6 +166,7 @@ type DisplayVars struct {
 	SuppressResultLines        bool                 // CLI_SUPPRESS_RESULT_LINES
 	ExplainFormat              enums.ExplainFormat  // CLI_EXPLAIN_FORMAT
 	ExplainWrapWidth           int64                // CLI_EXPLAIN_WRAP_WIDTH
+	ExplainOperatorHeader      string               // CLI_EXPLAIN_OPERATOR_HEADER
 	ExplainHangingIndent       bool                 // CLI_EXPLAIN_HANGING_INDENT
 	ExplainPrintSections       string               // CLI_EXPLAIN_PRINT_SECTIONS
 	ParsedExplainPrintSections planref.PrintSections
