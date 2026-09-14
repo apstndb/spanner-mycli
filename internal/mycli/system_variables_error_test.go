@@ -56,10 +56,10 @@ func TestSystemVariables_Set_Errors(t *testing.T) {
 			wantError: "unknown variable name: UNKNOWN_VAR",
 		},
 		{
-			name:      "read-only variable with nil setter",
-			varName:   "AUTOCOMMIT", // This has no Accessor at all
+			name:      "unimplemented setter",
+			varName:   "RETRY_ABORTS_INTERNALLY",
 			value:     "true",
-			wantError: "unimplemented setter: AUTOCOMMIT",
+			wantError: "unimplemented setter: RETRY_ABORTS_INTERNALLY",
 		},
 		{
 			name:      "invalid boolean value",

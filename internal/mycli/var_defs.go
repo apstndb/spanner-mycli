@@ -679,6 +679,13 @@ var varDefs = []varDef{
 		bind:       func(sv *systemVariables) Variable { return SavepointSupportVar(&sv.Transaction.SavepointSupport) },
 	},
 	{
+		name:    "AUTOCOMMIT",
+		desc:    "A boolean indicating whether the connection is in autocommit mode. TRUE (default) uses single-use reads and implicit RW DML commits. FALSE lazily starts a pending logical owner at the next eligible database operation (ordinary SELECT/DML/MUTATE, PROFILE DML even during a manual batch, EXPLAIN ANALYZE, automatic DML enqueue, nonempty RUN BATCH DML, or first enabled SAVEPOINT) and stays idle after COMMIT/ROLLBACK. Same-value SET/RESET is idempotent even with an owner or manual batch; a real change is rejected with the existing transaction/batch setter errors. SET LOCAL is not supported. false→true never implicit-Commits. EXPLAIN PLAN, ordinary manual-batch DML enqueue, DDL, PDML/TRUNCATE, partition, admin, and inspection commands do not create a new owner. EOF/EXIT/Close never commit unfinished work. Idle expiry is #357.",
+		scope:   scopeSession,
+		noLocal: true,
+		bind:    func(sv *systemVariables) Variable { return AutocommitVar(sv) },
+	},
+	{
 		name:  "AUTOCOMMIT_DML_MODE",
 		desc:  "A STRING property indicating the autocommit mode for Data Manipulation Language (DML) statements. TRANSACTIONAL (default) commits each implicit DML atomically. PARTITIONED_NON_ATOMIC uses partitioned DML for implicit UPDATE/DELETE. TRANSACTIONAL_WITH_FALLBACK_TO_PARTITIONED_NON_ATOMIC retries one eligible implicit UPDATE/DELETE as partitioned DML only after a SQL-phase mutation-limit failure that matches the pinned InvalidArgument + exact mutation-limit sentence + Cloud Spanner limits Help classifier. The fallback is non-atomic, returns a lower-bound count, and can partially commit if the partitioned attempt later fails. INSERT, THEN RETURN, explicit/pending/RO/SAVEPOINT owners, batches, EXPLAIN/analysis, Commit-phase failures, and weaker resource-limit errors are not retried. Not a Java-complete or stable driver-parity claim.",
 		scope: scopeSession,
@@ -1092,13 +1099,6 @@ var varDefs = []varDef{
 	},
 
 	// === Unimplemented variables ===
-	{
-		name:    "AUTOCOMMIT",
-		desc:    "A boolean indicating whether or not the connection is in autocommit mode. The default is true.",
-		scope:   scopeSession,
-		noReset: true,
-		bind:    func(sv *systemVariables) Variable { return &UnimplementedVar{name: "AUTOCOMMIT"} },
-	},
 	{
 		name:    "RETRY_ABORTS_INTERNALLY",
 		desc:    "A boolean indicating whether the connection automatically retries aborted transactions. The default is true.",

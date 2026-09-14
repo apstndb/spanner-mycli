@@ -318,6 +318,65 @@ func AutocommitDMLModeVar(ptr *enums.AutocommitDMLMode) *EnumVar[enums.Autocommi
 	}
 }
 
+// autocommitVar is the AUTOCOMMIT handler. Same-value SET/RESET is a no-op
+// even with a logical owner or manual batch; a real change reuses
+// errSetterInTransaction / errSetterInManualBatch. No SET LOCAL.
+type autocommitVar struct {
+	sv *systemVariables
+}
+
+// AutocommitVar binds AUTOCOMMIT to sv.Transaction.Autocommit.
+func AutocommitVar(sv *systemVariables) *autocommitVar {
+	return &autocommitVar{sv: sv}
+}
+
+func (v *autocommitVar) Get() (string, error) {
+	if v.sv == nil {
+		return "", fmt.Errorf("variable not initialized")
+	}
+	return formatBool(v.sv.Transaction.Autocommit), nil
+}
+
+func (v *autocommitVar) Set(value string) error {
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return err
+	}
+	if v.sv.Transaction.Autocommit == parsed {
+		return nil
+	}
+	if err := v.rejectToggle(); err != nil {
+		return err
+	}
+	v.sv.Transaction.Autocommit = parsed
+	return nil
+}
+
+func (v *autocommitVar) PrepareReset(value string) error {
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return err
+	}
+	if v.sv.Transaction.Autocommit == parsed {
+		return nil
+	}
+	return v.rejectToggle()
+}
+
+func (v *autocommitVar) ValidValues() []string {
+	return []string{"TRUE", "FALSE"}
+}
+
+func (v *autocommitVar) rejectToggle() error {
+	if v.sv.inTransaction != nil && v.sv.inTransaction() {
+		return errSetterInTransaction
+	}
+	if v.sv.inManualBatch != nil && v.sv.inManualBatch() {
+		return errSetterInManualBatch
+	}
+	return nil
+}
+
 // parseLogLevel accepts slog names (DEBUG, INFO, WARN, ERROR), numeric
 // offsets, and the WARNING alias. Unknown values must not be applied.
 func parseLogLevel(value string) (slog.Level, error) {
