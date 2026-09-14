@@ -346,11 +346,10 @@ func TestIdleTransactionTimeoutRejectedAdmissionDoesNotReset(t *testing.T) {
 	session := sessionForTM(t, h.tm)
 	h.tm.enableSavepointCaptureForTest()
 	armIdleOwner(t, h, session, true)
-	gen := ownerIdleGen(h.tm)
-	if err := h.tm.CreateSavepoint(ctx, "missing"); err == nil {
-		// first create succeeds; unknown rollback should not reset after we snapshot
+	if err := h.tm.CreateSavepoint(ctx, "keep"); err != nil {
+		t.Fatal(err)
 	}
-	gen = ownerIdleGen(h.tm)
+	gen := ownerIdleGen(h.tm)
 	if err := h.tm.RollbackToSavepoint(ctx, "unknown"); err == nil {
 		t.Fatal("unknown savepoint succeeded")
 	}

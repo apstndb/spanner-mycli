@@ -422,9 +422,7 @@ func (tm *TransactionManager) leaveStatement() {
 		tm.statementDepth--
 	}
 	if tm.statementDepth == 0 && tm.expirePendingBlocksLocked() {
-		if tm.tc != nil && tm.tc.idleExpired {
-			tm.rollbackAndRetireIdleLocked(tm.tc)
-		} else {
+		if !tm.retireIdleIfPendingLocked() {
 			tm.retireTransactionContextLocked()
 		}
 	} else if tm.statementDepth == 0 && tm.tc != nil {
@@ -445,9 +443,7 @@ func (tm *TransactionManager) syncExpiredOwnerRestore() {
 	}
 	tm.mu.Lock()
 	if tm.expirePendingBlocksLocked() {
-		if tm.tc != nil && tm.tc.idleExpired {
-			tm.rollbackAndRetireIdleLocked(tm.tc)
-		} else {
+		if !tm.retireIdleIfPendingLocked() {
 			tm.retireTransactionContextLocked()
 		}
 	}
