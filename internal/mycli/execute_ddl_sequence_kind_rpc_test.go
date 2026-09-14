@@ -1,6 +1,16 @@
 // Copyright 2026 apstndb
 //
-// Licensed under the MIT License.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package mycli
 
@@ -8,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -32,34 +43,60 @@ import (
 )
 
 type scriptedDDLStep struct {
-	createErr error
-	done      bool
-	stay      bool
-	errCode   codes.Code
-	errMsg    string
-	meta      *databasepb.UpdateDatabaseDdlMetadata
-	getErr    error
+	createErr           error
+	done                bool
+	stay                bool
+	errCode             codes.Code
+	errMsg              string
+	meta                *databasepb.UpdateDatabaseDdlMetadata
+	getErr              error
+	blockGetUntilCancel bool
+	requireLiveCtx      bool
+	accepted            chan struct{}
+	acceptedOnce        *sync.Once
+	polled              chan struct{}
+	polledOnce          *sync.Once
 }
 
 type scriptedDDLServer struct {
 	databasepb.UnimplementedDatabaseAdminServer
 	longrunningpb.UnimplementedOperationsServer
 
-	mu     sync.Mutex
-	n      int
-	reqs   []*databasepb.UpdateDatabaseDdlRequest
-	ops    map[string]*longrunningpb.Operation
-	getErr map[string]error
-	step   func(req *databasepb.UpdateDatabaseDdlRequest, n int) scriptedDDLStep
+	mu           sync.Mutex
+	n            int
+	reqs         []*databasepb.UpdateDatabaseDdlRequest
+	createCtxErr []error
+	ops          map[string]*longrunningpb.Operation
+	getErr       map[string]error
+	hangGet      map[string]bool
+	pollCh       map[string]chan struct{}
+	pollOnce     map[string]*sync.Once
+	step         func(req *databasepb.UpdateDatabaseDdlRequest, n int) scriptedDDLStep
 }
 
-func (s *scriptedDDLServer) UpdateDatabaseDdl(_ context.Context, req *databasepb.UpdateDatabaseDdlRequest) (*longrunningpb.Operation, error) {
+func notifyOnce(ch chan struct{}, once *sync.Once) {
+	if ch == nil {
+		return
+	}
+	if once == nil {
+		close(ch)
+		return
+	}
+	once.Do(func() { close(ch) })
+}
+
+func (s *scriptedDDLServer) UpdateDatabaseDdl(ctx context.Context, req *databasepb.UpdateDatabaseDdlRequest) (*longrunningpb.Operation, error) {
 	s.mu.Lock()
 	s.reqs = append(s.reqs, proto.Clone(req).(*databasepb.UpdateDatabaseDdlRequest))
+	s.createCtxErr = append(s.createCtxErr, ctx.Err())
 	n := s.n
 	s.n++
 	step := s.step(req, n)
 	s.mu.Unlock()
+	notifyOnce(step.accepted, step.acceptedOnce)
+	if step.requireLiveCtx && ctx.Err() != nil {
+		return nil, status.Errorf(codes.FailedPrecondition, "repair RPC %d saw canceled context: %v", n, ctx.Err())
+	}
 	if step.createErr != nil {
 		return nil, step.createErr
 	}
@@ -91,22 +128,51 @@ func (s *scriptedDDLServer) UpdateDatabaseDdl(_ context.Context, req *databasepb
 	if s.getErr == nil {
 		s.getErr = map[string]error{}
 	}
+	if s.hangGet == nil {
+		s.hangGet = map[string]bool{}
+	}
+	if s.pollCh == nil {
+		s.pollCh = map[string]chan struct{}{}
+	}
+	if s.pollOnce == nil {
+		s.pollOnce = map[string]*sync.Once{}
+	}
 	s.ops[name] = proto.Clone(op).(*longrunningpb.Operation)
 	if step.getErr != nil {
 		s.getErr[name] = step.getErr
+	}
+	if step.blockGetUntilCancel {
+		s.hangGet[name] = true
+	}
+	if step.polled != nil {
+		s.pollCh[name] = step.polled
+		s.pollOnce[name] = step.polledOnce
 	}
 	s.mu.Unlock()
 	return op, nil
 }
 
-func (s *scriptedDDLServer) GetOperation(_ context.Context, req *longrunningpb.GetOperationRequest) (*longrunningpb.Operation, error) {
+func (s *scriptedDDLServer) GetOperation(ctx context.Context, req *longrunningpb.GetOperationRequest) (*longrunningpb.Operation, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	if ch := s.pollCh[req.Name]; ch != nil {
+		notifyOnce(ch, s.pollOnce[req.Name])
+	}
+	hang := s.hangGet[req.Name]
 	if err := s.getErr[req.Name]; err != nil {
+		s.mu.Unlock()
 		return nil, err
 	}
-	if op, ok := s.ops[req.Name]; ok && op != nil {
-		return proto.Clone(op).(*longrunningpb.Operation), nil
+	var op *longrunningpb.Operation
+	if stored, ok := s.ops[req.Name]; ok && stored != nil {
+		op = proto.Clone(stored).(*longrunningpb.Operation)
+	}
+	s.mu.Unlock()
+	if hang {
+		<-ctx.Done()
+		return nil, status.FromContextError(ctx.Err()).Err()
+	}
+	if op != nil {
+		return op, nil
 	}
 	return nil, status.Errorf(codes.NotFound, "unknown op %s", req.Name)
 }
@@ -530,5 +596,280 @@ func TestSequenceKindRepairRPC(t *testing.T) {
 		if len(server.reqs) != 0 {
 			t.Fatalf("canceled caller issued %d RPCs, want 0", len(server.reqs))
 		}
+	})
+
+	t.Run("alter create rejection no suffix", func(t *testing.T) {
+		t.Parallel()
+		later := status.Error(codes.FailedPrecondition, "alter create rejected")
+		session, server := newScriptedDDLSession(t, func(req *databasepb.UpdateDatabaseDdlRequest, n int) scriptedDDLStep {
+			if n == 0 {
+				return missingKindStep()
+			}
+			return scriptedDDLStep{createErr: later, requireLiveCtx: true}
+		})
+		enableKind(session)
+		before := session.SchemaGeneration()
+		_, err := executeDdlStatements(t.Context(), session, []string{userDDL})
+		requireRepairPhaseError(t, err, "ALTER DATABASE", "alter create rejected")
+		requireExactDDLRequests(t, server.reqs, [][]string{
+			{userDDL},
+			{wantGoogleSQLAlter("test")},
+		})
+		if len(server.reqs[1].GetProtoDescriptors()) != 0 {
+			t.Fatal("ALTER carried descriptors")
+		}
+		requireCreateCtxLive(t, server, 1)
+		if session.SchemaGeneration() != before+1 {
+			t.Fatalf("gen=%d want %d", session.SchemaGeneration(), before+1)
+		}
+	})
+
+	t.Run("suffix create rejection does not loop", func(t *testing.T) {
+		t.Parallel()
+		later := status.Error(codes.InvalidArgument, missingKindSentence)
+		session, server := newScriptedDDLSession(t, func(req *databasepb.UpdateDatabaseDdlRequest, n int) scriptedDDLStep {
+			switch n {
+			case 0:
+				return missingKindStep()
+			case 1:
+				return successStep(commit)
+			default:
+				return scriptedDDLStep{createErr: later, requireLiveCtx: true}
+			}
+		})
+		enableKind(session)
+		before := session.SchemaGeneration()
+		_, err := executeDdlStatements(t.Context(), session, []string{userDDL})
+		requireRepairPhaseError(t, err, "suffix retry", missingKindSentence)
+		requireExactDDLRequests(t, server.reqs, [][]string{
+			{userDDL},
+			{wantGoogleSQLAlter("test")},
+			{userDDL},
+		})
+		if len(server.reqs) != 3 {
+			t.Fatalf("rpc count=%d want 3 (no recursive repair)", len(server.reqs))
+		}
+		requireCreateCtxLive(t, server, 1, 2)
+		if session.SchemaGeneration() != before+2 {
+			t.Fatalf("gen=%d want %d", session.SchemaGeneration(), before+2)
+		}
+	})
+
+	t.Run("in-flight cancel during alter wait", func(t *testing.T) {
+		t.Parallel()
+		accepted := make(chan struct{})
+		polled := make(chan struct{})
+		var acceptedOnce, polledOnce sync.Once
+		session, server := newScriptedDDLSession(t, func(req *databasepb.UpdateDatabaseDdlRequest, n int) scriptedDDLStep {
+			if n == 0 {
+				return missingKindStep()
+			}
+			return scriptedDDLStep{
+				stay:                true,
+				requireLiveCtx:      true,
+				blockGetUntilCancel: true,
+				accepted:            accepted,
+				acceptedOnce:        &acceptedOnce,
+				polled:              polled,
+				polledOnce:          &polledOnce,
+				meta:                &databasepb.UpdateDatabaseDdlMetadata{},
+			}
+		})
+		enableKind(session)
+		before := session.SchemaGeneration()
+		caller := newRepairPhaseCtx(t.Context())
+		guard, guardCancel := context.WithTimeout(t.Context(), 30*time.Second)
+		defer guardCancel()
+		errc := make(chan error, 1)
+		go func() {
+			_, err := executeDdlStatements(caller, session, []string{userDDL})
+			errc <- err
+		}()
+		waitForClosed(t, guard, accepted, "accepted ALTER UpdateDatabaseDdl")
+		requireCreateCtxLive(t, server, 1)
+		waitForClosed(t, guard, polled, "first ALTER GetOperation poll")
+		caller.cancel()
+		var err error
+		select {
+		case err = <-errc:
+		case <-guard.Done():
+			t.Fatal("timed out waiting for canceled ALTER wait")
+		}
+		requireRepairPhaseError(t, err, "ALTER DATABASE", "")
+		if !isCancellationError(err) && !errors.Is(err, context.Canceled) {
+			t.Fatalf("want canceled later cause: %v", err)
+		}
+		if !strings.Contains(err.Error(), "SHOW OPERATION") {
+			t.Fatalf("want SHOW OPERATION hint: %v", err)
+		}
+		requireExactDDLRequests(t, server.reqs, [][]string{
+			{userDDL},
+			{wantGoogleSQLAlter("test")},
+		})
+		if session.SchemaGeneration() != before+2 {
+			t.Fatalf("gen=%d want %d", session.SchemaGeneration(), before+2)
+		}
+	})
+
+	t.Run("in-flight deadline during suffix wait", func(t *testing.T) {
+		t.Parallel()
+		accepted := make(chan struct{})
+		polled := make(chan struct{})
+		var acceptedOnce, polledOnce sync.Once
+		session, server := newScriptedDDLSession(t, func(req *databasepb.UpdateDatabaseDdlRequest, n int) scriptedDDLStep {
+			switch n {
+			case 0:
+				return missingKindStep()
+			case 1:
+				return successStep(commit)
+			default:
+				return scriptedDDLStep{
+					stay:                true,
+					requireLiveCtx:      true,
+					blockGetUntilCancel: true,
+					accepted:            accepted,
+					acceptedOnce:        &acceptedOnce,
+					polled:              polled,
+					polledOnce:          &polledOnce,
+					meta:                &databasepb.UpdateDatabaseDdlMetadata{},
+				}
+			}
+		})
+		enableKind(session)
+		before := session.SchemaGeneration()
+		caller := newRepairPhaseCtx(t.Context())
+		guard, guardCancel := context.WithTimeout(t.Context(), 30*time.Second)
+		defer guardCancel()
+		errc := make(chan error, 1)
+		go func() {
+			_, err := executeDdlStatements(caller, session, []string{userDDL})
+			errc <- err
+		}()
+		waitForClosed(t, guard, accepted, "accepted suffix UpdateDatabaseDdl")
+		requireCreateCtxLive(t, server, 1, 2)
+		waitForClosed(t, guard, polled, "first suffix GetOperation poll")
+		caller.expireDeadline()
+		var err error
+		select {
+		case err = <-errc:
+		case <-guard.Done():
+			t.Fatal("timed out waiting for suffix deadline")
+		}
+		requireRepairPhaseError(t, err, "suffix retry", "")
+		if !isCancellationError(err) && !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("want deadline later cause: %v", err)
+		}
+		if !strings.Contains(err.Error(), "SHOW OPERATION") {
+			t.Fatalf("want SHOW OPERATION hint: %v", err)
+		}
+		requireExactDDLRequests(t, server.reqs, [][]string{
+			{userDDL},
+			{wantGoogleSQLAlter("test")},
+			{userDDL},
+		})
+		if session.SchemaGeneration() != before+3 {
+			t.Fatalf("gen=%d want %d", session.SchemaGeneration(), before+3)
+		}
+	})
+}
+
+func wantGoogleSQLAlter(databaseID string) string {
+	return "ALTER DATABASE `" + databaseID + "` SET OPTIONS (default_sequence_kind = 'bit_reversed_positive')"
+}
+
+func requireExactDDLRequests(t *testing.T, reqs []*databasepb.UpdateDatabaseDdlRequest, want [][]string) {
+	t.Helper()
+	if len(reqs) != len(want) {
+		t.Fatalf("rpc count=%d want %d", len(reqs), len(want))
+	}
+	for i, stmts := range want {
+		if got := reqs[i].GetStatements(); !slices.Equal(got, stmts) {
+			t.Fatalf("req[%d]=%v want %v", i, got, stmts)
+		}
+	}
+}
+
+func requireCreateCtxLive(t *testing.T, server *scriptedDDLServer, indexes ...int) {
+	t.Helper()
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	for _, i := range indexes {
+		if i >= len(server.createCtxErr) {
+			t.Fatalf("create ctx[%d] missing; recorded %d", i, len(server.createCtxErr))
+		}
+		if err := server.createCtxErr[i]; err != nil {
+			t.Fatalf("create RPC %d saw %v, want live context", i, err)
+		}
+	}
+}
+
+func requireRepairPhaseError(t *testing.T, err error, phase, laterSubstr string) {
+	t.Helper()
+	if err == nil {
+		t.Fatal("want repair-phase error")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "DEFAULT_SEQUENCE_KIND "+phase+" failed") {
+		t.Fatalf("phase %q missing: %v", phase, err)
+	}
+	if !strings.Contains(msg, "original DDL error") {
+		t.Fatalf("original cause missing: %v", err)
+	}
+	if !strings.Contains(msg, missingKindSentence) {
+		t.Fatalf("original missing-kind sentence missing: %v", err)
+	}
+	if laterSubstr != "" && !strings.Contains(msg, laterSubstr) {
+		t.Fatalf("later %q missing: %v", laterSubstr, err)
+	}
+}
+
+// repairPhaseCtx starts live so the initial missing-kind DDL and the first
+// repair RPC share the original budget. Tests expire it only after the fake
+// has accepted the in-flight repair operation.
+type repairPhaseCtx struct {
+	context.Context
+	done     chan struct{}
+	once     sync.Once
+	mu       sync.Mutex
+	err      error
+	deadline time.Time
+}
+
+func newRepairPhaseCtx(parent context.Context) *repairPhaseCtx {
+	return &repairPhaseCtx{Context: parent, done: make(chan struct{})}
+}
+
+func (c *repairPhaseCtx) Done() <-chan struct{} { return c.done }
+
+func (c *repairPhaseCtx) Err() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.err
+}
+
+func (c *repairPhaseCtx) Deadline() (time.Time, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.deadline.IsZero() {
+		return time.Time{}, false
+	}
+	return c.deadline, true
+}
+
+func (c *repairPhaseCtx) cancel() {
+	c.finish(context.Canceled, time.Time{})
+}
+
+func (c *repairPhaseCtx) expireDeadline() {
+	c.finish(context.DeadlineExceeded, time.Now())
+}
+
+func (c *repairPhaseCtx) finish(err error, deadline time.Time) {
+	c.once.Do(func() {
+		c.mu.Lock()
+		c.err = err
+		c.deadline = deadline
+		c.mu.Unlock()
+		close(c.done)
 	})
 }
