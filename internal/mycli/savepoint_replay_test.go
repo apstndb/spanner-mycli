@@ -833,11 +833,10 @@ func TestSavepointReplayCancellationCleansUpWithoutCommit(t *testing.T) {
 	}
 
 	cancel()
-	select {
-	case <-releaseSQL:
-	default:
-		close(releaseSQL)
-	}
+	// Keep the candidate SQL blocked. prepareSQL already selects on ctx.Done();
+	// closing releaseSQL here used to make the successful-response path
+	// available before cancellation necessarily reached the RPC handler.
+	// t.Cleanup still unblocks the mock if the test fails or times out.
 
 	var err error
 	select {
