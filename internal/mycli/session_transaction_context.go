@@ -106,14 +106,18 @@ type transactionContext struct {
 	idleUserWork   bool
 	idleExpired    bool
 	idleNeedsRearm bool
-	idleGen        uint64
-	idleResultHold int
-	idleHold       int
-	idleLastUser   time.Time
-	idleCancel     context.CancelFunc
-	attempt        uint64
-	inFlight       int
-	pending        *captureToken
+	// idleElapsedHeld is set when the quiet-interval deadline fires while
+	// expiry is blocked. Non-activity keeps that elapsed deadline and
+	// retires at the next safe barrier; completed admitted work clears it
+	// and rearms a fresh interval instead.
+	idleElapsedHeld bool
+	idleGen         uint64
+	idleHold        int
+	idleLastUser    time.Time
+	idleCancel      context.CancelFunc
+	attempt         uint64
+	inFlight        int
+	pending         *captureToken
 	// replacing is true while ROLLBACK TO is replacing the physical RW handle.
 	replacing bool
 }

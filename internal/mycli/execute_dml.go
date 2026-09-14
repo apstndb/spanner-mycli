@@ -52,6 +52,9 @@ func bufferOrExecuteDML(ctx context.Context, session *Session, sql string) (*Res
 			return nil, err
 		}
 		b.DMLs = append(b.DMLs, stmt)
+		if session.txn != nil {
+			session.txn.noteIdleUserWork(true)
+		}
 		// Buffered DML is not executed yet, so no IsExecutedDML flag
 		return &Result{}, nil
 	case *BulkDdlStatement:

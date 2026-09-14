@@ -15,10 +15,12 @@
 package mycli
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -360,56 +362,114 @@ func TestIdleTransactionTimeoutRejectedAdmissionDoesNotReset(t *testing.T) {
 
 func TestIdleTransactionTimeoutResultHoldAndLongRPC(t *testing.T) {
 	t.Parallel()
-	h := newHeartbeatHarness(t)
-	ctx := t.Context()
-	session := sessionForTM(t, h.tm)
-	owner := armIdleOwner(t, h, session, true)
-	expired := make(chan struct{})
-	h.tm.idleAfterExpire = func(got *transactionContext) {
-		if got == owner {
-			close(expired)
+	t.Run("hold without fire keeps deadline", func(t *testing.T) {
+		t.Parallel()
+		h := newHeartbeatHarness(t)
+		session := sessionForTM(t, h.tm)
+		owner := armIdleOwner(t, h, session, true)
+		gen := ownerIdleGen(h.tm)
+		h.tm.beginIdleResultHold()
+		if txnContext(h.tm) != owner {
+			t.Fatal("result-hold dropped the owner")
 		}
-	}
-
-	h.tm.beginIdleResultHold()
-	fireIdleNow(h.tm)
-	if txnContext(h.tm) != owner {
-		t.Fatal("result-hold allowed idle retire")
-	}
-	select {
-	case <-expired:
-		t.Fatal("result-hold retired the owner")
-	default:
-	}
-	h.tm.endIdleResultHold()
-
-	h.tm.enterStatement()
-	block := make(chan struct{})
-	inFlight := make(chan struct{})
-	h.server.setBlockSQL(block)
-	h.server.setSQLBlocked(func() { close(inFlight) })
-	errCh := make(chan error, 1)
-	go func() {
-		iter, _, err := h.tm.RunQuery(ctx, spanner.NewStatement("SELECT 1 AS held"))
-		if err != nil {
+		h.tm.endIdleResultHold()
+		if txnContext(h.tm) != owner {
+			t.Fatal("result-hold release retired the owner")
+		}
+		if ownerIdleGen(h.tm) != gen {
+			t.Fatal("non-activity hold rearmed idle")
+		}
+		_, _, _, armed := ownerIdle(h.tm)
+		if !armed {
+			t.Fatal("non-activity hold disarmed idle")
+		}
+	})
+	t.Run("elapsed hold retires at barrier", func(t *testing.T) {
+		t.Parallel()
+		h := newHeartbeatHarness(t)
+		session := sessionForTM(t, h.tm)
+		owner := armIdleOwner(t, h, session, true)
+		expired := make(chan struct{})
+		h.tm.idleAfterExpire = func(got *transactionContext) {
+			if got == owner {
+				close(expired)
+			}
+		}
+		h.tm.beginIdleResultHold()
+		fireIdleNow(h.tm)
+		if txnContext(h.tm) != owner {
+			t.Fatal("result-hold allowed idle retire")
+		}
+		select {
+		case <-expired:
+			t.Fatal("result-hold retired the owner")
+		default:
+		}
+		h.tm.endIdleResultHold()
+		waitIdleExpire(t, expired, "idle expire at result-hold barrier")
+		if txnContext(h.tm) != nil {
+			t.Fatal("elapsed non-activity hold left an owner")
+		}
+	})
+	t.Run("elapsed hold with work rearms", func(t *testing.T) {
+		t.Parallel()
+		h := newHeartbeatHarness(t)
+		session := sessionForTM(t, h.tm)
+		owner := armIdleOwner(t, h, session, true)
+		gen := ownerIdleGen(h.tm)
+		h.tm.beginIdleResultHold()
+		h.tm.noteIdleUserWork(true)
+		fireIdleNow(h.tm)
+		if txnContext(h.tm) != owner {
+			t.Fatal("held work allowed idle retire")
+		}
+		h.tm.endIdleResultHold()
+		if txnContext(h.tm) != owner {
+			t.Fatal("completed work expired at the hold barrier")
+		}
+		if ownerIdleGen(h.tm) == gen {
+			t.Fatal("completed work did not rearm idle")
+		}
+	})
+	t.Run("long rpc expires at leave", func(t *testing.T) {
+		t.Parallel()
+		h := newHeartbeatHarness(t)
+		ctx := t.Context()
+		session := sessionForTM(t, h.tm)
+		owner := armIdleOwner(t, h, session, true)
+		expired := make(chan struct{})
+		h.tm.idleAfterExpire = func(got *transactionContext) {
+			if got == owner {
+				close(expired)
+			}
+		}
+		h.tm.enterStatement()
+		block := make(chan struct{})
+		inFlight := make(chan struct{})
+		h.server.setBlockSQL(block)
+		h.server.setSQLBlocked(func() { close(inFlight) })
+		errCh := make(chan error, 1)
+		go func() {
+			iter, _, err := h.tm.RunQuery(ctx, spanner.NewStatement("SELECT 1 AS held"))
+			if err != nil {
+				errCh <- err
+				return
+			}
+			_, _, _, _, err = consumeRowIterDiscard(iter)
 			errCh <- err
-			return
+		}()
+		waitChan(t, inFlight, "query RPC")
+		fireIdleNow(h.tm)
+		if txnContext(h.tm) != owner {
+			t.Fatal("in-flight query allowed idle retire")
 		}
-		_, _, _, _, err = consumeRowIterDiscard(iter)
-		errCh <- err
-	}()
-	waitChan(t, inFlight, "query RPC")
-	fireIdleNow(h.tm)
-	if txnContext(h.tm) != owner {
-		t.Fatal("in-flight query allowed idle retire")
-	}
-	close(block)
-	if err := waitTimeoutErr(t, errCh, "held query"); err != nil {
-		t.Fatal(err)
-	}
-	h.tm.leaveStatement()
-	fireIdleNow(h.tm)
-	waitIdleExpire(t, expired, "idle expire after hold")
+		close(block)
+		if err := waitTimeoutErr(t, errCh, "held query"); err != nil {
+			t.Fatal(err)
+		}
+		h.tm.leaveStatement()
+		waitIdleExpire(t, expired, "idle expire after RPC hold")
+	})
 }
 
 func TestIdleTransactionTimeoutTombstoneIsOneShot(t *testing.T) {
@@ -626,5 +686,119 @@ func TestIdleTransactionTimeoutDoesNotCancelInFlightWhenTotalTimeoutWins(t *test
 	}
 	if h.tm.consumeIdleNotice(false) != nil {
 		t.Fatal("idle notice set after total-timeout retire")
+	}
+}
+
+type idleFireWriter struct {
+	tm    *TransactionManager
+	t     *testing.T
+	once  sync.Once
+	buf   bytes.Buffer
+	wrote bool
+	live  bool
+}
+
+func (w *idleFireWriter) Write(p []byte) (int, error) {
+	w.once.Do(func() {
+		w.wrote = true
+		if w.t != nil && txnContext(w.tm) != nil {
+			w.live = true
+		}
+		fireIdleNow(w.tm)
+		if w.t != nil && txnContext(w.tm) == nil {
+			w.live = false
+		}
+	})
+	return w.buf.Write(p)
+}
+
+func testCLI(session *Session) *Cli {
+	session.systemVariables.Display.Verbose = true
+	return &Cli{
+		SessionHandler:  NewSessionHandler(session),
+		SystemVariables: session.systemVariables,
+	}
+}
+
+func TestIdleTransactionTimeoutCLIShowDoesNotRestartIdle(t *testing.T) {
+	t.Parallel()
+	h := newHeartbeatHarness(t)
+	ctx := t.Context()
+	session := sessionForTM(t, h.tm)
+	owner := armIdleOwner(t, h, session, true)
+	expired := make(chan struct{})
+	h.tm.idleAfterExpire = func(got *transactionContext) {
+		if got == owner {
+			close(expired)
+		}
+	}
+	w := &idleFireWriter{tm: h.tm}
+	cli := testCLI(session)
+	if _, err := cli.executeStatement(ctx, &ShowVariableStatement{VarName: "CLI_IDLE_TRANSACTION_TIMEOUT"}, false, "SHOW VARIABLE CLI_IDLE_TRANSACTION_TIMEOUT", w); err != nil {
+		t.Fatal(err)
+	}
+	if !w.wrote {
+		t.Fatal("expected SHOW result output")
+	}
+	waitIdleExpire(t, expired, "idle expire after client-only SHOW")
+	if txnContext(h.tm) != nil {
+		t.Fatalf("SHOW crossing the old deadline left owner gen=%d", ownerIdleGen(h.tm))
+	}
+}
+
+func TestIdleTransactionTimeoutCLIBeginRWHoldCoversNewOwner(t *testing.T) {
+	t.Parallel()
+	h := newHeartbeatHarness(t)
+	ctx := t.Context()
+	session := sessionForTM(t, h.tm)
+	mustExec(t, ctx, session, "SET CLI_IDLE_TRANSACTION_TIMEOUT = '1h'")
+	w := &idleFireWriter{tm: h.tm, t: t}
+	cli := testCLI(session)
+	if _, err := cli.executeStatement(ctx, &BeginRwStatement{}, false, "BEGIN RW", w); err != nil {
+		t.Fatal(err)
+	}
+	if !w.wrote {
+		t.Fatal("expected BEGIN RW result output")
+	}
+	if !w.live {
+		t.Fatal("BEGIN RW owner expired while CLI result output was still running")
+	}
+	if txnContext(h.tm) == nil {
+		t.Fatal("BEGIN RW owner was retired after CLI output")
+	}
+	_, _, userWork, armed := ownerIdle(h.tm)
+	if !userWork || !armed {
+		t.Fatalf("BEGIN RW after CLI output userWork=%v armed=%v", userWork, armed)
+	}
+}
+
+func TestIdleTransactionTimeoutManualBufferedDMLRearms(t *testing.T) {
+	t.Parallel()
+	h := newHeartbeatHarness(t)
+	ctx := t.Context()
+	session := sessionForTM(t, h.tm)
+	armIdleOwner(t, h, session, true)
+	mustExec(t, ctx, session, "START BATCH DML")
+	gen := ownerIdleGen(h.tm)
+	mustExec(t, ctx, session, "INSERT INTO t (id) VALUES (1)")
+	if ownerIdleGen(h.tm) == gen {
+		t.Fatal("manual buffered DML did not rearm idle")
+	}
+
+	gen = ownerIdleGen(h.tm)
+	_, err := execSQL(t, ctx, session, "INSERT INTO t (id) VALUES (1) THEN RETURN id")
+	if err == nil || !errors.Is(err, errReturningDMLNotSupportedInBatch) {
+		t.Fatalf("THEN RETURN: %v", err)
+	}
+	if ownerIdleGen(h.tm) != gen {
+		t.Fatal("THEN RETURN rearmed idle")
+	}
+
+	_, err = session.ExecuteStatement(ctx, &DmlStatement{Dml: "INSERT INTO t (id) VALUES ('"})
+	if err == nil {
+		t.Fatal("rejected DML input succeeded")
+	}
+	if ownerIdleGen(h.tm) != gen {
+		t.Fatal("rejected DML input rearmed idle")
 	}
 }

@@ -27,9 +27,9 @@ const idleTransactionTimeoutVarName = "CLI_IDLE_TRANSACTION_TIMEOUT"
 
 // CLI_IDLE_TRANSACTION_TIMEOUT is a sliding user-idle quiet interval on the
 // logical owner. It is distinct from TRANSACTION_TIMEOUT (#482) and from
-// KEEP_TRANSACTION_ALIVE. NULL or 0 disables idle expiry. #402 hasUserWork
-// is not on this tree yet; idleUserWork is the local admitted-work bit and
-// must not be conflated with constructor firstUse.
+// KEEP_TRANSACTION_ALIVE. NULL or 0 disables idle expiry. idleUserWork is
+// admitted user/database work on this owner. It is not constructor firstUse
+// and not #402 hasUserWork (DDL emptiness).
 var (
 	errIdleTransactionTimeout = errors.New("CLI_IDLE_TRANSACTION_TIMEOUT exceeded; the transaction was rolled back")
 	errIdleTransactionFrozen  = errors.New("CLI_IDLE_TRANSACTION_TIMEOUT cannot be changed after admitted user work")
@@ -101,13 +101,11 @@ func (tm *TransactionManager) beginIdleResultHold() {
 	}
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
-	if tm.tc == nil {
-		return
-	}
-	// Hold expiry without cancelling the quiet-interval timer. SHOW and
-	// other client-only commands must not restart lastUser. If the
-	// deadline fires during the hold, tryIdleExpire marks needsRearm.
-	tm.tc.idleResultHold++
+	// Manager-level hold so a newly installed owner (BEGIN RW) is covered
+	// through CLI output even when this ran before the owner existed.
+	// Do not cancel the quiet-interval timer: client-only SHOW/SET must
+	// keep the existing deadline.
+	tm.idleCLIHold++
 }
 
 func (tm *TransactionManager) endIdleResultHold() {
@@ -115,12 +113,11 @@ func (tm *TransactionManager) endIdleResultHold() {
 		return
 	}
 	tm.mu.Lock()
-	owner := tm.tc
-	if owner != nil && owner.idleResultHold > 0 {
-		owner.idleResultHold--
+	if tm.idleCLIHold > 0 {
+		tm.idleCLIHold--
 	}
-	if owner != nil && owner.idleResultHold == 0 {
-		tm.maybeRearmIdleLocked(owner)
+	if tm.tc != nil {
+		tm.maybeRearmOrExpireIdleLocked(tm.tc)
 	}
 	tm.mu.Unlock()
 }
@@ -132,6 +129,7 @@ func (tm *TransactionManager) noteIdleUserWorkLocked(survived bool) {
 	owner := tm.tc
 	owner.idleUserWork = true
 	owner.idleLastUser = tm.now()
+	owner.idleElapsedHeld = false
 	if tm.idleBlockedLocked(owner) {
 		tm.cancelIdleTimerLocked(owner)
 		owner.idleNeedsRearm = owner.idle > 0
@@ -153,7 +151,7 @@ func (tm *TransactionManager) idleBlockedLocked(owner *transactionContext) bool 
 	if owner == nil {
 		return true
 	}
-	return tm.statementDepth > 0 || owner.idleResultHold > 0 || owner.idleHold > 0
+	return tm.statementDepth > 0 || tm.idleCLIHold > 0 || owner.idleHold > 0
 }
 
 func (tm *TransactionManager) cancelIdleTimerLocked(owner *transactionContext) {
@@ -164,19 +162,29 @@ func (tm *TransactionManager) cancelIdleTimerLocked(owner *transactionContext) {
 	owner.idleCancel = nil
 }
 
-func (tm *TransactionManager) maybeRearmIdleLocked(owner *transactionContext) {
-	if owner == nil || owner != tm.tc || !owner.idleNeedsRearm {
-		return
-	}
-	if owner.idle <= 0 || !owner.idleUserWork {
-		owner.idleNeedsRearm = false
-		tm.cancelIdleTimerLocked(owner)
+func (tm *TransactionManager) maybeRearmOrExpireIdleLocked(owner *transactionContext) {
+	if owner == nil || owner != tm.tc {
 		return
 	}
 	if tm.idleBlockedLocked(owner) {
 		return
 	}
-	tm.rearmIdleLocked(owner)
+	if owner.idleNeedsRearm {
+		if owner.idle <= 0 || !owner.idleUserWork {
+			owner.idleNeedsRearm = false
+			owner.idleElapsedHeld = false
+			tm.cancelIdleTimerLocked(owner)
+			return
+		}
+		tm.rearmIdleLocked(owner)
+		return
+	}
+	if owner.idleElapsedHeld {
+		tm.rollbackAndRetireIdleLocked(owner)
+		if hook := tm.idleAfterExpire; hook != nil {
+			hook(owner)
+		}
+	}
 }
 
 func (tm *TransactionManager) rearmIdleLocked(owner *transactionContext) {
@@ -186,6 +194,7 @@ func (tm *TransactionManager) rearmIdleLocked(owner *transactionContext) {
 	}
 	tm.cancelIdleTimerLocked(owner)
 	owner.idleNeedsRearm = false
+	owner.idleElapsedHeld = false
 	owner.idleGen++
 	gen := owner.idleGen
 	deadline := tm.now().Add(owner.idle)
@@ -212,7 +221,10 @@ func (tm *TransactionManager) tryIdleExpire(owner *transactionContext, gen uint6
 		return
 	}
 	if tm.idleBlockedLocked(owner) {
-		owner.idleNeedsRearm = true
+		// Preserve the elapsed deadline. Non-activity must not restart
+		// idle; retire at the next safe barrier unless admitted work
+		// completes and requests a fresh interval.
+		owner.idleElapsedHeld = true
 		return
 	}
 	tm.rollbackAndRetireIdleLocked(owner)

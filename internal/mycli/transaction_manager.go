@@ -185,6 +185,12 @@ type TransactionManager struct {
 	// or writes. It is not a lock and is not held across RPCs.
 	statementDepth int
 
+	// idleCLIHold is the CLI executeStatement/result frame, including
+	// pager/error cleanup. It is manager-level so a newly installed owner
+	// (BEGIN RW) is covered through output even when the hold started
+	// before that owner existed.
+	idleCLIHold int
+
 	// savepointEnabled is a private capture switch for owner-journal
 	// integration tests. Public CLI_SAVEPOINT_SUPPORT also enables capture.
 	savepointEnabled bool
@@ -426,7 +432,7 @@ func (tm *TransactionManager) leaveStatement() {
 			tm.retireTransactionContextLocked()
 		}
 	} else if tm.statementDepth == 0 && tm.tc != nil {
-		tm.maybeRearmIdleLocked(tm.tc)
+		tm.maybeRearmOrExpireIdleLocked(tm.tc)
 	}
 	tm.mu.Unlock()
 	tm.restoreLocalVarsIfIdle()
