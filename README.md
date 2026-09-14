@@ -163,8 +163,8 @@ Flags:
       --endpoint=STRING                        Set the Spanner API endpoint (host:port)
       --host=STRING                            Host on which Spanner server is located
       --port=INT                               Port number for Spanner connection
-      --directed-read=STRING                   Directed read option (replica_location:replica_type). The replica_type is
-                                               optional and either READ_ONLY or READ_WRITE
+      --directed-read=STRING                   Directed read option: replica_location[:READ_ONLY|READ_WRITE] shorthand,
+                                               or DirectedReadOptions protobuf JSON
       --set=KEY=VALUE                          Set system variables e.g. --set=name1=value1 --set=name2=value2
       --param=KEY=VALUE                        Set query parameters, it can be literal or type(EXPLAIN/DESCRIBE only).
                                                Names are case-insensitive; conflicting case aliases are rejected;
@@ -582,9 +582,11 @@ The replica name can be specified in one of the following formats:
 
 - `<replica_location>`
 - `<replica_location>:<replica_type>`
+- DirectedReadOptions protobuf JSON (include or exclude replicas, multiple selections, and `autoFailoverDisabled`)
 
 The `<replica_location>` specifies the region where the replica is located such as `us-central1`, `asia-northeast2`.  
-The `<replica_type>` specifies the type of the replica either `READ_WRITE` or `READ_ONLY`. 
+The `<replica_type>` specifies the type of the replica either `READ_WRITE` or `READ_ONLY`.
+The location[:type] shorthand always sets one include replica with `autoFailoverDisabled` true. Use protobuf JSON for exclude replicas, multiple selections, or `autoFailoverDisabled` false.
 
 ```
 $ spanner-mycli -p myproject -i myinstance -d mydb --directed-read us-central1
@@ -596,7 +598,7 @@ $ spanner-mycli -p myproject -i myinstance -d mydb --directed-read asia-northeas
 
 Directed reads apply to supported read-only queries, including autocommit SELECT, explicit read-only transactions, partition queries, DUMP data-plane catalog/column/row reads, and metadata completions. They do not apply to read-write SELECT or DML, heartbeat, or partitioned DML.
 
-Runtime `SET DIRECTED_READ` uses the same `location` or `location:READ_ONLY|READ_WRITE` grammar as `--directed-read`. An empty value clears the option. `SET` is rejected while a transaction is pending or active; `SET LOCAL` is not supported. This is not the JDBC protobuf JSON syntax.
+Runtime `SET DIRECTED_READ` accepts the same `location` or `location:READ_ONLY|READ_WRITE` shorthand as `--directed-read`, or DirectedReadOptions protobuf JSON. An empty value clears the option. `SHOW` prints shorthand when that form is lossless; otherwise it prints protobuf JSON. `SET` is rejected while a transaction is pending or active; `SET LOCAL` is not supported. Unknown or malformed JSON fields are rejected and leave the current value unchanged.
 
 > [!NOTE]
 > If you specify an incorrect region or type for directed reads, directed reads will not be enabled and [your requsts won't be routed as expected](https://cloud.google.com/spanner/docs/directed-reads#parameters). For example, in a multi-region configuration `nam3`, if you mistype `us-east1` as `us-east-1`, the connection will succeed, but directed reads will not be enabled. 
