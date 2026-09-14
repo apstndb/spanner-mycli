@@ -1,6 +1,16 @@
 // Copyright 2026 apstndb
 //
-// Licensed under the MIT License.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package mycli
 
@@ -15,6 +25,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -35,7 +46,11 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
-const runPartitionChildEnv = "SPANNER_MYCLI_RUN_PARTITION_CHILD"
+const (
+	runPartitionChildEnv          = "SPANNER_MYCLI_RUN_PARTITION_CHILD"
+	runPartitionChildRoleProducer = "producer"
+	runPartitionChildRoleConsumer = "consumer"
+)
 
 type runPartitionWireServer struct {
 	partitionFanInServer
@@ -434,7 +449,8 @@ func TestRunPartitionPreservesTokenOptions(t *testing.T) {
 	dro := includeDirectedRead(false, replicaSel("us-central1", sppb.DirectedReadOptions_ReplicaSelection_READ_ONLY))
 	producerVars.Query.DirectedRead = dro
 	producer := newRunPartitionSession(t, opts, producerVars)
-	tokens := mustPartition(t, producer, "SELECT * FROM Singers")
+	mustExec(t, t.Context(), producer, "SET PARAM active = TRUE")
+	tokens := mustPartition(t, producer, "SELECT * FROM Singers WHERE active = @active")
 	producer.Close()
 
 	consumerVars := newRunPartitionVars(t)
@@ -459,6 +475,13 @@ func TestRunPartitionPreservesTokenOptions(t *testing.T) {
 	}
 	if !proto.Equal(got.GetDirectedReadOptions(), dro) {
 		t.Fatalf("directed-read overlay leaked: %v", got.GetDirectedReadOptions())
+	}
+	active := got.GetParams().GetFields()["active"]
+	if active == nil || !active.GetBoolValue() {
+		t.Fatalf("bound param active = %v, want BOOL true", active)
+	}
+	if typ := got.GetParamTypes()["active"]; typ == nil || typ.GetCode() != sppb.TypeCode_BOOL {
+		t.Fatalf("param type active = %v, want BOOL", typ)
 	}
 }
 
@@ -573,57 +596,104 @@ func TestRunPartitionWriterError(t *testing.T) {
 }
 
 func TestRunPartitionSecondProcess(t *testing.T) {
-	if os.Getenv(runPartitionChildEnv) == "1" {
-		runPartitionChildMain(t)
+	switch os.Getenv(runPartitionChildEnv) {
+	case runPartitionChildRoleProducer:
+		runPartitionProducerChild(t)
+		return
+	case runPartitionChildRoleConsumer:
+		runPartitionConsumerChild(t)
 		return
 	}
+
+	// Local fake-RPC only: this proves a producing process can exit while
+	// sibling tokens remain usable. It is not Cloud retention or
+	// cross-principal evidence.
 	server := &runPartitionWireServer{partitionFanInServer: partitionFanInServer{nPartitions: 2, rowsPer: 1}}
 	addr, stop := startRunPartitionTCP(t, server)
 	t.Cleanup(stop)
 
-	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
-	defer cancel()
-	producer, err := newRunPartitionTCPSession(ctx, t, addr)
+	outFile := filepath.Join(t.TempDir(), "tokens.json")
+	producerCtx, producerCancel := context.WithTimeout(t.Context(), 20*time.Second)
+	defer producerCancel()
+	producerOut := runPartitionTestChild(t, producerCtx, []string{
+		runPartitionChildEnv + "=" + runPartitionChildRoleProducer,
+		"SPANNER_MYCLI_RUN_PARTITION_ADDR=" + addr,
+		"SPANNER_MYCLI_RUN_PARTITION_OUT=" + outFile,
+	})
+	if !strings.Contains(string(producerOut), "PRODUCER_OK") {
+		t.Fatalf("producer output:\n%s", producerOut)
+	}
+	if server.deletes.Load() != 0 {
+		t.Fatalf("DeleteSession after producer exit = %d", server.deletes.Load())
+	}
+
+	raw, err := os.ReadFile(outFile)
 	if err != nil {
 		t.Fatal(err)
 	}
-	tokens := mustPartition(t, producer, "SELECT * FROM Singers")
-	producer.Close()
-	if server.deletes.Load() != 0 {
-		t.Fatalf("DeleteSession after producer close = %d", server.deletes.Load())
+	var tokens []string
+	if err := json.Unmarshal(raw, &tokens); err != nil {
+		t.Fatal(err)
+	}
+	if len(tokens) != 2 {
+		t.Fatalf("exported tokens=%d, want 2", len(tokens))
 	}
 
-	cmd := exec.Command(os.Args[0], "-test.run=TestRunPartitionSecondProcess", "-test.v", "-test.count=1")
-	cmd.Env = append(os.Environ(),
-		runPartitionChildEnv+"=1",
-		"SPANNER_MYCLI_RUN_PARTITION_ADDR="+addr,
-		"SPANNER_MYCLI_RUN_PARTITION_TOKEN="+tokens[0],
-	)
+	wantRows := []string{"0-0", "1-0"}
+	for i, tok := range tokens {
+		consumerCtx, consumerCancel := context.WithTimeout(t.Context(), 15*time.Second)
+		out := runPartitionTestChild(t, consumerCtx, []string{
+			runPartitionChildEnv + "=" + runPartitionChildRoleConsumer,
+			"SPANNER_MYCLI_RUN_PARTITION_ADDR=" + addr,
+			"SPANNER_MYCLI_RUN_PARTITION_TOKEN=" + tok,
+		})
+		consumerCancel()
+		if !strings.Contains(string(out), "CHILD_OK "+wantRows[i]) {
+			t.Fatalf("consumer %d output:\n%s", i, out)
+		}
+	}
+	if server.deletes.Load() != 0 {
+		t.Fatalf("DeleteSession after separate consumers = %d", server.deletes.Load())
+	}
+}
+
+func runPartitionTestChild(t *testing.T, ctx context.Context, extraEnv []string) []byte {
+	t.Helper()
+	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestRunPartitionSecondProcess$", "-test.v", "-test.count=1")
+	cmd.Env = append(os.Environ(), extraEnv...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("child: %v\n%s", err, out)
 	}
-	if !strings.Contains(string(out), "CHILD_OK 0-0") {
-		t.Fatalf("child output:\n%s", string(out))
+	if cmd.ProcessState == nil || !cmd.ProcessState.Exited() {
+		t.Fatal("child process did not exit")
 	}
-
-	consumer, err := newRunPartitionTCPSession(ctx, t, addr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	result, err := consumer.ExecuteStatement(ctx, &RunPartitionStatement{Token: tokens[1]})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !hasAllStrings(collectTypedStrings(t, result), "1-0") {
-		t.Fatalf("in-process sibling missing row")
-	}
-	if server.deletes.Load() != 0 {
-		t.Fatalf("DeleteSession after child/sibling = %d", server.deletes.Load())
-	}
+	return out
 }
 
-func runPartitionChildMain(t *testing.T) {
+func runPartitionProducerChild(t *testing.T) {
+	t.Helper()
+	addr := os.Getenv("SPANNER_MYCLI_RUN_PARTITION_ADDR")
+	outFile := os.Getenv("SPANNER_MYCLI_RUN_PARTITION_OUT")
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	session, err := newRunPartitionTCPSession(ctx, t, addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokens := mustPartition(t, session, "SELECT * FROM Singers")
+	session.Close()
+	raw, err := json.Marshal(tokens)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(outFile, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fmt.Println("PRODUCER_OK")
+}
+
+func runPartitionConsumerChild(t *testing.T) {
 	t.Helper()
 	addr := os.Getenv("SPANNER_MYCLI_RUN_PARTITION_ADDR")
 	token := os.Getenv("SPANNER_MYCLI_RUN_PARTITION_TOKEN")
