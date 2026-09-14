@@ -55,6 +55,9 @@ type BeginStatement struct {
 }
 
 func (s *BeginStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
+	if session.txn != nil {
+		session.txn.syncExpiredOwnerRestore()
+	}
 	if session.txn.InTransaction() {
 		return nil, errors.New("you're in transaction. Please finish the transaction by 'COMMIT;' or 'ROLLBACK;'")
 	}

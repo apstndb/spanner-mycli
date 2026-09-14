@@ -308,11 +308,14 @@ func (tm *TransactionManager) rollbackToSavepointLocked(ctx context.Context, nam
 	}()
 	tm.discardPhysicalLocked(ctx)
 
+	ctx, cancelDeadline := tm.bindDeadlineLocked(ctx)
+	defer cancelDeadline()
+
 	candidate, err := spanner.NewReadWriteStmtBasedTransactionWithOptions(ctx, tm.client, ctor)
 	if err != nil {
 		return tm.failReconstructionLocked(err)
 	}
-	if err := replayPrefix(ctx, candidate, prefix); err != nil {
+	if err := replayPrefix(ctx, tm, candidate, prefix); err != nil {
 		cleanup, cancel := savepointCleanupContext()
 		candidate.Rollback(cleanup)
 		cancel()
@@ -342,21 +345,21 @@ func (s frozenStatement) statement() spanner.Statement {
 	return spanner.Statement{SQL: s.SQL, Params: params}
 }
 
-func replayPrefix(ctx context.Context, tx *spanner.ReadWriteStmtBasedTransaction, prefix []replayEntry) error {
+func replayPrefix(ctx context.Context, tm *TransactionManager, tx *spanner.ReadWriteStmtBasedTransaction, prefix []replayEntry) error {
 	for _, e := range prefix {
-		if err := replayEntryOn(ctx, tx, e); err != nil {
+		if err := replayEntryOn(ctx, tm, tx, e); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func replayEntryOn(ctx context.Context, tx *spanner.ReadWriteStmtBasedTransaction, e replayEntry) error {
+func replayEntryOn(ctx context.Context, tm *TransactionManager, tx *spanner.ReadWriteStmtBasedTransaction, e replayEntry) error {
 	switch e.kind {
 	case replayKindSQL:
 		return replaySQL(ctx, tx, e)
 	case replayKindBatchDML:
-		return replayBatch(ctx, tx, e)
+		return replayBatch(ctx, tm, tx, e)
 	case replayKindMutate:
 		return replayMutations(ctx, tx, e)
 	default:
@@ -387,12 +390,12 @@ func replaySQL(ctx context.Context, tx *spanner.ReadWriteStmtBasedTransaction, e
 	return nil
 }
 
-func replayBatch(ctx context.Context, tx *spanner.ReadWriteStmtBasedTransaction, e replayEntry) error {
+func replayBatch(ctx context.Context, tm *TransactionManager, tx *spanner.ReadWriteStmtBasedTransaction, e replayEntry) error {
 	dmls := make([]spanner.Statement, 0, len(e.batch))
 	for _, stmt := range e.batch {
 		dmls = append(dmls, stmt.statement())
 	}
-	counts, err := tx.BatchUpdateWithOptions(ctx, dmls, spanner.QueryOptions{LastStatement: false})
+	counts, err := tm.batchUpdateWithRemainingDeadline(ctx, tx, dmls, spanner.QueryOptions{LastStatement: false})
 	if err != nil {
 		return err
 	}

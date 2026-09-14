@@ -199,6 +199,7 @@ type TransactionVars struct {
 	ReadLockMode                        sppb.TransactionOptions_ReadWrite_ReadLockMode // READ_LOCK_MODE
 	CommitPriority                      sppb.RequestOptions_Priority                   // COMMIT_PRIORITY
 	KeepTransactionAlive                bool                                           // KEEP_TRANSACTION_ALIVE
+	TransactionTimeout                  *time.Duration                                 // TRANSACTION_TIMEOUT
 	SavepointSupport                    enums.SavepointSupport                         // CLI_SAVEPOINT_SUPPORT
 
 	// Unimplemented variables (kept for compatibility)
