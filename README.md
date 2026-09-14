@@ -1105,6 +1105,7 @@ For how these and other connection properties map to the official Spanner driver
 | CLI_FUZZY_FINDER_KEY       | READ_WRITE | `"C_T"`                                        |
 | CLI_FUZZY_FINDER_OPTIONS   | READ_WRITE | `""`                                           |
 | CLI_TYPE_STYLES            | READ_WRITE | `"NULL=dim"`                                   |
+| CLI_SHOW_NULLS             | READ_WRITE | `FALSE`                                        |
 | CLI_BIGQUERY_PROJECT       | READ_WRITE | `"my-gcp-project"`                             |
 | CLI_BIGQUERY_LOCATION      | READ_WRITE | `"US"`                                         |
 | CLI_BIGQUERY_MAX_BYTES_BILLED | READ_WRITE | `1000000000`                                |
@@ -1156,6 +1157,8 @@ is unchanged. It does not change when plans are cached or cleared (plain
 > - Example: `SET CLI_TYPE_STYLES = 'STRING=green:INT64=cyan:NULL=dim';`
 > - Set to empty string to disable all type styling.
 > - See [docs/system_variables.md](docs/system_variables.md) for full reference.
+
+> **Note**: `CLI_SHOW_NULLS` (default `FALSE`) is an opt-in TABLE/VERTICAL distinction between SQL NULL and a STRING that spells `NULL`. When `TRUE`, SQL NULL becomes `<NULL>` and a STRING equal to that marker is quote-wrapped as `"<NULL>"`. STRING `NULL` stays `NULL`. This is not a lossless string format: an already-quoted marker can still match the quoted form. CSV, TSV, JSONL, SQL export, TAB, HTML, and XML are unchanged. See [docs/system_variables.md](docs/system_variables.md#cli_show_nulls).
 
 Table width calculation and wrapping account for 7-bit ANSI escape sequences
 already present in values or headers, independently of CLI-added type styling.

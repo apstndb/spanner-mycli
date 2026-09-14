@@ -163,6 +163,7 @@ type DisplayVars struct {
 	MultilineProtoText         bool                 // CLI_PROTOTEXT_MULTILINE
 	MarkdownCodeblock          bool                 // CLI_MARKDOWN_CODEBLOCK
 	SkipColumnNames            bool                 // CLI_SKIP_COLUMN_NAMES
+	ShowNulls                  bool                 // CLI_SHOW_NULLS
 	SuppressResultLines        bool                 // CLI_SUPPRESS_RESULT_LINES
 	ExplainFormat              enums.ExplainFormat  // CLI_EXPLAIN_FORMAT
 	ExplainWrapWidth           int64                // CLI_EXPLAIN_WRAP_WIDTH
