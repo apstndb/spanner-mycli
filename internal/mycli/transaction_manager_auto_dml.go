@@ -140,7 +140,8 @@ func (tm *TransactionManager) flushAutomaticDMLLocked(ctx context.Context) ([]sp
 		return nil, nil, ErrNotInReadWriteTransaction
 	}
 
-	counts, err := rwTxn.BatchUpdateWithOptions(ctx, dmls, spanner.QueryOptions{LastStatement: false})
+	counts, err := tm.batchUpdateWithRemainingDeadline(ctx, rwTxn, dmls, spanner.QueryOptions{LastStatement: false})
+	err = annotateTransactionTimeout(err, owner)
 	if err == nil {
 		// Compare each enabled entry before a successful journal receipt.
 		// RPC or partial BatchUpdate errors keep their original cause.

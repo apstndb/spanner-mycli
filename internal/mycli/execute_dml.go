@@ -72,7 +72,9 @@ func bufferOrExecuteDML(ctx context.Context, session *Session, sql string) (*Res
 			}
 		}
 
-		if _, err := session.txn.FlushAutomaticDML(ctx); err != nil {
+		flushCtx, cancelFlush := session.txn.bindTransactionDeadline(ctx)
+		defer cancelFlush()
+		if _, err := session.txn.FlushAutomaticDML(flushCtx); err != nil {
 			return nil, err
 		}
 
@@ -134,7 +136,7 @@ func executeBatchDML(ctx context.Context, session *Session, dmls []spanner.State
 		if admitErr := session.txn.admitBatchDMLLocked(dmls, opts); admitErr != nil {
 			return 0, nil, nil, admitError(admitErr)
 		}
-		affectedRowSlice, err = tx.BatchUpdateWithOptions(ctx, dmls, opts)
+		affectedRowSlice, err = session.txn.batchUpdateWithRemainingDeadline(ctx, tx, dmls, opts)
 		tok, recErr := session.txn.completeBatchDMLLocked(affectedRowSlice, err)
 		if err == nil {
 			err = recErr

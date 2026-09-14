@@ -486,6 +486,52 @@ func TestSystemVariables_StringTypes(t *testing.T) {
 		assertError(t, err, "read-only")
 	})
 
+	t.Run("TransactionTimeout", func(t *testing.T) {
+		t.Parallel()
+		tests := []struct {
+			desc     string
+			value    string
+			want     *time.Duration
+			errorMsg string
+		}{
+			{desc: "valid_seconds", value: "30s", want: durationPtr(30 * time.Second)},
+			{desc: "valid_zero", value: "0s", want: durationPtr(0)},
+			{desc: "null", value: "NULL", want: nil},
+			{desc: "invalid_format", value: "invalid", errorMsg: "invalid duration"},
+			{desc: "negative_value", value: "-30s", errorMsg: "duration -30s is less than minimum 0s"},
+		}
+		for _, test := range tests {
+			t.Run(test.desc, func(t *testing.T) {
+				t.Parallel()
+				sysVars := newSystemVariablesWithDefaultsForTest()
+				err := sysVars.SetFromSimple("TRANSACTION_TIMEOUT", test.value)
+				assertError(t, err, test.errorMsg)
+				if err != nil {
+					return
+				}
+				if test.want == nil {
+					if sysVars.Transaction.TransactionTimeout != nil {
+						t.Errorf("expected NULL, got %v", *sysVars.Transaction.TransactionTimeout)
+					}
+					result, err := sysVars.Get("TRANSACTION_TIMEOUT")
+					assertNoError(t, err)
+					if diff := cmp.Diff(singletonMap("TRANSACTION_TIMEOUT", "NULL"), result); diff != "" {
+						t.Errorf("TRANSACTION_TIMEOUT getter mismatch (-want +got):\n%s", diff)
+					}
+					return
+				}
+				if sysVars.Transaction.TransactionTimeout == nil || *sysVars.Transaction.TransactionTimeout != *test.want {
+					t.Errorf("expected TransactionTimeout %v, got %v", *test.want, sysVars.Transaction.TransactionTimeout)
+				}
+				result, err := sysVars.Get("TRANSACTION_TIMEOUT")
+				assertNoError(t, err)
+				if diff := cmp.Diff(singletonMap("TRANSACTION_TIMEOUT", test.want.String()), result); diff != "" {
+					t.Errorf("TRANSACTION_TIMEOUT getter mismatch (-want +got):\n%s", diff)
+				}
+			})
+		}
+	})
+
 	t.Run("StatementTimeout", func(t *testing.T) {
 		t.Parallel()
 		tests := []struct {
@@ -969,6 +1015,7 @@ func TestSystemVariables_SetGetOperations(t *testing.T) {
 			"CLI_LOG_LEVEL":                "INFO",
 			"PROTO_DESCRIPTORS_FILE_PATH":  "testdata/protos/order_descriptors.pb",
 			"STATEMENT_TIMEOUT":            "30s",
+			"TRANSACTION_TIMEOUT":          "45s",
 			"MAX_PARTITIONED_PARALLELISM":  "10",
 			"AUTO_BATCH_DML_UPDATE_COUNT":  "3",
 			"CLI_TAB_WIDTH":                "4",
@@ -1119,6 +1166,7 @@ func TestSystemVariables_SetGetOperations(t *testing.T) {
 			"OPTIMIZER_VERSION":            `"LATEST"`,
 			"OPTIMIZER_STATISTICS_PACKAGE": `"test-package"`,
 			"STATEMENT_TIMEOUT":            `"30s"`,
+			"TRANSACTION_TIMEOUT":          `"45s"`,
 			"MAX_COMMIT_DELAY":             `"100ms"`,
 			"DIRECTED_READ":                `"us-east1:READ_ONLY"`,
 			"DDL_EXECUTION_MODE":           `"ASYNC"`,

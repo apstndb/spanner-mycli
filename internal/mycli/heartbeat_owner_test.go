@@ -65,8 +65,10 @@ type beginObservation struct {
 }
 
 type batchDMLObservation struct {
-	txnID string
-	sqls  []string
+	txnID             string
+	sqls              []string
+	hasDeadline       bool
+	deadlineRemaining time.Duration
 }
 
 type commitObservation struct {
@@ -92,6 +94,9 @@ type heartbeatRPCServer struct {
 	failROQuery           error
 	failSQL               error
 	failBatchDML          error
+	failBegin             error
+	blockBegin            <-chan struct{}
+	beginBlocked          func()
 	partialBatchDMLCount  int64
 	partialBatchDMLStatus *statuspb.Status
 	sqlRowCount           map[string]int64
@@ -105,6 +110,9 @@ type heartbeatRPCServer struct {
 	blockSQL   <-chan struct{}
 	skipSQL    int
 	sqlBlocked func()
+
+	blockBatchDML <-chan struct{}
+	batchBlocked  func()
 }
 
 func (s *heartbeatRPCServer) newTxnID() []byte {
@@ -245,9 +253,22 @@ func (s *heartbeatRPCServer) batchObservations() []batchDMLObservation {
 	defer s.mu.Unlock()
 	out := make([]batchDMLObservation, len(s.batchObs))
 	for i, obs := range s.batchObs {
-		out[i] = batchDMLObservation{txnID: obs.txnID, sqls: slices.Clone(obs.sqls)}
+		out[i] = obs
+		out[i].sqls = slices.Clone(obs.sqls)
 	}
 	return out
+}
+
+func (s *heartbeatRPCServer) setBlockBatchDML(ch <-chan struct{}) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.blockBatchDML = ch
+}
+
+func (s *heartbeatRPCServer) setBatchBlocked(fn func()) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.batchBlocked = fn
 }
 
 func (s *heartbeatRPCServer) sqlObservations() []sqlObservation {
@@ -368,7 +389,25 @@ func (s *heartbeatRPCServer) setSQLBlocked(fn func()) {
 	s.sqlBlocked = fn
 }
 
-func (s *heartbeatRPCServer) BeginTransaction(_ context.Context, r *sppb.BeginTransactionRequest) (*sppb.Transaction, error) {
+func (s *heartbeatRPCServer) BeginTransaction(ctx context.Context, r *sppb.BeginTransactionRequest) (*sppb.Transaction, error) {
+	s.mu.Lock()
+	block := s.blockBegin
+	blocked := s.beginBlocked
+	fail := s.failBegin
+	s.mu.Unlock()
+	if blocked != nil {
+		blocked()
+	}
+	if block != nil {
+		select {
+		case <-block:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	if fail != nil {
+		return nil, fail
+	}
 	id := s.newTxnID()
 	txn := &sppb.Transaction{Id: id}
 	s.mu.Lock()
@@ -405,7 +444,22 @@ func (s *heartbeatRPCServer) Commit(_ context.Context, r *sppb.CommitRequest) (*
 	return &sppb.CommitResponse{CommitTimestamp: timestamppb.Now()}, nil
 }
 
-func (s *heartbeatRPCServer) ExecuteBatchDml(_ context.Context, r *sppb.ExecuteBatchDmlRequest) (*sppb.ExecuteBatchDmlResponse, error) {
+func (s *heartbeatRPCServer) ExecuteBatchDml(ctx context.Context, r *sppb.ExecuteBatchDmlRequest) (*sppb.ExecuteBatchDmlResponse, error) {
+	s.mu.Lock()
+	block := s.blockBatchDML
+	blocked := s.batchBlocked
+	s.mu.Unlock()
+	if blocked != nil {
+		blocked()
+	}
+	if block != nil {
+		select {
+		case <-block:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+
 	var id []byte
 	if existing := r.GetTransaction().GetId(); len(existing) > 0 {
 		id = slices.Clone(existing)
@@ -420,9 +474,15 @@ func (s *heartbeatRPCServer) ExecuteBatchDml(_ context.Context, r *sppb.ExecuteB
 		sqls = append(sqls, st.GetSql())
 	}
 
+	obs := batchDMLObservation{txnID: string(id), sqls: sqls}
+	if dl, ok := ctx.Deadline(); ok {
+		obs.hasDeadline = true
+		obs.deadlineRemaining = time.Until(dl)
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.batchObs = append(s.batchObs, batchDMLObservation{txnID: string(id), sqls: sqls})
+	s.batchObs = append(s.batchObs, obs)
 	if s.failBatchDML != nil {
 		return nil, s.failBatchDML
 	}

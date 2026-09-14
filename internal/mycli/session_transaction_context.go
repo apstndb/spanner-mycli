@@ -2,6 +2,7 @@ package mycli
 
 import (
 	"context"
+	"time"
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
@@ -62,9 +63,29 @@ type transactionContext struct {
 	// existing heartbeat-after-first-SQL behavior. BeginReadWriteTransactionLocked
 	// sets it from the session variable before any user SQL.
 	keepAliveDisabled bool
-	attempt           uint64
-	inFlight          int
-	pending           *captureToken
+	// timeout is the TRANSACTION_TIMEOUT duration captured for this logical
+	// owner. Zero means no additional deadline. timeoutCaptured distinguishes
+	// an explicit zero from an uninitialized ad-hoc test owner.
+	timeout         time.Duration
+	timeoutCaptured bool
+	// firstUse is set at the first real read/write database RPC for this
+	// logical owner, including constructor BeginTransaction. It is
+	// independent of whether a timer exists: NULL/0 still freezes SET LOCAL
+	// after first use. Failed construction and physical replacement keep
+	// this owner pointer, so firstUse is preserved with it.
+	firstUse bool
+	// expirePending is set by the timeout watcher while a statement is
+	// executing. Heartbeat and the deadline watcher stop immediately;
+	// SET LOCAL undo stays on this owner until a statement-safe barrier
+	// retires it and restores the registry. Timer goroutines never call
+	// Registry.Set.
+	expirePending  bool
+	deadline       time.Time
+	deadlineCtx    context.Context
+	deadlineCancel context.CancelFunc
+	attempt        uint64
+	inFlight       int
+	pending        *captureToken
 	// replacing is true while ROLLBACK TO is replacing the physical RW handle.
 	replacing bool
 }
@@ -113,11 +134,19 @@ func (tc *transactionContext) Tag() string {
 	return tc.attrs.tag
 }
 
-// Close stops the heartbeat goroutine if it's running.
-// This should be called when the transaction is committed or rolled back.
+// Close stops the heartbeat goroutine and the transaction-deadline watcher
+// if they are running. This should be called when the transaction is
+// committed, rolled back, or expired.
 func (tc *transactionContext) Close() {
-	if tc != nil && tc.heartbeatCancel != nil {
+	if tc == nil {
+		return
+	}
+	if tc.heartbeatCancel != nil {
 		tc.heartbeatCancel()
 		tc.heartbeatCancel = nil
+	}
+	if tc.deadlineCancel != nil {
+		tc.deadlineCancel()
+		tc.deadlineCancel = nil
 	}
 }
