@@ -1149,6 +1149,16 @@ TABLE Singers (42)
 			want:  &ResetAllStatement{},
 		},
 		{
+			desc:  "RESET single variable statement",
+			input: `RESET CLI_VERBOSE`,
+			want:  &ResetStatement{VarName: "CLI_VERBOSE"},
+		},
+		{
+			desc:  "RESET single variable lowercase",
+			input: `reset cli_verbose`,
+			want:  &ResetStatement{VarName: "cli_verbose"},
+		},
+		{
 			desc:  "SET LOCAL statement",
 			input: `SET LOCAL OPTIMIZER_VERSION = "3"`,
 			want:  &SetLocalStatement{VarName: "OPTIMIZER_VERSION", Value: `"3"`},

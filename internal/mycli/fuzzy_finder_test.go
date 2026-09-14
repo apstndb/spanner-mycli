@@ -121,6 +121,27 @@ func TestDetectFuzzyContext(t *testing.T) {
 			wantArgPrefix:      "read",
 			wantArgStartPos:    14,
 		},
+		{
+			name:               "RESET with partial name",
+			input:              "RESET CLI_",
+			wantCompletionType: fuzzyCompleteVariable,
+			wantArgPrefix:      "CLI_",
+			wantArgStartPos:    6,
+		},
+		{
+			name:               "RESET with no name",
+			input:              "RESET ",
+			wantCompletionType: fuzzyCompleteVariable,
+			wantArgPrefix:      "",
+			wantArgStartPos:    6,
+		},
+		{
+			name:               "reset lowercase",
+			input:              "reset read",
+			wantCompletionType: fuzzyCompleteVariable,
+			wantArgPrefix:      "read",
+			wantArgStartPos:    6,
+		},
 		// Argument completion: SHOW COLUMNS FROM → table
 		{
 			name:               "SHOW COLUMNS FROM with trailing space",
