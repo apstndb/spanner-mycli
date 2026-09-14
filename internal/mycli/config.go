@@ -115,45 +115,48 @@ type spannerOptions struct {
 	// InitCommand and InitCommandAdd are startup statements (#353), executed
 	// after connect and before --file/--execute or the interactive loop.
 	// --init-command-add is repeatable and is not a teardown hook.
-	InitCommand            string            `name:"init-command" help:"SQL to execute after connecting, before other input. Failure aborts startup."`
-	InitCommandAdd         []string          `name:"init-command-add" sep:"none" help:"Additional startup SQL (repeatable). Appended after --init-command. Failure aborts startup."`
-	Table                  bool              `name:"table" short:"t" help:"Display output in table format for batch mode."`
-	HTML                   bool              `name:"html" help:"Display output in HTML format."`
-	XML                    bool              `name:"xml" help:"Display output in XML format."`
-	CSV                    bool              `name:"csv" help:"Display output in CSV format."`
-	Format                 string            `name:"format" help:"Output format (table, tab, tsv, vertical, html, xml, csv, jsonl)"`
-	Verbose                bool              `name:"verbose" short:"v" help:"Display verbose output."`
-	Credential             string            `name:"credential" help:"Use the specific credential file"`
-	Prompt                 *string           `name:"prompt" help:"Set the prompt to the specified format (default: ${defaultPromptQuoted})"`
-	Prompt2                *string           `name:"prompt2" help:"Set the prompt2 to the specified format (default: ${defaultPrompt2Quoted})"`
-	HistoryFile            *string           `name:"history" help:"Set the history file to the specified path (default: ${defaultHistoryFile})"`
-	Priority               string            `name:"priority" help:"Set default request priority (HIGH|MEDIUM|LOW)"`
-	Role                   string            `name:"role" help:"Use the specific database role. --database-role is an alias."`
-	Endpoint               string            `name:"endpoint" help:"Set the Spanner API endpoint (host:port)"`
-	Host                   string            `name:"host" help:"Host on which Spanner server is located"`
-	Port                   int               `name:"port" help:"Port number for Spanner connection"`
-	DirectedRead           string            `name:"directed-read" help:"Directed read option: replica_location[:READ_ONLY|READ_WRITE] shorthand, or DirectedReadOptions protobuf JSON"`
-	SQL                    string            `name:"sql" hidden:"" help:"Hidden alias of --execute for gcloud spanner databases execute-sql compatibility"`
-	Set                    map[string]string `name:"set" mapsep:"none" help:"Set system variables e.g. --set=name1=value1 --set=name2=value2"`
-	Param                  map[string]string `name:"param" mapsep:"none" help:"Set query parameters, it can be literal or type(EXPLAIN/DESCRIBE only). Names are case-insensitive; conflicting case aliases are rejected; identical aliases collapse to one name. e.g. --param=\"p1='string_value'\" --param=p2=FLOAT64"`
-	ProtoDescriptorFile    string            `name:"proto-descriptor-file" help:"Path of a file that contains a protobuf-serialized google.protobuf.FileDescriptorSet message."`
-	Insecure               *bool             `name:"insecure" help:"Permit plaintext gRPC (no TLS). --skip-tls-verify is an alias. Cannot be combined with custom CA or client certificates."`
-	SkipTlsVerify          *bool             `name:"skip-tls-verify" hidden:"" help:"Hidden alias of --insecure from original spanner-cli"`
-	CaCertFile             string            `name:"ca-cert-file" help:"PEM CA certificate file used as the TLS trust bundle (replaces system roots). Requires an explicit --endpoint or --host. Startup-only."`
-	ClientCertFile         string            `name:"client-cert-file" help:"PEM client certificate for mTLS. Must be paired with --client-cert-key. Requires an explicit --endpoint or --host. Startup-only."`
-	ClientCertKey          string            `name:"client-cert-key" help:"PEM client private key for mTLS. Must be paired with --client-cert-file. Never shown by SHOW VARIABLES. Startup-only."`
-	WithoutAuthentication  bool              `name:"without-authentication" help:"Do not send Google bearer credentials to the Spanner endpoint. Requires an explicit --endpoint or --host and at least one custom TLS file. Does not enable plaintext or skip certificate verification. Default: false."`
-	EmbeddedEmulator       bool              `name:"embedded-emulator" help:"Use embedded Cloud Spanner Emulator. --project, --instance, --database, --endpoint, --insecure will be automatically configured."`
-	EmbeddedOmni           bool              `name:"embedded-omni" help:"Use embedded experimental Spanner Omni. --project, --instance, --database, --endpoint, --insecure will be automatically configured."`
-	EmulatorImage          string            `name:"emulator-image" help:"container image for embedded runtime (--embedded-emulator or --embedded-omni)"`
-	EmulatorPlatform       string            `name:"emulator-platform" help:"Container platform (e.g. linux/amd64, linux/arm64) for embedded runtime"`
-	SampleDatabase         string            `name:"sample-database" help:"Initialize embedded runtime with built-in sample (e.g. fingraph, singers, banking) or path to a metadata file (.json, .yaml, .yml). Requires --embedded-emulator or --embedded-omni. Cannot be combined with --detached."`
-	ListSamples            bool              `name:"list-samples" help:"List available sample databases and exit"`
-	OutputTemplate         string            `name:"output-template" help:"Filepath of output template. (EXPERIMENTAL)"`
-	LogLevel               string            `name:"log-level" help:"Set CLI log level (DEBUG, INFO, WARN, ERROR). INFO and DEBUG include embedded runtime container lifecycle logs. SQL SET CLI_LOG_LEVEL does not change those container logs."`
-	LogGrpc                bool              `name:"log-grpc" help:"Show gRPC logs"`
-	SpannerMetricsExporter string            `name:"spanner-metrics-exporter" help:"Opt-in caller-owned Spanner client metrics exporter: off (default, no provider) or otlp (OTLP HTTP/protobuf). OTEL_* environment variables alone do not enable export. SQL SET cannot change this." enum:"off,otlp" default:"off"`
-	SpannerMetricsEndpoint string            `name:"spanner-metrics-endpoint" help:"Absolute http/https collector URL for --spanner-metrics-exporter=otlp. Host required; no userinfo, query, or fragment. Missing/root path becomes /v1/metrics. Required with otlp; forbidden with off."`
+	InitCommand              string            `name:"init-command" help:"SQL to execute after connecting, before other input. Failure aborts startup."`
+	InitCommandAdd           []string          `name:"init-command-add" sep:"none" help:"Additional startup SQL (repeatable). Appended after --init-command. Failure aborts startup."`
+	Table                    bool              `name:"table" short:"t" help:"Display output in table format for batch mode."`
+	HTML                     bool              `name:"html" help:"Display output in HTML format."`
+	XML                      bool              `name:"xml" help:"Display output in XML format."`
+	CSV                      bool              `name:"csv" help:"Display output in CSV format."`
+	Format                   string            `name:"format" help:"Output format (table, tab, tsv, vertical, html, xml, csv, jsonl)"`
+	Verbose                  bool              `name:"verbose" short:"v" help:"Display verbose output."`
+	Credential               string            `name:"credential" help:"Use the specific credential file"`
+	Prompt                   *string           `name:"prompt" help:"Set the prompt to the specified format (default: ${defaultPromptQuoted})"`
+	Prompt2                  *string           `name:"prompt2" help:"Set the prompt2 to the specified format (default: ${defaultPrompt2Quoted})"`
+	HistoryFile              *string           `name:"history" help:"Set the history file to the specified path (default: ${defaultHistoryFile})"`
+	Priority                 string            `name:"priority" help:"Set default request priority (HIGH|MEDIUM|LOW)"`
+	Role                     string            `name:"role" help:"Use the specific database role. --database-role is an alias."`
+	Endpoint                 string            `name:"endpoint" help:"Set the Spanner API endpoint (host:port)"`
+	Host                     string            `name:"host" help:"Host on which Spanner server is located"`
+	Port                     int               `name:"port" help:"Port number for Spanner connection"`
+	DirectedRead             string            `name:"directed-read" help:"Directed read option: replica_location[:READ_ONLY|READ_WRITE] shorthand, or DirectedReadOptions protobuf JSON"`
+	SQL                      string            `name:"sql" hidden:"" help:"Hidden alias of --execute for gcloud spanner databases execute-sql compatibility"`
+	Set                      map[string]string `name:"set" mapsep:"none" help:"Set system variables e.g. --set=name1=value1 --set=name2=value2"`
+	Param                    map[string]string `name:"param" mapsep:"none" help:"Set query parameters, it can be literal or type(EXPLAIN/DESCRIBE only). Names are case-insensitive; conflicting case aliases are rejected; identical aliases collapse to one name. e.g. --param=\"p1='string_value'\" --param=p2=FLOAT64"`
+	ProtoDescriptorFile      string            `name:"proto-descriptor-file" help:"Path of a file that contains a protobuf-serialized google.protobuf.FileDescriptorSet message."`
+	Insecure                 *bool             `name:"insecure" help:"Permit plaintext gRPC (no TLS). --skip-tls-verify is an alias. Cannot be combined with custom CA or client certificates."`
+	SkipTlsVerify            *bool             `name:"skip-tls-verify" hidden:"" help:"Hidden alias of --insecure from original spanner-cli"`
+	CaCertFile               string            `name:"ca-cert-file" help:"PEM CA certificate file used as the TLS trust bundle (replaces system roots). Requires an explicit --endpoint or --host. Startup-only."`
+	ClientCertFile           string            `name:"client-cert-file" help:"PEM client certificate for mTLS. Must be paired with --client-cert-key. Requires an explicit --endpoint or --host. Startup-only."`
+	ClientCertKey            string            `name:"client-cert-key" help:"PEM client private key for mTLS. Must be paired with --client-cert-file. Never shown by SHOW VARIABLES. Startup-only."`
+	WithoutAuthentication    bool              `name:"without-authentication" help:"Do not send Google bearer credentials to the Spanner endpoint. Requires an explicit --endpoint or --host and at least one custom TLS file. Does not enable plaintext or skip certificate verification. Default: false."`
+	EmbeddedEmulator         bool              `name:"embedded-emulator" help:"Use embedded Cloud Spanner Emulator. --project, --instance, --database, --endpoint, --insecure will be automatically configured."`
+	EmbeddedOmni             bool              `name:"embedded-omni" help:"Use embedded experimental Spanner Omni. --project, --instance, --database, --endpoint, --insecure will be automatically configured."`
+	EmulatorImage            string            `name:"emulator-image" help:"container image for embedded runtime (--embedded-emulator or --embedded-omni)"`
+	EmulatorPlatform         string            `name:"emulator-platform" help:"Container platform (e.g. linux/amd64, linux/arm64) for embedded runtime"`
+	SampleDatabase           string            `name:"sample-database" help:"Initialize embedded runtime with built-in sample (e.g. fingraph, singers, banking) or path to a metadata file (.json, .yaml, .yml). Requires --embedded-emulator or --embedded-omni. Cannot be combined with --detached."`
+	ListSamples              bool              `name:"list-samples" help:"List available sample databases and exit"`
+	OutputTemplate           string            `name:"output-template" help:"Filepath of output template. (EXPERIMENTAL)"`
+	LogLevel                 string            `name:"log-level" help:"Set CLI log level (DEBUG, INFO, WARN, ERROR). INFO and DEBUG include embedded runtime container lifecycle logs. SQL SET CLI_LOG_LEVEL does not change those container logs."`
+	LogGrpc                  bool              `name:"log-grpc" help:"Show gRPC logs"`
+	SpannerMetricsExporter   string            `name:"spanner-metrics-exporter" help:"Opt-in caller-owned Spanner client metrics exporter: off (default, no provider) or otlp (OTLP HTTP/protobuf). OTEL_* environment variables alone do not enable export. SQL SET cannot change this." enum:"off,otlp" default:"off"`
+	SpannerMetricsEndpoint   string            `name:"spanner-metrics-endpoint" help:"Absolute http/https collector URL for --spanner-metrics-exporter=otlp. Host required; no userinfo, query, or fragment. Missing/root path becomes /v1/metrics. Required with otlp; forbidden with off."`
+	SpannerTracesExporter    string            `name:"spanner-traces-exporter" help:"Opt-in process-owned Spanner client traces exporter: off (default, no pipeline or global TracerProvider change) or otlp (OTLP HTTP/protobuf). OTEL_* environment variables alone do not enable export. SQL SET cannot change this." enum:"off,otlp" default:"off"`
+	SpannerTracesEndpoint    string            `name:"spanner-traces-endpoint" help:"Absolute http/https collector URL for --spanner-traces-exporter=otlp. Host required; no userinfo, query, or fragment. Missing/root path becomes /v1/traces. Required with otlp; forbidden with off."`
+	SpannerTracesSampleRatio float64           `name:"spanner-traces-sample-ratio" help:"Root sampling ratio in [0,1] used when --spanner-traces-exporter=otlp. ParentBased: a sampled parent is honored and an unsampled parent drops the child. Default 0.01. Ignored when export is off." default:"0.01"`
 	// Kong only accepts enum validation on optional flags when they are modeled as
 	// pointers. Keeping these as *string preserves "unset" semantics while still
 	// letting Kong validate and document the allowed values natively.
@@ -272,6 +275,9 @@ func ValidateSpannerOptions(opts *spannerOptions) error {
 	}
 
 	if _, _, err := normalizeSpannerMetricsOptions(opts.SpannerMetricsExporter, opts.SpannerMetricsEndpoint); err != nil {
+		return err
+	}
+	if _, _, _, err := normalizeSpannerTracesOptions(opts.SpannerTracesExporter, opts.SpannerTracesEndpoint, opts.SpannerTracesSampleRatio); err != nil {
 		return err
 	}
 
@@ -473,6 +479,9 @@ func createSystemVariablesFromOptions(opts *spannerOptions, features ...Feature)
 	sysVars.Params = params
 	sysVars.Config.LogGrpc = opts.LogGrpc
 	if err := applySpannerMetricsOptions(&sysVars, opts); err != nil {
+		return nil, err
+	}
+	if err := applySpannerTracesOptions(&sysVars, opts); err != nil {
 		return nil, err
 	}
 	sysVars.Feature.LogLevel = l

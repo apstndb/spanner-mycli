@@ -123,7 +123,7 @@ func requirePreservedCommandResult(t *testing.T, err error) {
 	if err == nil {
 		t.Fatal("error = nil, want the original command result")
 	}
-	if strings.Contains(err.Error(), "Spanner metrics shutdown") {
+	if strings.Contains(err.Error(), "Spanner telemetry shutdown") || strings.Contains(err.Error(), "Spanner metrics shutdown") {
 		t.Fatalf("cleanup replaced the original result: %v", err)
 	}
 	var exitErr *ExitCodeError
@@ -168,7 +168,7 @@ func newHangingOTLPServer() (*httptest.Server, <-chan struct{}) {
 
 func requireOneBoundedShutdownDiagnostic(t *testing.T, stderr string, elapsed time.Duration) {
 	t.Helper()
-	const warning = "WARNING: Spanner metrics shutdown failed"
+	const warning = "WARNING: Spanner telemetry shutdown failed"
 	if n := strings.Count(stderr, warning); n != 1 {
 		t.Fatalf("shutdown diagnostics = %d, want 1; stderr=%q", n, stderr)
 	}

@@ -16,6 +16,7 @@ package mycli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
@@ -29,10 +30,11 @@ import (
 )
 
 const (
-	spannerMetricsExporterOff  = "off"
-	spannerMetricsExporterOTLP = "otlp"
-	spannerMetricsDefaultPath  = "/v1/metrics"
-	spannerMetricsCleanupBound = 5 * time.Second
+	spannerMetricsExporterOff    = "off"
+	spannerMetricsExporterOTLP   = "otlp"
+	spannerMetricsDefaultPath    = "/v1/metrics"
+	spannerTelemetryCleanupBound = 5 * time.Second
+	spannerMetricsCleanupBound   = spannerTelemetryCleanupBound
 )
 
 // metricsOwner is the process-level caller-owned Spanner client-metrics
@@ -68,21 +70,25 @@ func normalizeSpannerMetricsOptions(exporter, endpoint string) (string, string, 
 	}
 }
 
-func parseSpannerMetricsEndpoint(raw string) (string, error) {
+func parseOTLPEndpoint(raw, flagName, defaultPath string) (string, error) {
 	u, err := url.Parse(raw)
 	if err != nil {
-		return "", fmt.Errorf("invalid --spanner-metrics-endpoint %q: %w", raw, err)
+		return "", fmt.Errorf("invalid %s %q: %w", flagName, raw, err)
 	}
 	if !u.IsAbs() || u.Opaque != "" || u.Hostname() == "" || (u.Scheme != "http" && u.Scheme != "https") {
-		return "", fmt.Errorf("invalid --spanner-metrics-endpoint %q: must be an absolute http or https URL with a host", raw)
+		return "", fmt.Errorf("invalid %s %q: must be an absolute http or https URL with a host", flagName, raw)
 	}
 	if u.User != nil || u.RawQuery != "" || u.Fragment != "" {
-		return "", fmt.Errorf("invalid --spanner-metrics-endpoint %q: userinfo, query, and fragment are not allowed", raw)
+		return "", fmt.Errorf("invalid %s %q: userinfo, query, and fragment are not allowed", flagName, raw)
 	}
 	if u.Path == "" || u.Path == "/" {
-		u.Path = spannerMetricsDefaultPath
+		u.Path = defaultPath
 	}
 	return u.String(), nil
+}
+
+func parseSpannerMetricsEndpoint(raw string) (string, error) {
+	return parseOTLPEndpoint(raw, "--spanner-metrics-endpoint", spannerMetricsDefaultPath)
 }
 
 func applySpannerMetricsOptions(sysVars *systemVariables, opts *spannerOptions) error {
@@ -103,7 +109,7 @@ func startSpannerMetrics(sysVars *systemVariables) (*metricsOwner, error) {
 		return &metricsOwner{}, nil
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), spannerMetricsCleanupBound)
+	ctx, cancel := context.WithTimeout(context.Background(), spannerTelemetryCleanupBound)
 	defer cancel()
 	exporter, err := otlpmetrichttp.New(ctx, otlpmetrichttp.WithEndpointURL(sysVars.Config.SpannerMetricsEndpoint))
 	if err != nil {
@@ -116,19 +122,15 @@ func startSpannerMetrics(sysVars *systemVariables) (*metricsOwner, error) {
 	return &metricsOwner{provider: provider}, nil
 }
 
-// Shutdown flushes and stops the owned reader/provider using one fresh
-// five-second budget. It is independent of the cancelled command context.
-// Diagnostics go to errw; the caller keeps the original exit result.
-func (o *metricsOwner) Shutdown(errw io.Writer) {
+// Shutdown flushes and stops the owned reader/provider. The caller supplies
+// the shared cleanup context and writes any combined diagnostic.
+func (o *metricsOwner) Shutdown(ctx context.Context) error {
 	if o == nil || o.provider == nil {
-		return
+		return nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), spannerMetricsCleanupBound)
-	defer cancel()
-	if err := o.provider.Shutdown(ctx); err != nil && errw != nil {
-		fmt.Fprintf(errw, "WARNING: Spanner metrics shutdown failed: %v\n", err)
-	}
+	err := o.provider.Shutdown(ctx)
 	o.provider = nil
+	return err
 }
 
 func closeCliClients(cli *Cli) {
@@ -160,13 +162,29 @@ func runWithOutputErrStream(fallback io.Writer) io.Writer {
 	return fallback
 }
 
-// releaseOwnedClientsAndMetrics is the runWithOutput cleanup seam: close
-// owned CLI clients first, then flush/stop the process-level metrics owner
-// with one fresh five-second budget. Shutdown diagnostics go to errw and
-// must not replace the caller's original result.
+// releaseOwnedClientsAndMetrics keeps the metrics-only cleanup entry point.
 func releaseOwnedClientsAndMetrics(cli *Cli, metrics *metricsOwner, errw io.Writer) {
+	releaseOwnedClientsAndTelemetry(cli, metrics, nil, errw)
+}
+
+// releaseOwnedClientsAndTelemetry closes owned CLI clients first, then
+// flushes/stops enabled metrics and traces against one fresh five-second
+// budget. Both Shutdown calls run even if the first exhausts the context.
+// Diagnostics go to errw and must not replace the caller's original result.
+func releaseOwnedClientsAndTelemetry(cli *Cli, metrics *metricsOwner, traces *tracesOwner, errw io.Writer) {
 	closeCliClients(cli)
-	metrics.Shutdown(errw)
+	ctx, cancel := context.WithTimeout(context.Background(), spannerTelemetryCleanupBound)
+	defer cancel()
+	var errs []error
+	if err := metrics.Shutdown(ctx); err != nil {
+		errs = append(errs, err)
+	}
+	if err := traces.Shutdown(ctx); err != nil {
+		errs = append(errs, err)
+	}
+	if len(errs) > 0 && errw != nil {
+		fmt.Fprintf(errw, "WARNING: Spanner telemetry shutdown failed: %v\n", errors.Join(errs...))
+	}
 }
 
 func overlayClientMetricsProvider(cfg *spanner.ClientConfig, sysVars *systemVariables) {

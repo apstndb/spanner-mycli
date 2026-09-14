@@ -136,6 +136,15 @@ func StringVar(ptr *string) *VarHandler[string] {
 	}
 }
 
+// Float64Var creates a handler for float64 variables.
+func Float64Var(ptr *float64) *VarHandler[float64] {
+	return &VarHandler[float64]{
+		ptr:    ptr,
+		format: func(f float64) string { return strconv.FormatFloat(f, 'g', -1, 64) },
+		parse:  func(s string) (float64, error) { return strconv.ParseFloat(s, 64) },
+	}
+}
+
 // IntVar creates a handler for int64 variables
 func IntVar(ptr *int64) *VarHandler[int64] {
 	return &VarHandler[int64]{
