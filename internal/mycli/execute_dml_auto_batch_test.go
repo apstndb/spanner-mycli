@@ -335,8 +335,8 @@ func TestAutoBatchDMLLifecycle(t *testing.T) {
 		mustExec(t, ctx, session, "BEGIN")
 		mustExec(t, ctx, session, "INSERT INTO AuditBatch (Id) VALUES (1)")
 		_, err := execSQL(t, ctx, session, "CREATE TABLE Extra (Id INT64) PRIMARY KEY (Id)")
-		if err == nil || !strings.Contains(err.Error(), "active batch DML") {
-			t.Fatalf("DDL with automatic queue: %v", err)
+		if !errors.Is(err, errDDLInTransaction) {
+			t.Fatalf("DDL with automatic queue: %v, want errDDLInTransaction", err)
 		}
 		if !session.txn.HasAutomaticDML() {
 			t.Fatal("DDL guard consumed the automatic queue")

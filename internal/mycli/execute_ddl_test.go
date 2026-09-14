@@ -123,8 +123,8 @@ func TestBufferOrExecuteDdlStatements(t *testing.T) {
 		session := newSessionForLocalVarTest(t)
 		session.batch.SetCurrent(&BatchDMLStatement{})
 		_, err := bufferOrExecuteDdlStatements(t.Context(), session, []string{"CREATE TABLE t (id INT64) PRIMARY KEY (id)"})
-		if err == nil || !strings.Contains(err.Error(), "active batch DML") {
-			t.Fatalf("error = %v, want active batch DML", err)
+		if !errors.Is(err, errDDLManualDMLBatch) {
+			t.Fatalf("error = %v, want errDDLManualDMLBatch", err)
 		}
 	})
 
@@ -157,11 +157,12 @@ func TestBufferOrExecuteDdlStatements(t *testing.T) {
 		t.Parallel()
 		session := newSessionForLocalVarTest(t)
 		session.txn.tc = &transactionContext{
+			attrs:   transactionAttributes{mode: transactionModeReadWrite},
 			autoDML: []automaticDMLEntry{{stmt: spanner.Statement{SQL: "INSERT INTO t (id) VALUES (1)"}, expected: 1}},
 		}
 		_, err := bufferOrExecuteDdlStatements(t.Context(), session, []string{"CREATE TABLE t (id INT64) PRIMARY KEY (id)"})
-		if err == nil || !strings.Contains(err.Error(), "active batch DML") {
-			t.Fatalf("error = %v, want active batch DML", err)
+		if !errors.Is(err, errDDLInTransaction) {
+			t.Fatalf("error = %v, want errDDLInTransaction", err)
 		}
 	})
 }
@@ -293,4 +294,19 @@ func TestNewProgressWithTTY(t *testing.T) {
 		t.Fatal("TTY stream: got nil progress")
 	}
 	p.Wait()
+}
+
+func TestMarshalDDLProtoDescriptors(t *testing.T) {
+	t.Parallel()
+	if b, err := marshalDDLProtoDescriptors(nil); err != nil || b != nil {
+		t.Fatalf("nil session: bytes=%v err=%v", b, err)
+	}
+	session := &Session{systemVariables: &systemVariables{}}
+	if b, err := marshalDDLProtoDescriptors(session); err != nil || b != nil {
+		t.Fatalf("nil descriptors: bytes=%v err=%v", b, err)
+	}
+	session.systemVariables.Internal.ProtoDescriptor = uninitializedFileDescriptorSet()
+	if _, err := marshalDDLProtoDescriptors(session); err == nil {
+		t.Fatal("uninitialized descriptors must fail before Commit")
+	}
 }
