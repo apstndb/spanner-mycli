@@ -676,6 +676,25 @@ func (s *BulkDdlStatement) Execute(ctx context.Context, session *Session, out Op
 	return executeDdlStatements(ctx, session, s.Ddls)
 }
 
+// preparedDDLStatement is a nonempty RUN BATCH payload after local descriptor
+// validation and transaction admission. Execute must not rematerialize
+// descriptors or call prepareDDLInTransaction again.
+type preparedDDLStatement struct {
+	ddls        []string
+	descriptors []byte
+	prep        *ddlTxnPrep
+}
+
+func (s *preparedDDLStatement) String() string {
+	return strings.Join(s.ddls, ";\n")
+}
+
+func (preparedDDLStatement) isNonTransactionalMutationStatement() {}
+
+func (s *preparedDDLStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
+	return executePreparedDdlStatements(ctx, session, s.ddls, s.prep, s.descriptors)
+}
+
 type BatchDMLStatement struct {
 	DMLs []spanner.Statement
 }
@@ -729,9 +748,27 @@ func runBatch(ctx context.Context, session *Session, out OperationOutput) (*Resu
 	}
 	if session.batch.IsActive() {
 		if bulk, ok := session.batch.Current().(*BulkDdlStatement); ok && len(bulk.Ddls) > 0 {
-			if _, err := prepareDDLInTransaction(ctx, session); err != nil {
+			descriptors, err := marshalDDLProtoDescriptors(session)
+			if err != nil {
 				return nil, err
 			}
+			prep, err := prepareDDLInTransaction(ctx, session)
+			if err != nil {
+				return nil, err
+			}
+			batch, err := session.batch.TakeForExecution()
+			if err != nil {
+				return nil, annotateDDLAfterCommit(prep, err)
+			}
+			taken, ok := batch.(*BulkDdlStatement)
+			if !ok {
+				return nil, annotateDDLAfterCommit(prep, fmt.Errorf("internal error: expected *BulkDdlStatement"))
+			}
+			return session.ExecuteStatementWithOutput(ctx, &preparedDDLStatement{
+				ddls:        taken.Ddls,
+				descriptors: descriptors,
+				prep:        prep,
+			}, out)
 		}
 		batch, err := session.batch.TakeForExecution()
 		if err != nil {

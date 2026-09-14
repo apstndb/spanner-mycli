@@ -33,7 +33,25 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/descriptorpb"
 )
+
+// uninitializedFileDescriptorSet is a FileDescriptorSet whose nested proto2
+// NamePart is missing required fields. Local marshal/CheckInitialized must
+// reject it before any Commit or Admin RPC.
+func uninitializedFileDescriptorSet() *descriptorpb.FileDescriptorSet {
+	return &descriptorpb.FileDescriptorSet{
+		File: []*descriptorpb.FileDescriptorProto{{
+			Name: proto.String("bad.proto"),
+			Options: &descriptorpb.FileOptions{
+				UninterpretedOption: []*descriptorpb.UninterpretedOption{{
+					Name: []*descriptorpb.UninterpretedOption_NamePart{{}},
+				}},
+			},
+		}},
+	}
+}
 
 const ddlInTxnSQL = "CREATE TABLE t (id INT64) PRIMARY KEY (id)"
 
@@ -259,7 +277,8 @@ func TestDDLInTransactionRPCAdmission(t *testing.T) {
 	t.Run("successful commit then failed ddl", func(t *testing.T) {
 		t.Parallel()
 		h := newDDLTxnHarness(t)
-		h.admin.updateErr = status.Error(codes.InvalidArgument, "bad ddl")
+		injected := status.Error(codes.InvalidArgument, "bad ddl")
+		h.admin.updateErr = injected
 		mustExec(t, ctx, h.session, "SET CLI_DDL_IN_TRANSACTION_MODE = 'AUTO_COMMIT_TRANSACTION'")
 		mustExec(t, ctx, h.session, "BEGIN RW")
 		_, err := execSQL(t, ctx, h.session, ddlInTxnSQL)
@@ -267,14 +286,14 @@ func TestDDLInTransactionRPCAdmission(t *testing.T) {
 		if !errors.As(err, &after) {
 			t.Fatalf("err=%v, want ddlAfterCommitError", err)
 		}
-		if !errors.Is(err, err) || !strings.Contains(err.Error(), "bad ddl") {
-			t.Fatalf("must preserve DDL cause: %v", err)
+		if !errors.Is(err, injected) {
+			t.Fatalf("must preserve injected Admin cause: %v", err)
 		}
-		if status.Code(err) != codes.InvalidArgument && !strings.Contains(err.Error(), "InvalidArgument") {
-			// wrapped create-op error should still mention the cause
-			if !strings.Contains(err.Error(), "bad ddl") {
-				t.Fatalf("DDL cause lost: %v", err)
-			}
+		if status.Code(err) != codes.InvalidArgument {
+			t.Fatalf("status=%v, want InvalidArgument: %v", status.Code(err), err)
+		}
+		if !strings.Contains(err.Error(), "bad ddl") {
+			t.Fatalf("must preserve DDL cause: %v", err)
 		}
 		if len(h.hb.server.commits) != 1 {
 			t.Fatalf("commits=%v", h.hb.server.commits)
@@ -385,6 +404,67 @@ func TestDDLInTransactionRPCAdmission(t *testing.T) {
 		}
 		if !h.session.batch.IsActive() {
 			t.Fatal("rejected RUN BATCH should keep the DDL batch")
+		}
+	})
+
+	t.Run("run batch after later begin auto_commit admin failure keeps commit receipt", func(t *testing.T) {
+		t.Parallel()
+		h := newDDLTxnHarness(t)
+		injected := status.Error(codes.InvalidArgument, "bad ddl")
+		h.admin.updateErr = injected
+		mustExec(t, ctx, h.session, "SET CLI_DDL_IN_TRANSACTION_MODE = 'AUTO_COMMIT_TRANSACTION'")
+		mustExec(t, ctx, h.session, "START BATCH DDL")
+		mustExec(t, ctx, h.session, ddlInTxnSQL)
+		mustExec(t, ctx, h.session, "BEGIN RW")
+		_, err := execSQL(t, ctx, h.session, "RUN BATCH")
+		var after *ddlAfterCommitError
+		if !errors.As(err, &after) {
+			t.Fatalf("err=%v, want ddlAfterCommitError", err)
+		}
+		if !errors.Is(err, injected) {
+			t.Fatalf("must preserve injected Admin cause: %v", err)
+		}
+		if status.Code(err) != codes.InvalidArgument {
+			t.Fatalf("status=%v, want InvalidArgument: %v", status.Code(err), err)
+		}
+		if len(h.hb.server.commits) != 1 {
+			t.Fatalf("commits=%v, want 1", h.hb.server.commits)
+		}
+		if !h.adminCalled() {
+			t.Fatal("Admin must have been attempted")
+		}
+		if h.session.batch.IsActive() {
+			t.Fatal("successful admission should consume the batch")
+		}
+	})
+
+	t.Run("run batch after later begin prevalidation failure keeps batch", func(t *testing.T) {
+		t.Parallel()
+		h := newDDLTxnHarness(t)
+		mustExec(t, ctx, h.session, "SET CLI_DDL_IN_TRANSACTION_MODE = 'AUTO_COMMIT_TRANSACTION'")
+		mustExec(t, ctx, h.session, "START BATCH DDL")
+		mustExec(t, ctx, h.session, ddlInTxnSQL)
+		mustExec(t, ctx, h.session, "BEGIN RW")
+		h.session.systemVariables.Internal.ProtoDescriptor = uninitializedFileDescriptorSet()
+		_, err := execSQL(t, ctx, h.session, "RUN BATCH")
+		if err == nil {
+			t.Fatal("expected descriptor validation error")
+		}
+		var after *ddlAfterCommitError
+		if errors.As(err, &after) {
+			t.Fatal("prevalidation must not report a successful commit")
+		}
+		if len(h.hb.server.commits) != 0 {
+			t.Fatalf("prevalidation must not Commit, commits=%v", h.hb.server.commits)
+		}
+		if h.adminCalled() {
+			t.Fatal("prevalidation must not call Admin")
+		}
+		if !h.session.batch.IsActive() {
+			t.Fatal("failed admission must keep the DDL batch")
+		}
+		if !h.session.txn.InReadWriteTransaction() {
+			t.Fatal("failed admission must leave the RW owner")
 		}
 	})
 }

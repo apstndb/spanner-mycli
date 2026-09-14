@@ -40,7 +40,14 @@ func marshalDDLProtoDescriptors(session *Session) ([]byte, error) {
 	if session == nil || session.systemVariables == nil {
 		return nil, nil
 	}
-	return proto.Marshal(session.systemVariables.Internal.ProtoDescriptor)
+	fds := session.systemVariables.Internal.ProtoDescriptor
+	if fds == nil {
+		return nil, nil
+	}
+	if err := proto.CheckInitialized(fds); err != nil {
+		return nil, fmt.Errorf("invalid proto descriptors: %w", err)
+	}
+	return proto.Marshal(fds)
 }
 
 // replacerForProgress replaces tabs and newlines to avoid breaking progress bars.
@@ -81,7 +88,14 @@ func executeDdlStatements(ctx context.Context, session *Session, ddls []string) 
 		return nil, err
 	}
 
-	result, err := submitDdlStatements(ctx, session, ddls, b)
+	return executePreparedDdlStatements(ctx, session, ddls, prep, b)
+}
+
+// executePreparedDdlStatements submits already-validated descriptors with a
+// preparation receipt from prepareDDLInTransaction. RUN BATCH uses this so a
+// Commit that happens before Admin is not discarded.
+func executePreparedDdlStatements(ctx context.Context, session *Session, ddls []string, prep *ddlTxnPrep, descriptors []byte) (*Result, error) {
+	result, err := submitDdlStatements(ctx, session, ddls, descriptors)
 	if err != nil {
 		return result, annotateDDLAfterCommit(prep, err)
 	}

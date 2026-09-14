@@ -91,6 +91,7 @@ var (
 	_ nonTransactionalMutationStatement = (*ExportDataStatement)(nil)
 	_ nonTransactionalMutationStatement = (*DdlStatement)(nil)
 	_ nonTransactionalMutationStatement = (*BulkDdlStatement)(nil)
+	_ nonTransactionalMutationStatement = (*preparedDDLStatement)(nil)
 	_ nonTransactionalMutationStatement = (*SyncProtoStatement)(nil)
 )
 
