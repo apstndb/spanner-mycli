@@ -1127,6 +1127,16 @@ TABLE Singers (42)
 			want:  &SyncProtoStatement{},
 		},
 		{
+			desc:  "SYNC PROTO BUNDLE RECURSIVE UPSERT",
+			input: "SYNC PROTO BUNDLE RECURSIVE UPSERT (examples.shipping.Order)",
+			want:  &SyncProtoStatement{UpsertPaths: sliceOf("examples.shipping.Order")},
+		},
+		{
+			desc:  "SYNC PROTO BUNDLE mixed RECURSIVE and plain UPSERT",
+			input: "SYNC PROTO BUNDLE UPSERT (examples.A) RECURSIVE UPSERT (examples.B)",
+			want:  &SyncProtoStatement{UpsertPaths: sliceOf("examples.A", "examples.B")},
+		},
+		{
 			desc:  "SET statement",
 			input: `SET OPTIMIZER_VERSION = "3"`,
 			want:  &SetStatement{VarName: "OPTIMIZER_VERSION", Value: `"3"`},
@@ -1560,6 +1570,9 @@ func TestBuildStatement_InvalidCase(t *testing.T) {
 		"SYNC PROTO BUNDLE UPSERT (examples.A) DELETE (examples.A)",
 		"SYNC PROTO BUNDLE DELETE (examples.A) UPSERT (examples.A)",
 		"SYNC PROTO BUNDLE UPSERT (examples.A) DELETE (",
+		"SYNC PROTO BUNDLE RECURSIVE DELETE (examples.A)",
+		"SYNC PROTO BUNDLE RECURSIVE",
+		"SYNC PROTO BUNDLE UPSERT (examples.A) RECURSIVE",
 		`SHOW LAST QUERY PLAN INTO "unterminated`,
 		"SHOW LAST QUERY PLAN INTO two paths.json",
 		`SHOW LAST QUERY PLAN INTO ""`,

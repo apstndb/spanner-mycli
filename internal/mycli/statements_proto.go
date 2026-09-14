@@ -34,15 +34,42 @@ var (
 	remoteProtoRowEncoder = spancodec.MustNewRowEncoder[*descriptorInfo](spancodec.WithoutColumns("file"))
 )
 
+// syncProtoClause is one parsed UPSERT or DELETE list. recursive is valid
+// only on UPSERT and is expanded against the local FileDescriptorSet.
+type syncProtoClause struct {
+	recursive bool
+	delete    bool
+	paths     []string
+}
+
 type SyncProtoStatement struct {
 	UpsertPaths []string
 	DeletePaths []string
+	// clauses preserves per-clause RECURSIVE vs plain UPSERT order. It is
+	// unexported so existing cmp.Diff cases keep comparing listed paths only.
+	clauses []syncProtoClause
 }
 
 func (SyncProtoStatement) isMutationStatement() {}
 
+// Equal reports listed-path identity so existing cmp.Diff cases ignore clauses.
+func (s *SyncProtoStatement) Equal(o *SyncProtoStatement) bool {
+	if s == nil || o == nil {
+		return s == o
+	}
+	return slices.Equal(s.UpsertPaths, o.UpsertPaths) && slices.Equal(s.DeletePaths, o.DeletePaths)
+}
+
 func (s *SyncProtoStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
-	if name, ok := firstSharedFullName(s.UpsertPaths, s.DeletePaths); ok {
+	var local *descriptorpb.FileDescriptorSet
+	if session.systemVariables != nil {
+		local = session.systemVariables.Internal.ProtoDescriptor
+	}
+	upsertPaths, deletePaths, err := s.resolvedPaths(local)
+	if err != nil {
+		return nil, err
+	}
+	if name, ok := firstSharedFullName(upsertPaths, deletePaths); ok {
 		return nil, fmt.Errorf("SYNC PROTO BUNDLE conflict: %q appears in both UPSERT and DELETE", name)
 	}
 
@@ -51,7 +78,102 @@ func (s *SyncProtoStatement) Execute(ctx context.Context, session *Session, out 
 		return nil, err
 	}
 
-	return bufferOrExecuteDdlStatements(ctx, session, composeProtoBundleDDLs(fds, s.UpsertPaths, s.DeletePaths))
+	return bufferOrExecuteDdlStatements(ctx, session, composeProtoBundleDDLs(fds, upsertPaths, deletePaths))
+}
+
+// resolvedPaths expands RECURSIVE UPSERT clauses against local descriptors.
+// Missing, placeholder, and map-entry roots fail here, before Admin reads.
+// First-occurrence dedup is per operation; UPSERT/DELETE overlap is left to
+// the caller so mixed DELETE conflicts are detected after expansion.
+func (s *SyncProtoStatement) resolvedPaths(local *descriptorpb.FileDescriptorSet) ([]string, []string, error) {
+	if len(s.clauses) == 0 {
+		return s.UpsertPaths, s.DeletePaths, nil
+	}
+
+	var upsertPaths, deletePaths []string
+	seenUpsert := make(map[string]struct{})
+	seenDelete := make(map[string]struct{})
+	for _, clause := range s.clauses {
+		for _, path := range clause.paths {
+			names := []string{path}
+			if clause.recursive {
+				var err error
+				names, err = expandRecursiveProtoNames(local, path)
+				if err != nil {
+					return nil, nil, err
+				}
+			}
+			target, seen := &upsertPaths, seenUpsert
+			if clause.delete {
+				target, seen = &deletePaths, seenDelete
+			}
+			for _, name := range names {
+				if _, ok := seen[name]; ok {
+					continue
+				}
+				seen[name] = struct{}{}
+				*target = append(*target, name)
+			}
+		}
+	}
+	return upsertPaths, deletePaths, nil
+}
+
+func expandRecursiveProtoNames(fds *descriptorpb.FileDescriptorSet, root string) ([]string, error) {
+	found, ok := lookupLocalDescriptor(fds, root)
+	if !ok {
+		return nil, fmt.Errorf("SYNC PROTO BUNDLE RECURSIVE UPSERT: unknown type %q", root)
+	}
+	switch dp := found.(type) {
+	case *descriptorpb.EnumDescriptorProto:
+		return []string{root}, nil
+	case *descriptorpb.DescriptorProto:
+		if hasPlaceholderDescriptorProto(dp) {
+			return nil, fmt.Errorf("SYNC PROTO BUNDLE RECURSIVE UPSERT: %q is a placeholder descriptor", root)
+		}
+		if dp.GetOptions().GetMapEntry() {
+			return nil, fmt.Errorf("SYNC PROTO BUNDLE RECURSIVE UPSERT: %q is a synthetic map entry", root)
+		}
+	default:
+		return nil, fmt.Errorf("SYNC PROTO BUNDLE RECURSIVE UPSERT: %q is not a message or enum", root)
+	}
+
+	var names []string
+	prefix := root + "."
+	for _, fdp := range fds.GetFile() {
+		for name, message := range fdpToSeq(fdp) {
+			if name != root && !strings.HasPrefix(name, prefix) {
+				continue
+			}
+			if !selectableProtoDescriptor(message) {
+				continue
+			}
+			names = append(names, name)
+		}
+	}
+	return names, nil
+}
+
+func lookupLocalDescriptor(fds *descriptorpb.FileDescriptorSet, fullName string) (proto.Message, bool) {
+	for _, fdp := range fds.GetFile() {
+		for name, message := range fdpToSeq(fdp) {
+			if name == fullName {
+				return message, true
+			}
+		}
+	}
+	return nil, false
+}
+
+func selectableProtoDescriptor(message proto.Message) bool {
+	switch m := message.(type) {
+	case *descriptorpb.DescriptorProto:
+		return !hasPlaceholderDescriptorProto(m) && !m.GetOptions().GetMapEntry()
+	case *descriptorpb.EnumDescriptorProto:
+		return true
+	default:
+		return false
+	}
 }
 
 func firstSharedFullName(upsertPaths, deletePaths []string) (string, bool) {
