@@ -857,16 +857,19 @@ func (s *Session) ExecuteStatement(ctx context.Context, stmt Statement) (*Result
 }
 
 func (s *Session) executeStatement(ctx context.Context, stmt Statement, out OperationOutput) (result *Result, err error) {
-	// Drain expired-owner SET LOCAL undo at the serialized session safe
-	// point before this statement reads execution defaults or creates a
-	// new owner. Timer goroutines never call Registry.Set. Owner install
-	// also restores under tm.mu via withOwnerInstallAfterRestore so a
-	// retirement that lands after this drain cannot leak LOCAL into B.
+	// Owner-aware deferred retirement: enter the statement frame so a
+	// timeout callback can only mark expirePending, then drain any
+	// already-detached undo, run the test seam, and apply the barrier
+	// before statement-timeout defaults are read. Timer goroutines never
+	// call Registry.Set. Nested ExecuteStatement increments depth.
 	if s.txn != nil {
+		s.txn.enterStatement()
+		defer s.txn.leaveStatement()
 		s.txn.restoreLocalVarsIfIdle()
 		if s.txn.afterEntryRestore != nil {
 			s.txn.afterEntryRestore()
 		}
+		s.txn.syncExpiredOwnerRestore()
 	}
 
 	// Validate statement compatibility with current session mode

@@ -76,6 +76,9 @@ type SetStatement struct {
 func (s *SetStatement) isDetachedCompatible() {}
 
 func (s *SetStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
+	if session.txn != nil {
+		session.txn.syncExpiredOwnerRestore()
+	}
 	sysVars := session.systemVariables
 	sysVars.ensureRegistry()
 	if strings.EqualFold(s.VarName, protoDescriptorsVarName) && session.batch.IsActive() {
@@ -172,6 +175,9 @@ type ResetAllStatement struct{}
 func (s *ResetAllStatement) isDetachedCompatible() {}
 
 func (s *ResetAllStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
+	if session.txn != nil {
+		session.txn.syncExpiredOwnerRestore()
+	}
 	sysVars := session.systemVariables
 	sysVars.ensureRegistry()
 	prep, err := sysVars.Registry.prepareResetAll()
@@ -194,6 +200,9 @@ type ResetStatement struct {
 func (s *ResetStatement) isDetachedCompatible() {}
 
 func (s *ResetStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
+	if session.txn != nil {
+		session.txn.syncExpiredOwnerRestore()
+	}
 	sysVars := session.systemVariables
 	sysVars.ensureRegistry()
 	prep, err := sysVars.Registry.prepareReset([]string{s.VarName})

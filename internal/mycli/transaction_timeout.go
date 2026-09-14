@@ -146,11 +146,8 @@ func (tm *TransactionManager) batchUpdateWithRemainingDeadline(ctx context.Conte
 }
 
 // watchTransactionDeadline cancels in-flight RPCs via the already-armed
-// deadline context (no lifecycle lock, no tm.mu) and then retires only
-// the matching logical owner under tm.mu. It never calls Registry.Set;
-// SET LOCAL undo is detached for the session/CLI safe point, which
-// restores before the next statement reads defaults or installs a
-// replacement owner.
+// deadline context (no lifecycle lock, no tm.mu) and then expires only
+// the matching logical owner under tm.mu. It never calls Registry.Set.
 func (tm *TransactionManager) watchTransactionDeadline(owner *transactionContext, ctx context.Context) {
 	<-ctx.Done()
 	if !errors.Is(ctx.Err(), context.DeadlineExceeded) {
@@ -159,17 +156,24 @@ func (tm *TransactionManager) watchTransactionDeadline(owner *transactionContext
 	tm.retireMatchingOwner(owner)
 }
 
-// retireMatchingOwner retires only the matching logical owner under tm.mu
-// and detaches SET LOCAL undo. It does not call Registry.Set.
-// ExecuteStatement / withOwnerInstallAfterRestore restore that undo before
-// another statement reads defaults or installs a replacement owner.
+// retireMatchingOwner expires only the matching logical owner under tm.mu.
+// Outside ExecuteStatement it detaches SET LOCAL undo immediately. During
+// a statement it marks expirePending and stops heartbeat/deadline watchers
+// without detaching undo, so syncExpiredOwnerRestore can restore before
+// ordinary SET, default reads, or a replacement owner. It does not call
+// Registry.Set.
 func (tm *TransactionManager) retireMatchingOwner(owner *transactionContext) {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
 	if tm.tc != owner {
 		return
 	}
-	tm.retireTransactionContextLocked()
+	if tm.statementDepth > 0 {
+		owner.expirePending = true
+		owner.Close()
+	} else {
+		tm.retireTransactionContextLocked()
+	}
 	if hook := tm.timeoutAfterExpire; hook != nil {
 		hook(owner)
 	}

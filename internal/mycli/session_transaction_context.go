@@ -73,7 +73,13 @@ type transactionContext struct {
 	// independent of whether a timer exists: NULL/0 still freezes SET LOCAL
 	// after first use. Failed construction and physical replacement keep
 	// this owner pointer, so firstUse is preserved with it.
-	firstUse       bool
+	firstUse bool
+	// expirePending is set by the timeout watcher while a statement is
+	// executing. Heartbeat and the deadline watcher stop immediately;
+	// SET LOCAL undo stays on this owner until a statement-safe barrier
+	// retires it and restores the registry. Timer goroutines never call
+	// Registry.Set.
+	expirePending  bool
 	deadline       time.Time
 	deadlineCtx    context.Context
 	deadlineCancel context.CancelFunc

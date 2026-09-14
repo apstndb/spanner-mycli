@@ -885,9 +885,7 @@ func TestTransactionTimeoutExpiryAfterEntryRestoreBeforeBegin(t *testing.T) {
 		t.Fatal(err)
 	}
 	ownerA := requireOwner(t, h.tm)
-	h.tm.afterEntryRestore = func() {
-		h.tm.retireMatchingOwner(ownerA)
-	}
+	expireOwnerAfterEntryRestore(h.tm, ownerA)
 	mustExec(t, ctx, session, "BEGIN")
 	if txnContext(h.tm) == ownerA {
 		t.Fatal("BEGIN reused expired owner A")
@@ -979,6 +977,145 @@ func TestTransactionTimeoutInFlightCancelRestoresLocalBeforeNextOwner(t *testing
 	d, captured, armed := ownerTimeout(h.tm)
 	if !captured || d != time.Hour || armed {
 		t.Fatalf("next owner snapshot d=%s captured=%v armed=%v, want restored 1h pending", d, captured, armed)
+	}
+}
+
+func TestTransactionTimeoutExpiryAfterEntryRestoreOrdinarySET(t *testing.T) {
+	t.Parallel()
+	h := newHeartbeatHarness(t)
+	ctx := t.Context()
+	session := sessionForTM(t, h.tm)
+	h.attachSessionClient(session)
+	mustExec(t, ctx, session, "SET TRANSACTION_TIMEOUT = '1h'")
+	mustExec(t, ctx, session, "BEGIN")
+	mustExec(t, ctx, session, "SET LOCAL TRANSACTION_TIMEOUT = '2h'")
+	if err := h.tm.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+		t.Fatal(err)
+	}
+	ownerA := requireOwner(t, h.tm)
+	expireOwnerAfterEntryRestore(h.tm, ownerA)
+	mustExec(t, ctx, session, "SET TRANSACTION_TIMEOUT = '3h'")
+	if txnContext(h.tm) != nil {
+		t.Fatal("ordinary SET left expired owner A")
+	}
+	if got := mustGetVar(t, session, "TRANSACTION_TIMEOUT"); got != (3 * time.Hour).String() {
+		t.Fatalf("post-statement restore overwrote SET: %s", got)
+	}
+}
+
+func TestTransactionTimeoutExpiryAfterEntryRestoreFrozenPriorityIsolation(t *testing.T) {
+	t.Parallel()
+	h := newHeartbeatHarness(t)
+	ctx := t.Context()
+	session := sessionForTM(t, h.tm)
+	h.attachSessionClient(session)
+	mustExec(t, ctx, session, "SET RPC_PRIORITY = 'LOW'")
+	mustExec(t, ctx, session, "SET DEFAULT_ISOLATION_LEVEL = 'SERIALIZABLE'")
+	mustExec(t, ctx, session, "BEGIN")
+	mustExec(t, ctx, session, "SET LOCAL RPC_PRIORITY = 'HIGH'")
+	mustExec(t, ctx, session, "SET LOCAL DEFAULT_ISOLATION_LEVEL = 'REPEATABLE_READ'")
+	if err := h.tm.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+		t.Fatal(err)
+	}
+	ownerA := requireOwner(t, h.tm)
+	expireOwnerAfterEntryRestore(h.tm, ownerA)
+	mustExec(t, ctx, session, "BEGIN")
+	if txnContext(h.tm) == ownerA {
+		t.Fatal("BEGIN reused expired owner A")
+	}
+	if got := mustGetVar(t, session, "RPC_PRIORITY"); got != "LOW" {
+		t.Fatalf("registry kept A's LOCAL priority: %s", got)
+	}
+	if got := mustGetVar(t, session, "DEFAULT_ISOLATION_LEVEL"); got != "SERIALIZABLE" {
+		t.Fatalf("registry kept A's LOCAL isolation: %s", got)
+	}
+	attrs := h.tm.TransactionAttrsWithLock()
+	if attrs.priority != sppb.RequestOptions_PRIORITY_LOW {
+		t.Fatalf("B froze A's LOCAL priority: %v", attrs.priority)
+	}
+	if attrs.isolationLevel != sppb.TransactionOptions_SERIALIZABLE {
+		t.Fatalf("B froze A's LOCAL isolation: %v", attrs.isolationLevel)
+	}
+}
+
+func TestTransactionTimeoutExpiryAfterEntryRestoreStatementTimeout(t *testing.T) {
+	t.Parallel()
+	h := newHeartbeatHarness(t)
+	ctx := t.Context()
+	session := sessionForTM(t, h.tm)
+	h.attachSessionClient(session)
+	mustExec(t, ctx, session, "SET STATEMENT_TIMEOUT = '10m'")
+	mustExec(t, ctx, session, "BEGIN")
+	mustExec(t, ctx, session, "SET LOCAL STATEMENT_TIMEOUT = '1s'")
+	if err := h.tm.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+		t.Fatal(err)
+	}
+	ownerA := requireOwner(t, h.tm)
+	expireOwnerAfterEntryRestore(h.tm, ownerA)
+	probe := &statementTimeoutProbe{}
+	if _, err := session.ExecuteStatement(ctx, probe); err != nil {
+		t.Fatal(err)
+	}
+	if !probe.ok {
+		t.Fatal("statement context had no deadline")
+	}
+	if probe.remaining < time.Minute {
+		t.Fatalf("statement used unrestored LOCAL timeout remaining=%s", probe.remaining)
+	}
+	if got := mustGetVar(t, session, "STATEMENT_TIMEOUT"); got != (10 * time.Minute).String() {
+		t.Fatalf("STATEMENT_TIMEOUT after statement = %s", got)
+	}
+}
+
+func TestTransactionTimeoutNestedExecutionRestoresBeforeInnerSET(t *testing.T) {
+	t.Parallel()
+	h := newHeartbeatHarness(t)
+	ctx := t.Context()
+	session := sessionForTM(t, h.tm)
+	h.attachSessionClient(session)
+	mustExec(t, ctx, session, "SET TRANSACTION_TIMEOUT = '1h'")
+	mustExec(t, ctx, session, "BEGIN")
+	mustExec(t, ctx, session, "SET LOCAL TRANSACTION_TIMEOUT = '2h'")
+	if err := h.tm.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+		t.Fatal(err)
+	}
+	ownerA := requireOwner(t, h.tm)
+	expireOwnerAfterEntryRestore(h.tm, ownerA)
+	if _, err := session.ExecuteStatement(ctx, &nestedSetTimeoutStatement{value: "'3h'"}); err != nil {
+		t.Fatal(err)
+	}
+	if txnContext(h.tm) != nil {
+		t.Fatal("nested SET left expired owner A")
+	}
+	if got := mustGetVar(t, session, "TRANSACTION_TIMEOUT"); got != (3 * time.Hour).String() {
+		t.Fatalf("nested SET overwritten by restore: %s", got)
+	}
+}
+
+type statementTimeoutProbe struct {
+	remaining time.Duration
+	ok        bool
+}
+
+func (s *statementTimeoutProbe) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
+	if dl, ok := ctx.Deadline(); ok {
+		s.remaining = time.Until(dl)
+		s.ok = true
+	}
+	return &Result{KeepVariables: true}, nil
+}
+
+type nestedSetTimeoutStatement struct {
+	value string
+}
+
+func (s *nestedSetTimeoutStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
+	return session.ExecuteStatement(ctx, &SetStatement{VarName: "TRANSACTION_TIMEOUT", Value: s.value})
+}
+
+func expireOwnerAfterEntryRestore(tm *TransactionManager, owner *transactionContext) {
+	tm.afterEntryRestore = func() {
+		tm.watchTransactionDeadline(owner, expiredContext())
 	}
 }
 
