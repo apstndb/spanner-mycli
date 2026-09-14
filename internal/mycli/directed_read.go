@@ -21,8 +21,14 @@ import (
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
+
+// DiscardUnknown stays false so unknown JSON fields are rejected atomically.
+var directedReadJSONUnmarshal = protojson.UnmarshalOptions{}
+
+var directedReadJSONMarshal = protojson.MarshalOptions{}
 
 // forceNilDirectedReadOnCopiedClientConfig clears DirectedReadOptions on a
 // ClientConfig that was copied from defaultClientConfig or EmbeddedClientConfig.
@@ -41,22 +47,54 @@ func cloneDirectedRead(d *sppb.DirectedReadOptions) *sppb.DirectedReadOptions {
 	return proto.CloneOf(d)
 }
 
+func parseDirectedReadJSON(jsonText string) (*sppb.DirectedReadOptions, error) {
+	var opts sppb.DirectedReadOptions
+	if err := directedReadJSONUnmarshal.Unmarshal([]byte(jsonText), &opts); err != nil {
+		return nil, fmt.Errorf("invalid directed read protobuf JSON: %w", err)
+	}
+	return &opts, nil
+}
+
 func formatDirectedReadOption(d *sppb.DirectedReadOptions) string {
 	if d == nil {
 		return ""
 	}
-	var parts []string
-	for _, rs := range d.GetIncludeReplicas().GetReplicaSelections() {
-		if rs == nil {
-			continue
-		}
-		if rs.GetType() == sppb.DirectedReadOptions_ReplicaSelection_TYPE_UNSPECIFIED {
-			parts = append(parts, rs.GetLocation())
-			continue
-		}
-		parts = append(parts, fmt.Sprintf("%s:%s", rs.GetLocation(), rs.GetType()))
+	if s, ok := losslessDirectedReadShorthand(d); ok {
+		return s
 	}
-	return strings.Join(parts, ";")
+	b, err := directedReadJSONMarshal.Marshal(d)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+// losslessDirectedReadShorthand returns location or location:TYPE only when that
+// text is nonempty, parses through the setter grammar, and proto.Equal-s the
+// complete message. Shape alone is not enough: an empty replica SHOW would
+// clear, and an unknown type number is not valid shorthand.
+func losslessDirectedReadShorthand(d *sppb.DirectedReadOptions) (string, bool) {
+	include := d.GetIncludeReplicas()
+	if include == nil || !include.GetAutoFailoverDisabled() {
+		return "", false
+	}
+	sels := include.GetReplicaSelections()
+	if len(sels) != 1 || sels[0] == nil {
+		return "", false
+	}
+	rs := sels[0]
+	candidate := rs.GetLocation()
+	if rs.GetType() != sppb.DirectedReadOptions_ReplicaSelection_TYPE_UNSPECIFIED {
+		candidate = fmt.Sprintf("%s:%s", rs.GetLocation(), rs.GetType())
+	}
+	if strings.TrimSpace(candidate) == "" {
+		return "", false
+	}
+	parsed, err := parseDirectedReadOption(candidate)
+	if err != nil || !proto.Equal(d, parsed) {
+		return "", false
+	}
+	return candidate, true
 }
 
 func queryWithDirectedRead(ctx context.Context, txn *spanner.ReadOnlyTransaction, stmt spanner.Statement, dro *sppb.DirectedReadOptions) *spanner.RowIterator {

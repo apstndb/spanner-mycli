@@ -1822,6 +1822,27 @@ func TestParseDirectedReadOptionMain(t *testing.T) {
 			input:       "us-east1:INVALID",
 			errContains: "<replica_type> must be either READ_WRITE or READ_ONLY",
 		},
+		{
+			name:  "protobuf json exclude",
+			input: `{"excludeReplicas":{"replicaSelections":[{"location":"us-east1","type":"READ_WRITE"}]}}`,
+			want: &sppb.DirectedReadOptions{
+				Replicas: &sppb.DirectedReadOptions_ExcludeReplicas_{
+					ExcludeReplicas: &sppb.DirectedReadOptions_ExcludeReplicas{
+						ReplicaSelections: []*sppb.DirectedReadOptions_ReplicaSelection{
+							{
+								Location: "us-east1",
+								Type:     sppb.DirectedReadOptions_ReplicaSelection_READ_WRITE,
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:        "protobuf json unknown field",
+			input:       `{"notAField":true}`,
+			errContains: "invalid directed read protobuf JSON",
+		},
 	}
 
 	for _, tt := range tests {
@@ -1836,6 +1857,8 @@ func TestParseDirectedReadOptionMain(t *testing.T) {
 				if diff := cmp.Diff(tt.want, got, cmpopts.IgnoreUnexported(sppb.DirectedReadOptions{},
 					sppb.DirectedReadOptions_IncludeReplicas_{},
 					sppb.DirectedReadOptions_IncludeReplicas{},
+					sppb.DirectedReadOptions_ExcludeReplicas_{},
+					sppb.DirectedReadOptions_ExcludeReplicas{},
 					sppb.DirectedReadOptions_ReplicaSelection{})); diff != "" {
 					t.Errorf("parseDirectedReadOption() mismatch (-want +got):\n%s", diff)
 				}

@@ -132,7 +132,7 @@ type spannerOptions struct {
 	Endpoint            string            `name:"endpoint" help:"Set the Spanner API endpoint (host:port)"`
 	Host                string            `name:"host" help:"Host on which Spanner server is located"`
 	Port                int               `name:"port" help:"Port number for Spanner connection"`
-	DirectedRead        string            `name:"directed-read" help:"Directed read option (replica_location:replica_type). The replica_type is optional and either READ_ONLY or READ_WRITE"`
+	DirectedRead        string            `name:"directed-read" help:"Directed read option: replica_location[:READ_ONLY|READ_WRITE] shorthand, or DirectedReadOptions protobuf JSON"`
 	SQL                 string            `name:"sql" hidden:"" help:"Hidden alias of --execute for gcloud spanner databases execute-sql compatibility"`
 	Set                 map[string]string `name:"set" mapsep:"none" help:"Set system variables e.g. --set=name1=value1 --set=name2=value2"`
 	Param               map[string]string `name:"param" mapsep:"none" help:"Set query parameters, it can be literal or type(EXPLAIN/DESCRIBE only). Names are case-insensitive; conflicting case aliases are rejected; identical aliases collapse to one name. e.g. --param=\"p1='string_value'\" --param=p2=FLOAT64"`
