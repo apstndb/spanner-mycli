@@ -1129,6 +1129,26 @@ TABLE Singers (42)
 			want:  &ShowRemoteProtoStatement{},
 		},
 		{
+			desc:  "PULL REMOTE PROTO ALL",
+			input: `PULL REMOTE PROTO ALL`,
+			want:  &PullRemoteProtoStatement{All: true},
+		},
+		{
+			desc:  "PULL REMOTE PROTO single type",
+			input: `PULL REMOTE PROTO examples.shipping.Order`,
+			want:  &PullRemoteProtoStatement{Names: sliceOf("examples.shipping.Order")},
+		},
+		{
+			desc:  "PULL REMOTE PROTO quoted type",
+			input: "PULL REMOTE PROTO `examples.shipping.Order`",
+			want:  &PullRemoteProtoStatement{Names: sliceOf("examples.shipping.Order")},
+		},
+		{
+			desc:  "PULL REMOTE PROTO type list with duplicates",
+			input: "PULL REMOTE PROTO (examples.shipping.Order, examples.`Customer`, examples.shipping.Order)",
+			want:  &PullRemoteProtoStatement{Names: sliceOf("examples.shipping.Order", "examples.Customer")},
+		},
+		{
 			desc:  "SYNC PROTO BUNDLE UPSERT statement",
 			input: "SYNC PROTO BUNDLE UPSERT (examples.ProtoType, examples.`EscapedType`, `examples.EscapedPath`)",
 			want: &SyncProtoStatement{
@@ -1690,6 +1710,12 @@ func TestBuildStatement_InvalidCase(t *testing.T) {
 		"SYNC PROTO BUNDLE RECURSIVE DELETE (examples.A)",
 		"SYNC PROTO BUNDLE RECURSIVE",
 		"SYNC PROTO BUNDLE UPSERT (examples.A) RECURSIVE",
+		"PULL REMOTE PROTO",
+		"PULL REMOTE PROTO ()",
+		"PULL REMOTE PROTO ALL leftover",
+		"PULL REMOTE PROTO (examples.A) leftover",
+		"PULL REMOTE PROTO examples.A leftover",
+		"PULL REMOTE PROTO (",
 		`SHOW LAST QUERY PLAN INTO "unterminated`,
 		"SHOW LAST QUERY PLAN INTO two paths.json",
 		`SHOW LAST QUERY PLAN INTO ""`,
