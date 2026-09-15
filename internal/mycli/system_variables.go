@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/url"
@@ -24,6 +25,8 @@ import (
 	"github.com/apstndb/spanner-mycli/internal/mycli/format"
 	planref "github.com/apstndb/spannerplan/plantree/reference"
 	"github.com/bufbuild/protocompile"
+	"github.com/bufbuild/protocompile/parser"
+	"github.com/bufbuild/protocompile/reporter"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"google.golang.org/protobuf/reflect/protodesc"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -601,12 +604,64 @@ func mergeFDS(left, right *descriptorpb.FileDescriptorSet) *descriptorpb.FileDes
 }
 
 func protoDescriptorResolver(ctx context.Context) protocompile.Resolver {
-	return protocompile.CompositeResolver{
+	inner := protocompile.CompositeResolver{
 		protocompile.ResolverFunc(resolveLocalProtoDescriptorSource),
 		protocompile.ResolverFunc(func(path string) (protocompile.SearchResult, error) {
 			return resolveProtoDescriptorImport(ctx, path)
 		}),
 	}
+	// Rewrite file:// imports to the decoded local path before the compiler
+	// links, so a bare path and its file:// alias are one file identity.
+	return protocompile.ResolverFunc(func(path string) (protocompile.SearchResult, error) {
+		res, err := inner.FindFileByPath(path)
+		if err != nil {
+			return res, err
+		}
+		return canonicalizeFileURIImportsInSearchResult(path, res)
+	})
+}
+
+func rewriteFileURIDependencies(fd *descriptorpb.FileDescriptorProto) {
+	if fd == nil {
+		return
+	}
+	for i, dep := range fd.Dependency {
+		fd.Dependency[i] = remapFileURIDescriptorName(dep)
+	}
+}
+
+func canonicalizeFileURIImportsInSearchResult(name string, res protocompile.SearchResult) (protocompile.SearchResult, error) {
+	if res.ParseResult != nil {
+		rewriteFileURIDependencies(res.ParseResult.FileDescriptorProto())
+		return res, nil
+	}
+	if res.Proto != nil {
+		fd := proto.Clone(res.Proto).(*descriptorpb.FileDescriptorProto)
+		rewriteFileURIDependencies(fd)
+		res.Proto = fd
+		return res, nil
+	}
+	if res.Desc != nil || res.Source == nil {
+		return res, nil
+	}
+	b, err := io.ReadAll(res.Source)
+	if c, ok := res.Source.(io.Closer); ok {
+		_ = c.Close()
+	}
+	if err != nil {
+		return protocompile.SearchResult{}, err
+	}
+	handler := reporter.NewHandler(nil)
+	fileNode, err := parser.Parse(name, bytes.NewReader(b), handler)
+	if err != nil {
+		return protocompile.SearchResult{Source: bytes.NewReader(b)}, nil
+	}
+	parsed, err := parser.ResultFromAST(fileNode, true, handler)
+	if err != nil {
+		return protocompile.SearchResult{Source: bytes.NewReader(b)}, nil
+	}
+	rewriteFileURIDependencies(parsed.FileDescriptorProto())
+	return protocompile.SearchResult{ParseResult: parsed}, nil
 }
 
 // resolveLocalProtoDescriptorSource loads a bare filesystem proto through

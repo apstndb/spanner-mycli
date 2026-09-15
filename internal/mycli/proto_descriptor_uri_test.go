@@ -164,6 +164,61 @@ func TestFileProtoDescriptorURI(t *testing.T) {
 	}
 }
 
+func TestProtoDescriptorMixedFileURIImportIdentity(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	dep := writeProtoSource(t, filepath.Join(dir, "dep.proto"), `syntax="proto3"; package mixed; message Dep { string value=1; }`)
+	abs, err := filepath.Abs(dep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	slash := filepath.ToSlash(abs)
+	fileURI := fileURLForPath(t, dep)
+	a := writeProtoSource(t, filepath.Join(dir, "a.proto"), fmt.Sprintf(`syntax="proto3"; package mixed; import %q; message A { Dep d=1; }`, slash))
+	b := writeProtoSource(t, filepath.Join(dir, "b.proto"), fmt.Sprintf(`syntax="proto3"; package mixed; import %q; message B { Dep d=1; }`, fileURI))
+	root := writeProtoSource(t, filepath.Join(dir, "root.proto"), fmt.Sprintf(`syntax="proto3"; package mixed; import %q; import %q; message Root { A a=1; B b=2; }`, a, b))
+
+	if _, err := readFileDescriptorProtoFromFile(a); err != nil {
+		t.Fatalf("bare-path branch alone: %v", err)
+	}
+	if _, err := readFileDescriptorProtoFromFile(b); err != nil {
+		t.Fatalf("file:// branch alone: %v", err)
+	}
+
+	fds, err := readFileDescriptorProtoFromFile(root)
+	if err != nil {
+		t.Fatalf("mixed file:// / bare-path graph: %v", err)
+	}
+	files := requireUsableDescriptor(t, fds)
+	if _, err := files.FindDescriptorByName("mixed.Dep"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := files.FindDescriptorByName("mixed.A"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := files.FindDescriptorByName("mixed.B"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := files.FindDescriptorByName("mixed.Root"); err != nil {
+		t.Fatal(err)
+	}
+
+	var names []string
+	depCount := 0
+	for _, file := range fds.File {
+		names = append(names, file.GetName())
+		if strings.HasPrefix(file.GetName(), "file:") {
+			t.Fatalf("file:// identity leaked into mixed graph: %v", names)
+		}
+		if file.GetName() == slash || file.GetName() == filepath.ToSlash(dep) {
+			depCount++
+		}
+	}
+	if depCount != 1 {
+		t.Fatalf("want one decoded dep identity, got %d in %v", depCount, names)
+	}
+}
+
 func TestFileProtoDescriptorSourceRootPolicy(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
