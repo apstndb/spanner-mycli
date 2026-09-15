@@ -1301,7 +1301,7 @@ func TestFuzzyCandidateCacheScope(t *testing.T) {
 	for _, ct := range cached {
 		assert.Equal(t, []fzfItem{{Value: ct.String()}}, f.getCachedCandidates(ct))
 	}
-	for _, ct := range []fuzzyCompletionType{fuzzyCompleteRole, fuzzyCompleteOperation, fuzzyCompleteVariable, fuzzyCompleteParam} {
+	for _, ct := range []fuzzyCompletionType{fuzzyCompleteRole, fuzzyCompleteOperation, fuzzyCompleteVariable, fuzzyCompleteParam, fuzzyCompleteQueryProfile} {
 		f.setCachedCandidates(ct, []fzfItem{{Value: "must not be cached"}})
 		assert.Nil(t, f.getCachedCandidates(ct))
 	}
