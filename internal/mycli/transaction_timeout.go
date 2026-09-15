@@ -27,9 +27,9 @@ import (
 
 // TRANSACTION_TIMEOUT is a logical read/write budget, distinct from
 // STATEMENT_TIMEOUT and from CLI_IDLE_TRANSACTION_TIMEOUT (#357).
-// Zero or NULL means no additional transaction deadline. Implicit ABORTED
-// retry (#994) reuses this remaining budget and never restarts it. Explicit
-// journal replay (#293) is still unimplemented.
+// Zero or NULL means no additional transaction deadline. Implicit and
+// explicit ABORTED retry (#994 / #1006) reuse this remaining budget and
+// never restart it.
 var (
 	errTransactionTimeout       = errors.New("TRANSACTION_TIMEOUT exceeded")
 	errTransactionTimeoutFrozen = errors.New("TRANSACTION_TIMEOUT cannot be changed after the transaction deadline has started")

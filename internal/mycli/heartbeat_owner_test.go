@@ -83,40 +83,43 @@ type commitObservation struct {
 type heartbeatRPCServer struct {
 	sppb.UnimplementedSpannerServer
 
-	mu                    sync.Mutex
-	next                  atomic.Uint64
-	sqlTxn                map[string]string
-	roIDs                 map[string]struct{}
-	rwIDs                 map[string]struct{}
-	heartbeats            []heartbeatRecord
-	sqlObs                []sqlObservation
-	batchObs              []batchDMLObservation
-	begins                []beginObservation
-	rollbacks             []string
-	commits               []string
-	commitObs             []commitObservation
-	failROQuery           error
-	failSQL               error
-	failStreamingSQL      error
-	failStreamingSQLLeft  int
-	failUnarySQL          error
-	failCommit            error
-	failCommitLeft        int
-	pdmlIDs               map[string]struct{}
-	failBatchDML          error
-	failBatchDMLLeft      int
-	failBegin             error
-	blockBegin            <-chan struct{}
-	beginBlocked          func()
-	partialBatchDMLCount  int64
-	partialBatchDMLStatus *statuspb.Status
-	sqlRowCount           map[string]int64
-	sqlValue              map[string]string
-	sqlRows               map[string][]string
-	sqlCallN              map[string]int
-	sqlRowCountSeq        map[string][]int64
-	sqlRowsSeq            map[string][][]string
-	queryPlan             *sppb.QueryPlan
+	mu                        sync.Mutex
+	next                      atomic.Uint64
+	sqlTxn                    map[string]string
+	roIDs                     map[string]struct{}
+	rwIDs                     map[string]struct{}
+	heartbeats                []heartbeatRecord
+	sqlObs                    []sqlObservation
+	batchObs                  []batchDMLObservation
+	begins                    []beginObservation
+	rollbacks                 []string
+	commits                   []string
+	commitObs                 []commitObservation
+	failROQuery               error
+	failSQL                   error
+	failStreamingSQL          error
+	failStreamingSQLLeft      int
+	failStreamingSQLAfterRows int
+	streamingResumeTokens     bool
+	failUnarySQL              error
+	failCommit                error
+	failCommitLeft            int
+	pdmlIDs                   map[string]struct{}
+	failBatchDML              error
+	failBatchDMLLeft          int
+	failBegin                 error
+	blockBegin                <-chan struct{}
+	beginBlocked              func()
+	partialBatchDMLCount      int64
+	partialBatchDMLStatus     *statuspb.Status
+	sqlRowCount               map[string]int64
+	sqlValue                  map[string]string
+	sqlRows                   map[string][]string
+	sqlCallN                  map[string]int
+	sqlRowCountSeq            map[string][]int64
+	sqlRowsSeq                map[string][][]string
+	sqlType                   map[string]sppb.TypeCode
+	queryPlan                 *sppb.QueryPlan
 
 	heartbeatStarted     chan struct{}
 	heartbeatStartedOnce sync.Once
@@ -219,6 +222,21 @@ func (s *heartbeatRPCServer) setFailStreamingSQLTimes(n int, err error) {
 	defer s.mu.Unlock()
 	s.failStreamingSQL = err
 	s.failStreamingSQLLeft = n
+	s.failStreamingSQLAfterRows = 0
+}
+
+func (s *heartbeatRPCServer) setFailStreamingSQLAfterRows(after int, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.failStreamingSQL = err
+	s.failStreamingSQLLeft = 1
+	s.failStreamingSQLAfterRows = after
+}
+
+func (s *heartbeatRPCServer) setStreamingResumeTokens(enabled bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.streamingResumeTokens = enabled
 }
 
 func (s *heartbeatRPCServer) setFailUnarySQL(err error) {
@@ -294,6 +312,15 @@ func (s *heartbeatRPCServer) setSQLRowsSequence(sql string, rows ...[]string) {
 		cloned[i] = slices.Clone(r)
 	}
 	s.sqlRowsSeq[sql] = cloned
+}
+
+func (s *heartbeatRPCServer) setSQLType(sql string, code sppb.TypeCode) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.sqlType == nil {
+		s.sqlType = make(map[string]sppb.TypeCode)
+	}
+	s.sqlType[sql] = code
 }
 
 func (s *heartbeatRPCServer) rollbackIDs() []string {
@@ -646,15 +673,30 @@ func (s *heartbeatRPCServer) ExecuteStreamingSql(r *sppb.ExecuteSqlRequest, stre
 	if err != nil {
 		return err
 	}
+	isHeartbeat := r.GetRequestOptions().GetRequestTag() == "spanner_mycli_heartbeat"
 	s.mu.Lock()
-	fail := consumeLimitedFailLocked(&s.failStreamingSQLLeft, &s.failStreamingSQL)
+	afterRows := s.failStreamingSQLAfterRows
+	var fail error
+	if !isHeartbeat {
+		fail = consumeLimitedFailLocked(&s.failStreamingSQLLeft, &s.failStreamingSQL)
+		if fail != nil {
+			s.failStreamingSQLAfterRows = 0
+		}
+	}
+	useResume := s.streamingResumeTokens
 	s.mu.Unlock()
-	if fail != nil && r.GetRequestOptions().GetRequestTag() != "spanner_mycli_heartbeat" {
+	if fail != nil && afterRows <= 0 {
 		return fail
 	}
 	rs := s.resultSet(txnID, readTs, r.GetSql())
 	if len(rs.Rows) == 0 {
-		return stream.Send(&sppb.PartialResultSet{Metadata: rs.Metadata, Stats: rs.Stats})
+		if err := stream.Send(&sppb.PartialResultSet{Metadata: rs.Metadata, Stats: rs.Stats}); err != nil {
+			return err
+		}
+		if fail != nil && r.GetRequestOptions().GetRequestTag() != "spanner_mycli_heartbeat" {
+			return fail
+		}
+		return nil
 	}
 	for i, row := range rs.Rows {
 		prs := &sppb.PartialResultSet{Values: row.GetValues()}
@@ -664,9 +706,18 @@ func (s *heartbeatRPCServer) ExecuteStreamingSql(r *sppb.ExecuteSqlRequest, stre
 		if i == len(rs.Rows)-1 {
 			prs.Stats = rs.Stats
 		}
+		if useResume {
+			prs.ResumeToken = []byte(fmt.Sprintf("resume-%d", i+1))
+		}
 		if err := stream.Send(prs); err != nil {
 			return err
 		}
+		if fail != nil && afterRows > 0 && i+1 >= afterRows && !isHeartbeat {
+			return fail
+		}
+	}
+	if fail != nil && afterRows > len(rs.Rows) && r.GetRequestOptions().GetRequestTag() != "spanner_mycli_heartbeat" {
+		return fail
 	}
 	return nil
 }
@@ -687,10 +738,13 @@ func (s *heartbeatRPCServer) prepareSQL(ctx context.Context, r *sppb.ExecuteSqlR
 		if blocked != nil {
 			blocked()
 		}
+		if err := ctx.Err(); err != nil {
+			return nil, nil, err
+		}
 		select {
-		case <-block:
 		case <-ctx.Done():
 			return nil, nil, ctx.Err()
+		case <-block:
 		}
 	}
 	s.noteSQL(r, txnID)
@@ -760,7 +814,7 @@ func (s *heartbeatRPCServer) valueLocked(sql string) string {
 
 func (s *heartbeatRPCServer) rowValuesLocked(sql string) []string {
 	if s.sqlRows != nil {
-		if values, ok := s.sqlRows[sql]; ok && len(values) > 0 {
+		if values, ok := s.sqlRows[sql]; ok {
 			return values
 		}
 	}
@@ -797,6 +851,10 @@ func (s *heartbeatRPCServer) resultSet(txnID []byte, readTs *timestamppb.Timesta
 		values = slices.Clone(seq[i])
 	}
 	plan := s.queryPlan
+	typ := sppb.TypeCode_INT64
+	if code, ok := s.sqlType[sql]; ok {
+		typ = code
+	}
 	s.mu.Unlock()
 	rows := make([]*structpb.ListValue, len(values))
 	for i, value := range values {
@@ -811,7 +869,7 @@ func (s *heartbeatRPCServer) resultSet(txnID []byte, readTs *timestamppb.Timesta
 	return &sppb.ResultSet{
 		Metadata: &sppb.ResultSetMetadata{
 			RowType: &sppb.StructType{Fields: []*sppb.StructType_Field{
-				{Name: "", Type: &sppb.Type{Code: sppb.TypeCode_INT64}},
+				{Name: "", Type: &sppb.Type{Code: typ}},
 			}},
 			Transaction: &sppb.Transaction{Id: txnID, ReadTimestamp: readTs},
 		},

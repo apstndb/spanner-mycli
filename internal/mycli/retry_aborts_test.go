@@ -215,6 +215,26 @@ func TestShouldRetryImplicitAbort(t *testing.T) {
 	}
 }
 
+func TestShouldDeferAbortOwnerFailure(t *testing.T) {
+	t.Parallel()
+	owner := &transactionContext{retryAborts: true}
+	if !shouldDeferAbortOwnerFailure(true, implicitAbortRetryDisabled, owner) {
+		t.Fatal("implicit owners still defer so finalizeImplicitAbort owns failure")
+	}
+	if !shouldDeferAbortOwnerFailure(false, implicitAbortRetryIfEnabled, owner) {
+		t.Fatal("explicit DML/PROFILE should defer for journal replay")
+	}
+	if shouldDeferAbortOwnerFailure(false, implicitAbortRetryDisabled, owner) {
+		t.Fatal("explicit PLAN must not defer owner failure")
+	}
+	if shouldDeferAbortOwnerFailure(false, implicitAbortRetryIfEnabled, nil) {
+		t.Fatal("missing owner must not defer")
+	}
+	if shouldDeferAbortOwnerFailure(false, implicitAbortRetryIfEnabled, &transactionContext{}) {
+		t.Fatal("captured FALSE must not defer")
+	}
+}
+
 func TestSnapshotRetryAbortsIgnoresLaterSessionSet(t *testing.T) {
 	t.Parallel()
 	sv := newSystemVariablesWithDefaultsForTest()
