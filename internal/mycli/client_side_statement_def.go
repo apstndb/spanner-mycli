@@ -520,6 +520,19 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 	{
 		Descriptions: []clientSideStatementDescription{
 			{
+				Usage:  `Pull remote proto descriptors`,
+				Syntax: `PULL REMOTE PROTO {ALL|<type>|(<type> [, <type>]...)}`,
+				Note:   `Loads selected remote PROTO/ENUM files and their import closure into the local descriptor store. Prefers remote files and reuses matching local imports. Nested names still load the whole containing file. Does not delete complete local types or submit remote DDL. Uses a fresh Admin GetDatabaseDdl read. Returns SHOW LOCAL PROTO rows for the selected roots.`,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^PULL\s+REMOTE\s+PROTO(?:\s+(?P<args>.*))?$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			return parsePullRemoteProto(groups["args"])
+		},
+	},
+	{
+		Descriptions: []clientSideStatementDescription{
+			{
 				Usage:  `Manipulate PROTO BUNDLE`,
 				Syntax: `SYNC PROTO BUNDLE [{[RECURSIVE] UPSERT|DELETE} (<type> ...)]...`,
 				Note:   `RECURSIVE modifies only the following UPSERT and expands lexically nested local messages/enums. It is not native Spanner syntax and does not follow references or imports.`,
@@ -1412,6 +1425,60 @@ func parseShowTransactionOption(s string) (showTransactionKind, error) {
 	}
 }
 
+func parsePullRemoteProto(s string) (Statement, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil, errors.New("expected ALL or a proto type name")
+	}
+
+	p := &memefish.Parser{Lexer: &memefish.Lexer{
+		File: &token.File{
+			Buffer: s,
+		},
+	}}
+	if err := p.NextToken(); err != nil {
+		return nil, err
+	}
+
+	if syncProtoTokenIs(p.Token, "ALL") {
+		if err := p.NextToken(); err != nil {
+			return nil, err
+		}
+		if p.Token.Kind != token.TokenEOF {
+			return nil, fmt.Errorf("unexpected input after ALL: %q", syncProtoTokenText(p.Token))
+		}
+		return &PullRemoteProtoStatement{All: true}, nil
+	}
+
+	var names []string
+	if p.Token.Kind == "(" {
+		parsed, err := parseParenthesizedProtoNames(p)
+		if err != nil {
+			return nil, err
+		}
+		if p.Token.Kind != token.TokenEOF {
+			return nil, fmt.Errorf("unexpected input after proto type list: %q", syncProtoTokenText(p.Token))
+		}
+		names = parsed
+	} else {
+		expr, err := parseMemefishExpr("", s)
+		if err != nil {
+			return nil, err
+		}
+		name, err := exprToFullName(expr)
+		if err != nil {
+			return nil, err
+		}
+		names = []string{name}
+	}
+
+	names = uniqFullNames(names)
+	if len(names) == 0 {
+		return nil, errors.New("empty proto type list")
+	}
+	return &PullRemoteProtoStatement{Names: names}, nil
+}
+
 func parseSyncProtoBundle(s string) (Statement, error) {
 	p := &memefish.Parser{Lexer: &memefish.Lexer{
 		File: &token.File{
@@ -1506,6 +1573,13 @@ func parsePaths(p *memefish.Parser) ([]string, error) {
 	if err := p.NextToken(); err != nil {
 		return nil, err
 	}
+	return parseParenthesizedProtoNames(p)
+}
+
+// parseParenthesizedProtoNames reads a balanced "(...)" proto-name list starting
+// at the current token. After a successful parse the current token is the first
+// token after the closing parenthesis.
+func parseParenthesizedProtoNames(p *memefish.Parser) ([]string, error) {
 	if p.Token.Kind != "(" {
 		return nil, fmt.Errorf("expected path list, but: %q", p.Token.Raw)
 	}
