@@ -58,6 +58,14 @@ func (s *PullRemoteProtoStatement) Execute(ctx context.Context, session *Session
 		return nil, err
 	}
 
+	// Result rows are already computed. Stream/buffer them before touching
+	// local descriptor fields so a CSV/JSONL write failure cannot leave a
+	// failed PULL applied.
+	result, err := executeStructRows(localProtoRowEncoder, planned.selected, session, out)
+	if err != nil {
+		return nil, err
+	}
+
 	if planned.changed && session.systemVariables != nil {
 		if planned.candidate == nil || len(planned.candidate.GetFile()) == 0 {
 			session.systemVariables.Internal.ProtoDescriptor = nil
@@ -67,10 +75,6 @@ func (s *PullRemoteProtoStatement) Execute(ctx context.Context, session *Session
 		session.systemVariables.Internal.ProtoDescriptorFile = nil
 	}
 
-	result, err := executeStructRows(localProtoRowEncoder, planned.selected, session, out)
-	if err != nil {
-		return nil, err
-	}
 	result.KeepVariables = true
 	return result, nil
 }

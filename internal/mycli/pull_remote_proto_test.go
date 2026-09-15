@@ -17,12 +17,14 @@ package mycli
 import (
 	"errors"
 	"fmt"
+	"io"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
+	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spanner-mycli/internal/mycli/decoder"
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
@@ -499,6 +501,83 @@ func TestPullRemoteProtoDoesNotDetermineTransaction(t *testing.T) {
 	if _, ok := stmt.(DetachedCompatible); ok {
 		t.Fatal("PULL must not run in detached mode")
 	}
+}
+
+func TestPullRemoteProtoOutputFailurePreservesDescriptors(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []enums.DisplayMode{enums.DisplayModeCSV, enums.DisplayModeJSONL} {
+		t.Run(mode.String(), func(t *testing.T) {
+			t.Parallel()
+			fds := simpleMessageFDS("shared.proto", "pkg", "Root", "value")
+			session, server := newProtoBundleAdminSession(t, &databasepb.GetDatabaseDdlResponse{ProtoDescriptors: mustMarshalFDS(t, fds)})
+			if err := session.systemVariables.SetFromSimple("PROTO_DESCRIPTORS_FILE_PATH", "testdata/protos/order_descriptors.pb"); err != nil {
+				t.Fatal(err)
+			}
+			session.systemVariables.Display.CLIFormat = mode
+			beforeGraph, beforeFiles := cloneDescriptorState(session.systemVariables)
+			if beforeGraph == nil || len(beforeFiles) == 0 {
+				t.Fatal("expected local graph and file provenance")
+			}
+
+			stmt, err := BuildStatement("PULL REMOTE PROTO ALL")
+			if err != nil {
+				t.Fatal(err)
+			}
+			writer := &errCauseWriter{err: errPullRemoteProtoOutput}
+			_, err = session.ExecuteStatementWithOutput(t.Context(), stmt, OperationOutput{w: writer})
+			if !errors.Is(err, errPullRemoteProtoOutput) {
+				t.Fatalf("err=%v, want cause %v", err, errPullRemoteProtoOutput)
+			}
+			assertDescriptorState(t, session.systemVariables, beforeGraph, beforeFiles)
+			if len(server.reqs) != 0 {
+				t.Fatalf("DDL submitted: %v", server.reqs)
+			}
+		})
+	}
+
+	t.Run("CSV success still installs", func(t *testing.T) {
+		t.Parallel()
+		fds := simpleMessageFDS("shared.proto", "pkg", "Root", "value")
+		session, server := newProtoBundleAdminSession(t, &databasepb.GetDatabaseDdlResponse{ProtoDescriptors: mustMarshalFDS(t, fds)})
+		if err := session.systemVariables.SetFromSimple("PROTO_DESCRIPTORS_FILE_PATH", "testdata/protos/order_descriptors.pb"); err != nil {
+			t.Fatal(err)
+		}
+		session.systemVariables.Display.CLIFormat = enums.DisplayModeCSV
+		beforeGraph, _ := cloneDescriptorState(session.systemVariables)
+		stmt, err := BuildStatement("PULL REMOTE PROTO ALL")
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, err := session.ExecuteStatementWithOutput(t.Context(), stmt, OperationOutput{w: io.Discard})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !result.KeepVariables || result.AffectedRows != 1 {
+			t.Fatalf("result=%+v", result)
+		}
+		if len(session.systemVariables.Internal.ProtoDescriptorFile) != 0 {
+			t.Fatalf("file paths survived a successful stream: %v", session.systemVariables.Internal.ProtoDescriptorFile)
+		}
+		if proto.Equal(beforeGraph, session.systemVariables.Internal.ProtoDescriptor) {
+			t.Fatal("successful CSV pull did not change the local graph")
+		}
+		if _, err := requireUsableDescriptor(t, session.systemVariables.Internal.ProtoDescriptor).FindDescriptorByName("pkg.Root"); err != nil {
+			t.Fatal(err)
+		}
+		if len(server.reqs) != 0 {
+			t.Fatalf("DDL submitted: %v", server.reqs)
+		}
+	})
+}
+
+var errPullRemoteProtoOutput = errors.New("pull remote proto output failure")
+
+type errCauseWriter struct {
+	err error
+}
+
+func (w *errCauseWriter) Write([]byte) (int, error) {
+	return 0, w.err
 }
 
 func executePull(t *testing.T, session *Session, sql string) (*Result, error) {
