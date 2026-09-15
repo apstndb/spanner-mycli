@@ -145,7 +145,10 @@ Flags:
                                                ($SPANNER_DATABASE_ID).
       --detached                               Start in detached mode, ignoring database env var/flag
   -e, --execute=STRING                         Execute SQL statement and quit. --sql is an alias.
-  -f, --file=STRING                            Execute SQL statement from file and quit. --source is an alias.
+  -f, --file=STRING                            Execute SQL from a local file, process substitution, stdin (-), or a
+                                               file/http/https/gs URI and quit. --source is an alias. Remote scripts
+                                               run against the selected connection (100 MiB limit; GCS uses configured
+                                               credentials).
       --init-command=STRING                    SQL to execute after connecting, before other input. Failure aborts
                                                startup.
       --init-command-add=INIT-COMMAND-ADD      Additional startup SQL (repeatable). Appended after --init-command.

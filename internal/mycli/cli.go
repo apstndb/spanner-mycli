@@ -35,7 +35,6 @@ import (
 	"golang.org/x/term"
 
 	"github.com/apstndb/go-tabwrap"
-	"github.com/apstndb/spanner-mycli/internal/mycli/filesafety"
 	"github.com/samber/lo"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -266,12 +265,13 @@ func (c *Cli) updateSystemVariables(result *Result) {
 	}
 }
 
-// executeSourceFile executes SQL statements from a file
+// executeSourceFile executes SQL statements from a local file, process
+// substitution, or an explicit file/http/https/gs URI. The complete script is
+// loaded and parsed before any statement runs. Remote scripts execute against
+// the selected connection; GCS uses the process ADC. Nested SOURCE is rejected
+// by buildCommands (batch-mode meta-command ban).
 func (c *Cli) executeSourceFile(ctx context.Context, filePath string) error {
-	// Use common file safety checks (nil uses DefaultMaxFileSize - 100MB)
-	// AllowNonRegular keeps process substitution working for SOURCE / \.;
-	// SafeReadFile still bounds the read for pipe-like inputs.
-	contents, err := filesafety.SafeReadFile(filePath, &filesafety.FileSafetyOptions{AllowNonRegular: true})
+	contents, err := loadSQLInput(ctx, filePath, defaultSQLInputFileOptions())
 	if err != nil {
 		return err
 	}

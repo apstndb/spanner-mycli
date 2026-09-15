@@ -315,8 +315,18 @@ func loadMultipleFromURIs(ctx context.Context, uris []string) (map[string][]byte
 }
 
 // loadFromGCSWithClient loads a single GCS object using an existing client
+// and the sample-database 10 MiB cap.
 func loadFromGCSWithClient(ctx context.Context, client *storage.Client, uri string) ([]byte, error) {
-	// Parse gs://bucket/path/to/object
+	return loadFromGCSWithClientAndLimit(ctx, client, uri, filesafety.SampleDatabaseMaxFileSize)
+}
+
+// loadFromGCSWithClientAndLimit loads a single GCS object using an existing
+// client and a caller-selected size cap. Declared object size and actual
+// bytes read are both checked. The sample loader keeps calling this through
+// loadFromGCSWithClient so its 10 MiB limit and client-reuse path stay intact.
+func loadFromGCSWithClientAndLimit(ctx context.Context, client *storage.Client, uri string, maxSize int64) ([]byte, error) {
+	// Parse gs://bucket/path/to/object. url.Parse decodes percent-encoded
+	// bucket/object names; Host is the bucket and Path is the object.
 	u, err := url.Parse(uri)
 	if err != nil {
 		return nil, fmt.Errorf("invalid GCS URI %q: %w", uri, err)
@@ -324,14 +334,17 @@ func loadFromGCSWithClient(ctx context.Context, client *storage.Client, uri stri
 
 	bucket := u.Host
 	object := strings.TrimPrefix(u.Path, "/")
+	if bucket == "" || object == "" {
+		return nil, fmt.Errorf("invalid GCS URI %q: bucket and object are required", uri)
+	}
 
 	// Check object size before reading
 	attrs, err := client.Bucket(bucket).Object(object).Attrs(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get GCS object attributes for %s: %w", uri, err)
 	}
-	if attrs.Size > filesafety.SampleDatabaseMaxFileSize {
-		return nil, fmt.Errorf("GCS object %s too large: %d bytes (max %d)", uri, attrs.Size, filesafety.SampleDatabaseMaxFileSize)
+	if attrs.Size > maxSize {
+		return nil, fmt.Errorf("GCS object %s too large: %d bytes (max %d)", uri, attrs.Size, maxSize)
 	}
 
 	reader, err := client.Bucket(bucket).Object(object).NewReader(ctx)
@@ -340,12 +353,12 @@ func loadFromGCSWithClient(ctx context.Context, client *storage.Client, uri stri
 	}
 	defer func() { _ = reader.Close() }()
 
-	data, err := io.ReadAll(io.LimitReader(reader, filesafety.SampleDatabaseMaxFileSize+1))
+	data, err := io.ReadAll(io.LimitReader(reader, maxSize+1))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read GCS object %s: %w", uri, err)
 	}
-	if int64(len(data)) > filesafety.SampleDatabaseMaxFileSize {
-		return nil, fmt.Errorf("GCS object %s too large: exceeded %d bytes", uri, filesafety.SampleDatabaseMaxFileSize)
+	if int64(len(data)) > maxSize {
+		return nil, fmt.Errorf("GCS object %s too large: exceeded %d bytes", uri, maxSize)
 	}
 
 	return data, nil

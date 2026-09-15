@@ -1508,7 +1508,7 @@ func TestDetermineInputAndMode(t *testing.T) {
 			}
 			defer cleanup()
 
-			input, interactive, err := determineInputAndMode(tt.opts, stdin)
+			input, interactive, err := determineInputAndMode(t.Context(), tt.opts, stdin)
 
 			if (err != nil) != tt.wantErr {
 				t.Errorf("determineInputAndMode() error = %v, wantErr %v", err, tt.wantErr)

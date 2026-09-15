@@ -46,13 +46,18 @@ ERROR: system commands are disabled
 
 ## SQL File Execution (`\.`)
 
-The `\.` meta command allows you to execute SQL statements from a file:
+The `\.` meta command allows you to execute SQL statements from a local file or an explicit `file://`, `http://`, `https://`, or `gs://` URI. Bare paths, including process substitution, keep the existing local-file behavior.
 
 ```
 spanner> \. init_database.sql
 Query OK, 0 rows affected (30.60 sec)
 Query OK, 5 rows affected (5.08 sec)
+spanner> \. "file with spaces.sql"
+spanner> \. file:///tmp/setup.sql
+spanner> \. https://example.com/setup.sql
 ```
+
+`--file` / `--source` accept the same sources. Remote scripts run against the selected connection, the same as local scripts. GCS objects use the user's configured Application Default Credentials. The complete script is fetched and parsed before the first statement runs (100 MiB limit; remote fetches use a 30-second timeout or an earlier caller deadline). There is no separate allow-remote flag or confirmation prompt: supplying an explicit URI is the opt-in.
 
 ### Features
 
@@ -61,10 +66,11 @@ Query OK, 5 rows affected (5.08 sec)
 - Stops execution on the first error
 - Supports both relative and absolute file paths
 - Handles filenames with spaces when quoted: `\. "file with spaces.sql"`
+- Accepts explicit `file://` (local empty/localhost authority), `http://`, `https://`, and `gs://` URIs
 
 ### Limitations
 
-Meta commands (including `\.`) cannot be used within sourced files. Only SQL statements are allowed in the files. This is because the file contents are processed using the same parser as batch mode, which explicitly rejects meta commands.
+Meta commands (including `\.`) cannot be used within sourced files. Only SQL statements are allowed in the files. This is because the file contents are processed using the same parser as batch mode, which explicitly rejects meta commands. Nested or relative remote includes are not supported.
 
 ### Example
 
