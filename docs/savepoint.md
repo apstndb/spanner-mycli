@@ -33,6 +33,9 @@ COMMIT;
   `SET LOCAL` is not supported.
 - Capture starts at `BEGIN`, not at the first `SAVEPOINT`.
 - Implicit one-statement transactions are not journaled.
+- A retry-required explicit owner can share this same journal. That does
+  not enable `SAVEPOINT` / `ROLLBACK TO` / `RELEASE` while
+  `CLI_SAVEPOINT_SUPPORT` is `DISABLED`.
 
 ## Syntax
 
