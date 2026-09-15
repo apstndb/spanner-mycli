@@ -125,6 +125,7 @@ var (
 	_ savepointRecoverySafeStatement = (*ShowVariablesStatement)(nil)
 	_ savepointRecoverySafeStatement = (*ShowParamsStatement)(nil)
 	_ savepointRecoverySafeStatement = (*ShowTransactionStatement)(nil)
+	_ savepointRecoverySafeStatement = (*ShowHistoryStatement)(nil)
 )
 
 // rowCountType is type of modified rows count by DML.

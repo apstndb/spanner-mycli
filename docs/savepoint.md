@@ -101,7 +101,7 @@ If a statement fails after a completed marker in an enabled explicit RW
 transaction, the physical attempt is discarded and the logical transaction
 requires `ROLLBACK TO SAVEPOINT`. Until then, only `ROLLBACK TO`, full
 `ROLLBACK`/`CLOSE`, and help / local inspection (`HELP`, `HELP VARIABLES`,
-`SHOW VARIABLE`, `SHOW VARIABLES`, `SHOW PARAMS`) are admitted. `SET`,
+`SHOW VARIABLE`, `SHOW VARIABLES`, `SHOW PARAMS`, `SHOW HISTORY`) are admitted. `SET`,
 `SET LOCAL`, `SET PARAM`, `START BATCH`, `ABORT BATCH`, `SAVEPOINT`, `RELEASE`,
 `COMMIT`, and SQL are rejected without changing variables, batch state, or the
 logical owner. Failed reconstruction ends the logical transaction.
