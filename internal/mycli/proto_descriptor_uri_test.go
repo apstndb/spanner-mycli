@@ -22,10 +22,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -159,6 +162,60 @@ func TestFileProtoDescriptorURI(t *testing.T) {
 	if !containsDescriptorPackage(started.Internal.ProtoDescriptor, "loopbin") {
 		t.Fatal("startup file:// binary missing package")
 	}
+}
+
+func TestFileProtoDescriptorSourceRootPolicy(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	t.Run("oversized source root", func(t *testing.T) {
+		t.Parallel()
+		path := filepath.Join(dir, "huge.proto")
+		f, err := os.Create(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.Write([]byte("!")); err != nil {
+			t.Fatal(err)
+		}
+		if err := f.Truncate(filesafety.DefaultMaxFileSize + 1); err != nil {
+			t.Fatal(err)
+		}
+		if err := f.Close(); err != nil {
+			t.Fatal(err)
+		}
+		_, err = readFileDescriptorProtoFromFile(fileURLForPath(t, path))
+		if err == nil || !strings.Contains(err.Error(), "too large") {
+			t.Fatalf("error = %v, want size rejection before compile", err)
+		}
+		if strings.Contains(err.Error(), "invalid character") {
+			t.Fatalf("oversized file:// source reached the parser: %v", err)
+		}
+	})
+
+	t.Run("non-regular source root", func(t *testing.T) {
+		t.Parallel()
+		if runtime.GOOS == "windows" {
+			t.Skip("named pipes are not created with Mkfifo on Windows")
+		}
+		path := filepath.Join(dir, "fifo.proto")
+		if err := syscall.Mkfifo(path, 0o600); err != nil {
+			t.Skipf("Skipping FIFO test: %v", err)
+		}
+		done := make(chan error, 1)
+		go func() {
+			_, err := readFileDescriptorProtoFromFile(fileURLForPath(t, path))
+			done <- err
+		}()
+		select {
+		case err := <-done:
+			if err == nil || !strings.Contains(err.Error(), "cannot read named pipe") {
+				t.Fatalf("error = %v, want named-pipe rejection before open", err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("file:// FIFO source root hung instead of rejecting")
+		}
+	})
 }
 
 func TestGCSProtoDescriptorURI(t *testing.T) {
@@ -308,7 +365,7 @@ func TestGCSProtoDescriptorURI(t *testing.T) {
 		}
 	})
 
-	t.Run("client closed after success and failure", func(t *testing.T) {
+	t.Run("creates a new client for success and failure", func(t *testing.T) {
 		var created atomic.Int64
 		okSrv := httptest.NewServer(protoGCSObjectsHandler(t, map[string]protoGCSObject{
 			bucket + "/" + binObject: {attrsSize: int64(len(binary)), body: binary},
@@ -319,7 +376,7 @@ func TestGCSProtoDescriptorURI(t *testing.T) {
 			return storage.NewClient(ctx, option.WithEndpoint(okSrv.URL), option.WithoutAuthentication())
 		}
 		if _, err := readFileDescriptorProtoFromFileContext(t.Context(), binURI); err != nil {
-			t.Fatalf("success close path: %v", err)
+			t.Fatalf("success path: %v", err)
 		}
 		failSrv := httptest.NewServer(protoGCSObjectsHandler(t, map[string]protoGCSObject{
 			bucket + "/" + binObject: {attrsSize: filesafety.DefaultMaxFileSize + 1, body: binary},
@@ -330,7 +387,7 @@ func TestGCSProtoDescriptorURI(t *testing.T) {
 			return storage.NewClient(ctx, option.WithEndpoint(failSrv.URL), option.WithoutAuthentication())
 		}
 		if _, err := readFileDescriptorProtoFromFileContext(t.Context(), binURI); err == nil {
-			t.Fatal("expected failure so client still closes")
+			t.Fatal("expected failure on a second uncached client")
 		}
 		if created.Load() != 2 {
 			t.Fatalf("created %d clients, want 2 (no cache)", created.Load())

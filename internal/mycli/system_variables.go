@@ -596,11 +596,25 @@ func mergeFDS(left, right *descriptorpb.FileDescriptorSet) *descriptorpb.FileDes
 
 func protoDescriptorResolver(ctx context.Context) protocompile.Resolver {
 	return protocompile.CompositeResolver{
-		&protocompile.SourceResolver{},
+		protocompile.ResolverFunc(resolveLocalProtoDescriptorSource),
 		protocompile.ResolverFunc(func(path string) (protocompile.SearchResult, error) {
 			return resolveProtoDescriptorImport(ctx, path)
 		}),
 	}
+}
+
+// resolveLocalProtoDescriptorSource loads a bare filesystem proto through
+// SafeReadFile so source roots (including decoded file:// aliases) get the
+// same 100 MiB regular-file policy as binary roots before compile.
+func resolveLocalProtoDescriptorSource(path string) (protocompile.SearchResult, error) {
+	if explicitSQLInputScheme(path) != "" {
+		return protocompile.SearchResult{}, protoregistry.NotFound
+	}
+	b, err := filesafety.SafeReadFile(path, nil)
+	if err != nil {
+		return protocompile.SearchResult{}, err
+	}
+	return protocompile.SearchResult{Source: bytes.NewReader(b)}, nil
 }
 
 func resolveProtoDescriptorImport(ctx context.Context, path string) (protocompile.SearchResult, error) {
