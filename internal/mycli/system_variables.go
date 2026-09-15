@@ -194,6 +194,7 @@ type QueryVars struct {
 	OptimizerStatisticsPackage string                            // OPTIMIZER_STATISTICS_PACKAGE
 	AutoPartitionMode          bool                              // AUTO_PARTITION_MODE
 	DataBoostEnabled           bool                              // DATA_BOOST_ENABLED
+	MaxPartitions              int64                             // MAX_PARTITIONS
 	MaxPartitionedParallelism  int64                             // MAX_PARTITIONED_PARALLELISM
 	QueryMode                  *sppb.ExecuteSqlRequest_QueryMode // CLI_QUERY_MODE
 	TryPartitionQuery          bool                              // CLI_TRY_PARTITION_QUERY
