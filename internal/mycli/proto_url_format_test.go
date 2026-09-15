@@ -51,6 +51,12 @@ func TestProtoDescriptorLooksLikeSource(t *testing.T) {
 		{name: "local source", filename: "testdata/protos/singer.proto", want: true},
 		{name: "local binary", filename: "testdata/protos/order_descriptors.pb", want: false},
 		{name: "local literal query suffix", filename: "weird.pb?filename=.proto", want: true},
+		{name: "file source", filename: "file:///tmp/root.proto", want: true},
+		{name: "file binary query looks like proto", filename: "file:///tmp/binary.pb?filename=.proto", want: false},
+		{name: "gs source", filename: "gs://bucket/dir/root.proto", want: true},
+		{name: "gs binary query looks like proto", filename: "gs://bucket/binary.pb?filename=.proto", want: false},
+		{name: "percent bare local name", filename: "migration-100%.proto", want: true},
+		{name: "unknown scheme", filename: "s3://bucket/root.proto", wantErr: "unsupported proto descriptor URI scheme"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()

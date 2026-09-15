@@ -19,20 +19,26 @@ import (
 	"net/url"
 	"path"
 	"path/filepath"
+	"strings"
 )
 
 // protoDescriptorLooksLikeSource reports whether filename should be compiled as
-// protobuf source. HTTP(S) classification uses the parsed URL path only, so a
-// query or fragment cannot change source vs binary. The original string is
-// still the compiler root and the HTTP request URL. Local names keep
-// filepath.Ext semantics and are not parsed as URLs.
+// protobuf source. Explicit URI schemes are classified before url.Parse so
+// bare names that contain % and Windows drive paths stay filesystem paths.
+// file://, gs://, and HTTP(S) use the decoded URL path extension, so a query
+// or fragment cannot change source vs binary. Local non-URI names keep
+// filepath.Ext semantics. Unknown schemes are rejected instead of local-open.
 func protoDescriptorLooksLikeSource(filename string) (bool, error) {
-	if httpOrHTTPSRe.MatchString(filename) {
+	switch strings.ToLower(explicitSQLInputScheme(filename)) {
+	case "":
+		return filepath.Ext(filename) == ".proto", nil
+	case "http", "https", "file", "gs":
 		u, err := url.Parse(filename)
 		if err != nil {
 			return false, fmt.Errorf("invalid proto descriptor URL %q: %w", filename, err)
 		}
 		return path.Ext(u.Path) == ".proto", nil
+	default:
+		return false, fmt.Errorf("unsupported proto descriptor URI scheme %q", explicitSQLInputScheme(filename))
 	}
-	return filepath.Ext(filename) == ".proto", nil
 }

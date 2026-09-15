@@ -1,6 +1,7 @@
 package mycli
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net"
@@ -153,9 +154,15 @@ func (p *ProtoDescriptorVar) Get() (string, error) {
 }
 
 func (p *ProtoDescriptorVar) Set(value string) error {
+	// SET has no session context. Remote HTTP/GCS fetches still apply the
+	// existing 30s bound inside the loader; do not redesign Variable.Set.
+	return installProtoDescriptorsFromFilePath(context.Background(), p.filesPtr, p.descriptorPtr, value)
+}
+
+func installProtoDescriptorsFromFilePath(ctx context.Context, filesPtr *[]string, descriptorPtr **descriptorpb.FileDescriptorSet, value string) error {
 	if value == "" {
-		*p.filesPtr = []string{}
-		*p.descriptorPtr = nil
+		*filesPtr = []string{}
+		*descriptorPtr = nil
 		return nil
 	}
 
@@ -164,7 +171,7 @@ func (p *ProtoDescriptorVar) Set(value string) error {
 
 	for _, filename := range files {
 		filename = strings.TrimSpace(filename)
-		fds, err := readFileDescriptorProtoFromFile(filename)
+		fds, err := readFileDescriptorProtoFromFileContext(ctx, filename)
 		if err != nil {
 			return err
 		}
@@ -176,8 +183,8 @@ func (p *ProtoDescriptorVar) Set(value string) error {
 		return fmt.Errorf("invalid proto descriptor set: %w", err)
 	}
 
-	*p.filesPtr = files
-	*p.descriptorPtr = fileDescriptorSet
+	*filesPtr = files
+	*descriptorPtr = fileDescriptorSet
 	return nil
 }
 
@@ -221,7 +228,7 @@ func (p *ProtoDescriptorVar) Add(value string) error {
 		return nil
 	}
 
-	fds, err := readFileDescriptorProtoFromFile(value)
+	fds, err := readFileDescriptorProtoFromFileContext(context.Background(), value)
 	if err != nil {
 		return err
 	}

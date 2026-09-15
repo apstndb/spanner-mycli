@@ -176,8 +176,10 @@ Flags:
                                                Names are case-insensitive; conflicting case aliases are rejected;
                                                identical aliases collapse to one name. e.g. --param="p1='string_value'"
                                                --param=p2=FLOAT64
-      --proto-descriptor-file=STRING           Path of a file that contains a protobuf-serialized
-                                               google.protobuf.FileDescriptorSet message.
+      --proto-descriptor-file=STRING           Local path or file://, http(s)://, or gs:// URI of a FileDescriptorSet
+                                               (.pb) or proto source (.proto). file:// aliases the decoded path;
+                                               gs:// keeps URI identity. Path extension selects format. 100 MiB.
+                                               GCS uses configured credentials.
       --insecure                               Permit plaintext gRPC (no TLS). --skip-tls-verify is an alias. Cannot be
                                                combined with custom CA or client certificates.
       --ca-cert-file=STRING                    PEM CA certificate file used as the TLS trust bundle (replaces system
@@ -1471,8 +1473,9 @@ You can also use `PROTO_DESCRIPTORS_FILE_PATH` system variable to update or read
 This replaces `CLI_PROTO_DESCRIPTOR_FILE`; the old variable name is no longer
 accepted. Update SQL scripts and `--set` entries to the new name. The
 `--proto-descriptor-file` flag and its configuration-file setting are unchanged.
-ADD, `.proto` compilation, and HTTP(S) loading remain supported. `SET LOCAL`
-is not supported because restoring the value would reload external files.
+ADD, `.proto` compilation, and HTTP(S), `file://`, and `gs://` loading remain
+supported. `SET LOCAL` is not supported because restoring the value would
+reload external files.
 
 ```
 spanner> SET PROTO_DESCRIPTORS_FILE_PATH = "./other_descriptors.pb";
@@ -1518,11 +1521,16 @@ spanner> SHOW LOCAL PROTO;
 
 This feature is powered by [bufbuild/protocompile](https://github.com/bufbuild/protocompile).
 
-(EXPERIMENTAL) `.pb` and `.proto` files can be loaded from HTTP(S) URLs.
-Source vs binary is classified from the URL path; a query or fragment cannot
-change that. The original URL is used for the request, including query
-encoding. Local filenames keep ordinary extension semantics and are not parsed
-as URLs.
+(EXPERIMENTAL) `.pb` and `.proto` files can be loaded from HTTP(S), `file://`,
+and `gs://` URIs. Source vs binary is classified from the URI path; a query or
+fragment cannot change that. HTTP(S) and `gs://` keep the original URI as
+identity and request target, including query encoding. `file://` is a local-path
+alias: the decoded path is compiled or unmarshaled so it shares descriptor
+identity with the same bare path. Local non-URI names keep ordinary extension
+semantics and are not parsed as URLs. Relative `import` paths are not rewritten
+onto the remote host or bucket; only explicit `http(s)://` or `gs://` import
+strings are fetched. Remote loads use a 100 MiB cap. GCS uses configured
+application default credentials.
 
 ```
 spanner> SET PROTO_DESCRIPTORS_FILE_PATH = "https://github.com/apstndb/spanner-mycli/raw/refs/heads/main/testdata/protos/order_descriptors.pb";

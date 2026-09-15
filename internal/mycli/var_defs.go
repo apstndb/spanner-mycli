@@ -831,7 +831,7 @@ var varDefs = []varDef{
 		// RESET ALL does not turn a displayed path into a resource-loading reset.
 		name:    "PROTO_DESCRIPTORS_FILE_PATH",
 		noReset: true,
-		desc:    "Comma-separated list of proto descriptor files. Supports ADD to append files. HTTP(S) source vs binary is classified from the URL path, not query or fragment.",
+		desc:    "Comma-separated list of proto descriptor files. Supports ADD to append files. Bare paths and file://, HTTP(S), and gs:// URIs are accepted. file:// aliases the decoded local path; gs:// keeps the URI identity. Source vs binary is classified from the path extension, not query or fragment. Relative remote imports are not rewritten onto the same host or bucket. Remote loads use a 100 MiB cap and configured GCS credentials.",
 		scope:   scopeSession,
 		noLocal: true,
 		bind: func(sv *systemVariables) Variable {
