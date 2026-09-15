@@ -82,6 +82,7 @@ func TestCompletionHeader(t *testing.T) {
 		{fuzzyCompleteParam, "Query Parameters"},
 		{fuzzyCompleteSetTarget, "System Variables / PARAM"},
 		{fuzzyCompletePlanNode, "Cached Plan Nodes"},
+		{fuzzyCompleteQueryProfile, "Query Profiles"},
 		{fuzzyCompletionType(99), "Statements"},
 	}
 	for _, tt := range tests {
@@ -233,7 +234,7 @@ func TestFetchCandidatesNilSession(t *testing.T) {
 	network := []fuzzyCompletionType{
 		fuzzyCompleteDatabase, fuzzyCompleteTable, fuzzyCompleteRole, fuzzyCompleteOperation,
 		fuzzyCompleteView, fuzzyCompleteIndex, fuzzyCompleteChangeStream, fuzzyCompleteSequence,
-		fuzzyCompleteModel, fuzzyCompleteSchema,
+		fuzzyCompleteModel, fuzzyCompleteSchema, fuzzyCompleteQueryProfile,
 	}
 	for _, ct := range network {
 		got, err := f.resolveCandidates(t.Context(), ct, "db")

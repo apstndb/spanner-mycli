@@ -72,7 +72,7 @@ There are differences between spanner-mycli and spanner-cli that include not onl
   * Pager support when `CLI_USE_PAGER = TRUE`
   * Progress bar of DDL execution.
   * Syntax highlight when `CLI_ENABLE_HIGHLIGHT = TRUE`
-  * Fuzzy finder (default `Ctrl+T`, configurable via `CLI_FUZZY_FINDER_KEY`) powered by [fzf](https://github.com/junegunn/fzf) for databases, tables, system variables, database roles, operations, and statement names
+  * Fuzzy finder (default `Ctrl+T`, configurable via `CLI_FUZZY_FINDER_KEY`) powered by [fzf](https://github.com/junegunn/fzf) for databases, tables, system variables, database roles, operations, query-profile fingerprints, and statement names
 * Utilize other libraries
   * Dogfooding [`cloudspannerecosystem/memefish`](https://github.com/cloudspannerecosystem/memefish)
     * Spin out memefish logic as [`apstndb/gsqlutils`](https://github.com/apstndb/gsqlutils).
@@ -1149,6 +1149,15 @@ is inserted. Scalar nodes are included. This reads the same cache as
 `SHOW PLAN NODE` without a network request; when no plan is cached, the input
 is unchanged. It does not change when plans are cached or cleared (plain
 `EXPLAIN` does not populate this cache).
+
+Type `SHOW QUERY PROFILE ` and press `Ctrl+T` to select a sampled fingerprint
+from the current database's `SPANNER_SYS.QUERY_PROFILES_TOP_HOUR`. Searching
+uses the fingerprint plus a one-line query-text preview (whitespace-normalized,
+capped at 120 runes). Selecting inserts only the signed decimal fingerprint.
+Duplicates keep the newest interval's preview. This is a bounded network
+completion and is not cached. `SHOW QUERY PROFILES` is unchanged. A missing
+session, no rows, fetch failure, cancellation, or an active read-write
+transaction leaves the input unchanged.
 
 > **Note**: `CLI_TYPE_STYLES` configures ANSI styling for query result values based on their Spanner type. Format: colon-separated `TYPE=STYLE` pairs.
 > - Named colors/attributes: `red`, `green`, `bold`, `dim`, `italic`, `underline`, etc.
