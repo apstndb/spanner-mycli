@@ -494,7 +494,10 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string, fo
 			err = session.txn.invokeQueryAfterCollectHook()
 		}
 		if err != nil {
-			if recovered, handled, recErr := session.txn.tryExplicitAbortRetry(ctx, tok, err, actualRows > 0); recovered {
+			// PROFILE consumption is not user-visible output. A yielded row
+			// (including a resume-token checkpoint) must not forbid retry;
+			// generateExplainAnalyzeResult has not run yet.
+			if recovered, handled, recErr := session.txn.tryExplicitAbortRetry(ctx, tok, err, false); recovered {
 				continue
 			} else if handled {
 				return nil, recErr

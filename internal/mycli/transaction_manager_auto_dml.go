@@ -165,7 +165,7 @@ func (tm *TransactionManager) flushAutomaticDMLLocked(ctx context.Context) ([]sp
 					}
 					continue
 				}
-				if tm.tc != nil {
+				if tm.tc == owner {
 					tm.noteIdleUserWorkLocked(true)
 				}
 				return nil, nil, wrapAbortedKeepCause(recErr)

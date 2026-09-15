@@ -100,6 +100,7 @@ type heartbeatRPCServer struct {
 	failStreamingSQL          error
 	failStreamingSQLLeft      int
 	failStreamingSQLAfterRows int
+	streamingResumeTokens     bool
 	failUnarySQL              error
 	failCommit                error
 	failCommitLeft            int
@@ -230,6 +231,12 @@ func (s *heartbeatRPCServer) setFailStreamingSQLAfterRows(after int, err error) 
 	s.failStreamingSQL = err
 	s.failStreamingSQLLeft = 1
 	s.failStreamingSQLAfterRows = after
+}
+
+func (s *heartbeatRPCServer) setStreamingResumeTokens(enabled bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.streamingResumeTokens = enabled
 }
 
 func (s *heartbeatRPCServer) setFailUnarySQL(err error) {
@@ -676,6 +683,7 @@ func (s *heartbeatRPCServer) ExecuteStreamingSql(r *sppb.ExecuteSqlRequest, stre
 			s.failStreamingSQLAfterRows = 0
 		}
 	}
+	useResume := s.streamingResumeTokens
 	s.mu.Unlock()
 	if fail != nil && afterRows <= 0 {
 		return fail
@@ -697,6 +705,9 @@ func (s *heartbeatRPCServer) ExecuteStreamingSql(r *sppb.ExecuteSqlRequest, stre
 		}
 		if i == len(rs.Rows)-1 {
 			prs.Stats = rs.Stats
+		}
+		if useResume {
+			prs.ResumeToken = []byte(fmt.Sprintf("resume-%d", i+1))
 		}
 		if err := stream.Send(prs); err != nil {
 			return err

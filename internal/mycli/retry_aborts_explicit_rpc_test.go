@@ -1008,6 +1008,172 @@ func TestRetryAbortsExplicitProfileFreezesRequestOptions(t *testing.T) {
 	}
 }
 
+func TestRetryAbortsExplicitCommitLostOwnerLeavesReplacement(t *testing.T) {
+	t.Parallel()
+	h := newHeartbeatHarness(t)
+	session := newRetryAbortsSession(t, h)
+	ctx := t.Context()
+	beginExplicitRetry(t, ctx, session)
+	h.server.setSQLRows("SELECT 1", []string{"1"})
+	mustExec(t, ctx, session, "SELECT 1")
+	original, _, _ := ownerAttemptHandle(h.tm)
+	if original == nil {
+		t.Fatal("missing commit owner")
+	}
+
+	var (
+		replacement     *transactionContext
+		replAttempt     uint64
+		replHandle      transaction
+		replIdle        time.Time
+		replRetryAborts bool
+	)
+	h.server.setFailCommitTimes(1, abortedWithRetryDelay("commit aborted", 20*time.Millisecond))
+	h.tm.abortRetryWait = func(context.Context, time.Duration) error {
+		if err := h.tm.RollbackReadWriteTransaction(ctx); err != nil {
+			t.Errorf("rollback during commit wait: %v", err)
+			return err
+		}
+		if err := h.tm.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
+			t.Errorf("begin during commit wait: %v", err)
+			return err
+		}
+		if _, err := session.ExecuteStatement(ctx, &SetLocalStatement{VarName: "OPTIMIZER_VERSION", Value: "7"}); err != nil {
+			t.Errorf("SET LOCAL during commit wait: %v", err)
+			return err
+		}
+		replacement, replAttempt, replHandle = ownerAttemptHandle(h.tm)
+		h.tm.mu.RLock()
+		if h.tm.tc != nil {
+			replIdle = h.tm.tc.idleLastUser
+			replRetryAborts = h.tm.tc.retryAborts
+		}
+		h.tm.mu.RUnlock()
+		return nil
+	}
+
+	_, err := session.txn.CommitReadWriteTransaction(ctx)
+	if !errors.Is(err, errImplicitAbortRetryLostOwner) {
+		t.Fatalf("commit lost owner: %v", err)
+	}
+	if replacement == nil || replacement == original {
+		t.Fatal("wait seam did not install a replacement owner")
+	}
+	gotOwner, gotAttempt, gotHandle := ownerAttemptHandle(h.tm)
+	if gotOwner != replacement || gotAttempt != replAttempt || gotHandle != replHandle {
+		t.Fatalf("commit completion mutated replacement: %p/%d/%p -> %p/%d/%p",
+			replacement, replAttempt, replHandle, gotOwner, gotAttempt, gotHandle)
+	}
+	h.tm.mu.RLock()
+	idle := time.Time{}
+	retryAborts := false
+	if h.tm.tc != nil {
+		idle = h.tm.tc.idleLastUser
+		retryAborts = h.tm.tc.retryAborts
+	}
+	h.tm.mu.RUnlock()
+	if idle != replIdle {
+		t.Fatalf("replacement idle changed: %v -> %v", replIdle, idle)
+	}
+	if retryAborts != replRetryAborts {
+		t.Fatalf("replacement retryAborts changed: %v -> %v", replRetryAborts, retryAborts)
+	}
+	if got := mustGetVar(t, session, "OPTIMIZER_VERSION"); got != "7" {
+		t.Fatalf("replacement SET LOCAL OPTIMIZER_VERSION = %s", got)
+	}
+	if !session.txn.InReadWriteTransaction() {
+		t.Fatal("commit lost-owner retired the replacement")
+	}
+}
+
+func TestRetryAbortsExplicitProfileResumableRowRetries(t *testing.T) {
+	t.Parallel()
+	h := newHeartbeatHarness(t)
+	session := newRetryAbortsSession(t, h)
+	ctx := t.Context()
+	beginExplicitRetry(t, ctx, session)
+	h.server.setQueryPlan(&sppb.QueryPlan{PlanNodes: hangingIndentPlanNodes()})
+	h.server.setSQLRows("SELECT 1", []string{"1", "2"})
+	h.server.setStreamingResumeTokens(true)
+	h.server.setFailStreamingSQLAfterRows(1, abortedStatus("profile resumable"))
+	res, err := executeExplainAnalyze(ctx, session, "SELECT 1", 0, 0, nil)
+	if err != nil {
+		t.Fatalf("PROFILE resumable retry: %v", err)
+	}
+	if res == nil || res.AffectedRows != 2 {
+		t.Fatalf("PROFILE resumable result: %+v", res)
+	}
+	if got := countRPC(userSQLObservations(h.server.sqlObservations()), "ExecuteStreamingSql", false); got != 2 {
+		t.Fatalf("PROFILE resumable RPCs = %d", got)
+	}
+}
+
+func TestRetryAbortsExplicitResumablePartialOutputIsNotRetried(t *testing.T) {
+	t.Parallel()
+	t.Run("csv", func(t *testing.T) {
+		t.Parallel()
+		h := newHeartbeatHarness(t)
+		session := newRetryAbortsSession(t, h)
+		ctx := t.Context()
+		var out bytes.Buffer
+		session.systemVariables.StreamManager = streamio.NewStreamManager(io.NopCloser(strings.NewReader("")), &out, io.Discard)
+		mustExec(t, ctx, session, "SET CLI_FORMAT = 'CSV'")
+		beginExplicitRetry(t, ctx, session)
+		h.server.setSQLRows("SELECT 1", []string{"1", "2"})
+		h.server.setStreamingResumeTokens(true)
+		h.server.setFailStreamingSQLAfterRows(1, abortedStatus("csv resumable"))
+		_, err := execSQL(t, ctx, session, "SELECT 1")
+		if err == nil || !isAbortedErr(err) {
+			t.Fatalf("CSV resumable: %v", err)
+		}
+		if got := countRPC(userSQLObservations(h.server.sqlObservations()), "ExecuteStreamingSql", false); got != 1 {
+			t.Fatalf("CSV resumable retried: %d out=%q", got, out.String())
+		}
+	})
+	t.Run("vertical", func(t *testing.T) {
+		t.Parallel()
+		h := newHeartbeatHarness(t)
+		session := newRetryAbortsSession(t, h)
+		ctx := t.Context()
+		var out bytes.Buffer
+		session.systemVariables.StreamManager = streamio.NewStreamManager(io.NopCloser(strings.NewReader("")), &out, io.Discard)
+		mustExec(t, ctx, session, "SET CLI_FORMAT = 'VERTICAL'")
+		beginExplicitRetry(t, ctx, session)
+		h.server.setSQLRows("SELECT 1", []string{"1", "2"})
+		h.server.setStreamingResumeTokens(true)
+		h.server.setFailStreamingSQLAfterRows(1, abortedStatus("vertical resumable"))
+		_, err := execSQL(t, ctx, session, "SELECT 1")
+		if err == nil || !isAbortedErr(err) {
+			t.Fatalf("VERTICAL resumable: %v", err)
+		}
+		if got := countRPC(userSQLObservations(h.server.sqlObservations()), "ExecuteStreamingSql", false); got != 1 {
+			t.Fatalf("VERTICAL resumable retried: %d out=%q", got, out.String())
+		}
+	})
+	t.Run("buffered_table", func(t *testing.T) {
+		t.Parallel()
+		h := newHeartbeatHarness(t)
+		session := newRetryAbortsSession(t, h)
+		ctx := t.Context()
+		beginExplicitRetry(t, ctx, session)
+		session.systemVariables.StreamManager = nil
+		session.systemVariables.Display.AutoWrap = false
+		h.server.setSQLRows("SELECT 1", []string{"1", "2"})
+		h.server.setStreamingResumeTokens(true)
+		h.server.setFailStreamingSQLAfterRows(1, abortedStatus("table resumable"))
+		res, err := executeSQLImplWithVars(ctx, session, "SELECT 1", session.systemVariables, OperationOutput{})
+		if err != nil {
+			t.Fatalf("buffered TABLE resumable retry: %v", err)
+		}
+		if res == nil || res.AffectedRows != 2 {
+			t.Fatalf("buffered TABLE result: %+v", res)
+		}
+		if got := countRPC(userSQLObservations(h.server.sqlObservations()), "ExecuteStreamingSql", false); got != 2 {
+			t.Fatalf("buffered TABLE RPCs = %d", got)
+		}
+	})
+}
+
 func TestRetryAbortsExplicitWriterFailureIsNotReceipt(t *testing.T) {
 	t.Parallel()
 	h := newHeartbeatHarness(t)

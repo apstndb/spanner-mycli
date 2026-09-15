@@ -1025,10 +1025,11 @@ func (tm *TransactionManager) commitReadWritePhysicalLocked(ctx context.Context)
 // Eligible explicit ABORTED retries reconstruct and replay first. Recovery
 // or flush admission errors do not retire.
 func (tm *TransactionManager) CommitReadWriteTransactionLocked(ctx context.Context) (spanner.CommitResponse, error) {
+	commitOwner := tm.tc
 	for {
 		resp, err, attempted := tm.commitReadWritePhysicalLocked(ctx)
 		if err == nil {
-			if attempted && tm.tc != nil {
+			if attempted && tm.tc == commitOwner && tm.tc != nil {
 				tm.retireTransactionContextLocked()
 			}
 			return resp, nil
@@ -1038,7 +1039,9 @@ func (tm *TransactionManager) CommitReadWriteTransactionLocked(ctx context.Conte
 		} else if recErr != err {
 			err = recErr
 		}
-		if attempted && tm.tc != nil {
+		// Recovery unlocks during backoff. A replacement owner created in
+		// that window is not the Commit that failed; leave it untouched.
+		if attempted && tm.tc == commitOwner && tm.tc != nil {
 			if !tm.capturingLocked() || tm.tc.replay == nil || !tm.tc.replay.needsRecovery() {
 				tm.retireTransactionContextLocked()
 			}
