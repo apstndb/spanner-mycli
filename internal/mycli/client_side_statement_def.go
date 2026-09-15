@@ -53,6 +53,7 @@ const (
 	fuzzyCompleteParam
 	fuzzyCompleteSetTarget
 	fuzzyCompletePlanNode
+	fuzzyCompleteQueryProfile
 )
 
 func (t fuzzyCompletionType) String() string {
@@ -87,6 +88,8 @@ func (t fuzzyCompletionType) String() string {
 		return "set_target"
 	case fuzzyCompletePlanNode:
 		return "plan_node"
+	case fuzzyCompleteQueryProfile:
+		return "query_profile"
 	default:
 		return fmt.Sprintf("unhandled fuzzyCompletionType: %d", t)
 	}
@@ -1339,6 +1342,10 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			}
 			return &ShowQueryProfileStatement{Fprint: fprint}, nil
 		},
+		Completion: []fuzzyArgCompletion{{
+			PrefixPattern:  regexp.MustCompile(`(?i)^\s*SHOW\s+QUERY\s+PROFILE\s+(-?\d*)$`),
+			CompletionType: fuzzyCompleteQueryProfile,
+		}},
 	},
 	// CLI control
 	{
