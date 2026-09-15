@@ -58,25 +58,34 @@ optimizer_statistics_package: {{.OptimizerStatisticsPackage}}
 {{end}}`))
 )
 
-type ShowQueryProfilesStatement struct{}
+const queryProfilesTopHourSQL = `SELECT INTERVAL_END, TEXT_FINGERPRINT, LATENCY_SECONDS, PARSE_JSON(QUERY_PROFILE) AS QUERY_PROFILE FROM SPANNER_SYS.QUERY_PROFILES_TOP_HOUR`
 
-func (s *ShowQueryProfilesStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
-	if session.txn.InReadWriteTransaction() {
-		// INFORMATION_SCHEMA can't be used in read-write transaction.
-		// https://cloud.google.com/spanner/docs/information-schema
-		return nil, fmt.Errorf(`%q can not be used in a read-write transaction`, `SPANNER_SYS.QUERY_PROFILES_TOP_HOUR`)
+func queryProfilesInReadWriteError() error {
+	// SPANNER_SYS / INFORMATION_SCHEMA can't be used in a read-write transaction.
+	// https://cloud.google.com/spanner/docs/information-schema
+	return fmt.Errorf(`%q can not be used in a read-write transaction`, `SPANNER_SYS.QUERY_PROFILES_TOP_HOUR`)
+}
+
+func fetchQueryProfilesTopHour(ctx context.Context, session *Session) ([]*queryProfilesRow, error) {
+	if session != nil && session.txn != nil && session.txn.InReadWriteTransaction() {
+		return nil, queryProfilesInReadWriteError()
+	}
+	if session == nil || session.txn == nil {
+		return nil, nil
 	}
 
-	stmt := spanner.Statement{
-		SQL: `SELECT INTERVAL_END, TEXT_FINGERPRINT, LATENCY_SECONDS, PARSE_JSON(QUERY_PROFILE) AS QUERY_PROFILE FROM SPANNER_SYS.QUERY_PROFILES_TOP_HOUR`,
-	}
-
-	iter, _, err := session.txn.RunQuery(ctx, stmt)
+	iter, _, err := session.txn.RunQuery(ctx, spanner.Statement{SQL: queryProfilesTopHourSQL})
 	if err != nil {
 		return nil, err
 	}
-
 	rows, _, _, _, _, err := consumeRowIterCollect(iter, toQpr)
+	return rows, err
+}
+
+type ShowQueryProfilesStatement struct{}
+
+func (s *ShowQueryProfilesStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
+	rows, err := fetchQueryProfilesTopHour(ctx, session)
 	if err != nil {
 		return nil, err
 	}
@@ -144,9 +153,7 @@ type ShowQueryProfileStatement struct {
 
 func (s *ShowQueryProfileStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
 	if session.txn.InReadWriteTransaction() {
-		// INFORMATION_SCHEMA can't be used in read-write transaction.
-		// https://cloud.google.com/spanner/docs/information-schema
-		return nil, fmt.Errorf(`%q can not be used in a read-write transaction`, `SPANNER_SYS.QUERY_PROFILES_TOP_HOUR`)
+		return nil, queryProfilesInReadWriteError()
 	}
 
 	stmt := spanner.Statement{
