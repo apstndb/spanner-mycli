@@ -40,36 +40,23 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
+// TestSQLLiteralFormatConfigFloat32 checks mycli SQL-literal export and
+// typed-replay formatter selection. The scalar/array/struct CAST(-0.0 AS
+// FLOAT32) matrix is owned by spanvalue v0.9.0:
+//   - literal_test.go TestLiteralFloat32NegativeZero
+//   - writer/writer_test.go TestSQLInsertWriterFloat32NegativeZero
 func TestSQLLiteralFormatConfigFloat32(t *testing.T) {
 	t.Parallel()
-	negativeZero := float32(math.Copysign(0, -1))
-	structValue := spanner.GenericColumnValue{
-		Type: &sppb.Type{Code: sppb.TypeCode_STRUCT, StructType: &sppb.StructType{
-			Fields: []*sppb.StructType_Field{{Name: "F", Type: &sppb.Type{Code: sppb.TypeCode_FLOAT32}}},
-		}},
-		Value: structpb.NewListValue(&structpb.ListValue{Values: []*structpb.Value{structpb.NewNumberValue(math.Copysign(0, -1))}}),
-	}
 	for _, tc := range []struct {
 		name  string
 		value any
-		want  string // Empty means preserve the upstream preset's existing bytes.
+		want  string
 	}{
-		{"negative zero", negativeZero, "CAST(-0.0 AS FLOAT32)"},
-		{"nullable negative zero", spanner.NullFloat32{Float32: negativeZero, Valid: true}, "CAST(-0.0 AS FLOAT32)"},
-		{"positive zero", float32(0), ""},
-		{"integer", float32(3), ""},
-		{"finite", float32(1.5), ""},
-		{"NaN", float32(math.NaN()), ""},
-		{"positive infinity", float32(math.Inf(1)), ""},
-		{"negative infinity", float32(math.Inf(-1)), ""},
-		{"NULL", spanner.NullFloat32{}, ""},
-		{"FLOAT64 negative zero", math.Copysign(0, -1), ""},
-		{"STRING with cast text", "CAST(-0 AS FLOAT32)", ""},
-		{"JSON with cast text", spanner.NullJSON{Value: map[string]any{"text": "CAST(-0 AS FLOAT32)"}, Valid: true}, ""},
-		{"array", []spanner.NullFloat32{{Float32: negativeZero, Valid: true}, {Valid: true}, {}}, "[CAST(-0.0 AS FLOAT32), CAST(0 AS FLOAT32), NULL]"},
-		{"empty array", []spanner.NullFloat32{}, ""},
-		{"NULL array", []spanner.NullFloat32(nil), ""},
-		{"struct field", structValue, "STRUCT<F FLOAT32>(CAST(-0.0 AS FLOAT32))"},
+		{"negative zero", float32(math.Copysign(0, -1)), "CAST(-0.0 AS FLOAT32)"},
+		{"STRING with cast text", "CAST(-0 AS FLOAT32)", `"CAST(-0 AS FLOAT32)"`},
+		{"JSON with cast text", spanner.NullJSON{Value: map[string]any{"text": "CAST(-0 AS FLOAT32)"}, Valid: true}, `JSON '{"text":"CAST(-0 AS FLOAT32)"}'`},
+		{"empty array", []spanner.NullFloat32{}, "[]"},
+		{"NULL array", []spanner.NullFloat32(nil), "NULL"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			row, err := spanner.NewRow([]string{"V"}, []any{tc.value})
@@ -79,13 +66,6 @@ func TestSQLLiteralFormatConfigFloat32(t *testing.T) {
 			var value spanner.GenericColumnValue
 			if err := row.Column(0, &value); err != nil {
 				t.Fatal(err)
-			}
-			want := tc.want
-			if want == "" {
-				want, err = spanvalue.LiteralFormatConfig().FormatToplevelColumn(value)
-				if err != nil {
-					t.Fatal(err)
-				}
 			}
 			for _, mode := range []enums.DisplayMode{enums.DisplayModeSQLInsert, enums.DisplayModeSQLInsertOrIgnore, enums.DisplayModeSQLInsertOrUpdate} {
 				sv := newSystemVariablesWithDefaults()
@@ -105,8 +85,8 @@ func TestSQLLiteralFormatConfigFloat32(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					if got != want {
-						t.Errorf("%s/%s got %s, want %s", mode, name, got, want)
+					if got != tc.want {
+						t.Errorf("%s/%s got %s, want %s", mode, name, got, tc.want)
 					}
 				}
 			}
@@ -125,8 +105,9 @@ func TestSQLLiteralFormatConfigInvalidFloat32(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := config.FormatToplevelColumn(value); err == nil {
-		t.Fatal("expected invalid FLOAT32 error")
+	_, err = config.FormatToplevelColumn(value)
+	if !errors.Is(err, spanvalue.ErrMalformedWire) || !strings.Contains(err.Error(), `"not a float"`) {
+		t.Fatalf("invalid FLOAT32 error = %v, want ErrMalformedWire mentioning the payload", err)
 	}
 }
 
@@ -204,8 +185,9 @@ func TestSQLLiteralFormatConfigInvalidFloat32Streaming(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := render.Spanvalue.FormatToplevelColumn(value); err == nil {
-		t.Fatal("expected invalid FLOAT32 error from sqlLiteralFormatConfig")
+	_, err = render.Spanvalue.FormatToplevelColumn(value)
+	if !errors.Is(err, spanvalue.ErrMalformedWire) || !strings.Contains(err.Error(), `"not a float"`) {
+		t.Fatalf("invalid FLOAT32 streaming error = %v, want ErrMalformedWire mentioning the payload", err)
 	}
 }
 

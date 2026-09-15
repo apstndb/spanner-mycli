@@ -68,7 +68,7 @@ func TestNewSpanvalueRowIteratorWriterForContract(t *testing.T) {
 	t.Run("SQL export missing table name is handled with exact error text", func(t *testing.T) {
 		t.Parallel()
 		var buf bytes.Buffer
-		w, handled, err := newSpanvalueRowIteratorWriterFor(&buf, exportWriterOptions{CLIFormat: enums.DisplayModeSQLInsert}, sqlLiteralFormatConfig())
+		w, handled, err := newSpanvalueRowIteratorWriterFor(&buf, exportWriterOptions{CLIFormat: enums.DisplayModeSQLInsert}, spanvalue.LiteralFormatConfig())
 		if w != nil || !handled {
 			t.Fatalf("got writer=%v handled=%v, want nil, true", w, handled)
 		}
@@ -87,7 +87,7 @@ func TestNewSpanvalueRowIteratorWriterForContract(t *testing.T) {
 			CLIFormat:    enums.DisplayModeSQLInsert,
 			SQLTableName: "Items",
 			SQLBatchSize: -1,
-		}, sqlLiteralFormatConfig())
+		}, spanvalue.LiteralFormatConfig())
 		if !handled {
 			t.Fatal("negative batch size should be handled")
 		}
@@ -104,7 +104,7 @@ func TestNewSpanvalueRowIteratorWriterForContract(t *testing.T) {
 			CLIFormat:    enums.DisplayModeSQLInsert,
 			SQLTableName: "Items",
 			SQLBatchSize: 10001,
-		}, sqlLiteralFormatConfig())
+		}, spanvalue.LiteralFormatConfig())
 		if !handled {
 			t.Fatal("oversized batch size should be handled")
 		}
@@ -148,25 +148,25 @@ func TestNewSpanvalueRowIteratorWriterForOutput(t *testing.T) {
 		{
 			name: "SQL INSERT uses table name and GoogleSQL string quotes",
 			opts: exportWriterOptions{CLIFormat: enums.DisplayModeSQLInsert, SQLTableName: "Items"},
-			fc:   sqlLiteralFormatConfig(),
+			fc:   spanvalue.LiteralFormatConfig(),
 			want: "INSERT INTO `Items` (`id`, `name`) VALUES (1, \"Alice\");\nINSERT INTO `Items` (`id`, `name`) VALUES (2, \"Bob\");\nINSERT INTO `Items` (`id`, `name`) VALUES (3, \"Carol\");\n",
 		},
 		{
 			name: "SQL INSERT OR IGNORE",
 			opts: exportWriterOptions{CLIFormat: enums.DisplayModeSQLInsertOrIgnore, SQLTableName: "Items"},
-			fc:   sqlLiteralFormatConfig(),
+			fc:   spanvalue.LiteralFormatConfig(),
 			want: "INSERT OR IGNORE INTO `Items` (`id`, `name`) VALUES (1, \"Alice\");\nINSERT OR IGNORE INTO `Items` (`id`, `name`) VALUES (2, \"Bob\");\nINSERT OR IGNORE INTO `Items` (`id`, `name`) VALUES (3, \"Carol\");\n",
 		},
 		{
 			name: "SQL INSERT OR UPDATE",
 			opts: exportWriterOptions{CLIFormat: enums.DisplayModeSQLInsertOrUpdate, SQLTableName: "Items"},
-			fc:   sqlLiteralFormatConfig(),
+			fc:   spanvalue.LiteralFormatConfig(),
 			want: "INSERT OR UPDATE INTO `Items` (`id`, `name`) VALUES (1, \"Alice\");\nINSERT OR UPDATE INTO `Items` (`id`, `name`) VALUES (2, \"Bob\");\nINSERT OR UPDATE INTO `Items` (`id`, `name`) VALUES (3, \"Carol\");\n",
 		},
 		{
 			name: "SQL batch size groups VALUES lists",
 			opts: exportWriterOptions{CLIFormat: enums.DisplayModeSQLInsert, SQLTableName: "Items", SQLBatchSize: 2},
-			fc:   sqlLiteralFormatConfig(),
+			fc:   spanvalue.LiteralFormatConfig(),
 			want: "INSERT INTO `Items` (`id`, `name`) VALUES\n  (1, \"Alice\"),\n  (2, \"Bob\");\nINSERT INTO `Items` (`id`, `name`) VALUES\n  (3, \"Carol\");\n",
 		},
 		{
@@ -176,7 +176,7 @@ func TestNewSpanvalueRowIteratorWriterForOutput(t *testing.T) {
 				SQLTableName:    "Items",
 				DatabaseDialect: databasepb.DatabaseDialect_POSTGRESQL,
 			},
-			fc:   sqlLiteralFormatConfig(),
+			fc:   spanvalue.LiteralFormatConfig(),
 			want: "INSERT INTO \"Items\" (\"id\", \"name\") VALUES (1, \"Alice\");\nINSERT INTO \"Items\" (\"id\", \"name\") VALUES (2, \"Bob\");\nINSERT INTO \"Items\" (\"id\", \"name\") VALUES (3, \"Carol\");\n",
 		},
 	}
