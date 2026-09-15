@@ -197,8 +197,10 @@ type TransactionManager struct {
 	// before that owner existed.
 	idleCLIHold int
 
-	// savepointEnabled is a private capture switch for owner-journal
-	// integration tests. Public CLI_SAVEPOINT_SUPPORT also enables capture.
+	// savepointEnabled is a private SAVEPOINT capture+command switch for
+	// owner-journal integration tests. Public CLI_SAVEPOINT_SUPPORT also
+	// enables SAVEPOINT commands and capture. A captured retry-required
+	// pending/RW owner can share the same journal without this switch.
 	savepointEnabled bool
 }
 
