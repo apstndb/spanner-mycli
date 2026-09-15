@@ -1088,7 +1088,7 @@ func TestFlagSpecialModes(t *testing.T) {
 			// Check if this test case has specified a desired CLI_FORMAT value
 			if tt.wantCLIFormat != 0 {
 				// Determine if this would be interactive mode
-				_, _, err := determineInputAndMode(&gopts.Spanner, bytes.NewReader(nil))
+				_, _, err := determineInputAndMode(t.Context(), &gopts.Spanner, bytes.NewReader(nil))
 				if err != nil {
 					t.Fatalf("Failed to determine input mode: %v", err)
 				}
@@ -1357,7 +1357,7 @@ func TestFileFlagBehavior(t *testing.T) {
 
 			// If no validation error, test determineInputAndMode
 			if err == nil && tt.checkInput && gopts != nil {
-				input, _, determineErr := determineInputAndMode(&gopts.Spanner, bytes.NewReader([]byte(tt.stdin)))
+				input, _, determineErr := determineInputAndMode(t.Context(), &gopts.Spanner, bytes.NewReader([]byte(tt.stdin)))
 				if determineErr != nil {
 					err = determineErr
 				} else if input != tt.wantInput {
@@ -2067,7 +2067,7 @@ func TestBatchModeTableFormatLogic(t *testing.T) {
 			}
 			defer cleanup()
 
-			input, _, err := determineInputAndMode(&gopts.Spanner, stdin)
+			input, _, err := determineInputAndMode(t.Context(), &gopts.Spanner, stdin)
 			if err != nil {
 				t.Fatalf("Failed to determine input mode: %v", err)
 			}
@@ -2724,7 +2724,7 @@ func TestExecuteSQLAliasPrecedence(t *testing.T) {
 			}
 
 			stdin := strings.NewReader("")
-			input, _, err := determineInputAndMode(&gopts.Spanner, stdin)
+			input, _, err := determineInputAndMode(t.Context(), &gopts.Spanner, stdin)
 			if err != nil {
 				t.Fatalf("determineInputAndMode() error: %v", err)
 			}

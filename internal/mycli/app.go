@@ -419,7 +419,7 @@ func runWithOutput(ctx context.Context, opts *spannerOptions, stdout io.Writer, 
 		return err
 	}
 
-	input, interactive, err := determineInputAndMode(opts, os.Stdin)
+	input, interactive, err := determineInputAndMode(ctx, opts, os.Stdin)
 	if err != nil {
 		return err
 	}
