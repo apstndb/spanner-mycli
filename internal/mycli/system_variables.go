@@ -557,13 +557,9 @@ func (sv *systemVariables) ListVariables() map[string]string {
 	return sv.Registry.ListVariables()
 }
 
-// ListVariableInfo returns information about all variables
-func (sv *systemVariables) ListVariableInfo() map[string]struct {
-	Description   string
-	ReadOnly      bool
-	CanAdd        bool
-	Unimplemented bool
-} {
+// ListVariableInfo returns static metadata for every canonical registered
+// variable. It forwards the registry shape and does not Get or Set.
+func (sv *systemVariables) ListVariableInfo() map[string]variableInfo {
 	sv.ensureRegistry()
 	return sv.Registry.ListVariableInfo()
 }

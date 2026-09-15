@@ -252,8 +252,11 @@ func TestDirectedReadHelpAndUnknownNames(t *testing.T) {
 		}
 		if row.Name == "DIRECTED_READ" {
 			saw = true
-			if !strings.Contains(row.Operations, "write") {
+			if !strings.Contains(row.Operations, "write") || !strings.Contains(row.Operations, "reset") {
 				t.Errorf("operations=%q", row.Operations)
+			}
+			if strings.Contains(row.Operations, "local") {
+				t.Errorf("DIRECTED_READ must not advertise local: %q", row.Operations)
 			}
 		}
 	}

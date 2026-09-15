@@ -111,7 +111,7 @@ func TestRunOfflineHelp(t *testing.T) {
 			"| Description",
 			"`CLI_FORMAT`",
 			"`COMMIT_RESPONSE`",
-			"read,write",
+			"read,write,local,reset",
 			`\<name\>:\<template\>`,
 		} {
 			requireContains(t, withoutFeature, want, "sysvars-help")

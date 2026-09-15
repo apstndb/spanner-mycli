@@ -1230,6 +1230,7 @@ func TestRenderSystemVariablesHelp(t *testing.T) {
 	for _, want := range []string{
 		"| Name",
 		"`CLI_FORMAT`",
+		"read,write,local,reset",
 		// Special variables handled outside the registry.
 		"`COMMIT_RESPONSE`",
 		"`DIRECTED_READ`",
@@ -1244,6 +1245,10 @@ func TestRenderSystemVariablesHelp(t *testing.T) {
 	if strings.Contains(got, "<name>") {
 		t.Error("renderSystemVariablesHelp() must escape angle brackets in descriptions")
 	}
+	header, _, _ := strings.Cut(got, "\n")
+	if strings.Contains(header, "Type") || strings.Contains(header, "Default") {
+		t.Errorf("renderSystemVariablesHelp() header must stay Name | Operations | Description, got %q", header)
+	}
 }
 
 func TestCommitResponseVariableInfo(t *testing.T) {
@@ -1255,6 +1260,9 @@ func TestCommitResponseVariableInfo(t *testing.T) {
 	}
 	if !info.ReadOnly {
 		t.Error("COMMIT_RESPONSE must be read-only")
+	}
+	if info.LocalAllowed || info.Resettable {
+		t.Errorf("COMMIT_RESPONSE local=%v reset=%v; want both false", info.LocalAllowed, info.Resettable)
 	}
 
 	const wantDescription = "The most recent response for a read-write transaction. SHOW VARIABLE COMMIT_RESPONSE returns COMMIT_TIMESTAMP and MUTATION_COUNT columns; SHOW VARIABLES includes those values as COMMIT_TIMESTAMP and MUTATION_COUNT."

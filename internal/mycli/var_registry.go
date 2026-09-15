@@ -251,19 +251,46 @@ func (r *VarRegistry) ListMultiValues() map[string]string {
 	return result
 }
 
-// ListVariableInfo returns information about all variables
-func (r *VarRegistry) ListVariableInfo() map[string]struct {
+// variableInfo is the static HELP VARIABLES / generated-docs metadata for one
+// registered variable. Labels describe registered capability from the def and
+// bound handler type, not whether an operation will succeed in the current
+// session (transaction phase, setter guards, valid values, or the captured
+// startup snapshot). Current values and snapshots are not read.
+type variableInfo struct {
 	Description   string
 	ReadOnly      bool
 	CanAdd        bool
+	LocalAllowed  bool
+	Resettable    bool
 	Unimplemented bool
-} {
-	result := make(map[string]struct {
-		Description   string
-		ReadOnly      bool
-		CanAdd        bool
-		Unimplemented bool
-	})
+}
+
+// operations returns the HELP / generated-docs Operations cell. Unimplemented
+// placeholders advertise a single marker and never a successful operation.
+func (info variableInfo) operations() string {
+	if info.Unimplemented {
+		return "unimplemented"
+	}
+	ops := []string{"read"}
+	if !info.ReadOnly {
+		ops = append(ops, "write")
+	}
+	if info.CanAdd {
+		ops = append(ops, "add")
+	}
+	if info.LocalAllowed {
+		ops = append(ops, "local")
+	}
+	if info.Resettable {
+		ops = append(ops, "reset")
+	}
+	return strings.Join(ops, ",")
+}
+
+// ListVariableInfo returns static metadata for every canonical registered
+// variable. It does not Get, Set, or read resources; aliases are excluded.
+func (r *VarRegistry) ListVariableInfo() map[string]variableInfo {
+	result := make(map[string]variableInfo)
 
 	addRow := func(def *varDef) {
 		name := strings.ToUpper(def.name)
@@ -271,15 +298,12 @@ func (r *VarRegistry) ListVariableInfo() map[string]struct {
 		// Unimplemented status is derived from the bound handler type, not from a
 		// hardcoded name list, so generated docs stay honest as vars come and go.
 		_, unimplemented := rv.v.(*UnimplementedVar)
-		result[name] = struct {
-			Description   string
-			ReadOnly      bool
-			CanAdd        bool
-			Unimplemented bool
-		}{
+		result[name] = variableInfo{
 			Description:   rv.def.desc,
 			ReadOnly:      !rv.def.settable(),
 			CanAdd:        rv.add != nil,
+			LocalAllowed:  !unimplemented && rv.def.localAllowed(),
+			Resettable:    !unimplemented && rv.def.resettable(),
 			Unimplemented: unimplemented,
 		}
 	}
