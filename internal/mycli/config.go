@@ -137,7 +137,7 @@ type spannerOptions struct {
 	SQL                      string            `name:"sql" hidden:"" help:"Hidden alias of --execute for gcloud spanner databases execute-sql compatibility"`
 	Set                      map[string]string `name:"set" mapsep:"none" help:"Set system variables e.g. --set=name1=value1 --set=name2=value2"`
 	Param                    map[string]string `name:"param" mapsep:"none" help:"Set query parameters, it can be literal or type(EXPLAIN/DESCRIBE only). Names are case-insensitive; conflicting case aliases are rejected; identical aliases collapse to one name. e.g. --param=\"p1='string_value'\" --param=p2=FLOAT64"`
-	ProtoDescriptorFile      string            `name:"proto-descriptor-file" help:"Path of a file that contains a protobuf-serialized google.protobuf.FileDescriptorSet message."`
+	ProtoDescriptorFile      string            `name:"proto-descriptor-file" help:"Local path or file://, http(s)://, or gs:// URI of a FileDescriptorSet (.pb) or proto source (.proto). file:// aliases the decoded path; gs:// keeps URI identity. Path extension selects format. 100 MiB. GCS uses configured credentials."`
 	Insecure                 *bool             `name:"insecure" help:"Permit plaintext gRPC (no TLS). --skip-tls-verify is an alias. Cannot be combined with custom CA or client certificates."`
 	SkipTlsVerify            *bool             `name:"skip-tls-verify" hidden:"" help:"Hidden alias of --insecure from original spanner-cli"`
 	CaCertFile               string            `name:"ca-cert-file" help:"PEM CA certificate file used as the TLS trust bundle (replaces system roots). Requires an explicit --endpoint or --host. Startup-only."`
@@ -558,12 +558,16 @@ func applyStalenessOptions(sysVars *systemVariables, opts *spannerOptions) error
 }
 
 func applyProtoDescriptors(sysVars *systemVariables, opts *spannerOptions) error {
+	return applyProtoDescriptorsContext(context.Background(), sysVars, opts)
+}
+
+func applyProtoDescriptorsContext(ctx context.Context, sysVars *systemVariables, opts *spannerOptions) error {
 	if opts.ProtoDescriptorFile == "" {
 		return nil
 	}
 	// Binary files can supply different parts of the same graph. Install the
 	// startup list as one candidate, just like a multi-input SQL SET.
-	if err := sysVars.SetFromSimple("PROTO_DESCRIPTORS_FILE_PATH", opts.ProtoDescriptorFile); err != nil {
+	if err := installProtoDescriptorsFromFilePath(ctx, &sysVars.Internal.ProtoDescriptorFile, &sysVars.Internal.ProtoDescriptor, opts.ProtoDescriptorFile); err != nil {
 		return fmt.Errorf("error on --proto-descriptor-file, file: %v: %w", opts.ProtoDescriptorFile, err)
 	}
 	return nil
@@ -634,6 +638,10 @@ func applyEmbeddedRuntimeDefaults(sysVars *systemVariables, opts *spannerOptions
 // initializeSystemVariables initializes the systemVariables struct based on spannerOptions.
 // It extracts the logic for setting default values and applying flag values.
 func initializeSystemVariables(opts *spannerOptions, features ...Feature) (*systemVariables, error) {
+	return initializeSystemVariablesContext(context.Background(), opts, features...)
+}
+
+func initializeSystemVariablesContext(ctx context.Context, opts *spannerOptions, features ...Feature) (*systemVariables, error) {
 	sysVars, err := createSystemVariablesFromOptions(opts, features...)
 	if err != nil {
 		return nil, err
@@ -683,10 +691,16 @@ func initializeSystemVariables(opts *spannerOptions, features ...Feature) (*syst
 		return nil, err
 	}
 
+	if err := applyOutputTemplate(sysVars, opts); err != nil {
+		return nil, err
+	}
+	if err := applyStalenessOptions(sysVars, opts); err != nil {
+		return nil, err
+	}
+	if err := applyProtoDescriptorsContext(ctx, sysVars, opts); err != nil {
+		return nil, err
+	}
 	for _, apply := range []func(*systemVariables, *spannerOptions) error{
-		applyOutputTemplate,
-		applyStalenessOptions,
-		applyProtoDescriptors,
 		applyDirectedRead,
 		applyFormatAndSetOptions,
 		applyEmbeddedRuntimeDefaults,

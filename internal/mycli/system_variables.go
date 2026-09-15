@@ -9,9 +9,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
-	"regexp"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -24,6 +25,8 @@ import (
 	"github.com/apstndb/spanner-mycli/internal/mycli/format"
 	planref "github.com/apstndb/spannerplan/plantree/reference"
 	"github.com/bufbuild/protocompile"
+	"github.com/bufbuild/protocompile/parser"
+	"github.com/bufbuild/protocompile/reporter"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"google.golang.org/protobuf/reflect/protodesc"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -601,36 +604,234 @@ func mergeFDS(left, right *descriptorpb.FileDescriptorSet) *descriptorpb.FileDes
 	return &descriptorpb.FileDescriptorSet{File: result}
 }
 
-var httpResolver = protocompile.ResolverFunc(httpResolveFunc)
-
-var httpOrHTTPSRe = regexp.MustCompile("^https?://")
-
-func httpResolveFunc(path string) (protocompile.SearchResult, error) {
-	if !httpOrHTTPSRe.MatchString(path) {
-		return protocompile.SearchResult{}, protoregistry.NotFound
+func protoDescriptorResolver(ctx context.Context) protocompile.Resolver {
+	inner := protocompile.CompositeResolver{
+		protocompile.ResolverFunc(resolveLocalProtoDescriptorSource),
+		protocompile.ResolverFunc(func(path string) (protocompile.SearchResult, error) {
+			return resolveProtoDescriptorImport(ctx, path)
+		}),
 	}
+	// Rewrite file:// imports to the decoded local path before the compiler
+	// links, so a bare path and its file:// alias are one file identity.
+	return protocompile.ResolverFunc(func(path string) (protocompile.SearchResult, error) {
+		res, err := inner.FindFileByPath(path)
+		if err != nil {
+			return res, err
+		}
+		return canonicalizeFileURIImportsInSearchResult(path, res)
+	})
+}
 
-	b, err := loadFromHTTPWithLimit(context.Background(), path, filesafety.DefaultMaxFileSize)
+func rewriteFileURIDependencies(fd *descriptorpb.FileDescriptorProto) {
+	if fd == nil {
+		return
+	}
+	for i, dep := range fd.Dependency {
+		fd.Dependency[i] = remapFileURIDescriptorName(dep)
+	}
+}
+
+func canonicalizeFileURIImportsInSearchResult(name string, res protocompile.SearchResult) (protocompile.SearchResult, error) {
+	if res.ParseResult != nil {
+		rewriteFileURIDependencies(res.ParseResult.FileDescriptorProto())
+		return res, nil
+	}
+	if res.Proto != nil {
+		fd := proto.Clone(res.Proto).(*descriptorpb.FileDescriptorProto)
+		rewriteFileURIDependencies(fd)
+		res.Proto = fd
+		return res, nil
+	}
+	if res.Desc != nil || res.Source == nil {
+		return res, nil
+	}
+	b, err := io.ReadAll(res.Source)
+	if c, ok := res.Source.(io.Closer); ok {
+		_ = c.Close()
+	}
 	if err != nil {
 		return protocompile.SearchResult{}, err
 	}
+	handler := reporter.NewHandler(nil)
+	fileNode, err := parser.Parse(name, bytes.NewReader(b), handler)
+	if err != nil {
+		return protocompile.SearchResult{Source: bytes.NewReader(b)}, nil
+	}
+	parsed, err := parser.ResultFromAST(fileNode, true, handler)
+	if err != nil {
+		return protocompile.SearchResult{Source: bytes.NewReader(b)}, nil
+	}
+	rewriteFileURIDependencies(parsed.FileDescriptorProto())
+	return protocompile.SearchResult{ParseResult: parsed}, nil
+}
 
+// resolveLocalProtoDescriptorSource loads a bare filesystem proto through
+// SafeReadFile so source roots (including decoded file:// aliases) get the
+// same 100 MiB regular-file policy as binary roots before compile.
+func resolveLocalProtoDescriptorSource(path string) (protocompile.SearchResult, error) {
+	if explicitSQLInputScheme(path) != "" {
+		return protocompile.SearchResult{}, protoregistry.NotFound
+	}
+	b, err := filesafety.SafeReadFile(path, nil)
+	if err != nil {
+		return protocompile.SearchResult{}, err
+	}
 	return protocompile.SearchResult{Source: bytes.NewReader(b)}, nil
 }
 
-var resolver = protocompile.CompositeResolver{&protocompile.SourceResolver{}, httpResolver}
+func resolveProtoDescriptorImport(ctx context.Context, path string) (protocompile.SearchResult, error) {
+	switch strings.ToLower(explicitSQLInputScheme(path)) {
+	case "http", "https":
+		b, err := loadFromHTTPWithLimit(ctx, path, filesafety.DefaultMaxFileSize)
+		if err != nil {
+			return protocompile.SearchResult{}, err
+		}
+		return protocompile.SearchResult{Source: bytes.NewReader(b)}, nil
+	case "gs":
+		b, err := loadProtoDescriptorFromGCS(ctx, path)
+		if err != nil {
+			return protocompile.SearchResult{}, err
+		}
+		return protocompile.SearchResult{Source: bytes.NewReader(b)}, nil
+	case "file":
+		u, err := url.Parse(path)
+		if err != nil {
+			return protocompile.SearchResult{}, fmt.Errorf("invalid proto descriptor URL %q: %w", path, err)
+		}
+		local, err := localPathFromFileURI(u)
+		if err != nil {
+			return protocompile.SearchResult{}, err
+		}
+		b, err := filesafety.SafeReadFile(local, nil)
+		if err != nil {
+			return protocompile.SearchResult{}, err
+		}
+		return protocompile.SearchResult{Source: bytes.NewReader(b)}, nil
+	default:
+		return protocompile.SearchResult{}, protoregistry.NotFound
+	}
+}
+
+func loadProtoDescriptorFromGCS(ctx context.Context, uri string) ([]byte, error) {
+	ctx, cancel := remoteSQLInputContext(ctx)
+	defer cancel()
+	client, err := newSQLInputGCSClient(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create GCS client: %w", err)
+	}
+	defer func() { _ = client.Close() }()
+	return loadFromGCSWithClientAndLimit(ctx, client, uri, filesafety.DefaultMaxFileSize)
+}
+
+func protoDescriptorCompileName(filename string) (string, error) {
+	switch strings.ToLower(explicitSQLInputScheme(filename)) {
+	case "", "http", "https", "gs":
+		return filename, nil
+	case "file":
+		u, err := url.Parse(filename)
+		if err != nil {
+			return "", fmt.Errorf("invalid proto descriptor URL %q: %w", filename, err)
+		}
+		return localPathFromFileURI(u)
+	default:
+		return "", fmt.Errorf("unsupported proto descriptor URI scheme %q", explicitSQLInputScheme(filename))
+	}
+}
+
+func fetchProtoDescriptorBytes(ctx context.Context, filename string) ([]byte, error) {
+	switch strings.ToLower(explicitSQLInputScheme(filename)) {
+	case "":
+		b, err := filesafety.SafeReadFile(filename, nil)
+		if err != nil {
+			return nil, fmt.Errorf("error on read proto descriptor-file %v: %w", filename, err)
+		}
+		return b, nil
+	case "file":
+		u, err := url.Parse(filename)
+		if err != nil {
+			return nil, fmt.Errorf("invalid proto descriptor URL %q: %w", filename, err)
+		}
+		local, err := localPathFromFileURI(u)
+		if err != nil {
+			return nil, err
+		}
+		b, err := filesafety.SafeReadFile(local, nil)
+		if err != nil {
+			return nil, fmt.Errorf("error on read proto descriptor-file %v: %w", filename, err)
+		}
+		return b, nil
+	case "http", "https":
+		b, err := loadFromHTTPWithLimit(ctx, filename, filesafety.DefaultMaxFileSize)
+		if err != nil {
+			return nil, fmt.Errorf("error on fetch proto descriptor from %v: %w", filename, err)
+		}
+		return b, nil
+	case "gs":
+		b, err := loadProtoDescriptorFromGCS(ctx, filename)
+		if err != nil {
+			return nil, fmt.Errorf("error on fetch proto descriptor from %v: %w", filename, err)
+		}
+		return b, nil
+	default:
+		return nil, fmt.Errorf("unsupported proto descriptor URI scheme %q", explicitSQLInputScheme(filename))
+	}
+}
+
+func remapFileURIDescriptorName(name string) string {
+	if strings.ToLower(explicitSQLInputScheme(name)) != "file" {
+		return name
+	}
+	u, err := url.Parse(name)
+	if err != nil {
+		return name
+	}
+	local, err := localPathFromFileURI(u)
+	if err != nil {
+		return name
+	}
+	return local
+}
+
+// canonicalizeFileURIDescriptorNames rewrites explicit file:// compile/import
+// names to the decoded local path so file:// remains a #283 identity alias.
+func canonicalizeFileURIDescriptorNames(fds *descriptorpb.FileDescriptorSet) {
+	if fds == nil {
+		return
+	}
+	for _, fd := range fds.GetFile() {
+		fd.Name = proto.String(remapFileURIDescriptorName(fd.GetName()))
+		for i, dep := range fd.Dependency {
+			fd.Dependency[i] = remapFileURIDescriptorName(dep)
+		}
+	}
+	var collapsed *descriptorpb.FileDescriptorSet
+	for _, fd := range fds.GetFile() {
+		collapsed = mergeFDS(collapsed, &descriptorpb.FileDescriptorSet{File: []*descriptorpb.FileDescriptorProto{fd}})
+	}
+	if collapsed != nil {
+		fds.File = collapsed.File
+	}
+}
 
 func readFileDescriptorProtoFromFile(filename string) (*descriptorpb.FileDescriptorSet, error) {
+	return readFileDescriptorProtoFromFileContext(context.Background(), filename)
+}
+
+func readFileDescriptorProtoFromFileContext(ctx context.Context, filename string) (*descriptorpb.FileDescriptorSet, error) {
 	isSource, err := protoDescriptorLooksLikeSource(filename)
 	if err != nil {
 		return nil, err
 	}
 	if isSource {
+		compileName, err := protoDescriptorCompileName(filename)
+		if err != nil {
+			return nil, err
+		}
 		compiler := protocompile.Compiler{
-			Resolver: protocompile.WithStandardImports(resolver),
+			Resolver: protocompile.WithStandardImports(protoDescriptorResolver(ctx)),
 		}
 
-		files, err := compiler.Compile(context.Background(), filename)
+		files, err := compiler.Compile(ctx, compileName)
 		if err != nil {
 			return nil, err
 		}
@@ -652,27 +853,18 @@ func readFileDescriptorProtoFromFile(filename string) (*descriptorpb.FileDescrip
 			}
 			result.File = append(result.File, protodesc.ToFileDescriptorProto(file))
 		}
-		visit(files.FindFileByPath(filename))
+		visit(files.FindFileByPath(compileName))
+		canonicalizeFileURIDescriptorNames(&result)
 		return &result, nil
 	}
 
-	var b []byte
-	if httpOrHTTPSRe.MatchString(filename) {
-		b, err = loadFromHTTPWithLimit(context.Background(), filename, filesafety.DefaultMaxFileSize)
-		if err != nil {
-			return nil, fmt.Errorf("error on fetch proto descriptor from %v: %w", filename, err)
-		}
-	} else {
-		// nil options = regular-file check with the 100MB default cap.
-		b, err = filesafety.SafeReadFile(filename, nil)
-		if err != nil {
-			return nil, fmt.Errorf("error on read proto descriptor-file %v: %w", filename, err)
-		}
+	b, err := fetchProtoDescriptorBytes(ctx, filename)
+	if err != nil {
+		return nil, err
 	}
 
 	var fds descriptorpb.FileDescriptorSet
-	err = proto.Unmarshal(b, &fds)
-	if err != nil {
+	if err := proto.Unmarshal(b, &fds); err != nil {
 		return nil, fmt.Errorf("error on unmarshal proto descriptor-file %v: %w", filename, err)
 	}
 	return &fds, nil

@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"google.golang.org/protobuf/reflect/protoregistry"
@@ -135,8 +137,7 @@ func TestAdd(t *testing.T) {
 	}
 }
 
-// TestHttpResolveFunc tests the httpResolveFunc function
-func TestHttpResolveFunc(t *testing.T) {
+func TestResolveProtoDescriptorImport(t *testing.T) {
 	t.Parallel()
 	// Create a test HTTP server
 	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -156,18 +157,18 @@ func TestHttpResolveFunc(t *testing.T) {
 	}))
 	defer httpServer.Close()
 
-	t.Run("non-http path", func(t *testing.T) {
-		result, err := httpResolveFunc("local/file.proto")
+	t.Run("non-uri path", func(t *testing.T) {
+		result, err := resolveProtoDescriptorImport(t.Context(), "local/file.proto")
 		if err != protoregistry.NotFound {
 			t.Errorf("Expected protoregistry.NotFound, got %v", err)
 		}
 		if result.Source != nil {
-			t.Error("Expected nil source for non-HTTP path")
+			t.Error("Expected nil source for non-URI path")
 		}
 	})
 
 	t.Run("valid http URL", func(t *testing.T) {
-		result, err := httpResolveFunc(httpServer.URL + "/valid.proto")
+		result, err := resolveProtoDescriptorImport(t.Context(), httpServer.URL+"/valid.proto")
 		if err != nil {
 			t.Errorf("Unexpected error for valid HTTP URL: %v", err)
 		}
@@ -185,7 +186,7 @@ func TestHttpResolveFunc(t *testing.T) {
 		defer httpsServer.Close()
 
 		// Note: This will fail in tests due to certificate issues, but it tests the path matching
-		_, err := httpResolveFunc(httpsServer.URL + "/test.proto")
+		_, err := resolveProtoDescriptorImport(t.Context(), httpsServer.URL+"/test.proto")
 		// We expect an error due to certificate issues in test environment
 		if err == nil {
 			t.Error("Expected error for HTTPS URL in test environment")
@@ -196,13 +197,24 @@ func TestHttpResolveFunc(t *testing.T) {
 		}
 	})
 
-	t.Run("file path", func(t *testing.T) {
-		result, err := httpResolveFunc("file:///path/to/file.proto")
-		if err != protoregistry.NotFound {
-			t.Errorf("Expected protoregistry.NotFound for file:// URL, got %v", err)
+	t.Run("file URI reads decoded path", func(t *testing.T) {
+		path := writeProtoSource(t, filepath.Join(t.TempDir(), "imported.proto"), `syntax="proto3"; package cov; message Root { string value=1; }`)
+		result, err := resolveProtoDescriptorImport(t.Context(), fileURLForPath(t, path))
+		if err != nil {
+			t.Fatalf("file:// import: %v", err)
 		}
-		if result.Source != nil {
-			t.Error("Expected nil source for file:// URL")
+		if result.Source == nil {
+			t.Fatal("expected source for file:// import")
+		}
+	})
+
+	t.Run("remote file authority", func(t *testing.T) {
+		_, err := resolveProtoDescriptorImport(t.Context(), "file://example.com/tmp/x.proto")
+		if err == nil || !strings.Contains(err.Error(), "unsupported authority") {
+			t.Fatalf("error = %v, want unsupported authority", err)
+		}
+		if err == protoregistry.NotFound {
+			t.Fatal("remote file:// should not be NotFound")
 		}
 	})
 }

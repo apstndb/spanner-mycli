@@ -187,7 +187,7 @@ func runWithOutput(ctx context.Context, opts *spannerOptions, stdout io.Writer, 
 		return err
 	}
 
-	sysVars, err := initializeSystemVariables(opts, features...)
+	sysVars, err := initializeSystemVariablesContext(ctx, opts, features...)
 	if err != nil {
 		return err
 	}
