@@ -53,9 +53,11 @@ type transactionContext struct {
 	// Each entry freezes expected-count policy at enqueue so a later SET
 	// cannot reinterpret already buffered statements.
 	autoDML []automaticDMLEntry
-	// replay is the optional SAVEPOINT journal. Nil unless capture was
-	// enabled at explicit BEGIN via CLI_SAVEPOINT_SUPPORT=ENABLED or the
-	// private test hook.
+	// replay is the optional owner journal. Nil unless this explicit owner
+	// needed capture at construction: CLI_SAVEPOINT_SUPPORT=ENABLED, the
+	// private SAVEPOINT test hook, or a captured retry-required pending/RW
+	// policy. Implicit one-operation retries stay journal-free. A retry
+	// journal does not enable SAVEPOINT commands.
 	replay *replayState
 	// ctorOpts is the frozen NewReadWriteStmtBasedTransactionWithOptions input.
 	ctorOpts spanner.TransactionOptions

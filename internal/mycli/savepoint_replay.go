@@ -224,7 +224,11 @@ func (tm *TransactionManager) CreateSavepoint(ctx context.Context, name string) 
 		if err := tm.rejectIfRecoveringLocked(); err != nil {
 			return err
 		}
-		if !tm.capturingLocked() {
+		if !tm.savepointCommandsEnabledLocked() {
+			return errSavepointDisabled
+		}
+		tm.ensureReplayLocked()
+		if tm.tc.replay == nil {
 			return errSavepointDisabled
 		}
 		if _, _, ok := tm.tc.replay.lookup(name); ok {
@@ -264,7 +268,11 @@ func (tm *TransactionManager) ReleaseSavepoint(name string) error {
 		if err := tm.rejectIfRecoveringLocked(); err != nil {
 			return err
 		}
-		if !tm.capturingLocked() {
+		if !tm.savepointCommandsEnabledLocked() {
+			return errSavepointDisabled
+		}
+		tm.ensureReplayLocked()
+		if tm.tc.replay == nil {
 			return errSavepointDisabled
 		}
 		if err := tm.tc.replay.releaseNamed(name); err != nil {
@@ -295,7 +303,11 @@ func (tm *TransactionManager) rollbackToSavepointLocked(ctx context.Context, nam
 	if tm.tc.inFlight > 0 {
 		return errSavepointInFlight
 	}
-	if !tm.capturingLocked() {
+	if !tm.savepointCommandsEnabledLocked() {
+		return errSavepointDisabled
+	}
+	tm.ensureReplayLocked()
+	if tm.tc.replay == nil {
 		return errSavepointDisabled
 	}
 	idx, _, ok := tm.tc.replay.lookup(name)

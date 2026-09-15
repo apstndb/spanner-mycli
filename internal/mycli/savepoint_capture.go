@@ -103,6 +103,21 @@ func (tm *TransactionManager) enableSavepointCaptureForTest() {
 	tm.savepointEnabled = true
 }
 
+// attachRetryReplayForTest marks the current owner as captured-retry and
+// allocates the shared journal when that owner is pending or read-write.
+// It does not enable SAVEPOINT commands and does not change the session
+// RETRY_ABORTS_INTERNALLY value or lift public BEGIN/SET LOCAL rejection.
+func (tm *TransactionManager) attachRetryReplayForTest() {
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+	if tm.tc == nil {
+		return
+	}
+	tm.tc.retryAborts = true
+	tm.tc.retryAbortsCaptured = true
+	tm.ensureReplayLocked()
+}
+
 func (tm *TransactionManager) savepointCaptureEnabledLocked() bool {
 	if tm == nil {
 		return false
@@ -113,8 +128,33 @@ func (tm *TransactionManager) savepointCaptureEnabledLocked() bool {
 	return tm.sysVars != nil && tm.sysVars.Transaction.SavepointSupport == enums.SavepointSupportEnabled
 }
 
+// savepointCommandsEnabledLocked is eligibility to issue SAVEPOINT,
+// ROLLBACK TO, and RELEASE. It is not the same as journal ownership:
+// a retry-required explicit owner may have replayState while this is false.
+func (tm *TransactionManager) savepointCommandsEnabledLocked() bool {
+	return tm.savepointCaptureEnabledLocked()
+}
+
+func (tm *TransactionManager) ownerNeedsReplayLocked() bool {
+	if tm == nil || tm.tc == nil {
+		return false
+	}
+	if tm.savepointCaptureEnabledLocked() {
+		return true
+	}
+	if !tm.tc.retryAborts {
+		return false
+	}
+	switch tm.tc.attrs.mode {
+	case transactionModePending, transactionModeReadWrite:
+		return true
+	default:
+		return false
+	}
+}
+
 func (tm *TransactionManager) ensureReplayLocked() {
-	if tm == nil || tm.tc == nil || !tm.savepointCaptureEnabledLocked() {
+	if tm == nil || tm.tc == nil || !tm.ownerNeedsReplayLocked() {
 		return
 	}
 	if tm.tc.replay == nil {
