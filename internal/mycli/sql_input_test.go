@@ -186,6 +186,93 @@ func TestLoadSQLInput_SchemeClassification(t *testing.T) {
 	}
 }
 
+func TestExplicitSQLInputScheme(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		source string
+		want   string
+	}{
+		{source: "migration-100%.sql", want: ""},
+		{source: `C:\does\not\exist.sql`, want: ""},
+		{source: "C:/does/not/exist.sql", want: ""},
+		{source: "/tmp/script.sql", want: ""},
+		{source: "./rel.sql", want: ""},
+		{source: "s3://bucket/script.sql", want: "s3"},
+		{source: "https://example.com/a.sql", want: "https"},
+		{source: "HTTP://example.com/a.sql", want: "HTTP"},
+		{source: "file:///tmp/a.sql", want: "file"},
+		{source: "file:/tmp/a.sql", want: "file"},
+		{source: "gs://bucket/obj.sql", want: "gs"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.source, func(t *testing.T) {
+			t.Parallel()
+			if got := explicitSQLInputScheme(tt.source); got != tt.want {
+				t.Fatalf("explicitSQLInputScheme(%q) = %q, want %q", tt.source, got, tt.want)
+			}
+		})
+	}
+}
+
+func writePercentSQL(t *testing.T, content string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "migration-100%.sql")
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestLoadSQLInput_LiteralPercentBarePath(t *testing.T) {
+	t.Parallel()
+	content := "SET CLI_PROMPT = 'percent';"
+	path := writePercentSQL(t, content)
+	got, err := loadSQLInput(t.Context(), path, defaultSQLInputFileOptions())
+	if err != nil {
+		t.Fatalf("literal percent bare path: %v", err)
+	}
+	if string(got) != content {
+		t.Fatalf("got %q, want %q", got, content)
+	}
+}
+
+func TestCli_executeSourceFile_LiteralPercentPath(t *testing.T) {
+	t.Parallel()
+	var out bytes.Buffer
+	cli := newDetachedEchoCli(t, &out)
+	path := writePercentSQL(t, "SET CLI_PROMPT = 'percent';")
+	if err := cli.executeSourceFile(t.Context(), path); err != nil {
+		t.Fatalf("SOURCE literal percent path: %v", err)
+	}
+	if cli.SystemVariables.Display.Prompt != "percent" {
+		t.Fatalf("prompt = %q, want percent", cli.SystemVariables.Display.Prompt)
+	}
+}
+
+func TestDetermineInputAndMode_LiteralPercentPath(t *testing.T) {
+	t.Parallel()
+	content := "SELECT 1;"
+	path := writePercentSQL(t, content)
+	t.Run("file", func(t *testing.T) {
+		input, interactive, err := determineInputAndMode(t.Context(), &spannerOptions{File: path}, bytes.NewReader(nil))
+		if err != nil {
+			t.Fatalf("--file literal percent path: %v", err)
+		}
+		if interactive || input != content {
+			t.Fatalf("interactive=%v input=%q", interactive, input)
+		}
+	})
+	t.Run("source", func(t *testing.T) {
+		input, interactive, err := determineInputAndMode(t.Context(), &spannerOptions{Source: path}, bytes.NewReader(nil))
+		if err != nil {
+			t.Fatalf("--source literal percent path: %v", err)
+		}
+		if interactive || input != content {
+			t.Fatalf("interactive=%v input=%q", interactive, input)
+		}
+	})
+}
+
 func TestLoadSQLInput_HTTP(t *testing.T) {
 	t.Parallel()
 	const script = "SET CLI_PROMPT = 'first';\nSET CLI_PROMPT = 'second';"

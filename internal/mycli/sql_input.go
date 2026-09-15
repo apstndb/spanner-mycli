@@ -64,6 +64,47 @@ func isWindowsDriveScheme(scheme string) bool {
 	return len(scheme) == 1 && unicode.IsLetter(rune(scheme[0]))
 }
 
+func isURISchemeName(scheme string) bool {
+	if scheme == "" || !isASCIILetter(scheme[0]) {
+		return false
+	}
+	for i := 1; i < len(scheme); i++ {
+		c := scheme[i]
+		if isASCIILetter(c) || (c >= '0' && c <= '9') || c == '+' || c == '-' || c == '.' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func isASCIILetter(c byte) bool {
+	return c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z'
+}
+
+// explicitSQLInputScheme returns the URI scheme when source is an explicit
+// URI, or "" for a bare filesystem path. Classification happens before
+// url.Parse so literal filenames such as migration-100%.sql are not treated
+// as percent-encoded URLs. A single-letter scheme is a Windows drive path.
+func explicitSQLInputScheme(source string) string {
+	for i := 0; i < len(source); i++ {
+		switch c := source[i]; c {
+		case ':':
+			if i == 0 {
+				return ""
+			}
+			scheme := source[:i]
+			if isWindowsDriveScheme(scheme) || !isURISchemeName(scheme) {
+				return ""
+			}
+			return scheme
+		case '/', '\\':
+			return ""
+		}
+	}
+	return ""
+}
+
 func localPathFromFileURI(u *url.URL) (string, error) {
 	host := strings.ToLower(u.Hostname())
 	if host != "" && host != "localhost" {
@@ -95,17 +136,16 @@ func localPathFromFileURI(u *url.URL) (string, error) {
 // SOURCE and --file/--source use the 100 MiB AllowNonRegular SQL-input policy,
 // not the 10 MiB sample-database loader. Errors never include fetched bytes.
 func loadSQLInput(ctx context.Context, source string, opts *filesafety.FileSafetyOptions) ([]byte, error) {
+	if explicitSQLInputScheme(source) == "" {
+		return filesafety.SafeReadFile(source, opts)
+	}
+
 	u, err := url.Parse(source)
 	if err != nil {
 		return nil, fmt.Errorf("invalid SQL input URI %q: %w", source, err)
 	}
 
-	scheme := strings.ToLower(u.Scheme)
-	if scheme == "" || isWindowsDriveScheme(scheme) {
-		return filesafety.SafeReadFile(source, opts)
-	}
-
-	switch scheme {
+	switch strings.ToLower(u.Scheme) {
 	case "file":
 		path, err := localPathFromFileURI(u)
 		if err != nil {
