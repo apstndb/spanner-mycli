@@ -562,18 +562,20 @@ func TestProcessPlanAppendicesUsingRealPlan(t *testing.T) {
 	t.Parallel()
 	plan := loadTestPlan(t, "testdata/plans/scalar_subqueries.input.json")
 
-	_, _, appendices, err := processPlanWithoutStats(plan, enums.ExplainFormatTraditional, 0, false, planref.PrintSections{
-		planref.PrintAggregate,
-		planref.PrintTyped,
-	})
+	_, _, aggregates, err := processPlanWithoutStats(plan, enums.ExplainFormatTraditional, 0, false, planref.PrintSections{planref.PrintAggregate})
 	if err != nil {
-		t.Fatalf("processPlanWithoutStats() error = %v", err)
+		t.Fatalf("processPlanWithoutStats(aggregate) error = %v", err)
 	}
-	if !appendixContains(appendices, "Aggregates(identified by ID):", "Agg: COUNT()") {
-		t.Fatalf("aggregate appendix does not contain COUNT() line: %#v", appendices)
+	if !appendixContains(aggregates, "Aggregates(identified by ID):", "Agg: COUNT()") {
+		t.Fatalf("aggregate appendix does not contain COUNT() line: %#v", aggregates)
 	}
-	if !appendixContains(appendices, "Node Parameters(identified by ID):", "Condition:") {
-		t.Fatalf("typed appendix does not contain condition line: %#v", appendices)
+
+	_, _, typed, err := processPlanWithoutStats(plan, enums.ExplainFormatTraditional, 0, false, planref.PrintSections{planref.PrintTyped})
+	if err != nil {
+		t.Fatalf("processPlanWithoutStats(typed) error = %v", err)
+	}
+	if !appendixContains(typed, "Node Parameters(identified by ID):", "Condition:") {
+		t.Fatalf("typed appendix does not contain condition line: %#v", typed)
 	}
 }
 

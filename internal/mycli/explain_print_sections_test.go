@@ -15,8 +15,10 @@
 package mycli
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spannerplan/plantree"
 	planref "github.com/apstndb/spannerplan/plantree/reference"
 	"github.com/google/go-cmp/cmp"
@@ -34,80 +36,74 @@ func TestBuildPlanAppendices(t *testing.T) {
 			DisplayName: "Sort",
 			ScalarChildLinks: []plantree.ScalarChildLink{
 				{Type: "Key", Description: "$LastName (ASC)"},
-				{Type: "Key", Description: "$FirstName (DESC)"},
-			},
-		},
-		{
-			ID:          2,
-			DisplayName: "Aggregate",
-			ScalarChildLinks: []plantree.ScalarChildLink{
-				{Type: "Key", Description: "$SingerId"},
-				{Type: "Agg", Variable: "count", Description: "COUNT(*)"},
 			},
 		},
 	}
 
-	predicates, appendices := buildPlanAppendices(rows, planref.PrintSections{
+	predicates, appendices, err := buildPlanAppendices(rows, planref.PrintSections{
 		planref.PrintPredicates,
 		planref.PrintOrdering,
-		planref.PrintAggregate,
 	})
-
-	wantPredicates := []string{"0: Condition: ($SingerId = 1)"}
-	if diff := cmp.Diff(wantPredicates, predicates); diff != "" {
-		t.Errorf("predicates mismatch (-want +got):\n%s", diff)
+	if err != nil {
+		t.Fatalf("buildPlanAppendices() error = %v", err)
+	}
+	if len(appendices) != 2 {
+		t.Fatalf("len(appendices) = %d, want 2: %+v", len(appendices), appendices)
+	}
+	if appendices[0].Title != "Predicates(identified by ID):" {
+		t.Errorf("appendices[0].Title = %q", appendices[0].Title)
+	}
+	if appendices[1].Title != "Ordering(identified by ID):" {
+		t.Errorf("appendices[1].Title = %q", appendices[1].Title)
+	}
+	wantPredicateLine := "0: Condition: ($SingerId = 1)"
+	wantOrderingLine := "1: Key: $LastName ASC"
+	if diff := cmp.Diff([]string{wantPredicateLine}, appendices[0].Lines); diff != "" {
+		t.Errorf("predicate appendix lines mismatch (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff([]string{wantOrderingLine}, appendices[1].Lines); diff != "" {
+		t.Errorf("ordering appendix lines mismatch (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff([]string{wantPredicateLine}, predicates); diff != "" {
+		t.Errorf("legacy predicates slice mismatch (-want +got):\n%s", diff)
 	}
 
-	wantAppendices := []ResultAppendix{
-		{
-			Title: "Predicates(identified by ID):",
-			Lines: []string{"0: Condition: ($SingerId = 1)"},
-		},
-		{
-			Title: "Ordering(identified by ID):",
-			Lines: []string{"1: Key: $LastName ASC, $FirstName DESC"},
-		},
-		{
-			Title: "Aggregates(identified by ID):",
-			Lines: []string{
-				"2: Key: $SingerId",
-				"   Agg: COUNT(*)",
-			},
-		},
+	predicates, appendices, err = buildPlanAppendices(rows, planref.PrintSections{})
+	if err != nil {
+		t.Fatalf("empty sections error = %v", err)
 	}
-	if diff := cmp.Diff(wantAppendices, appendices); diff != "" {
-		t.Errorf("appendices mismatch (-want +got):\n%s", diff)
+	if len(predicates) != 0 || len(appendices) != 0 {
+		t.Fatalf("empty sections returned predicates=%q appendices=%+v", predicates, appendices)
 	}
 }
 
-func TestBuildPlanAppendicesTypedAndFull(t *testing.T) {
+const invalidPrintSectionsCause = `print section "full" cannot be combined with other sections`
+
+func TestBuildPlanAppendicesPropagatesInvalidSections(t *testing.T) {
 	t.Parallel()
-	rows := []plantree.RowWithPredicates{
-		{
-			ID: 0,
-			ScalarChildLinks: []plantree.ScalarChildLink{
-				{Type: "Condition", Description: "($SingerId = 1)"},
-				{Variable: "SingerId", Description: "SingerId"},
-			},
-		},
+	_, _, err := buildPlanAppendices(nil, planref.PrintSections{planref.PrintFull, planref.PrintPredicates})
+	if err == nil || !strings.Contains(err.Error(), invalidPrintSectionsCause) {
+		t.Fatalf("buildPlanAppendices() error = %v, want %q", err, invalidPrintSectionsCause)
 	}
+}
 
-	_, typed := buildPlanAppendices(rows, planref.PrintSections{planref.PrintTyped})
-	wantTyped := []ResultAppendix{{
-		Title: "Node Parameters(identified by ID):",
-		Lines: []string{"0: Condition: ($SingerId = 1)"},
-	}}
-	if diff := cmp.Diff(wantTyped, typed); diff != "" {
-		t.Errorf("typed appendices mismatch (-want +got):\n%s", diff)
+func TestBuildQueryPlanAppendixPropagatesAppendixError(t *testing.T) {
+	t.Parallel()
+	sysVars := newSystemVariablesWithDefaultsForTest()
+	sysVars.Display.ParsedExplainPrintSections = planref.PrintSections{planref.PrintFull, planref.PrintPredicates}
+	_, err := buildQueryPlanAppendix(sysVars, testQueryPlan(t))
+	if err == nil || !strings.Contains(err.Error(), invalidPrintSectionsCause) {
+		t.Fatalf("buildQueryPlanAppendix() error = %v, want %q", err, invalidPrintSectionsCause)
 	}
+}
 
-	_, full := buildPlanAppendices(rows, planref.PrintSections{planref.PrintFull})
-	wantFull := []ResultAppendix{{
-		Title: "Node Parameters(identified by ID):",
-		Lines: []string{"0: Condition: ($SingerId = 1)", "   $SingerId=SingerId"},
-	}}
-	if diff := cmp.Diff(wantFull, full); diff != "" {
-		t.Errorf("full appendices mismatch (-want +got):\n%s", diff)
+func TestBuildExplainAnalyzeResultPropagatesAppendixError(t *testing.T) {
+	t.Parallel()
+	sysVars := newSystemVariablesWithDefaultsForTest()
+	invalid := planref.PrintSections{planref.PrintFull, planref.PrintPredicates}
+	_, err := buildExplainAnalyzeResult(sysVars, testQueryPlan(t), QueryStats{}, enums.ExplainFormatUnspecified, 0, &invalid)
+	if err == nil || !strings.Contains(err.Error(), "failed to process query plan") || !strings.Contains(err.Error(), invalidPrintSectionsCause) {
+		t.Fatalf("buildExplainAnalyzeResult() error = %v, want wrapped %q", err, invalidPrintSectionsCause)
 	}
 }
 
