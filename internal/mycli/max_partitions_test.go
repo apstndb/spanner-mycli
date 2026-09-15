@@ -191,13 +191,14 @@ func TestMaxPartitionsIndependentOfParallelism(t *testing.T) {
 	vars := newDirectedReadVars(t)
 	session, _ := newDirectedReadProductSession(t, opts, vars)
 
-	if err := vars.SetFromSimple("MAX_PARTITIONS", "7"); err != nil {
+	if err := vars.SetFromSimple("MAX_PARTITIONS", "1"); err != nil {
 		t.Fatal(err)
 	}
 	if err := vars.SetFromSimple("MAX_PARTITIONED_PARALLELISM", "1"); err != nil {
 		t.Fatal(err)
 	}
 	srv.takePartitionQueries()
+	srv.takeRequests()
 	result, err := session.ExecuteStatement(ctx, &RunPartitionedQueryStatement{SQL: "SELECT 1"})
 	if err != nil {
 		t.Fatal(err)
@@ -206,11 +207,23 @@ func TestMaxPartitionsIndependentOfParallelism(t *testing.T) {
 	if len(reqs) != 1 {
 		t.Fatalf("PartitionQuery count=%d", len(reqs))
 	}
-	if got := reqs[0].GetPartitionOptions().GetMaxPartitions(); got != 7 {
-		t.Fatalf("hint=%d want 7 (parallelism must not rewrite it)", got)
+	if got := reqs[0].GetPartitionOptions().GetMaxPartitions(); got != 1 {
+		t.Fatalf("hint=%d want 1 (parallelism must not rewrite it)", got)
 	}
 	if result == nil || result.PartitionCount != 3 {
-		t.Fatalf("returned partitions=%v, fake must not be truncated by the hint", result)
+		t.Fatalf("returned partitions=%v, fake must not truncate 3 tokens when hint is 1", result)
+	}
+	var tokenExecs int
+	for _, req := range srv.takeRequests() {
+		if len(req.GetPartitionToken()) > 0 {
+			tokenExecs++
+		}
+	}
+	if tokenExecs != 3 {
+		t.Fatalf("executed partitions=%d want 3 (hint 1 must not drop tokens)", tokenExecs)
+	}
+	if result.AffectedRows != 3 {
+		t.Fatalf("AffectedRows=%d want 3 so all returned partitions are represented", result.AffectedRows)
 	}
 
 	if err := vars.SetFromSimple("MAX_PARTITIONS", "0"); err != nil {
