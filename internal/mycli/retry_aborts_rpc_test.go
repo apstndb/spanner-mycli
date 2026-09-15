@@ -57,22 +57,31 @@ func enableRetryAborts(t *testing.T, ctx context.Context, session *Session) {
 	mustExec(t, ctx, session, "SET RETRY_ABORTS_INTERNALLY = TRUE")
 }
 
-func TestRetryAbortsRejectsExplicitAndPending(t *testing.T) {
+func TestRetryAbortsAllowsExplicitAndPending(t *testing.T) {
 	t.Parallel()
 	h := newHeartbeatHarness(t)
 	session := newRetryAbortsSession(t, h)
 	ctx := t.Context()
 	enableRetryAborts(t, ctx, session)
 
-	if _, err := execSQL(t, ctx, session, "BEGIN"); err == nil || !errors.Is(err, errRetryAbortsExplicitUnsupported) {
+	if _, err := execSQL(t, ctx, session, "BEGIN"); err != nil {
 		t.Fatalf("BEGIN pending: %v", err)
 	}
-	if _, err := execSQL(t, ctx, session, "BEGIN RW"); err == nil || !errors.Is(err, errRetryAbortsExplicitUnsupported) {
+	if !ownerHasReplay(h.tm) {
+		t.Fatal("pending TRUE did not allocate a journal")
+	}
+	mustExec(t, ctx, session, "ROLLBACK")
+
+	if _, err := execSQL(t, ctx, session, "BEGIN RW"); err != nil {
 		t.Fatalf("BEGIN RW: %v", err)
 	}
-	if got := len(h.server.beginObservations()); got != 0 {
-		t.Fatalf("explicit reject issued BeginTransaction: %d", got)
+	if !session.txn.InReadWriteTransaction() {
+		t.Fatal("BEGIN RW did not start a read-write owner")
 	}
+	if !ownerHasReplay(h.tm) {
+		t.Fatal("explicit TRUE did not allocate a journal")
+	}
+	mustExec(t, ctx, session, "ROLLBACK")
 
 	if _, err := execSQL(t, ctx, session, "BEGIN RO"); err != nil {
 		t.Fatalf("BEGIN RO: %v", err)
@@ -83,25 +92,33 @@ func TestRetryAbortsRejectsExplicitAndPending(t *testing.T) {
 	mustExec(t, ctx, session, "CLOSE")
 
 	mustExec(t, ctx, session, "SET AUTOCOMMIT = FALSE")
-	if _, err := execSQL(t, ctx, session, "SELECT 1"); err == nil || !errors.Is(err, errRetryAbortsExplicitUnsupported) {
+	if _, err := execSQL(t, ctx, session, "SELECT 1"); err != nil {
 		t.Fatalf("AUTOCOMMIT=false pending: %v", err)
+	}
+	if !ownerHasReplay(h.tm) {
+		t.Fatal("AUTOCOMMIT=false TRUE did not allocate a journal")
 	}
 }
 
-func TestRetryAbortsSetLocalUnsupported(t *testing.T) {
+func TestRetryAbortsSetLocalPendingWindow(t *testing.T) {
 	t.Parallel()
 	session := newSessionForLocalVarTest(t)
 	ctx := t.Context()
+	_, err := session.ExecuteStatement(ctx, &SetLocalStatement{VarName: "RETRY_ABORTS_INTERNALLY", Value: "TRUE"})
+	if err == nil || !strings.Contains(err.Error(), "requires an active transaction") {
+		t.Fatalf("SET LOCAL idle: %v", err)
+	}
 	if _, err := session.ExecuteStatement(ctx, &BeginStatement{}); err != nil {
 		t.Fatal(err)
 	}
-	_, err := session.ExecuteStatement(ctx, &SetLocalStatement{VarName: "RETRY_ABORTS_INTERNALLY", Value: "TRUE"})
-	if err == nil || !errors.Is(err, errRetryAbortsSetLocalUnsupported) {
-		t.Fatalf("SET LOCAL TRUE: %v", err)
+	if _, err := session.ExecuteStatement(ctx, &SetLocalStatement{VarName: "RETRY_ABORTS_INTERNALLY", Value: "TRUE"}); err != nil {
+		t.Fatalf("SET LOCAL unused pending: %v", err)
 	}
-	_, err = session.ExecuteStatement(ctx, &SetLocalStatement{VarName: "RETRY_ABORTS_INTERNALLY", Value: "FALSE"})
-	if err == nil || !errors.Is(err, errRetryAbortsSetLocalUnsupported) {
-		t.Fatalf("SET LOCAL FALSE: %v", err)
+	if !session.systemVariables.Transaction.RetryAbortsInternally {
+		t.Fatal("SET LOCAL TRUE did not update the session value")
+	}
+	if _, err := session.ExecuteStatement(ctx, &SetLocalStatement{VarName: "RETRY_ABORTS_INTERNALLY", Value: "FALSE"}); err != nil {
+		t.Fatalf("SET LOCAL FALSE unused pending: %v", err)
 	}
 }
 
@@ -510,7 +527,7 @@ func TestReview997PendingOwnerKeepsCapturedFalse(t *testing.T) {
 	}
 }
 
-func TestReview997PendingCapturedTrueRejectsRWActivation(t *testing.T) {
+func TestReview997PendingCapturedTrueActivatesRW(t *testing.T) {
 	t.Parallel()
 	h := newHeartbeatHarness(t)
 	session := newRetryAbortsSession(t, h)
@@ -525,24 +542,18 @@ func TestReview997PendingCapturedTrueRejectsRWActivation(t *testing.T) {
 		t.Fatalf("READONLY pending: %v", err)
 	}
 	beginsBefore := len(h.server.beginObservations())
-	if _, err := execSQL(t, ctx, session, "SET TRANSACTION READ WRITE"); err == nil || !errors.Is(err, errRetryAbortsExplicitUnsupported) {
+	session.systemVariables.Transaction.ReadOnly = false
+	if _, err := execSQL(t, ctx, session, "SET TRANSACTION READ WRITE"); err != nil {
 		t.Fatalf("captured TRUE activation: %v", err)
 	}
-	if !session.txn.InPendingTransaction() {
-		t.Fatal("rejected activation retired the pending owner")
+	if !session.txn.InReadWriteTransaction() {
+		t.Fatal("captured TRUE pending did not activate RW")
 	}
-	if got := len(h.server.beginObservations()); got != beginsBefore {
-		t.Fatalf("captured TRUE activation issued BeginTransaction: %d -> %d", beginsBefore, got)
+	if got := len(h.server.beginObservations()); got <= beginsBefore {
+		t.Fatalf("captured TRUE activation issued no BeginTransaction: %d -> %d", beginsBefore, got)
 	}
-
-	// Ordinary SET READONLY is rejected while an owner exists; flip the
-	// session flag so DetermineTransaction takes the RW path on this owner.
-	session.systemVariables.Transaction.ReadOnly = false
-	if _, err := execSQL(t, ctx, session, "UPDATE T SET v = 1 WHERE TRUE"); err == nil || !errors.Is(err, errRetryAbortsExplicitUnsupported) {
-		t.Fatalf("captured TRUE Determine RW: %v", err)
-	}
-	if got := len(h.server.beginObservations()); got != beginsBefore {
-		t.Fatalf("Determine RW issued BeginTransaction: %d -> %d", beginsBefore, got)
+	if !ownerHasReplay(h.tm) {
+		t.Fatal("activated retry owner has no journal")
 	}
 }
 

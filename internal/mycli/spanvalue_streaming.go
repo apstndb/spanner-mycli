@@ -236,8 +236,24 @@ func runSpanvalueRowIterator(qe *queryExecution, w writer.RowIteratorWriter) (*w
 		qe.Iter,
 		func(row *spanner.Row) (*spanner.Row, error) { return row, nil },
 		rowIteratorSink[*spanner.Row]{
-			PrepareMetadata: hooks.PrepareMetadata,
-			Write:           hooks.WriteRow,
+			PrepareMetadata: func(md *sppb.ResultSetMetadata) error {
+				if hooks.PrepareMetadata != nil {
+					if err := hooks.PrepareMetadata(md); err != nil {
+						return err
+					}
+				}
+				qe.noteStreamed()
+				return nil
+			},
+			Write: func(row *spanner.Row) error {
+				if hooks.WriteRow != nil {
+					if err := hooks.WriteRow(row); err != nil {
+						return err
+					}
+				}
+				qe.noteStreamed()
+				return nil
+			},
 			Finish: func(result *writer.RowIteratorResult, _ int64) error {
 				if hooks.Finish == nil {
 					return nil
@@ -271,8 +287,22 @@ func runSpanvalueRowIteratorWithProcessor(
 		qe.Iter,
 		rowTransform,
 		rowIteratorSink[Row]{
-			PrepareMetadata: initProcessor,
-			Write:           qe.Processor.ProcessRow,
+			PrepareMetadata: func(md *sppb.ResultSetMetadata) error {
+				if err := initProcessor(md); err != nil {
+					return err
+				}
+				if md != nil {
+					qe.noteStreamed()
+				}
+				return nil
+			},
+			Write: func(row Row) error {
+				if err := qe.Processor.ProcessRow(row); err != nil {
+					return err
+				}
+				qe.noteStreamed()
+				return nil
+			},
 			Finish: func(result *writer.RowIteratorResult, rowCount int64) error {
 				_, queryStats, _ := rowIteratorResultParts(result)
 				var metadata *sppb.ResultSetMetadata

@@ -106,7 +106,7 @@ func (tm *TransactionManager) enableSavepointCaptureForTest() {
 // attachRetryReplayForTest marks the current owner as captured-retry and
 // allocates the shared journal when that owner is pending or read-write.
 // It does not enable SAVEPOINT commands and does not change the session
-// RETRY_ABORTS_INTERNALLY value or lift public BEGIN/SET LOCAL rejection.
+// RETRY_ABORTS_INTERNALLY value.
 func (tm *TransactionManager) attachRetryReplayForTest() {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()

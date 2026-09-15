@@ -134,15 +134,18 @@ func (s *SetLocalStatement) Execute(ctx context.Context, session *Session, out O
 	case def.txnGuard:
 		return nil, fmt.Errorf("%s does not support SET LOCAL: cannot be changed within a transaction", upperName)
 	case def.noLocal:
-		if def.name == "RETRY_ABORTS_INTERNALLY" {
-			return nil, errRetryAbortsSetLocalUnsupported
-		}
 		return nil, fmt.Errorf("%s does not support SET LOCAL", upperName)
 	}
 
 	oldValue, err := sysVars.Registry.Get(upperName)
 	if err != nil {
 		return nil, err
+	}
+
+	if def.name == "RETRY_ABORTS_INTERNALLY" {
+		if err := session.txn.checkLocalRetryAborts(); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := sysVars.SetFromGoogleSQL(s.VarName, s.Value); err != nil {
@@ -168,6 +171,15 @@ func (s *SetLocalStatement) Execute(ctx context.Context, session *Session, out O
 
 	if def.name == "CLI_DDL_IN_TRANSACTION_MODE" {
 		if err := session.txn.applyLocalDdlInTransactionMode(sysVars.Transaction.DdlInTransactionMode); err != nil {
+			if restoreErr := sysVars.Registry.Set(upperName, oldValue, false); restoreErr != nil {
+				err = errors.Join(err, restoreErr)
+			}
+			return nil, err
+		}
+	}
+
+	if def.name == "RETRY_ABORTS_INTERNALLY" {
+		if err := session.txn.applyLocalRetryAborts(sysVars.Transaction.RetryAbortsInternally); err != nil {
 			if restoreErr := sysVars.Registry.Set(upperName, oldValue, false); restoreErr != nil {
 				err = errors.Join(err, restoreErr)
 			}

@@ -162,15 +162,16 @@ func TestSavepointRetryPendingOwnerHasJournalWithoutCommands(t *testing.T) {
 	}
 	assertSavepointCommandsDisabled(t, session, h.tm)
 
-	if _, err := h.tm.DetermineTransaction(ctx); !errors.Is(err, errRetryAbortsExplicitUnsupported) {
-		t.Fatalf("pending RW activation: %v, want %v", err, errRetryAbortsExplicitUnsupported)
+	if _, err := h.tm.DetermineTransaction(ctx); err != nil {
+		t.Fatalf("pending RW activation: %v", err)
 	}
 	if txnContext(h.tm) != pending {
-		t.Fatal("rejected activation retired the pending owner")
+		t.Fatal("activation replaced the pending owner")
 	}
 	if !ownerHasReplay(h.tm) {
-		t.Fatal("rejected activation discarded the retry journal")
+		t.Fatal("activation discarded the retry journal")
 	}
+	assertSavepointCommandsDisabled(t, session, h.tm)
 }
 
 func TestSavepointRetryReadOnlyOwnerAllocatesNone(t *testing.T) {
@@ -241,9 +242,13 @@ func TestSavepointRetryImplicitRemainsJournalFree(t *testing.T) {
 	if ownerHasReplay(h.tm) {
 		t.Fatal("implicit path left a journal")
 	}
-	if _, err := execSQL(t, ctx, session, "BEGIN RW"); !errors.Is(err, errRetryAbortsExplicitUnsupported) {
+	if _, err := execSQL(t, ctx, session, "BEGIN RW"); err != nil {
 		t.Fatalf("public explicit TRUE: %v", err)
 	}
+	if !ownerHasReplay(h.tm) {
+		t.Fatal("explicit TRUE BEGIN did not allocate a journal")
+	}
+	assertSavepointCommandsDisabled(t, session, h.tm)
 }
 
 func TestSavepointRetryOwnerCapturesSQLBatchDMLAndMutate(t *testing.T) {
@@ -435,7 +440,7 @@ func TestSavepointRetryStaleCompletionDoesNotMutateReplacement(t *testing.T) {
 	}
 }
 
-func TestRetryAbortsPublicGuardsRemainWithSharedCapture(t *testing.T) {
+func TestRetryAbortsSetLocalAllowedOnUnusedPending(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 	h := newHeartbeatHarness(t)
@@ -443,18 +448,25 @@ func TestRetryAbortsPublicGuardsRemainWithSharedCapture(t *testing.T) {
 	if err := h.tm.BeginPendingTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := session.ExecuteStatement(ctx, &SetLocalStatement{VarName: "RETRY_ABORTS_INTERNALLY", Value: "TRUE"}); !errors.Is(err, errRetryAbortsSetLocalUnsupported) {
-		t.Fatalf("SET LOCAL: %v", err)
+	pending := txnContext(h.tm)
+	if _, err := session.ExecuteStatement(ctx, &SetLocalStatement{VarName: "RETRY_ABORTS_INTERNALLY", Value: "TRUE"}); err != nil {
+		t.Fatalf("SET LOCAL unused pending: %v", err)
 	}
-	if err := h.tm.ClosePendingTransaction(); err != nil {
-		t.Fatal(err)
+	if txnContext(h.tm) != pending {
+		t.Fatal("SET LOCAL replaced the pending owner")
 	}
-	mustExec(t, ctx, session, "SET RETRY_ABORTS_INTERNALLY = TRUE")
-	if _, err := execSQL(t, ctx, session, "BEGIN RW"); !errors.Is(err, errRetryAbortsExplicitUnsupported) {
-		t.Fatalf("BEGIN RW: %v", err)
+	h.tm.mu.Lock()
+	enabled := h.tm.tc.retryAborts
+	h.tm.mu.Unlock()
+	if !enabled || !ownerHasReplay(h.tm) {
+		t.Fatal("SET LOCAL TRUE did not capture retry or allocate a journal")
 	}
-	if ownerHasReplay(h.tm) {
-		t.Fatal("rejected explicit TRUE left a journal")
+	mustExec(t, ctx, session, "SET RETRY_ABORTS_INTERNALLY = FALSE")
+	h.tm.mu.Lock()
+	enabled = h.tm.tc.retryAborts
+	h.tm.mu.Unlock()
+	if !enabled {
+		t.Fatal("ordinary SET overrode the captured LOCAL retry policy")
 	}
 }
 
