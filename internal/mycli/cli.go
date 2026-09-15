@@ -119,6 +119,7 @@ func (c *Cli) RunInteractive(ctx context.Context) error {
 	if err != nil {
 		return NewExitCodeError(c.ExitOnError(err))
 	}
+	c.SystemVariables.interactiveHistory = history
 
 	// ensure reset
 	c.waitingStatus = ""

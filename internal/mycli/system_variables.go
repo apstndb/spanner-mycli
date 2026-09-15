@@ -318,6 +318,12 @@ type systemVariables struct {
 	// before the first registry build. Do not copy a live systemVariables.
 	runtimeLogLevel *slog.LevelVar
 
+	// interactiveHistory is the live readline History used by SHOW HISTORY.
+	// Set only by RunInteractive after setupHistory. Nil in batch, MCP, and
+	// --init-command; those paths load CLI_HISTORY_FILE without calling Add.
+	// Not a system variable and not a generic provider.
+	interactiveHistory History
+
 	// featureVarDefs holds the varDefs converted from feature-contributed
 	// FeatureVars (issue #778). They are registered alongside the core varDefs
 	// table when the registry is built. Empty until a feature contributes
