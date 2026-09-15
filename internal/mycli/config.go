@@ -18,6 +18,7 @@ package mycli
 
 import (
 	"cmp"
+	"context"
 	"fmt"
 	"io"
 	"log/slog"
@@ -110,7 +111,7 @@ type spannerOptions struct {
 	DatabaseId string `name:"database" short:"d" help:"Cloud Spanner Database ID. Optional when --detached is used ($SPANNER_DATABASE_ID)."`
 	Detached   bool   `name:"detached" help:"Start in detached mode, ignoring database env var/flag"`
 	Execute    string `name:"execute" short:"e" help:"Execute SQL statement and quit. --sql is an alias."`
-	File       string `name:"file" short:"f" help:"Execute SQL statement from file and quit. --source is an alias."`
+	File       string `name:"file" short:"f" help:"Execute SQL from a local file, process substitution, stdin (-), or a file/http/https/gs URI and quit. --source is an alias. Remote scripts run against the selected connection (100 MiB limit; GCS uses configured credentials)."`
 	Source     string `name:"source" hidden:"" help:"Hidden alias of --file for Google Cloud Spanner CLI compatibility"`
 	// InitCommand and InitCommandAdd are startup statements (#353), executed
 	// after connect and before --file/--execute or the interactive loop.
@@ -868,7 +869,7 @@ func collectStartupSQL(opts *spannerOptions) []string {
 
 // determineInputAndMode decides whether to run in interactive or batch mode
 // and returns the input string, interactive flag, and any error.
-func determineInputAndMode(opts *spannerOptions, stdin io.Reader) (input string, interactive bool, err error) {
+func determineInputAndMode(ctx context.Context, opts *spannerOptions, stdin io.Reader) (input string, interactive bool, err error) {
 	// Handle alias flags - aliases have lower precedence
 	// Note: This precedence may override normal flag/env/TOML precedence
 	if opts.Execute != "" && opts.SQL != "" {
@@ -899,9 +900,9 @@ func determineInputAndMode(opts *spannerOptions, stdin io.Reader) (input string,
 		}
 		return s, false, nil
 	case fileToRead != "":
-		// AllowNonRegular keeps process substitution (--file <(...)) working;
-		// SafeReadFile still bounds the read for pipe-like inputs.
-		b, err := filesafety.SafeReadFile(fileToRead, &filesafety.FileSafetyOptions{AllowNonRegular: true})
+		// Bare paths keep process substitution (--file <(...)); explicit
+		// file/http/https/gs URIs use the same 100 MiB SQL-input loader.
+		b, err := loadSQLInput(ctx, fileToRead, defaultSQLInputFileOptions())
 		if err != nil {
 			return "", false, fmt.Errorf("read from file %v failed: %w", fileToRead, err)
 		}

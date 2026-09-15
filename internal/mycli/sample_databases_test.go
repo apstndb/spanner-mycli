@@ -23,6 +23,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -134,6 +135,109 @@ func TestLoadFromGCSWithClientCapsBodyAfterAttrs(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "too large: exceeded") {
 		t.Fatalf("error = %v, want read cap rejection", err)
+	}
+}
+
+func TestLoadFromHTTPDeclaredOverSampleLimit(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", filesafety.SampleDatabaseMaxFileSize+1))
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(server.Close)
+
+	_, err := loadFromHTTP(t.Context(), server.URL+"/big.sql")
+	if err == nil || !strings.Contains(err.Error(), "too large") {
+		t.Fatalf("loadFromHTTP() error = %v, want sample 10MiB rejection", err)
+	}
+}
+
+func TestLoadFromGCSWithClientDecodesObject(t *testing.T) {
+	const (
+		bucket = "test-bucket"
+		object = "dir/my script.sql"
+	)
+	body := []byte("CREATE TABLE decoded (id INT64);")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path, _ := url.PathUnescape(r.URL.Path)
+		if !strings.Contains(path, object) && !strings.Contains(r.URL.Path, "my%20script.sql") {
+			t.Errorf("unexpected GCS request: %s", r.URL.String())
+			http.NotFound(w, r)
+			return
+		}
+		if r.URL.Query().Get("alt") == "media" || !strings.Contains(path, "/b/") {
+			w.Header().Set("Content-Type", "text/plain")
+			_, _ = w.Write(body)
+			return
+		}
+		_, _ = fmt.Fprintf(w, `{
+			"bucket": %q,
+			"name": %q,
+			"size": "%d",
+			"contentType": "text/plain",
+			"timeCreated": "2026-07-07T00:00:00Z",
+			"updated": "2026-07-07T00:00:00Z"
+		}`, bucket, object, len(body))
+	}))
+	t.Cleanup(server.Close)
+
+	ctx := t.Context()
+	client, err := storage.NewClient(ctx, option.WithEndpoint(server.URL), option.WithoutAuthentication())
+	if err != nil {
+		t.Fatalf("storage.NewClient: %v", err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+
+	got, err := loadFromGCSWithClient(ctx, client, fmt.Sprintf("gs://%s/dir/my%%20script.sql", bucket))
+	if err != nil {
+		t.Fatalf("loadFromGCSWithClient: %v", err)
+	}
+	if !bytes.Equal(got, body) {
+		t.Fatalf("got %q, want %q", got, body)
+	}
+}
+
+func TestLoadFromGCSWithClientAndLimitUsesCallerCap(t *testing.T) {
+	const (
+		bucket = "test-bucket"
+		object = "schema.sql"
+	)
+	body := []byte("tiny")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.Contains(r.URL.Path, object) && r.URL.Query().Get("alt") != "media" && strings.Contains(r.URL.Path, "/b/"):
+			_, _ = io.WriteString(w, `{
+				"bucket": "test-bucket",
+				"name": "schema.sql",
+				"size": "4",
+				"contentType": "text/plain",
+				"timeCreated": "2026-07-07T00:00:00Z",
+				"updated": "2026-07-07T00:00:00Z"
+			}`)
+		default:
+			w.Header().Set("Content-Type", "text/plain")
+			_, _ = w.Write(body)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	ctx := t.Context()
+	client, err := storage.NewClient(ctx, option.WithEndpoint(server.URL), option.WithoutAuthentication())
+	if err != nil {
+		t.Fatalf("storage.NewClient: %v", err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+
+	uri := fmt.Sprintf("gs://%s/%s", bucket, object)
+	got, err := loadFromGCSWithClientAndLimit(ctx, client, uri, 16)
+	if err != nil {
+		t.Fatalf("caller cap 16: %v", err)
+	}
+	if !bytes.Equal(got, body) {
+		t.Fatalf("got %q, want %q", got, body)
+	}
+	_, err = loadFromGCSWithClientAndLimit(ctx, client, uri, 3)
+	if err == nil || !strings.Contains(err.Error(), "too large") {
+		t.Fatalf("caller cap 3 error = %v, want rejection", err)
 	}
 }
 
