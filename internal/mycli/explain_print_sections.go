@@ -77,7 +77,7 @@ func buildPlanAppendices(rows []plantree.RowWithPredicates, sections planref.Pri
 	}
 
 	var predicates []string
-	appendices := make([]ResultAppendix, 0, len(built))
+	var appendices []ResultAppendix
 	for _, appendix := range built {
 		mapped := ResultAppendix{Title: appendix.Title, Lines: appendix.Lines}
 		appendices = append(appendices, mapped)
