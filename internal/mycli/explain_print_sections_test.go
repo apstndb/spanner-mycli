@@ -56,8 +56,16 @@ func TestBuildPlanAppendices(t *testing.T) {
 	if appendices[1].Title != "Ordering(identified by ID):" {
 		t.Errorf("appendices[1].Title = %q", appendices[1].Title)
 	}
-	if diff := cmp.Diff(appendices[0].Lines, predicates); diff != "" {
-		t.Errorf("legacy predicates slice should match PrintPredicates lines (-appendix +predicates):\n%s", diff)
+	wantPredicateLine := "0: Condition: ($SingerId = 1)"
+	wantOrderingLine := "1: Key: $LastName ASC"
+	if diff := cmp.Diff([]string{wantPredicateLine}, appendices[0].Lines); diff != "" {
+		t.Errorf("predicate appendix lines mismatch (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff([]string{wantOrderingLine}, appendices[1].Lines); diff != "" {
+		t.Errorf("ordering appendix lines mismatch (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff([]string{wantPredicateLine}, predicates); diff != "" {
+		t.Errorf("legacy predicates slice mismatch (-want +got):\n%s", diff)
 	}
 
 	predicates, appendices, err = buildPlanAppendices(rows, planref.PrintSections{})
@@ -69,11 +77,13 @@ func TestBuildPlanAppendices(t *testing.T) {
 	}
 }
 
+const invalidPrintSectionsCause = `print section "full" cannot be combined with other sections`
+
 func TestBuildPlanAppendicesPropagatesInvalidSections(t *testing.T) {
 	t.Parallel()
 	_, _, err := buildPlanAppendices(nil, planref.PrintSections{planref.PrintFull, planref.PrintPredicates})
-	if err == nil {
-		t.Fatal("buildPlanAppendices() error = nil, want invalid section combination")
+	if err == nil || !strings.Contains(err.Error(), invalidPrintSectionsCause) {
+		t.Fatalf("buildPlanAppendices() error = %v, want %q", err, invalidPrintSectionsCause)
 	}
 }
 
@@ -82,8 +92,8 @@ func TestBuildQueryPlanAppendixPropagatesAppendixError(t *testing.T) {
 	sysVars := newSystemVariablesWithDefaultsForTest()
 	sysVars.Display.ParsedExplainPrintSections = planref.PrintSections{planref.PrintFull, planref.PrintPredicates}
 	_, err := buildQueryPlanAppendix(sysVars, testQueryPlan(t))
-	if err == nil {
-		t.Fatal("buildQueryPlanAppendix() error = nil, want invalid section combination")
+	if err == nil || !strings.Contains(err.Error(), invalidPrintSectionsCause) {
+		t.Fatalf("buildQueryPlanAppendix() error = %v, want %q", err, invalidPrintSectionsCause)
 	}
 }
 
@@ -92,11 +102,8 @@ func TestBuildExplainAnalyzeResultPropagatesAppendixError(t *testing.T) {
 	sysVars := newSystemVariablesWithDefaultsForTest()
 	invalid := planref.PrintSections{planref.PrintFull, planref.PrintPredicates}
 	_, err := buildExplainAnalyzeResult(sysVars, testQueryPlan(t), QueryStats{}, enums.ExplainFormatUnspecified, 0, &invalid)
-	if err == nil {
-		t.Fatal("buildExplainAnalyzeResult() error = nil, want invalid section combination")
-	}
-	if !strings.Contains(err.Error(), "failed to process query plan") {
-		t.Fatalf("buildExplainAnalyzeResult() error = %v, want wrapped process-plan error", err)
+	if err == nil || !strings.Contains(err.Error(), "failed to process query plan") || !strings.Contains(err.Error(), invalidPrintSectionsCause) {
+		t.Fatalf("buildExplainAnalyzeResult() error = %v, want wrapped %q", err, invalidPrintSectionsCause)
 	}
 }
 
