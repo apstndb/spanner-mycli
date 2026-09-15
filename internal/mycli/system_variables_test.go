@@ -1044,6 +1044,7 @@ func TestSystemVariables_SetGetOperations(t *testing.T) {
 			"PROTO_DESCRIPTORS_FILE_PATH":  "testdata/protos/order_descriptors.pb",
 			"STATEMENT_TIMEOUT":            "30s",
 			"TRANSACTION_TIMEOUT":          "45s",
+			"MAX_PARTITIONS":               "10",
 			"MAX_PARTITIONED_PARALLELISM":  "10",
 			"AUTO_BATCH_DML_UPDATE_COUNT":  "3",
 			"CLI_TAB_WIDTH":                "4",

@@ -2293,6 +2293,14 @@ You can change it using `MAX_PARTITIONED_PARALLELISM`.
 spanner> SET MAX_PARTITIONED_PARALLELISM = 1;
 ```
 
+##### Max partitions hint
+
+`MAX_PARTITIONS` is a nonnegative INT64 hint on `PARTITION`, `TRY PARTITIONED QUERY`, `RUN PARTITIONED QUERY`, and `AUTO_PARTITION_MODE`. Default 0 means no hint and preserves existing service behavior. It is independent of `MAX_PARTITIONED_PARALLELISM` and does not truncate returned tokens or guarantee a partition count. `RUN PARTITION` executes an existing token and does not repartition. The official [PartitionOptions](https://docs.cloud.google.com/spanner/docs/reference/rest/v1/PartitionOptions) API currently ignores this hint.
+
+```
+spanner> SET MAX_PARTITIONS = 10;
+```
+
 Note: Partitioned queries do not support streaming output in the current implementation.
 
 #### Show partition tokens.
