@@ -146,6 +146,11 @@ type TransactionManager struct {
 	// frozenQueryOpts snapshots STATEMENT_TAG and query options for the
 	// current implicit abort-retry operation. Cleared when that operation ends.
 	frozenQueryOpts *spanner.QueryOptions
+	// frozenSQLQueryOpts snapshots STATEMENT_TAG and query options for one
+	// SELECT/PROFILE statement, including its explicit abort retries.
+	// Cleared when that statement ends. Distinct from frozenQueryOpts so a
+	// SELECT cannot inherit or clobber an in-flight DML freeze.
+	frozenSQLQueryOpts *spanner.QueryOptions
 	// abortRetryWait, if set, replaces interruptible abort backoff. Tests use
 	// a deterministic seam; production remains nil.
 	abortRetryWait func(context.Context, time.Duration) error
@@ -1322,8 +1327,10 @@ func (tm *TransactionManager) runQueryWithStatsAndCapture(ctx context.Context, s
 		return nil, nil, nil, err
 	}
 
-	opts := tm.buildQueryOptions(&mode)
-	opts.LastStatement = implicit
+	opts, prepared := tm.sqlQueryOptionsForRun(mode, implicit)
+	if prepared {
+		return tm.dispatchQueryWithOptions(ctx, stmt, opts)
+	}
 	iter, roTxn, tok, err := tm.runQueryWithOptions(ctx, stmt, opts)
 	return iter, roTxn, tok, err
 }
@@ -1337,8 +1344,10 @@ func (tm *TransactionManager) RunSingleUseQueryWithStats(ctx context.Context, st
 		return nil, nil, err
 	}
 
-	opts := tm.buildQueryOptions(&mode)
-	tm.prepareQueryOptions(&opts)
+	opts, prepared := tm.sqlQueryOptionsForRun(mode, false)
+	if !prepared {
+		tm.prepareQueryOptions(&opts)
+	}
 	iter, roTxn := tm.runSingleUseQuery(ctx, stmt, opts)
 	return iter, roTxn, nil
 }
@@ -1389,7 +1398,10 @@ func (tm *TransactionManager) RunAnalyzeQuery(ctx context.Context, stmt spanner.
 func (tm *TransactionManager) runQueryWithOptions(ctx context.Context, stmt spanner.Statement, opts spanner.QueryOptions) (*spanner.RowIterator, *spanner.ReadOnlyTransaction, *captureToken, error) {
 	// Prepare query options
 	tm.prepareQueryOptions(&opts)
+	return tm.dispatchQueryWithOptions(ctx, stmt, opts)
+}
 
+func (tm *TransactionManager) dispatchQueryWithOptions(ctx context.Context, stmt spanner.Statement, opts spanner.QueryOptions) (*spanner.RowIterator, *spanner.ReadOnlyTransaction, *captureToken, error) {
 	// Try to execute in existing transaction first
 	iter, txn, tok, err := tm.tryQueryInTransaction(ctx, stmt, opts)
 	if err != nil {

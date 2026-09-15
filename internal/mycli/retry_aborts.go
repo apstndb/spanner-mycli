@@ -188,13 +188,56 @@ func (tm *TransactionManager) freezeQueryOptionsLocked(mode *sppb.ExecuteSqlRequ
 	if tm.frozenQueryOpts != nil {
 		return *tm.frozenQueryOpts
 	}
+	opts := tm.consumeQueryOptionsLocked(mode)
+	snap := opts
+	tm.frozenQueryOpts = &snap
+	return opts
+}
+
+func (tm *TransactionManager) consumeQueryOptionsLocked(mode *sppb.ExecuteSqlRequest_QueryMode) spanner.QueryOptions {
 	opts := tm.queryOptionsLocked(mode)
 	if tm.sysVars != nil {
 		tm.sysVars.Transaction.RequestTag = ""
 	}
-	snap := opts
-	tm.frozenQueryOpts = &snap
 	return opts
+}
+
+// beginFrozenSQLQuery consumes STATEMENT_TAG once and snapshots query options
+// for the current SELECT/PROFILE statement and any explicit abort retries.
+func (tm *TransactionManager) beginFrozenSQLQuery(mode sppb.ExecuteSqlRequest_QueryMode) {
+	if tm == nil {
+		return
+	}
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+	opts := tm.consumeQueryOptionsLocked(mode.Enum())
+	snap := opts
+	tm.frozenSQLQueryOpts = &snap
+}
+
+func (tm *TransactionManager) endFrozenSQLQuery() {
+	if tm == nil {
+		return
+	}
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+	tm.frozenSQLQueryOpts = nil
+}
+
+func (tm *TransactionManager) sqlQueryOptionsForRun(mode sppb.ExecuteSqlRequest_QueryMode, implicit bool) (spanner.QueryOptions, bool) {
+	if tm == nil {
+		return spanner.QueryOptions{Mode: mode.Enum()}, false
+	}
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+	if tm.frozenSQLQueryOpts != nil {
+		opts := *tm.frozenSQLQueryOpts
+		opts.LastStatement = implicit
+		return opts, true
+	}
+	opts := tm.queryOptionsLocked(mode.Enum())
+	opts.LastStatement = implicit
+	return opts, false
 }
 
 // discardPhysicalKeepBudgetLocked rolls back the current physical handle and

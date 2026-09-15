@@ -379,14 +379,19 @@ func executeSQLImplWithQueryRunner(ctx context.Context, session *Session, sql st
 	}
 
 	out, delivered := wrapDeliveredWriter(out)
+	mode := effectiveQueryMode(sysVars.Query.QueryMode)
+	if session != nil && session.txn != nil {
+		session.txn.beginFrozenSQLQuery(mode)
+		defer session.txn.endFrozenSQLQuery()
+	}
 
 	var result *Result
 	for {
-		iter, roTxn, tok, err := run(ctx, stmt, false, effectiveQueryMode(sysVars.Query.QueryMode))
+		iter, roTxn, tok, err := run(ctx, stmt, false, mode)
 		if err != nil {
 			if session != nil && session.txn != nil {
 				_ = session.txn.finishQueryCapture(tok, err)
-				if recovered, handled, recErr := session.txn.tryExplicitAbortRetry(ctx, err, delivered.delivered()); recovered {
+				if recovered, handled, recErr := session.txn.tryExplicitAbortRetry(ctx, tok, err, delivered.delivered()); recovered {
 					continue
 				} else if handled {
 					return nil, recErr
@@ -418,7 +423,7 @@ func executeSQLImplWithQueryRunner(ctx context.Context, session *Session, sql st
 		}
 		if err != nil {
 			if session != nil && session.txn != nil {
-				if recovered, handled, recErr := session.txn.tryExplicitAbortRetry(ctx, err, delivered.delivered()); recovered {
+				if recovered, handled, recErr := session.txn.tryExplicitAbortRetry(ctx, tok, err, delivered.delivered()); recovered {
 					continue
 				} else if handled {
 					return nil, recErr

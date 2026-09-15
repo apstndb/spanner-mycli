@@ -79,6 +79,19 @@ func (tm *TransactionManager) explicitAbortRetryEligibleLocked(err error) bool {
 	return true
 }
 
+// explicitQueryAbortRetryEligibleLocked requires a still-current admitted
+// owner/attempt token. Nil (single-use/unadmitted), stale, PLAN-only, and
+// RO tokens must not reconstruct the live owner.
+func (tm *TransactionManager) explicitQueryAbortRetryEligibleLocked(tok *captureToken, err error) bool {
+	if !tm.explicitAbortRetryEligibleLocked(err) {
+		return false
+	}
+	if tok == nil || tok.planOnly || !tok.belongsToLocked(tm) {
+		return false
+	}
+	return true
+}
+
 func (tm *TransactionManager) pendingRetryLocalAllowedLocked() error {
 	if tm == nil || tm.tc == nil {
 		return errors.New("SET LOCAL requires an active transaction; start one with BEGIN")
@@ -137,6 +150,12 @@ func (tm *TransactionManager) recoverExplicitAbortLocked(ctx context.Context, er
 	}
 
 	for {
+		if ctx.Err() != nil {
+			if tm.tc == owner {
+				tm.retireTransactionContextLocked()
+			}
+			return false, ctx.Err()
+		}
 		if ownerDeadlineExhausted(owner, tm.now()) {
 			if tm.tc == owner {
 				tm.retireTransactionContextLocked()
@@ -191,6 +210,14 @@ func (tm *TransactionManager) recoverExplicitAbortLocked(ctx context.Context, er
 
 		replayErr := tm.replayJournalLocked(ctx)
 		if replayErr == nil {
+			// Caller cancel is terminal even if the mock/RPC raced past the
+			// canceled context and reported a successful prefix replay.
+			if ctx.Err() != nil {
+				if tm.tc == owner {
+					tm.retireTransactionContextLocked()
+				}
+				return false, ctx.Err()
+			}
 			if owner.attrs.sendHeartbeat {
 				owner.EnableHeartbeat()
 			}
@@ -265,13 +292,13 @@ func (tm *TransactionManager) restoreAutomaticDMLForRetryLocked(queued []automat
 	return nil
 }
 
-func (tm *TransactionManager) tryExplicitAbortRetry(ctx context.Context, err error, currentOutputDelivered bool) (recovered, handled bool, outErr error) {
+func (tm *TransactionManager) tryExplicitAbortRetry(ctx context.Context, tok *captureToken, err error, currentOutputDelivered bool) (recovered, handled bool, outErr error) {
 	if tm == nil || err == nil {
 		return false, false, err
 	}
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
-	if !tm.explicitAbortRetryEligibleLocked(err) {
+	if !tm.explicitQueryAbortRetryEligibleLocked(tok, err) {
 		return false, false, err
 	}
 	recovered, outErr = tm.recoverExplicitAbortLocked(ctx, err, currentOutputDelivered)

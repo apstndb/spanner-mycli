@@ -727,10 +727,13 @@ func (s *heartbeatRPCServer) prepareSQL(ctx context.Context, r *sppb.ExecuteSqlR
 		if blocked != nil {
 			blocked()
 		}
+		if err := ctx.Err(); err != nil {
+			return nil, nil, err
+		}
 		select {
-		case <-block:
 		case <-ctx.Done():
 			return nil, nil, ctx.Err()
+		case <-block:
 		}
 	}
 	s.noteSQL(r, txnID)

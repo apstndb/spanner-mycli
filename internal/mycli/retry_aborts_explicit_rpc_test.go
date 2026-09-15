@@ -40,6 +40,25 @@ func beginExplicitRetry(t *testing.T, ctx context.Context, session *Session) {
 	}
 }
 
+func admittedRetryToken(t *testing.T, tm *TransactionManager) *captureToken {
+	t.Helper()
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+	if tm.tc == nil {
+		t.Fatal("no owner for admitted retry token")
+	}
+	return &captureToken{owner: tm.tc, attempt: tm.tc.attempt}
+}
+
+func ownerAttemptHandle(tm *TransactionManager) (*transactionContext, uint64, transaction) {
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+	if tm.tc == nil {
+		return nil, 0, nil
+	}
+	return tm.tc, tm.tc.attempt, tm.tc.txn
+}
+
 func TestRetryAbortsExplicitFirstSelectAndDML(t *testing.T) {
 	t.Parallel()
 	t.Run("select", func(t *testing.T) {
@@ -357,7 +376,7 @@ func TestRetryAbortsExplicitOutputCompletion(t *testing.T) {
 		ctx := t.Context()
 		beginExplicitRetry(t, ctx, session)
 		begins := len(h.server.beginObservations())
-		recovered, handled, err := session.txn.tryExplicitAbortRetry(ctx, abortedStatus("partial presented"), true)
+		recovered, handled, err := session.txn.tryExplicitAbortRetry(ctx, admittedRetryToken(t, session.txn), abortedStatus("partial presented"), true)
 		if recovered || !handled || !isAbortedErr(err) {
 			t.Fatalf("partial presented: recovered=%v handled=%v err=%v", recovered, handled, err)
 		}
@@ -413,7 +432,7 @@ func TestRetryAbortsExplicitOutputCompletion(t *testing.T) {
 		mustExec(t, ctx, session, "BEGIN RW")
 		mustExec(t, ctx, session, "SAVEPOINT keep")
 		begins := len(h.server.beginObservations())
-		recovered, handled, err := session.txn.tryExplicitAbortRetry(ctx, abortedStatus("vertical presented"), true)
+		recovered, handled, err := session.txn.tryExplicitAbortRetry(ctx, admittedRetryToken(t, session.txn), abortedStatus("vertical presented"), true)
 		if recovered || !handled || !isAbortedErr(err) {
 			t.Fatalf("vertical presented: recovered=%v handled=%v err=%v", recovered, handled, err)
 		}
@@ -821,13 +840,171 @@ func TestRetryAbortsExplicitCancelDuringReplay(t *testing.T) {
 		t.Fatal(t.Context().Err())
 	}
 	cancel()
-	close(unblock)
 	err := <-errCh
 	if !errors.Is(err, context.Canceled) && spanner.ErrCode(err) != codes.Canceled {
 		t.Fatalf("cancel during replay: %v", err)
 	}
 	if session.txn.InTransaction() {
 		t.Fatal("canceled replay left an owner")
+	}
+}
+
+func TestRetryAbortsExplicitSingleUseExportDoesNotReconstructOwner(t *testing.T) {
+	t.Parallel()
+	h := newHeartbeatHarness(t)
+	session := newRetryAbortsSession(t, h)
+	ctx := t.Context()
+	beginExplicitRetry(t, ctx, session)
+	owner, attempt, handle := ownerAttemptHandle(h.tm)
+	begins := len(h.server.beginObservations())
+	const exportSQL = "EXPORT DATA OPTIONS (format = 'CLOUD_SPANNER', table = 'Account') AS SELECT 1"
+	h.server.setFailStreamingSQLTimes(1, abortedStatus("export aborted"))
+	_, err := session.ExecuteStatement(ctx, &ExportDataStatement{SQL: exportSQL})
+	if err == nil || !isAbortedErr(err) || !strings.Contains(err.Error(), "export aborted") {
+		t.Fatalf("EXPORT DATA abort: %v", err)
+	}
+	gotOwner, gotAttempt, gotHandle := ownerAttemptHandle(h.tm)
+	if gotOwner != owner || gotAttempt != attempt || gotHandle != handle {
+		t.Fatalf("EXPORT DATA reconstructed owner/attempt/handle: %p/%d/%p -> %p/%d/%p",
+			owner, attempt, handle, gotOwner, gotAttempt, gotHandle)
+	}
+	if got := len(h.server.beginObservations()); got != begins {
+		t.Fatalf("EXPORT DATA BeginTransaction %d -> %d", begins, got)
+	}
+	if !session.txn.InReadWriteTransaction() {
+		t.Fatal("EXPORT DATA abort retired the isolated RW owner")
+	}
+}
+
+func TestRetryAbortsExplicitStaleTokenDoesNotRetryReplacement(t *testing.T) {
+	t.Parallel()
+	h := newHeartbeatHarness(t)
+	session := newRetryAbortsSession(t, h)
+	ctx := t.Context()
+	beginExplicitRetry(t, ctx, session)
+	iter, _, staleTok, err := h.tm.runQueryWithStatsAndCapture(ctx, spanner.NewStatement("SELECT 1"), false, sppb.ExecuteSqlRequest_PROFILE)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if staleTok == nil {
+		t.Fatal("first SELECT was not admitted")
+	}
+	iter.Stop()
+	if err := h.tm.finishQueryCapture(staleTok, errors.New("abandon first")); err == nil || err.Error() != "abandon first" {
+		t.Fatalf("abandon first: %v", err)
+	}
+	mustExec(t, ctx, session, "ROLLBACK")
+	mustExec(t, ctx, session, "BEGIN RW")
+	if !ownerHasReplay(session.txn) {
+		t.Fatal("replacement owner has no journal")
+	}
+	owner, attempt, handle := ownerAttemptHandle(h.tm)
+	begins := len(h.server.beginObservations())
+	var calls int
+	run := func(context.Context, spanner.Statement, bool, sppb.ExecuteSqlRequest_QueryMode) (*spanner.RowIterator, *spanner.ReadOnlyTransaction, *captureToken, error) {
+		calls++
+		return nil, nil, staleTok, abortedStatus("stale-token")
+	}
+	_, err = executeSQLImplWithQueryRunner(ctx, session, "SELECT 1", session.systemVariables, run, true, OperationOutput{w: io.Discard})
+	if err == nil || !isAbortedErr(err) || !strings.Contains(err.Error(), "stale-token") {
+		t.Fatalf("stale token abort: %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("stale token runner calls = %d, want 1", calls)
+	}
+	gotOwner, gotAttempt, gotHandle := ownerAttemptHandle(h.tm)
+	if gotOwner != owner || gotAttempt != attempt || gotHandle != handle {
+		t.Fatalf("stale token reconstructed replacement: %p/%d/%p -> %p/%d/%p",
+			owner, attempt, handle, gotOwner, gotAttempt, gotHandle)
+	}
+	if got := len(h.server.beginObservations()); got != begins {
+		t.Fatalf("stale token BeginTransaction %d -> %d", begins, got)
+	}
+}
+
+func TestRetryAbortsExplicitSelectFreezesRequestOptions(t *testing.T) {
+	t.Parallel()
+	h := newHeartbeatHarness(t)
+	session := newRetryAbortsSession(t, h)
+	ctx := t.Context()
+	beginExplicitRetry(t, ctx, session)
+	mustExec(t, ctx, session, "SET STATEMENT_TAG = 'keep-on-retry'")
+	mustExec(t, ctx, session, "SET OPTIMIZER_VERSION = '1'")
+	h.tm.abortRetryWait = func(context.Context, time.Duration) error {
+		session.systemVariables.Query.OptimizerVersion = "2"
+		session.systemVariables.Transaction.RequestTag = "mutated-after-consume"
+		return nil
+	}
+	h.server.setSQLRows("SELECT 1", []string{"1"})
+	h.server.setFailStreamingSQLTimes(1, abortedStatus("select tag abort"))
+	if _, err := execSQL(t, ctx, session, "SELECT 1"); err != nil {
+		t.Fatalf("SELECT retry: %v", err)
+	}
+	obs := userSQLObservations(h.server.sqlObservations())
+	var selects []sqlObservation
+	for _, o := range obs {
+		if o.sql == "SELECT 1" {
+			selects = append(selects, o)
+		}
+	}
+	if len(selects) != 2 {
+		t.Fatalf("SELECT RPCs = %d; %+v", len(selects), obs)
+	}
+	for i, o := range selects {
+		if o.reqTag != "keep-on-retry" {
+			t.Fatalf("SELECT[%d] tag = %q; %+v", i, o.reqTag, o)
+		}
+		if o.optimizer != "1" {
+			t.Fatalf("SELECT[%d] optimizer = %q; %+v", i, o.optimizer, o)
+		}
+	}
+	if session.systemVariables.Transaction.RequestTag != "mutated-after-consume" {
+		t.Fatalf("live STATEMENT_TAG = %q", session.systemVariables.Transaction.RequestTag)
+	}
+}
+
+func TestRetryAbortsExplicitProfileFreezesRequestOptions(t *testing.T) {
+	t.Parallel()
+	h := newHeartbeatHarness(t)
+	session := newRetryAbortsSession(t, h)
+	ctx := t.Context()
+	beginExplicitRetry(t, ctx, session)
+	mustExec(t, ctx, session, "SET STATEMENT_TAG = 'keep-on-retry'")
+	mustExec(t, ctx, session, "SET OPTIMIZER_VERSION = '1'")
+	h.tm.abortRetryWait = func(context.Context, time.Duration) error {
+		session.systemVariables.Query.OptimizerVersion = "2"
+		session.systemVariables.Transaction.RequestTag = "mutated-after-consume"
+		return nil
+	}
+	h.server.setQueryPlan(&sppb.QueryPlan{PlanNodes: hangingIndentPlanNodes()})
+	h.server.setSQLRows("SELECT 1", []string{"1"})
+	h.server.setFailStreamingSQLTimes(1, abortedStatus("profile tag abort"))
+	if _, err := executeExplainAnalyze(ctx, session, "SELECT 1", 0, 0, nil); err != nil {
+		t.Fatalf("PROFILE retry: %v", err)
+	}
+	obs := userSQLObservations(h.server.sqlObservations())
+	var profiles []sqlObservation
+	for _, o := range obs {
+		if o.sql == "SELECT 1" {
+			profiles = append(profiles, o)
+		}
+	}
+	if len(profiles) != 2 {
+		t.Fatalf("PROFILE RPCs = %d; %+v", len(profiles), obs)
+	}
+	for i, o := range profiles {
+		if o.reqTag != "keep-on-retry" {
+			t.Fatalf("PROFILE[%d] tag = %q; %+v", i, o.reqTag, o)
+		}
+		if o.optimizer != "1" {
+			t.Fatalf("PROFILE[%d] optimizer = %q; %+v", i, o.optimizer, o)
+		}
+		if o.queryMode != sppb.ExecuteSqlRequest_PROFILE {
+			t.Fatalf("PROFILE[%d] mode = %v", i, o.queryMode)
+		}
+	}
+	if session.systemVariables.Transaction.RequestTag != "mutated-after-consume" {
+		t.Fatalf("live STATEMENT_TAG = %q", session.systemVariables.Transaction.RequestTag)
 	}
 }
 

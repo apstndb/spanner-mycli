@@ -458,6 +458,10 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string, fo
 		plan       *sppb.QueryPlan
 		actualRows int64
 	)
+	if session.txn != nil {
+		session.txn.beginFrozenSQLQuery(sppb.ExecuteSqlRequest_PROFILE)
+		defer session.txn.endFrozenSQLQuery()
+	}
 	for {
 		var err error
 		var iter *spanner.RowIterator
@@ -465,7 +469,7 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string, fo
 		if err != nil {
 			if session.txn != nil {
 				_ = session.txn.finishQueryCapture(tok, err)
-				if recovered, handled, recErr := session.txn.tryExplicitAbortRetry(ctx, err, false); recovered {
+				if recovered, handled, recErr := session.txn.tryExplicitAbortRetry(ctx, tok, err, false); recovered {
 					continue
 				} else if handled {
 					return nil, recErr
@@ -490,7 +494,7 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string, fo
 			err = session.txn.invokeQueryAfterCollectHook()
 		}
 		if err != nil {
-			if recovered, handled, recErr := session.txn.tryExplicitAbortRetry(ctx, err, actualRows > 0); recovered {
+			if recovered, handled, recErr := session.txn.tryExplicitAbortRetry(ctx, tok, err, actualRows > 0); recovered {
 				continue
 			} else if handled {
 				return nil, recErr
