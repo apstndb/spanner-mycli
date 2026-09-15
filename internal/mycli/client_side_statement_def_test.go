@@ -265,6 +265,7 @@ var completionSampleValues = map[string]string{
 	"schema":         "myschema",
 	"param":          "myparam",
 	"plan_node":      "0",
+	"query_profile":  "-6422424748333414178",
 }
 
 // completionCase describes one candidate insertion to simulate for a

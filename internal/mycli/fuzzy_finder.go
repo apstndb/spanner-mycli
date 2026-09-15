@@ -263,6 +263,8 @@ func completionHeader(ct fuzzyCompletionType) string {
 		return "System Variables / PARAM"
 	case fuzzyCompletePlanNode:
 		return "Cached Plan Nodes"
+	case fuzzyCompleteQueryProfile:
+		return "Query Profiles"
 	default:
 		return "Statements"
 	}
@@ -627,7 +629,7 @@ func requiresNetwork(ct fuzzyCompletionType) bool {
 	switch ct {
 	case fuzzyCompleteDatabase, fuzzyCompleteTable, fuzzyCompleteRole, fuzzyCompleteOperation,
 		fuzzyCompleteView, fuzzyCompleteIndex, fuzzyCompleteChangeStream, fuzzyCompleteSequence, fuzzyCompleteModel,
-		fuzzyCompleteSchema:
+		fuzzyCompleteSchema, fuzzyCompleteQueryProfile:
 		return true
 	default:
 		return false
@@ -755,6 +757,8 @@ func (f *fuzzyFinderCommand) fetchCandidates(ctx context.Context, ct fuzzyComple
 		return f.fetchSetTargetCandidates(), nil
 	case fuzzyCompletePlanNode:
 		return f.fetchPlanNodeCandidates(ctx)
+	case fuzzyCompleteQueryProfile:
+		return f.fetchQueryProfileCandidates(ctx)
 	default:
 		return nil, nil
 	}
@@ -796,6 +800,84 @@ func (f *fuzzyFinderCommand) fetchPlanNodeCandidates(ctx context.Context) ([]fzf
 		})
 	}
 	return items, nil
+}
+
+const queryProfilePreviewRuneLimit = 120
+
+func queryProfilePreviewText(queryText string) string {
+	preview := strings.Join(strings.FieldsFunc(queryText, func(r rune) bool {
+		return unicode.IsSpace(r) || unicode.IsControl(r)
+	}), " ")
+	runes := []rune(preview)
+	if len(runes) > queryProfilePreviewRuneLimit {
+		return string(runes[:queryProfilePreviewRuneLimit]) + "…"
+	}
+	return preview
+}
+
+func queryProfileCompletionItems(rows []*queryProfilesRow) []fzfItem {
+	sorted := append([]*queryProfilesRow(nil), rows...)
+	slices.SortFunc(sorted, func(a, b *queryProfilesRow) int {
+		if a == nil && b == nil {
+			return 0
+		}
+		if a == nil {
+			return 1
+		}
+		if b == nil {
+			return -1
+		}
+		if c := b.IntervalEnd.Compare(a.IntervalEnd); c != 0 {
+			return c
+		}
+		if a.TextFingerprint < b.TextFingerprint {
+			return -1
+		}
+		if a.TextFingerprint > b.TextFingerprint {
+			return 1
+		}
+		return 0
+	})
+	seen := make(map[int64]struct{}, len(sorted))
+	items := make([]fzfItem, 0, len(sorted))
+	for _, row := range sorted {
+		if row == nil {
+			continue
+		}
+		if _, ok := seen[row.TextFingerprint]; ok {
+			continue
+		}
+		seen[row.TextFingerprint] = struct{}{}
+		value := fmt.Sprintf("%d", row.TextFingerprint)
+		preview := ""
+		if row.QueryProfile != nil {
+			preview = queryProfilePreviewText(row.QueryProfile.QueryStats.QueryText)
+		}
+		label := value
+		if preview != "" {
+			label = value + " " + preview
+		}
+		items = append(items, fzfItem{Value: value, Label: label})
+	}
+	return items
+}
+
+func (f *fuzzyFinderCommand) fetchQueryProfileCandidates(ctx context.Context) ([]fzfItem, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if f.cli == nil || f.cli.SessionHandler == nil {
+		return nil, nil
+	}
+	session := f.cli.SessionHandler.GetSession()
+	if session == nil || session.client == nil {
+		return nil, nil
+	}
+	rows, err := fetchQueryProfilesTopHour(ctx, session)
+	if err != nil {
+		return nil, err
+	}
+	return queryProfileCompletionItems(rows), nil
 }
 
 // fetchDatabaseCandidates lists databases from the current instance.
