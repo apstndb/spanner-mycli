@@ -602,7 +602,7 @@ var varDefs = []varDef{
 	},
 	{
 		name:  "TRANSACTION_TIMEOUT",
-		desc:  "Logical read/write transaction deadline (duration or NULL). NULL or 0 means no additional transaction deadline. The duration is captured for the logical owner; the single total budget starts at the first real database RPC (including constructor BeginTransaction) and is preserved across physical reconstruction. Pending SET LOCAL may select the duration before the first RPC; changing it after first real database use is rejected, including when the selected duration is NULL or 0 and no timer exists. Session SET after BEGIN applies to a later owner. Distinct from STATEMENT_TIMEOUT and from CLI_IDLE_TRANSACTION_TIMEOUT (#357). Implicit ABORTED retry (#994) reuses the remaining budget, including during backoff, and never restarts it. Explicit journal replay remains #293.",
+		desc:  "Logical read/write transaction deadline (duration or NULL). NULL or 0 means no additional transaction deadline. The duration is captured for the logical owner; the single total budget starts at the first real database RPC (including constructor BeginTransaction) and is preserved across physical reconstruction. Pending SET LOCAL may select the duration before the first RPC; changing it after first real database use is rejected, including when the selected duration is NULL or 0 and no timer exists. Session SET after BEGIN applies to a later owner. Distinct from STATEMENT_TIMEOUT and from CLI_IDLE_TRANSACTION_TIMEOUT (#357). Implicit and explicit ABORTED retry (#994 / #1006) reuse the remaining budget, including during backoff, and never restart it.",
 		scope: scopeSession,
 		bind: func(sv *systemVariables) Variable {
 			return NullableDurationVar(&sv.Transaction.TransactionTimeout).
@@ -1119,10 +1119,9 @@ var varDefs = []varDef{
 	},
 
 	{
-		name:    "RETRY_ABORTS_INTERNALLY",
-		desc:    "Opt-in BOOL (default FALSE) enabling bounded ABORTED retries for one implicit autocommit read-write operation. Java/Go drivers default TRUE. This is application logical retry only, not SDK gRPC/gax/stream retries. At most 50 attempts including the first, using the original caller cancellation and TRANSACTION_TIMEOUT budget. Session SET/RESET applies to later owners; SHOW is the session value; RESET restores the startup snapshot. SET LOCAL is unsupported in this phase (TRUE and FALSE). Newly created explicit and pending read-write owners, including AUTOCOMMIT=false, are rejected while TRUE. Activating a pending owner uses that owner's captured policy: captured TRUE is rejected before the RW constructor; captured FALSE is allowed after a later session SET TRUE. Explicit journal replay remains #293.",
-		scope:   scopeSession,
-		noLocal: true,
-		bind:    func(sv *systemVariables) Variable { return BoolVar(&sv.Transaction.RetryAbortsInternally) },
+		name:  "RETRY_ABORTS_INTERNALLY",
+		desc:  "Opt-in BOOL (default FALSE) enabling bounded ABORTED retries for implicit autocommit read-write operations and explicit read-write transactions. Java/Go drivers default TRUE. This is application logical retry only, not SDK gRPC/gax/stream retries. At most 50 physical attempts including the first per logical owner (implicit: one operation; explicit: the whole transaction, including prefix-replay ABORTED). Uses the original caller cancellation and TRANSACTION_TIMEOUT budget and does not reset either. Session SET/RESET applies to later owners; SHOW is the session value; RESET restores the startup snapshot. An existing owner keeps its captured value after later session changes. SET LOCAL TRUE/FALSE is allowed only on an unused pending read-write owner before the first RPC, queued work, or SAVEPOINT marker. Direct BEGIN RW and implicit RW have no LOCAL window. Explicit retry silently replays the fully observed journal prefix and retries the current operation; bytes already delivered by that current operation, a writer failure, PLAN-only, PDML, RO, and non-ABORTED Commit failures are not retried. A changed replay result or reconstruction failure ends the logical transaction.",
+		scope: scopeSession,
+		bind:  func(sv *systemVariables) Variable { return BoolVar(&sv.Transaction.RetryAbortsInternally) },
 	},
 }

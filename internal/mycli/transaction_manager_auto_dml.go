@@ -126,44 +126,59 @@ func (tm *TransactionManager) FlushAutomaticDML(ctx context.Context) (*Result, e
 // or owner replacement discards without executing so stale work cannot open a
 // new implicit transaction.
 func (tm *TransactionManager) flushAutomaticDMLLocked(ctx context.Context) ([]spanner.Statement, []int64, error) {
-	owner := tm.tc
-	if owner == nil || len(owner.autoDML) == 0 {
-		return nil, nil, nil
-	}
-	queued := owner.autoDML
-	owner.autoDML = nil
-	dmls := automaticDMLStatements(queued)
-
-	if owner != tm.tc || owner.txn == nil || owner.attrs.mode != transactionModeReadWrite {
-		return nil, nil, nil
-	}
-	rwTxn, ok := owner.txn.(*spanner.ReadWriteStmtBasedTransaction)
-	if !ok {
-		return nil, nil, ErrNotInReadWriteTransaction
-	}
-
-	counts, err := tm.batchUpdateWithRemainingDeadline(ctx, rwTxn, dmls, spanner.QueryOptions{LastStatement: false})
-	err = annotateTransactionTimeout(err, owner)
-	if err == nil {
-		// Compare each enabled entry before a successful journal receipt.
-		// RPC or partial BatchUpdate errors keep their original cause.
-		err = verifyAutomaticDMLCounts(queued, counts)
-	}
-	if _, recErr := tm.completeBatchDMLLocked(counts, err); err == nil {
-		err = recErr
-	}
-	if tm.tc != nil {
-		tm.tc.EnableHeartbeat()
-	}
-	if err != nil {
-		err = tm.handleOwnerFailureLocked(ctx, err)
-		if tm.tc != nil {
-			tm.noteIdleUserWorkLocked(true)
+	for {
+		owner := tm.tc
+		if owner == nil || len(owner.autoDML) == 0 {
+			return nil, nil, nil
 		}
-		return nil, nil, fmt.Errorf("transaction was aborted: %w", err)
+		queued := owner.autoDML
+		owner.autoDML = nil
+		dmls := automaticDMLStatements(queued)
+
+		if owner != tm.tc || owner.txn == nil || owner.attrs.mode != transactionModeReadWrite {
+			return nil, nil, nil
+		}
+		rwTxn, ok := owner.txn.(*spanner.ReadWriteStmtBasedTransaction)
+		if !ok {
+			return nil, nil, ErrNotInReadWriteTransaction
+		}
+
+		counts, err := tm.batchUpdateWithRemainingDeadline(ctx, rwTxn, dmls, spanner.QueryOptions{LastStatement: false})
+		err = annotateTransactionTimeout(err, owner)
+		if err == nil {
+			// Compare each enabled entry before a successful journal receipt.
+			// RPC or partial BatchUpdate errors keep their original cause.
+			err = verifyAutomaticDMLCounts(queued, counts)
+		}
+		if _, recErr := tm.completeBatchDMLLocked(counts, err); err == nil {
+			err = recErr
+		}
+		if tm.tc != nil {
+			tm.tc.EnableHeartbeat()
+		}
+		if err != nil {
+			if tm.explicitAbortRetryEligibleLocked(err) {
+				recovered, recErr := tm.recoverExplicitAbortLocked(ctx, err, false)
+				if recovered {
+					if restErr := tm.restoreAutomaticDMLForRetryLocked(queued); restErr != nil {
+						return nil, nil, restErr
+					}
+					continue
+				}
+				if tm.tc == owner {
+					tm.noteIdleUserWorkLocked(true)
+				}
+				return nil, nil, wrapAbortedKeepCause(recErr)
+			}
+			err = tm.handleOwnerFailureLocked(ctx, err)
+			if tm.tc != nil {
+				tm.noteIdleUserWorkLocked(true)
+			}
+			return nil, nil, fmt.Errorf("transaction was aborted: %w", err)
+		}
+		tm.noteIdleUserWorkLocked(true)
+		return dmls, counts, nil
 	}
-	tm.noteIdleUserWorkLocked(true)
-	return dmls, counts, nil
 }
 
 func (tm *TransactionManager) heartbeatEnabled() bool {

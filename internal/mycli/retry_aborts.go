@@ -37,13 +37,7 @@ const (
 	implicitAbortRetryDisabled
 )
 
-var (
-	errRetryAbortsExplicitUnsupported = errors.New(
-		"RETRY_ABORTS_INTERNALLY=TRUE is not supported for explicit or pending read-write transactions; this property currently retries only implicit autocommit read-write operations")
-	errRetryAbortsSetLocalUnsupported = errors.New(
-		"SET LOCAL is not supported for RETRY_ABORTS_INTERNALLY; this property currently applies only to implicit autocommit read-write operations. Use ordinary SET to change the session value for later implicit operations. Pending-owner SET LOCAL activation is not implemented yet")
-	errImplicitAbortRetryLostOwner = errors.New("implicit abort retry lost its logical owner")
-)
+var errImplicitAbortRetryLostOwner = errors.New("implicit abort retry lost its logical owner")
 
 func isAbortedErr(err error) bool {
 	return err != nil && spanner.ErrCode(err) == codes.Aborted
@@ -64,31 +58,6 @@ func snapshotRetryAbortsLocked(tc *transactionContext, vars *systemVariables) {
 		tc.retryAborts = vars.Transaction.RetryAbortsInternally
 	}
 	tc.retryAbortsCaptured = true
-}
-
-func (tm *TransactionManager) rejectExplicitRetryAbortsLocked() error {
-	if tm == nil || tm.sysVars == nil || !tm.sysVars.Transaction.RetryAbortsInternally {
-		return nil
-	}
-	// Pending created while READONLY will resolve to an RO owner.
-	// Do not reject that READONLY path.
-	if tm.sysVars.Transaction.ReadOnly {
-		return nil
-	}
-	return errRetryAbortsExplicitUnsupported
-}
-
-// rejectPendingRetryAbortsActivationLocked rejects RW activation of a pending
-// owner whose captured RETRY_ABORTS_INTERNALLY snapshot is TRUE. Captured
-// FALSE still activates after a later session SET TRUE.
-func (tm *TransactionManager) rejectPendingRetryAbortsActivationLocked() error {
-	if tm == nil || tm.tc == nil || tm.tc.attrs.mode != transactionModePending {
-		return nil
-	}
-	if tm.tc.retryAborts {
-		return errRetryAbortsExplicitUnsupported
-	}
-	return nil
 }
 
 func abortRetryDelay(err error) time.Duration {
@@ -190,6 +159,21 @@ func (tm *TransactionManager) waitAbortRetry(ctx context.Context, d time.Duratio
 	}
 }
 
+// shouldDeferAbortOwnerFailure reports whether executeRwTxAttemptLocked should
+// return an ABORTED error without rolling back the logical owner so the outer
+// loop can retry or finalize. Implicit owners always defer when retry is
+// captured so finalizeImplicitAbortLocked remains the single failure owner.
+// Explicit PLAN-only calls pass implicitAbortRetryDisabled and must not defer.
+func shouldDeferAbortOwnerFailure(implicit bool, policy implicitAbortRetryPolicy, owner *transactionContext) bool {
+	if owner == nil || !owner.retryAborts {
+		return false
+	}
+	if implicit {
+		return true
+	}
+	return policy == implicitAbortRetryIfEnabled
+}
+
 func shouldRetryImplicitAbort(err error, implicit bool, policy implicitAbortRetryPolicy, owner *transactionContext, attempt, maxAttempts int) bool {
 	if err == nil || !implicit || policy != implicitAbortRetryIfEnabled || owner == nil || !owner.retryAborts {
 		return false
@@ -204,13 +188,56 @@ func (tm *TransactionManager) freezeQueryOptionsLocked(mode *sppb.ExecuteSqlRequ
 	if tm.frozenQueryOpts != nil {
 		return *tm.frozenQueryOpts
 	}
+	opts := tm.consumeQueryOptionsLocked(mode)
+	snap := opts
+	tm.frozenQueryOpts = &snap
+	return opts
+}
+
+func (tm *TransactionManager) consumeQueryOptionsLocked(mode *sppb.ExecuteSqlRequest_QueryMode) spanner.QueryOptions {
 	opts := tm.queryOptionsLocked(mode)
 	if tm.sysVars != nil {
 		tm.sysVars.Transaction.RequestTag = ""
 	}
-	snap := opts
-	tm.frozenQueryOpts = &snap
 	return opts
+}
+
+// beginFrozenSQLQuery consumes STATEMENT_TAG once and snapshots query options
+// for the current SELECT/PROFILE statement and any explicit abort retries.
+func (tm *TransactionManager) beginFrozenSQLQuery(mode sppb.ExecuteSqlRequest_QueryMode) {
+	if tm == nil {
+		return
+	}
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+	opts := tm.consumeQueryOptionsLocked(mode.Enum())
+	snap := opts
+	tm.frozenSQLQueryOpts = &snap
+}
+
+func (tm *TransactionManager) endFrozenSQLQuery() {
+	if tm == nil {
+		return
+	}
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+	tm.frozenSQLQueryOpts = nil
+}
+
+func (tm *TransactionManager) sqlQueryOptionsForRun(mode sppb.ExecuteSqlRequest_QueryMode, implicit bool) (spanner.QueryOptions, bool) {
+	if tm == nil {
+		return spanner.QueryOptions{Mode: mode.Enum()}, false
+	}
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+	if tm.frozenSQLQueryOpts != nil {
+		opts := *tm.frozenSQLQueryOpts
+		opts.LastStatement = implicit
+		return opts, true
+	}
+	opts := tm.queryOptionsLocked(mode.Enum())
+	opts.LastStatement = implicit
+	return opts, false
 }
 
 // discardPhysicalKeepBudgetLocked rolls back the current physical handle and

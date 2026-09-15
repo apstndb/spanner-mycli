@@ -37,6 +37,47 @@ COMMIT;
   not enable `SAVEPOINT` / `ROLLBACK TO` / `RELEASE` while
   `CLI_SAVEPOINT_SUPPORT` is `DISABLED`.
 
+## Explicit ABORTED retry
+
+`RETRY_ABORTS_INTERNALLY=TRUE` (opt-in, default `FALSE`; Java/Go drivers
+default `TRUE`) lets an explicit read-write owner recover from a real
+Spanner `ABORTED` by silently replaying the fully observed journal prefix
+and retrying the current frozen operation. This is the same typed ordered
+fingerprint comparison as `ROLLBACK TO`: row types/metadata, values,
+order, count (including zero rows), DML affected-row counts, and Batch DML
+count vectors. A changed replay result or reconstruction failure ends the
+logical transaction.
+
+The lifetime budget is **49 automatic physical reconstructions** (50
+attempts including the original) per logical owner. Prefix-replay
+`ABORTED` errors consume that budget. Successful statements and manual
+`ROLLBACK TO` do not reset it. Reconstruction reuses the original caller
+cancellation and `TRANSACTION_TIMEOUT` budget and is not new user-idle
+activity.
+
+Bytes already delivered by the **current** failed operation, including
+headers, prohibit automatic re-execution of that operation.
+Buffered/unpublished current results may be discarded and retried. A
+writer failure is neither a successful receipt nor a retryable database
+failure. Prior fully completed output is replayed silently and must not
+appear twice.
+
+Automatic full-prefix retry is attempted before SAVEPOINT
+recovery-required. Successful retry keeps markers and `SET LOCAL` undo.
+Partial current output or an exhausted attempt budget fall back to the
+existing valid-marker recovery behavior; without a marker the owner is
+retired. Manual `ROLLBACK TO` never silently substitutes an earlier
+marker for full-prefix retry.
+
+`SET LOCAL RETRY_ABORTS_INTERNALLY` is allowed only on an unused pending
+read-write owner, before the first RPC, queued work, or SAVEPOINT marker.
+Direct `BEGIN RW` and implicit RW have no such window.
+
+Limitations are the same as SAVEPOINT replay: hidden reads and unreturned
+volatile writes (generated UUIDs, sequences, defaults) are not preserved.
+PLAN-only operations, PDML, read-only transactions, and non-`ABORTED`
+Commit failures are not retried.
+
 ## Syntax
 
 ```text
@@ -106,11 +147,16 @@ requires `ROLLBACK TO SAVEPOINT`. Until then, only `ROLLBACK TO`, full
 `COMMIT`, and SQL are rejected without changing variables, batch state, or the
 logical owner. Failed reconstruction ends the logical transaction.
 
-An `Aborted` statement after a marker enters that same recovery path and does
-not replace the Spanner client. The original abort error is preserved and
-`ROLLBACK TO` reuses the same client and logical owner. Client recreation still
-runs for terminal aborts: capture off, no completed marker, or after the owner
-has already ended.
+When `RETRY_ABORTS_INTERNALLY` is enabled and the current operation has
+not already delivered output, a real `ABORTED` tries full-prefix
+automatic recovery before this recovery-required state. If retry is
+forbidden by partial current output or the attempt budget is exhausted,
+the existing valid-marker recovery behavior remains: the physical attempt
+is discarded, the original abort error is preserved, and `ROLLBACK TO`
+reuses the same client and logical owner. Client recreation still runs
+for terminal aborts: capture off, no completed marker, fingerprint
+mismatch/reconstruction failure, cancellation, owner expiry, or after
+the owner has already ended.
 
 See also [system variables](system_variables.md) and the driver
 [compatibility matrix](spanner-driver-compatibility.md).
