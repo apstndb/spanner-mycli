@@ -37,9 +37,7 @@ const (
 	implicitAbortRetryDisabled
 )
 
-var (
-	errImplicitAbortRetryLostOwner = errors.New("implicit abort retry lost its logical owner")
-)
+var errImplicitAbortRetryLostOwner = errors.New("implicit abort retry lost its logical owner")
 
 func isAbortedErr(err error) bool {
 	return err != nil && spanner.ErrCode(err) == codes.Aborted

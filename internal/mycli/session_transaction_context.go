@@ -130,8 +130,8 @@ type transactionContext struct {
 	// plus that original is the 50-attempt lifetime budget.
 	abortRetries int
 	attempt      uint64
-	inFlight            int
-	pending             *captureToken
+	inFlight     int
+	pending      *captureToken
 	// replacing is true while ROLLBACK TO is replacing the physical RW handle.
 	replacing bool
 }

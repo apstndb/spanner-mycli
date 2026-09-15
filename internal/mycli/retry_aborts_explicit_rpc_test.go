@@ -305,6 +305,27 @@ func TestRetryAbortsExplicitChangedReplayRetires(t *testing.T) {
 
 func TestRetryAbortsExplicitOutputCompletion(t *testing.T) {
 	t.Parallel()
+	t.Run("sdk_midstream_abort_retries_as_unpublished", func(t *testing.T) {
+		t.Parallel()
+		h := newHeartbeatHarness(t)
+		session := newRetryAbortsSession(t, h)
+		ctx := t.Context()
+		beginExplicitRetry(t, ctx, session)
+		session.systemVariables.StreamManager = nil
+		session.systemVariables.Display.AutoWrap = false
+		h.server.setSQLRows("SELECT 1", []string{"1", "2"})
+		h.server.setFailStreamingSQLAfterRows(1, abortedStatus("midstream unpublished"))
+		res, err := executeSQLImplWithVars(ctx, session, "SELECT 1", session.systemVariables, OperationOutput{})
+		if err != nil {
+			t.Fatalf("midstream unpublished retry: %v", err)
+		}
+		if res == nil || res.AffectedRows != 2 {
+			t.Fatalf("midstream unpublished result: %+v", res)
+		}
+		if got := countRPC(userSQLObservations(h.server.sqlObservations()), "ExecuteStreamingSql", false); got != 2 {
+			t.Fatalf("midstream unpublished RPCs = %d", got)
+		}
+	})
 	t.Run("buffered_unpublished_retries", func(t *testing.T) {
 		t.Parallel()
 		h := newHeartbeatHarness(t)
