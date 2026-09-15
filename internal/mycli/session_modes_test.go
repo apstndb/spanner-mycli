@@ -220,6 +220,7 @@ func TestDetachedCompatibleStatements(t *testing.T) {
 			&ShowDatabasesStatement{},
 			&UseStatement{Database: "test"},
 			&HelpStatement{},
+			&ShowHistoryStatement{},
 			&ExitStatement{},
 			// System variables statements
 			&ShowVariableStatement{VarName: "READONLY"},
