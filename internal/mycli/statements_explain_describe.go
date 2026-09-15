@@ -683,7 +683,10 @@ func processPlan(plan *sppb.QueryPlan, columnRenderDefs []columnRenderDef, inlin
 		}
 		rows = append(rows, toRow(rowStrs...))
 	}
-	predicates, appendices = buildPlanAppendices(rowsWithPredicates, printSections)
+	predicates, appendices, err = buildPlanAppendices(rowsWithPredicates, printSections)
+	if err != nil {
+		return nil, nil, nil, err
+	}
 
 	return rows, predicates, appendices, nil
 }
