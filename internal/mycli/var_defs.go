@@ -481,6 +481,20 @@ var varDefs = []varDef{
 
 	// === Integer variables ===
 	{
+		name:  "MAX_PARTITIONS",
+		desc:  "A nonnegative INT64 PartitionQuery hint (PartitionOptions.max_partitions). Default 0 preserves the SDK/proto default: the request still includes PartitionOptions and sends 0 rather than omitting the object. Applied once at the shared generation path for PARTITION, TRY PARTITIONED QUERY, RUN PARTITIONED QUERY, and AUTO_PARTITION_MODE. Not applied to RUN PARTITION token execution. Independent of MAX_PARTITIONED_PARALLELISM; returned partitions are never truncated and this is not a worker or output cap. The official API currently ignores this hint for PartitionQuery/Read; the advertised service default is 10,000 and the advertised maximum is 200,000, but the actual returned count may be smaller or larger. The client does not cap at 200,000. An emulator 1.5.56 observation of requested 1 returning 2 is not managed-service proof. SET, SET LOCAL, RESET, and SHOW follow the normal session-variable rules; the value is frozen when the partition request is issued.",
+		scope: scopeSession,
+		bind: func(sv *systemVariables) Variable {
+			return IntVar(&sv.Query.MaxPartitions).
+				WithValidator(func(value int64) error {
+					if value < 0 {
+						return fmt.Errorf("MAX_PARTITIONS must be non-negative, got %d", value)
+					}
+					return nil
+				})
+		},
+	},
+	{
 		name:  "MAX_PARTITIONED_PARALLELISM",
 		desc:  "A property of type INT64 indicating the number of worker threads the spanner-mycli uses to execute partitions. This value is used for AUTO_PARTITION_MODE=TRUE and RUN PARTITIONED QUERY",
 		scope: scopeSession,

@@ -1877,7 +1877,9 @@ func (tm *TransactionManager) RunPartitionQuery(ctx context.Context, stmt spanne
 		return nil, nil, err
 	}
 
-	partitions, err := batchROTx.PartitionQueryWithOptions(ctx, stmt, spanner.PartitionOptions{}, spanner.QueryOptions{
+	partitions, err := batchROTx.PartitionQueryWithOptions(ctx, stmt, spanner.PartitionOptions{
+		MaxPartitions: tm.sysVars.Query.MaxPartitions,
+	}, spanner.QueryOptions{
 		DataBoostEnabled:    tm.sysVars.Query.DataBoostEnabled,
 		Priority:            tm.sysVars.Query.RPCPriority,
 		DirectedReadOptions: tm.sysVars.Query.DirectedRead,

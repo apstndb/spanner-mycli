@@ -53,7 +53,7 @@ says otherwise; `java-spanner` versions are given where known.
 | `auto_partition_mode` | yes | yes | `AUTO_PARTITION_MODE` implemented |
 | `data_boost_enabled` | yes | yes | `DATA_BOOST_ENABLED` implemented |
 | `max_partitioned_parallelism` | yes | yes | `MAX_PARTITIONED_PARALLELISM` implemented |
-| `max_partitions` | yes | yes | not implemented (candidate gap) |
+| `max_partitions` | yes | yes | `MAX_PARTITIONS` implemented (#957). Nonnegative INT64, default 0 (SDK/proto default; the request still includes PartitionOptions). Applied once at the shared generation path for PARTITION, TRY PARTITIONED QUERY, RUN PARTITIONED QUERY, and AUTO_PARTITION_MODE. Not applied to RUN PARTITION token execution. Independent of `MAX_PARTITIONED_PARALLELISM`; returned partitions are never truncated. The official PartitionOptions API currently ignores this hint; the advertised service default is 10,000 and the advertised maximum is 200,000, but the actual returned count may be smaller or larger. The client does not cap at 200,000. An emulator 1.5.56 observation of requested 1 returning 2 is not managed-service proof. |
 | `default_sequence_kind` + auto-set on DDL failure | yes (v1.26.0) | JDBC/PGAdapter auto-set v6.88.0; `CREATE SEQUENCE` v6.102.0 | `DEFAULT_SEQUENCE_KIND` (empty/NULL default = disabled; only `bit_reversed_positive` is accepted). SYNC-only: after `InvalidArgument` plus the pinned missing-kind sentence, one `ALTER DATABASE` sets the database option, then only a metadata-proven unfinished suffix is retried. Any ALTER failure stops without a suffix retry. ASYNC, ASYNC_WAIT, and SHOW OPERATION do not repair. |
 | `max_commit_delay` | yes | yes | `MAX_COMMIT_DELAY` implemented |
 | `commit_priority` (`HIGH`/`MEDIUM`/`LOW`/`UNSPECIFIED`) | yes | n/a | `COMMIT_PRIORITY` implemented. Default `UNSPECIFIED` inherits the resolved transaction RPC priority (existing mycli behavior). go-sql-spanner's default `UNSPECIFIED` is the Go driver's `CommitPriority` default and does not inherit `RPC_PRIORITY`. The effective value is frozen in the constructor snapshot reused across physical attempts, including SAVEPOINT reconstruction. `SET LOCAL` is not supported. Not applied to query, DML, heartbeat, partitioned DML, read-only, or Admin RPCs. |
@@ -100,7 +100,6 @@ tracking issue. They are listed here so the gap is not lost:
 - `SHOW TRANSACTION` PostgreSQL-only aliases (`DEFERRABLE`, `transaction_isolation`,
   arbitrary `SHOW TRANSACTION <var>`) — isolation level and read-only inspection
   landed in #959; remaining aliases are tracked with #230.
-- `max_partitions` connection property.
 - `transaction_isolation` PG alias for `isolation_level`.
 
 ## Intentionally not tracked / out of scope
