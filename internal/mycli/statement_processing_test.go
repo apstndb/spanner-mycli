@@ -1423,6 +1423,16 @@ TABLE Singers (42)
 			},
 		},
 		{
+			desc:  "SHOW HISTORY statement",
+			input: `SHOW HISTORY`,
+			want:  &ShowHistoryStatement{},
+		},
+		{
+			desc:  "SHOW HISTORY LIMIT statement",
+			input: `SHOW HISTORY LIMIT 10`,
+			want:  &ShowHistoryStatement{Limit: 10},
+		},
+		{
 			desc:  "HELP statement",
 			input: `HELP`,
 			want:  &HelpStatement{},
@@ -1719,6 +1729,7 @@ func TestBuildStatement_InvalidCase(t *testing.T) {
 		`SHOW LAST QUERY PLAN INTO "unterminated`,
 		"SHOW LAST QUERY PLAN INTO two paths.json",
 		`SHOW LAST QUERY PLAN INTO ""`,
+		"SHOW HISTORY LIMIT 0",
 	}
 
 	for _, input := range invalidInputs {

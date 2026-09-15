@@ -78,6 +78,7 @@ var syntaxPlaceholderValues = map[string]string{
 	"<preset-or-sections>":   "ALL",
 	"<name>":                 "myvar",
 	"<value>":                "1",
+	"<n>":                    "10",
 	"<prompt>":               "prompt text",
 	"<token>":                "'smycli-part/1/example'",
 }

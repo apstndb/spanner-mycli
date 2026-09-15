@@ -1351,6 +1351,32 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 	{
 		Descriptions: []clientSideStatementDescription{
 			{
+				Usage:  `Show statement history`,
+				Syntax: `SHOW HISTORY`,
+				Note:   `Lists recorded statements oldest first. Interactive sessions use the live readline history; noninteractive sessions read CLI_HISTORY_FILE.`,
+			},
+			{
+				Usage:  `Show recent statement history`,
+				Syntax: `SHOW HISTORY LIMIT <n>`,
+				Note:   `LIMIT n returns the n most recent statements, oldest first within the window.`,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^SHOW\s+HISTORY(?:\s+LIMIT\s+(?P<n>\d+))?$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			nStr := strings.TrimSpace(groups["n"])
+			if nStr == "" {
+				return &ShowHistoryStatement{}, nil
+			}
+			n, err := strconv.Atoi(nStr)
+			if err != nil || n <= 0 {
+				return nil, fmt.Errorf("LIMIT must be a positive integer")
+			}
+			return &ShowHistoryStatement{Limit: n}, nil
+		},
+	},
+	{
+		Descriptions: []clientSideStatementDescription{
+			{
 				Usage:  `Show help`,
 				Syntax: `HELP`,
 			},
