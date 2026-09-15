@@ -449,34 +449,55 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string, fo
 	}
 
 	// EXPLAIN ANALYZE requires the query plan, so PROFILE is forced here
-	// regardless of CLI_QUERY_MODE.
-	iter, roTxn, tok, err := session.txn.runQueryWithStatsAndCapture(ctx, stmt, false, sppb.ExecuteSqlRequest_PROFILE)
-	if err != nil {
-		if session.txn != nil {
-			_ = session.txn.finishQueryCapture(tok, err)
+	// regardless of CLI_QUERY_MODE. PROFILE execution is retried on ABORTED;
+	// PLAN-only EXPLAIN/DESCRIBE is not.
+	var (
+		tok        *captureToken
+		roTxn      *spanner.ReadOnlyTransaction
+		stats      map[string]any
+		plan       *sppb.QueryPlan
+		actualRows int64
+	)
+	for {
+		var err error
+		var iter *spanner.RowIterator
+		iter, roTxn, tok, err = session.txn.runQueryWithStatsAndCapture(ctx, stmt, false, sppb.ExecuteSqlRequest_PROFILE)
+		if err != nil {
+			if session.txn != nil {
+				_ = session.txn.finishQueryCapture(tok, err)
+				if recovered, handled, recErr := session.txn.tryExplicitAbortRetry(ctx, err, false); recovered {
+					continue
+				} else if handled {
+					return nil, recErr
+				}
+			}
+			return nil, applyOwnerQueryFailure(ctx, session, tok, err, true)
 		}
-		return nil, applyOwnerQueryFailure(ctx, session, tok, err, true)
-	}
 
-	// Count the actual data rows while draining the iterator;
-	// RowIterator.RowCount is only populated for DML.
-	var actualRows int64
-	rec := tok.receipt()
-	stats, _, _, plan, err := consumeRowIterObserving(iter, func(*spanner.Row) error {
-		actualRows++
-		return nil
-	}, rec)
-	if err == nil {
-		_, err = rec.Finish(nil)
-	}
-	if capErr := session.txn.completeAdmittedQuery(tok, err); err == nil {
-		err = capErr
-	}
-	if err == nil {
-		err = session.txn.invokeQueryAfterCollectHook()
-	}
-	if err != nil {
-		return nil, applyOwnerQueryFailure(ctx, session, tok, err, true)
+		actualRows = 0
+		rec := tok.receipt()
+		stats, _, _, plan, err = consumeRowIterObserving(iter, func(*spanner.Row) error {
+			actualRows++
+			return nil
+		}, rec)
+		if err == nil {
+			_, err = rec.Finish(nil)
+		}
+		if capErr := session.txn.completeAdmittedQuery(tok, err); err == nil {
+			err = capErr
+		}
+		if err == nil {
+			err = session.txn.invokeQueryAfterCollectHook()
+		}
+		if err != nil {
+			if recovered, handled, recErr := session.txn.tryExplicitAbortRetry(ctx, err, actualRows > 0); recovered {
+				continue
+			} else if handled {
+				return nil, recErr
+			}
+			return nil, applyOwnerQueryFailure(ctx, session, tok, err, true)
+		}
+		break
 	}
 
 	// Cloud Spanner Emulator doesn't set query plan nodes to the result.

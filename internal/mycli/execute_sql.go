@@ -204,6 +204,15 @@ type queryExecution struct {
 	// path). Ownership is never inferred from pointer equality or display format.
 	QueryCacheDest **LastQueryCache
 	Receipt        *operationReceipt
+	// streamProgress records headers or rows already presented on a streaming
+	// sink so a later ABORTED cannot re-execute this operation.
+	streamProgress *deliveredByteCounter
+}
+
+func (qe *queryExecution) noteStreamed() {
+	if qe != nil && qe.streamProgress != nil {
+		qe.streamProgress.notePresented()
+	}
 }
 
 func (qe *queryExecution) outputWriter() io.Writer {
@@ -369,40 +378,59 @@ func executeSQLImplWithQueryRunner(ctx context.Context, session *Session, sql st
 		return nil, err
 	}
 
-	iter, roTxn, tok, err := run(ctx, stmt, false, effectiveQueryMode(sysVars.Query.QueryMode))
-	if err != nil {
+	out, delivered := wrapDeliveredWriter(out)
+
+	var result *Result
+	for {
+		iter, roTxn, tok, err := run(ctx, stmt, false, effectiveQueryMode(sysVars.Query.QueryMode))
+		if err != nil {
+			if session != nil && session.txn != nil {
+				_ = session.txn.finishQueryCapture(tok, err)
+				if recovered, handled, recErr := session.txn.tryExplicitAbortRetry(ctx, err, delivered.delivered()); recovered {
+					continue
+				} else if handled {
+					return nil, recErr
+				}
+			}
+			return nil, err
+		}
+
+		result, err = executeAndCollect(ctx, &queryExecution{
+			Session:        session,
+			Out:            out,
+			Iter:           iter,
+			ReadOnlyTxn:    roTxn,
+			SQL:            sql,
+			SysVars:        sysVars,
+			Render:         render,
+			Metrics:        m,
+			QueryCacheDest: queryCacheDest,
+			Receipt:        tok.receipt(),
+			streamProgress: delivered,
+		})
 		if session != nil && session.txn != nil {
-			_ = session.txn.finishQueryCapture(tok, err)
+			if capErr := session.txn.completeAdmittedQuery(tok, err); err == nil {
+				err = capErr
+			}
+			if err == nil {
+				err = session.txn.invokeQueryAfterCollectHook()
+			}
 		}
-		return nil, err
-	}
+		if err != nil {
+			if session != nil && session.txn != nil {
+				if recovered, handled, recErr := session.txn.tryExplicitAbortRetry(ctx, err, delivered.delivered()); recovered {
+					continue
+				} else if handled {
+					return nil, recErr
+				}
+			}
+			return nil, applyOwnerQueryFailure(ctx, session, tok, err, rollbackActiveTransactionOnAbort)
+		}
 
-	result, err := executeAndCollect(ctx, &queryExecution{
-		Session:        session,
-		Out:            out,
-		Iter:           iter,
-		ReadOnlyTxn:    roTxn,
-		SQL:            sql,
-		SysVars:        sysVars,
-		Render:         render,
-		Metrics:        m,
-		QueryCacheDest: queryCacheDest,
-		Receipt:        tok.receipt(),
-	})
-	if session != nil && session.txn != nil {
-		if capErr := session.txn.completeAdmittedQuery(tok, err); err == nil {
-			err = capErr
+		if result != nil {
+			result.capture = tok
 		}
-		if err == nil {
-			err = session.txn.invokeQueryAfterCollectHook()
-		}
-	}
-	if err != nil {
-		return nil, applyOwnerQueryFailure(ctx, session, tok, err, rollbackActiveTransactionOnAbort)
-	}
-
-	if result != nil {
-		result.capture = tok
+		break
 	}
 
 	if render.ValueFmtMode == format.SQLLiteralValues && render.Export.SQLTableName != "" {

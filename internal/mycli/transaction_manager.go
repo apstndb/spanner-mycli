@@ -803,9 +803,6 @@ func (tm *TransactionManager) BeginPendingTransaction(ctx context.Context, isola
 		if tm.tc != nil {
 			return fmt.Errorf("%s transaction is already running", tm.tc.attrs.mode)
 		}
-		if err := tm.rejectExplicitRetryAbortsLocked(); err != nil {
-			return err
-		}
 		// Resolve after the restore barrier so an expired owner's LOCAL
 		// priority/isolation cannot freeze into the replacement.
 		resolvedIsolationLevel := tm.resolveTransactionIsolationLevel(isolationLevel)
@@ -846,11 +843,12 @@ func (tm *TransactionManager) DetermineTransactionLocked(ctx context.Context) (t
 		return tm.BeginReadOnlyTransactionLocked(ctx, timestampBoundUnspecified, 0, time.Time{}, priority)
 	}
 
-	if err := tm.rejectPendingRetryAbortsActivationLocked(); err != nil {
+	// Start a read-write transaction with the pending transaction's isolation level and priority
+	if err := tm.BeginReadWriteTransactionLocked(ctx, isolationLevel, priority); err != nil {
 		return zeroTime, err
 	}
-	// Start a read-write transaction with the pending transaction's isolation level and priority
-	return zeroTime, tm.BeginReadWriteTransactionLocked(ctx, isolationLevel, priority)
+	tm.ensureReplayLocked()
+	return zeroTime, nil
 }
 
 // DetermineTransaction determines the type of transaction to start based on the pending transaction
@@ -972,18 +970,6 @@ func (tm *TransactionManager) BeginReadWriteTransactionLocked(ctx context.Contex
 // BeginReadWriteTransaction starts read-write transaction.
 func (tm *TransactionManager) BeginReadWriteTransaction(ctx context.Context, isolationLevel sppb.TransactionOptions_IsolationLevel, priority sppb.RequestOptions_Priority) error {
 	return tm.withOwnerInstallAfterRestore(func() error {
-		// Activating an existing pending owner uses that owner's captured
-		// RETRY_ABORTS_INTERNALLY snapshot: captured TRUE is rejected
-		// before the constructor RPC; captured FALSE is allowed even after
-		// a later session SET TRUE. Newly created explicit owners still
-		// follow the live session value.
-		if tm.tc != nil && tm.tc.attrs.mode == transactionModePending {
-			if err := tm.rejectPendingRetryAbortsActivationLocked(); err != nil {
-				return err
-			}
-		} else if err := tm.rejectExplicitRetryAbortsLocked(); err != nil {
-			return err
-		}
 		if err := tm.BeginReadWriteTransactionLocked(ctx, isolationLevel, priority); err != nil {
 			return err
 		}
@@ -1030,14 +1016,30 @@ func (tm *TransactionManager) commitReadWritePhysicalLocked(ctx context.Context)
 }
 
 // CommitReadWriteTransactionLocked commits the current read-write transaction.
-// A Commit RPC attempt invalidates the server transaction, so the owner is
-// retired after that attempt. Recovery/flush admission errors do not retire.
+// A successful Commit or a non-retryable attempted Commit retires the owner.
+// Eligible explicit ABORTED retries reconstruct and replay first. Recovery
+// or flush admission errors do not retire.
 func (tm *TransactionManager) CommitReadWriteTransactionLocked(ctx context.Context) (spanner.CommitResponse, error) {
-	resp, err, attempted := tm.commitReadWritePhysicalLocked(ctx)
-	if attempted && tm.tc != nil {
-		tm.retireTransactionContextLocked()
+	for {
+		resp, err, attempted := tm.commitReadWritePhysicalLocked(ctx)
+		if err == nil {
+			if attempted && tm.tc != nil {
+				tm.retireTransactionContextLocked()
+			}
+			return resp, nil
+		}
+		if recovered, recErr := tm.recoverExplicitAbortLocked(ctx, err, false); recovered {
+			continue
+		} else if recErr != err {
+			err = recErr
+		}
+		if attempted && tm.tc != nil {
+			if !tm.capturingLocked() || tm.tc.replay == nil || !tm.tc.replay.needsRecovery() {
+				tm.retireTransactionContextLocked()
+			}
+		}
+		return resp, err
 	}
-	return resp, err
 }
 
 // CommitReadWriteTransaction commits read-write transaction and returns commit timestamp if successful.
@@ -1698,59 +1700,73 @@ func (tm *TransactionManager) runInNewOrExistRwTxLocked(ctx context.Context,
 		maxAttempts = maxImplicitAbortAttempts
 	}
 
-	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		result, info, err := tm.executeRwTxAttemptLocked(ctx, f, implicitRWTx, owner)
+	for attempt := 1; ; attempt++ {
+		result, info, err := tm.executeRwTxAttemptLocked(ctx, f, implicitRWTx, owner, policy)
 		if err == nil {
 			return result, info, nil
 		}
-		if !shouldRetryImplicitAbort(err, implicitRWTx, policy, owner, attempt, maxAttempts) {
-			if implicitRWTx && owner != nil && tm.tc == owner && isAbortedErr(err) && !isAdmissionError(err) {
-				return nil, info, tm.finalizeImplicitAbortLocked(ctx, info, err)
+		if implicitRWTx {
+			if !shouldRetryImplicitAbort(err, implicitRWTx, policy, owner, attempt, maxAttempts) {
+				if owner != nil && tm.tc == owner && isAbortedErr(err) && !isAdmissionError(err) {
+					return nil, info, tm.finalizeImplicitAbortLocked(ctx, info, err)
+				}
+				return nil, info, err
 			}
-			return nil, info, err
-		}
-		if remaining, unlimited := tm.abortWaitBudget(ctx); !unlimited && remaining <= 0 {
-			return tm.stopImplicitAbortForDeadlineLocked(ctx, owner, info)
-		}
-		if recErr := tm.reconstructImplicitPhysicalLocked(ctx); recErr != nil {
-			return nil, info, recErr
-		}
-		remaining, unlimited := tm.abortWaitBudget(ctx)
-		if !unlimited && remaining <= 0 {
-			return tm.stopImplicitAbortForDeadlineLocked(ctx, owner, info)
-		}
-		delay := clampAbortRetryDelay(abortRetryDelay(err), remaining, unlimited)
-		waitCtx, waitCancel := tm.bindDeadlineLocked(ctx)
-		tm.mu.Unlock()
-		waitErr := tm.waitAbortRetry(waitCtx, delay)
-		waitCancel()
-		tm.mu.Lock()
-		if waitErr != nil {
-			if tm.tc == owner {
-				tm.retireTransactionContextLocked()
+			if remaining, unlimited := tm.abortWaitBudget(ctx); !unlimited && remaining <= 0 {
+				return tm.stopImplicitAbortForDeadlineLocked(ctx, owner, info)
 			}
-			return nil, info, abortDeadlineCause(ctx, owner, tm.now(), waitErr)
-		}
-		if ownerDeadlineExhausted(owner, tm.now()) {
-			return tm.stopImplicitAbortForDeadlineLocked(ctx, owner, info)
-		}
-		if tm.tc != owner || owner.txn == nil {
-			if tm.tc == owner {
-				tm.retireTransactionContextLocked()
+			if recErr := tm.reconstructImplicitPhysicalLocked(ctx); recErr != nil {
+				return nil, info, recErr
 			}
-			return nil, info, errImplicitAbortRetryLostOwner
+			remaining, unlimited := tm.abortWaitBudget(ctx)
+			if !unlimited && remaining <= 0 {
+				return tm.stopImplicitAbortForDeadlineLocked(ctx, owner, info)
+			}
+			delay := clampAbortRetryDelay(abortRetryDelay(err), remaining, unlimited)
+			waitCtx, waitCancel := tm.bindDeadlineLocked(ctx)
+			tm.mu.Unlock()
+			waitErr := tm.waitAbortRetry(waitCtx, delay)
+			waitCancel()
+			tm.mu.Lock()
+			if waitErr != nil {
+				if tm.tc == owner {
+					tm.retireTransactionContextLocked()
+				}
+				return nil, info, abortDeadlineCause(ctx, owner, tm.now(), waitErr)
+			}
+			if ownerDeadlineExhausted(owner, tm.now()) {
+				return tm.stopImplicitAbortForDeadlineLocked(ctx, owner, info)
+			}
+			if tm.tc != owner || owner.txn == nil {
+				if tm.tc == owner {
+					tm.retireTransactionContextLocked()
+				}
+				return nil, info, errImplicitAbortRetryLostOwner
+			}
+			if owner != nil {
+				info.deadline = owner.deadline
+			}
+			continue
 		}
-		if owner != nil {
-			info.deadline = owner.deadline
+		if policy == implicitAbortRetryIfEnabled {
+			if recovered, recErr := tm.recoverExplicitAbortLocked(ctx, err, false); recovered {
+				if owner != nil {
+					info.deadline = owner.deadline
+				}
+				continue
+			} else if recErr != err {
+				err = recErr
+			}
 		}
+		return nil, info, err
 	}
-	return nil, info, tm.finalizeImplicitAbortLocked(ctx, info, fmt.Errorf("transaction was aborted: implicit abort retry exhausted"))
 }
 
 func (tm *TransactionManager) executeRwTxAttemptLocked(ctx context.Context,
 	f func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (affected int64, plan *sppb.QueryPlan, metadata *sppb.ResultSetMetadata, err error),
 	implicitRWTx bool,
 	owner *transactionContext,
+	policy implicitAbortRetryPolicy,
 ) (*DMLResult, rwTxAttemptInfo, error) {
 	var info rwTxAttemptInfo
 	if owner != nil {
@@ -1792,7 +1808,7 @@ func (tm *TransactionManager) executeRwTxAttemptLocked(ctx context.Context,
 		if isAdmissionError(err) {
 			return nil, info, err
 		}
-		if implicitRWTx && isAbortedErr(err) && owner != nil && owner.retryAborts {
+		if isAbortedErr(err) && shouldDeferAbortOwnerFailure(implicitRWTx, policy, owner) {
 			return nil, info, err
 		}
 		err = tm.handleOwnerFailureLocked(ctx, err)
@@ -1820,7 +1836,7 @@ func (tm *TransactionManager) executeRwTxAttemptLocked(ctx context.Context,
 	info.phase = dmlAttemptPhaseCommit
 	resp, err, attempted := tm.commitReadWritePhysicalLocked(ctx)
 	if err != nil {
-		if isAbortedErr(err) && owner != nil && owner.retryAborts {
+		if isAbortedErr(err) && shouldDeferAbortOwnerFailure(implicitRWTx, policy, owner) {
 			return nil, info, err
 		}
 		if attempted && tm.tc != nil {

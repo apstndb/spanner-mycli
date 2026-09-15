@@ -123,7 +123,13 @@ type transactionContext struct {
 	// SET/RESET must not change this field.
 	retryAborts         bool
 	retryAbortsCaptured bool
-	attempt             uint64
+	// abortRetries counts automatic ABORTED reconstructions for this logical
+	// owner, including reconstructions caused by prefix-replay ABORTED.
+	// Successful statements and manual ROLLBACK TO do not reset it. The
+	// original physical attempt is not counted here; 49 reconstructions
+	// plus that original is the 50-attempt lifetime budget.
+	abortRetries int
+	attempt      uint64
 	inFlight            int
 	pending             *captureToken
 	// replacing is true while ROLLBACK TO is replacing the physical RW handle.

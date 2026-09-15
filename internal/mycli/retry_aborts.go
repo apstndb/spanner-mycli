@@ -38,10 +38,6 @@ const (
 )
 
 var (
-	errRetryAbortsExplicitUnsupported = errors.New(
-		"RETRY_ABORTS_INTERNALLY=TRUE is not supported for explicit or pending read-write transactions; this property currently retries only implicit autocommit read-write operations")
-	errRetryAbortsSetLocalUnsupported = errors.New(
-		"SET LOCAL is not supported for RETRY_ABORTS_INTERNALLY; this property currently applies only to implicit autocommit read-write operations. Use ordinary SET to change the session value for later implicit operations. Pending-owner SET LOCAL activation is not implemented yet")
 	errImplicitAbortRetryLostOwner = errors.New("implicit abort retry lost its logical owner")
 )
 
@@ -64,31 +60,6 @@ func snapshotRetryAbortsLocked(tc *transactionContext, vars *systemVariables) {
 		tc.retryAborts = vars.Transaction.RetryAbortsInternally
 	}
 	tc.retryAbortsCaptured = true
-}
-
-func (tm *TransactionManager) rejectExplicitRetryAbortsLocked() error {
-	if tm == nil || tm.sysVars == nil || !tm.sysVars.Transaction.RetryAbortsInternally {
-		return nil
-	}
-	// Pending created while READONLY will resolve to an RO owner.
-	// Do not reject that READONLY path.
-	if tm.sysVars.Transaction.ReadOnly {
-		return nil
-	}
-	return errRetryAbortsExplicitUnsupported
-}
-
-// rejectPendingRetryAbortsActivationLocked rejects RW activation of a pending
-// owner whose captured RETRY_ABORTS_INTERNALLY snapshot is TRUE. Captured
-// FALSE still activates after a later session SET TRUE.
-func (tm *TransactionManager) rejectPendingRetryAbortsActivationLocked() error {
-	if tm == nil || tm.tc == nil || tm.tc.attrs.mode != transactionModePending {
-		return nil
-	}
-	if tm.tc.retryAborts {
-		return errRetryAbortsExplicitUnsupported
-	}
-	return nil
 }
 
 func abortRetryDelay(err error) time.Duration {
@@ -188,6 +159,21 @@ func (tm *TransactionManager) waitAbortRetry(ctx context.Context, d time.Duratio
 	case <-timer.C:
 		return nil
 	}
+}
+
+// shouldDeferAbortOwnerFailure reports whether executeRwTxAttemptLocked should
+// return an ABORTED error without rolling back the logical owner so the outer
+// loop can retry or finalize. Implicit owners always defer when retry is
+// captured so finalizeImplicitAbortLocked remains the single failure owner.
+// Explicit PLAN-only calls pass implicitAbortRetryDisabled and must not defer.
+func shouldDeferAbortOwnerFailure(implicit bool, policy implicitAbortRetryPolicy, owner *transactionContext) bool {
+	if owner == nil || !owner.retryAborts {
+		return false
+	}
+	if implicit {
+		return true
+	}
+	return policy == implicitAbortRetryIfEnabled
 }
 
 func shouldRetryImplicitAbort(err error, implicit bool, policy implicitAbortRetryPolicy, owner *transactionContext, attempt, maxAttempts int) bool {
