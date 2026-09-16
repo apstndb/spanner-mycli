@@ -95,7 +95,7 @@ func TestParseMutation(t *testing.T) {
 		t.Run(tt.desc, func(t *testing.T) {
 			got, err := parseMutation(tt.table, tt.op, tt.input)
 			if err != nil {
-				t.Errorf("should suceed, but fail, err: %v", err)
+				t.Errorf("should succeed, but fail, err: %v", err)
 			}
 			if diff := cmp.Diff(tt.want, got, cmp.AllowUnexported(spanner.Mutation{}), protocmp.Transform()); diff != "" {
 				t.Errorf("parseMutation() mismatch (-want +got):\n%s", diff)
