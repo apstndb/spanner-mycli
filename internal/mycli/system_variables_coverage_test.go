@@ -1,6 +1,7 @@
 package mycli
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -159,7 +160,7 @@ func TestResolveProtoDescriptorImport(t *testing.T) {
 
 	t.Run("non-uri path", func(t *testing.T) {
 		result, err := resolveProtoDescriptorImport(t.Context(), "local/file.proto")
-		if err != protoregistry.NotFound {
+		if !errors.Is(err, protoregistry.NotFound) {
 			t.Errorf("Expected protoregistry.NotFound, got %v", err)
 		}
 		if result.Source != nil {
@@ -192,7 +193,7 @@ func TestResolveProtoDescriptorImport(t *testing.T) {
 			t.Error("Expected error for HTTPS URL in test environment")
 		}
 		// But the function should have attempted to fetch it (not returned NotFound)
-		if err == protoregistry.NotFound {
+		if errors.Is(err, protoregistry.NotFound) {
 			t.Error("Should not return NotFound for HTTPS URL")
 		}
 	})
@@ -213,7 +214,7 @@ func TestResolveProtoDescriptorImport(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "unsupported authority") {
 			t.Fatalf("error = %v, want unsupported authority", err)
 		}
-		if err == protoregistry.NotFound {
+		if errors.Is(err, protoregistry.NotFound) {
 			t.Fatal("remote file:// should not be NotFound")
 		}
 	})
