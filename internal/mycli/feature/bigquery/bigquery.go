@@ -27,6 +27,7 @@ package bigquery
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"regexp"
@@ -253,7 +254,7 @@ func (s *BigQueryStatement) Execute(ctx context.Context, session *mycli.Session,
 				headers = append(headers, field.Name)
 			}
 		}
-		if err == iterator.Done {
+		if errors.Is(err, iterator.Done) {
 			break
 		}
 		if err != nil {
