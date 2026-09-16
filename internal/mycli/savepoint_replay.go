@@ -57,7 +57,7 @@ func validateSavepointName(name string) error {
 
 func (tm *TransactionManager) rejectIfRecoveringLocked() error {
 	if tm.capturingLocked() && tm.tc.replay.needsRecovery() {
-		return fmt.Errorf("%w: %v", errSavepointRecovery, tm.tc.replay.recoveryRequired)
+		return fmt.Errorf("%w: %w", errSavepointRecovery, tm.tc.replay.recoveryRequired)
 	}
 	return nil
 }
