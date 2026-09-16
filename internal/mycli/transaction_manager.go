@@ -354,7 +354,7 @@ func (tm *TransactionManager) withReadOnlyTransaction(fn func(*spanner.ReadOnlyT
 func (tm *TransactionManager) withReadOnlyTransactionOrStart(ctx context.Context, fn func(*spanner.ReadOnlyTransaction) error) error {
 	// First try to use existing RO transaction
 	err := tm.withReadOnlyTransaction(fn)
-	if err != ErrNotInReadOnlyTransaction {
+	if !errors.Is(err, ErrNotInReadOnlyTransaction) {
 		// Either succeeded with existing transaction or different error
 		return err
 	}
