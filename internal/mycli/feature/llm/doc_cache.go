@@ -388,9 +388,9 @@ func extractSnippet(content, term string, maxLen int) string {
 
 	lower := strings.ToLower(content)
 	term = strings.ToLower(term)
-	idx := strings.Index(lower, term)
+	before, _, ok := strings.Cut(lower, term)
 
-	if idx < 0 {
+	if !ok {
 		if runeLen > maxLen {
 			return string(runes[:maxLen]) + "..."
 		}
@@ -401,7 +401,7 @@ func extractSnippet(content, term string, maxLen int) string {
 	// strings.Index returns a byte offset in the lowered string. Go's
 	// unicode.ToLower is 1:1 in runes but not in UTF-8 bytes (Ⱥ expands,
 	// K contracts), so convert that offset using the lowered prefix.
-	runeIdx := utf8.RuneCountInString(lower[:idx])
+	runeIdx := utf8.RuneCountInString(before)
 	start := max(runeIdx-maxLen/2, 0)
 	end := min(start+maxLen, runeLen)
 

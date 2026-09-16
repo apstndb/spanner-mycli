@@ -809,7 +809,7 @@ func TestStyledCellWrappedStyled(t *testing.T) {
 	t.Logf("Table output:\n%s", output)
 
 	// Each data line with styled text should have both open and close SGR
-	for _, line := range strings.Split(output, "\n") {
+	for line := range strings.SplitSeq(output, "\n") {
 		if !strings.HasPrefix(line, "|") {
 			continue
 		}
@@ -844,7 +844,7 @@ func TestNullStyledWrappedStyled(t *testing.T) {
 	t.Logf("Table output:\n%s", output)
 
 	// Each visible line containing NULL/value text should have ANSI dim codes
-	for _, line := range strings.Split(output, "\n") {
+	for line := range strings.SplitSeq(output, "\n") {
 		if !strings.HasPrefix(line, "|") {
 			continue
 		}
