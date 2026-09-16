@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -791,12 +792,7 @@ func e2eHeaderPresent(md metadata.MD) bool {
 	if md == nil {
 		return false
 	}
-	for _, v := range md.Get("x-goog-spanner-end-to-end-tracing") {
-		if v == "true" {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(md.Get("x-goog-spanner-end-to-end-tracing"), "true")
 }
 
 func decodeTraceBody(body []byte, encoding string) ([]byte, error) {

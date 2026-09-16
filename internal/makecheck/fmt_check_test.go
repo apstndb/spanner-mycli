@@ -236,7 +236,7 @@ func readCount(t *testing.T, countFile string) int {
 		t.Fatal(err)
 	}
 	n := 0
-	for _, line := range strings.Split(string(b), "\n") {
+	for line := range strings.SplitSeq(string(b), "\n") {
 		if strings.TrimSpace(line) != "" {
 			n++
 		}

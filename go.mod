@@ -25,7 +25,7 @@ require (
 	github.com/apstndb/spannerplan v0.3.0
 	github.com/apstndb/spanstats v0.1.0
 	github.com/apstndb/spantype v0.3.13
-	github.com/apstndb/spanvalue v0.8.4
+	github.com/apstndb/spanvalue v0.9.0
 	github.com/bufbuild/protocompile v0.14.1
 	github.com/cloudspannerecosystem/memefish v0.8.1
 	github.com/creack/pty v1.1.24
@@ -38,11 +38,11 @@ require (
 	github.com/googleapis/go-spanner-cassandra v0.7.0
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.4
 	github.com/hymkor/go-multiline-ny v0.23.1
-	github.com/junegunn/fzf v0.74.3
+	github.com/junegunn/fzf v0.74.4
 	github.com/k0kubun/pp/v3 v3.5.2
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
 	github.com/klauspost/compress v1.20.0
-	github.com/modelcontextprotocol/go-sdk v1.7.0
+	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/nyaosorg/go-readline-ny v1.16.1
 	github.com/olekukonko/tablewriter v1.1.4
 	github.com/pelletier/go-toml v1.9.5
@@ -52,7 +52,7 @@ require (
 	github.com/stretchr/testify v1.12.1
 	github.com/testcontainers/testcontainers-go v0.44.0
 	github.com/vbauerster/mpb/v8 v8.16.1
-	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.44.0
+	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.46.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.46.0
 	go.opentelemetry.io/proto/otlp v1.11.0
 	go.uber.org/zap v1.28.0

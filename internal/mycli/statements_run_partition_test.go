@@ -41,7 +41,6 @@ import (
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
@@ -87,27 +86,10 @@ func startRunPartitionWire(t *testing.T, server *runPartitionWireServer) []optio
 	if server.rowsPer == 0 {
 		server.rowsPer = 1
 	}
-	listener := bufconn.Listen(1 << 20)
-	grpcServer := grpc.NewServer()
-	sppb.RegisterSpannerServer(grpcServer, server)
-	adminpb.RegisterDatabaseAdminServer(grpcServer, &directedReadAdminServer{})
-	go func() {
-		if err := grpcServer.Serve(listener); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
-			t.Errorf("serve: %v", err)
-		}
-	}()
-	t.Cleanup(func() {
-		grpcServer.Stop()
-		_ = listener.Close()
+	return bufconnClientOptions(t, func(s *grpc.Server) {
+		sppb.RegisterSpannerServer(s, server)
+		registerDirectedReadAdmin(s)
 	})
-	return []option.ClientOption{
-		option.WithoutAuthentication(),
-		option.WithEndpoint("bufnet"),
-		option.WithGRPCDialOption(grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
-			return listener.Dial()
-		})),
-		option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())),
-	}
 }
 
 func newRunPartitionVars(t *testing.T) *systemVariables {

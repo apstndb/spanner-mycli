@@ -304,7 +304,7 @@ func TestStreamManager(t *testing.T) {
 		var wg sync.WaitGroup
 		errors := make([]error, 10)
 
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			wg.Go(func() {
 				filePath := filepath.Join(tmpDir, fmt.Sprintf("concurrent-%d.log", i))
 				errors[i] = sm.EnableTee(filePath, false)
@@ -352,10 +352,10 @@ func TestStreamManager(t *testing.T) {
 		iterations := 100
 
 		// Writers
-		for i := 0; i < 5; i++ {
+		for i := range 5 {
 			wg.Go(func() {
 				writer := sm.GetWriter()
-				for j := 0; j < iterations; j++ {
+				for j := range iterations {
 					data := fmt.Sprintf("Writer %d iteration %d\n", i, j)
 					_, _ = writer.Write([]byte(data))
 				}
@@ -363,9 +363,9 @@ func TestStreamManager(t *testing.T) {
 		}
 
 		// Status checkers
-		for i := 0; i < 3; i++ {
+		for range 3 {
 			wg.Go(func() {
-				for j := 0; j < iterations; j++ {
+				for range iterations {
 					_ = sm.IsEnabled()
 				}
 			})
@@ -487,7 +487,7 @@ func TestSafeTeeWriter(t *testing.T) {
 
 		// Concurrent writes
 		var wg sync.WaitGroup
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			wg.Go(func() {
 				data := fmt.Sprintf("Test data from goroutine %d\n", i)
 				_, _ = writer.Write([]byte(data))

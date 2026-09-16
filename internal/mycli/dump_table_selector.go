@@ -158,7 +158,7 @@ func buildDumpTableSelectorQuery(sel *dumpTableSelector) (spanner.Statement, err
 	if sel == nil || (len(sel.Like) == 0 && len(sel.Except) == 0) {
 		return spanner.Statement{}, errDumpTablesMissingSelection
 	}
-	params := make(map[string]interface{}, len(sel.Like)+len(sel.Except))
+	params := make(map[string]any, len(sel.Like)+len(sel.Except))
 	likePred := "TRUE"
 	if len(sel.Like) > 0 {
 		parts := make([]string, 0, len(sel.Like))

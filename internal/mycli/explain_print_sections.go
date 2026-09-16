@@ -235,8 +235,8 @@ func scalarLinkDescription(link plantree.ScalarChildLink) string {
 func normalizeKeyOrderSuffix(s string) string {
 	s = strings.TrimSpace(s)
 	for _, suffix := range []string{"(ASC)", "(DESC)"} {
-		if strings.HasSuffix(s, " "+suffix) {
-			return strings.TrimSuffix(s, " "+suffix) + " " + strings.Trim(suffix, "()")
+		if before, ok := strings.CutSuffix(s, " "+suffix); ok {
+			return before + " " + strings.Trim(suffix, "()")
 		}
 	}
 	return s

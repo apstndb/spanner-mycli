@@ -49,6 +49,50 @@ func assertNoError(t *testing.T, err error) {
 	}
 }
 
+type durationVarCase struct {
+	desc     string
+	value    string
+	want     *time.Duration
+	errorMsg string
+}
+
+// runDurationVarCases sets a duration system variable and asserts both the
+// backing field and the Get() string form. Each caller keeps its own table.
+func runDurationVarCases(t *testing.T, name, fieldLabel string, field func(*systemVariables) *time.Duration, cases []durationVarCase) {
+	t.Helper()
+	for _, test := range cases {
+		t.Run(test.desc, func(t *testing.T) {
+			t.Parallel()
+			sysVars := newSystemVariablesWithDefaultsForTest()
+			err := sysVars.SetFromSimple(name, test.value)
+			assertError(t, err, test.errorMsg)
+			if err != nil {
+				return
+			}
+			got := field(sysVars)
+			if test.want == nil {
+				if got != nil {
+					t.Errorf("expected NULL, got %v", *got)
+				}
+				result, err := sysVars.Get(name)
+				assertNoError(t, err)
+				if diff := cmp.Diff(singletonMap(name, "NULL"), result); diff != "" {
+					t.Errorf("%s getter mismatch (-want +got):\n%s", name, diff)
+				}
+				return
+			}
+			if got == nil || *got != *test.want {
+				t.Errorf("expected %s %v, got %v", fieldLabel, *test.want, got)
+			}
+			result, err := sysVars.Get(name)
+			assertNoError(t, err)
+			if diff := cmp.Diff(singletonMap(name, test.want.String()), result); diff != "" {
+				t.Errorf("%s getter mismatch (-want +got):\n%s", name, diff)
+			}
+		})
+	}
+}
+
 // testBooleanVariable tests boolean variables with both TRUE and FALSE values
 func testBooleanVariable(t *testing.T, setFunc func(*systemVariables, string, string) error, name string) {
 	t.Helper()
@@ -468,145 +512,46 @@ func TestSystemVariables_StringTypes(t *testing.T) {
 
 	t.Run("TransactionTimeout", func(t *testing.T) {
 		t.Parallel()
-		tests := []struct {
-			desc     string
-			value    string
-			want     *time.Duration
-			errorMsg string
-		}{
-			{desc: "valid_seconds", value: "30s", want: durationPtr(30 * time.Second)},
-			{desc: "valid_zero", value: "0s", want: durationPtr(0)},
-			{desc: "null", value: "NULL", want: nil},
-			{desc: "invalid_format", value: "invalid", errorMsg: "invalid duration"},
-			{desc: "negative_value", value: "-30s", errorMsg: "duration -30s is less than minimum 0s"},
-		}
-		for _, test := range tests {
-			t.Run(test.desc, func(t *testing.T) {
-				t.Parallel()
-				sysVars := newSystemVariablesWithDefaultsForTest()
-				err := sysVars.SetFromSimple("TRANSACTION_TIMEOUT", test.value)
-				assertError(t, err, test.errorMsg)
-				if err != nil {
-					return
-				}
-				if test.want == nil {
-					if sysVars.Transaction.TransactionTimeout != nil {
-						t.Errorf("expected NULL, got %v", *sysVars.Transaction.TransactionTimeout)
-					}
-					result, err := sysVars.Get("TRANSACTION_TIMEOUT")
-					assertNoError(t, err)
-					if diff := cmp.Diff(singletonMap("TRANSACTION_TIMEOUT", "NULL"), result); diff != "" {
-						t.Errorf("TRANSACTION_TIMEOUT getter mismatch (-want +got):\n%s", diff)
-					}
-					return
-				}
-				if sysVars.Transaction.TransactionTimeout == nil || *sysVars.Transaction.TransactionTimeout != *test.want {
-					t.Errorf("expected TransactionTimeout %v, got %v", *test.want, sysVars.Transaction.TransactionTimeout)
-				}
-				result, err := sysVars.Get("TRANSACTION_TIMEOUT")
-				assertNoError(t, err)
-				if diff := cmp.Diff(singletonMap("TRANSACTION_TIMEOUT", test.want.String()), result); diff != "" {
-					t.Errorf("TRANSACTION_TIMEOUT getter mismatch (-want +got):\n%s", diff)
-				}
+		runDurationVarCases(t, "TRANSACTION_TIMEOUT", "TransactionTimeout",
+			func(sv *systemVariables) *time.Duration { return sv.Transaction.TransactionTimeout },
+			[]durationVarCase{
+				{desc: "valid_seconds", value: "30s", want: durationPtr(30 * time.Second)},
+				{desc: "valid_zero", value: "0s", want: durationPtr(0)},
+				{desc: "null", value: "NULL", want: nil},
+				{desc: "invalid_format", value: "invalid", errorMsg: "invalid duration"},
+				{desc: "negative_value", value: "-30s", errorMsg: "duration -30s is less than minimum 0s"},
 			})
-		}
 	})
 
 	t.Run("IdleTransactionTimeout", func(t *testing.T) {
 		t.Parallel()
-		tests := []struct {
-			desc     string
-			value    string
-			want     *time.Duration
-			errorMsg string
-		}{
-			{desc: "valid_seconds", value: "60s", want: durationPtr(60 * time.Second)},
-			{desc: "valid_minutes", value: "5m", want: durationPtr(5 * time.Minute)},
-			{desc: "valid_zero", value: "0s", want: durationPtr(0)},
-			{desc: "null", value: "NULL", want: nil},
-			{desc: "invalid_format", value: "invalid", errorMsg: "invalid duration"},
-			{desc: "negative_value", value: "-30s", errorMsg: "duration -30s is less than minimum 0s"},
-			{desc: "overflow", value: "2562048h", errorMsg: "invalid duration"},
-		}
-		for _, test := range tests {
-			t.Run(test.desc, func(t *testing.T) {
-				t.Parallel()
-				sysVars := newSystemVariablesWithDefaultsForTest()
-				err := sysVars.SetFromSimple("CLI_IDLE_TRANSACTION_TIMEOUT", test.value)
-				assertError(t, err, test.errorMsg)
-				if err != nil {
-					return
-				}
-				if test.want == nil {
-					if sysVars.Transaction.IdleTransactionTimeout != nil {
-						t.Errorf("expected NULL, got %v", *sysVars.Transaction.IdleTransactionTimeout)
-					}
-					result, err := sysVars.Get("CLI_IDLE_TRANSACTION_TIMEOUT")
-					assertNoError(t, err)
-					if diff := cmp.Diff(singletonMap("CLI_IDLE_TRANSACTION_TIMEOUT", "NULL"), result); diff != "" {
-						t.Errorf("CLI_IDLE_TRANSACTION_TIMEOUT getter mismatch (-want +got):\n%s", diff)
-					}
-					return
-				}
-				if sysVars.Transaction.IdleTransactionTimeout == nil || *sysVars.Transaction.IdleTransactionTimeout != *test.want {
-					t.Errorf("expected IdleTransactionTimeout %v, got %v", *test.want, sysVars.Transaction.IdleTransactionTimeout)
-				}
-				result, err := sysVars.Get("CLI_IDLE_TRANSACTION_TIMEOUT")
-				assertNoError(t, err)
-				if diff := cmp.Diff(singletonMap("CLI_IDLE_TRANSACTION_TIMEOUT", test.want.String()), result); diff != "" {
-					t.Errorf("CLI_IDLE_TRANSACTION_TIMEOUT getter mismatch (-want +got):\n%s", diff)
-				}
+		runDurationVarCases(t, "CLI_IDLE_TRANSACTION_TIMEOUT", "IdleTransactionTimeout",
+			func(sv *systemVariables) *time.Duration { return sv.Transaction.IdleTransactionTimeout },
+			[]durationVarCase{
+				{desc: "valid_seconds", value: "60s", want: durationPtr(60 * time.Second)},
+				{desc: "valid_minutes", value: "5m", want: durationPtr(5 * time.Minute)},
+				{desc: "valid_zero", value: "0s", want: durationPtr(0)},
+				{desc: "null", value: "NULL", want: nil},
+				{desc: "invalid_format", value: "invalid", errorMsg: "invalid duration"},
+				{desc: "negative_value", value: "-30s", errorMsg: "duration -30s is less than minimum 0s"},
+				{desc: "overflow", value: "2562048h", errorMsg: "invalid duration"},
 			})
-		}
 	})
 
 	t.Run("StatementTimeout", func(t *testing.T) {
 		t.Parallel()
-		tests := []struct {
-			desc     string
-			value    string
-			want     time.Duration
-			errorMsg string
-		}{
-			{desc: "valid_seconds", value: "30s", want: 30 * time.Second},
-			{desc: "valid_minutes", value: "5m", want: 5 * time.Minute},
-			{desc: "valid_hours", value: "1h", want: 1 * time.Hour},
-			{desc: "valid_mixed", value: "1h30m", want: 90 * time.Minute},
-			{desc: "valid_zero", value: "0s", want: 0},
-			{desc: "invalid_format", value: "invalid", errorMsg: "invalid duration"},
-			{desc: "negative_value", value: "-30s", errorMsg: "duration -30s is less than minimum 0s"},
-			{desc: "empty_string", value: "", errorMsg: "invalid duration"},
-		}
-
-		for _, test := range tests {
-			t.Run(test.desc, func(t *testing.T) {
-				t.Parallel()
-				sysVars := newSystemVariablesWithDefaultsForTest()
-				err := sysVars.SetFromSimple("STATEMENT_TIMEOUT", test.value)
-
-				assertError(t, err, test.errorMsg)
-				if err != nil {
-					return
-				}
-
-				if sysVars.Query.StatementTimeout == nil || *sysVars.Query.StatementTimeout != test.want {
-					var got time.Duration
-					if sysVars.Query.StatementTimeout != nil {
-						got = *sysVars.Query.StatementTimeout
-					}
-					t.Errorf("expected StatementTimeout %v, got %v", test.want, got)
-				}
-
-				// Test getter
-				result, err := sysVars.Get("STATEMENT_TIMEOUT")
-				assertNoError(t, err)
-
-				expected := singletonMap("STATEMENT_TIMEOUT", test.want.String())
-				if diff := cmp.Diff(expected, result); diff != "" {
-					t.Errorf("STATEMENT_TIMEOUT getter mismatch (-want +got):\n%s", diff)
-				}
+		runDurationVarCases(t, "STATEMENT_TIMEOUT", "StatementTimeout",
+			func(sv *systemVariables) *time.Duration { return sv.Query.StatementTimeout },
+			[]durationVarCase{
+				{desc: "valid_seconds", value: "30s", want: durationPtr(30 * time.Second)},
+				{desc: "valid_minutes", value: "5m", want: durationPtr(5 * time.Minute)},
+				{desc: "valid_hours", value: "1h", want: durationPtr(1 * time.Hour)},
+				{desc: "valid_mixed", value: "1h30m", want: durationPtr(90 * time.Minute)},
+				{desc: "valid_zero", value: "0s", want: durationPtr(0)},
+				{desc: "invalid_format", value: "invalid", errorMsg: "invalid duration"},
+				{desc: "negative_value", value: "-30s", errorMsg: "duration -30s is less than minimum 0s"},
+				{desc: "empty_string", value: "", errorMsg: "invalid duration"},
 			})
-		}
 	})
 }
 

@@ -267,8 +267,10 @@ func TestTransactionTimeoutCancelsRPCWhileMutexHeld(t *testing.T) {
 	t.Parallel()
 	h := newHeartbeatHarness(t)
 	ctx := t.Context()
-	session := sessionForTM(t, h.tm)
-	mustExec(t, ctx, session, "SET TRANSACTION_TIMEOUT = '30ms'")
+	// Constructor BeginTransaction must not consume the 30ms budget. SET
+	// TRANSACTION_TIMEOUT before Begin arms at the constructor RPC, which
+	// failed once under -race on 2026-09-16 during setup. SET LOCAL is frozen
+	// after first use, so capture the duration unarmed after construction.
 	if err := h.tm.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
 		t.Fatal(err)
 	}
@@ -283,6 +285,7 @@ func TestTransactionTimeoutCancelsRPCWhileMutexHeld(t *testing.T) {
 	inFlight := make(chan struct{})
 	h.server.setBlockSQL(block)
 	h.server.setSQLBlocked(func() { close(inFlight) })
+	captureUnarmedTransactionTimeout(t, h.tm, 30*time.Millisecond)
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -1223,6 +1226,25 @@ func ownerExpirePending(tm *TransactionManager) (pending, live bool) {
 		return false, false
 	}
 	return tm.tc.expirePending, true
+}
+
+// captureUnarmedTransactionTimeout installs TRANSACTION_TIMEOUT on the live
+// owner without starting the deadline. RunQuery's armAndBindDeadlineLocked then
+// starts the budget at the blocked ExecuteSql, matching
+// TestTransactionTimeoutConstructorCancelWhileMutexHeld (arm at the RPC under
+// test, then wait for in-flight). Do not widen the duration or sleep.
+func captureUnarmedTransactionTimeout(t *testing.T, tm *TransactionManager, d time.Duration) {
+	t.Helper()
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+	if tm.tc == nil {
+		t.Fatal("expected a live logical owner")
+	}
+	if !tm.tc.deadline.IsZero() {
+		t.Fatal("setup started the transaction budget before the blocked query")
+	}
+	tm.tc.timeout = d
+	tm.tc.timeoutCaptured = true
 }
 
 func expireOwnerAfterEntryRestore(tm *TransactionManager, owner *transactionContext) {

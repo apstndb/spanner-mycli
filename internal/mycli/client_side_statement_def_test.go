@@ -37,6 +37,7 @@ package mycli_test
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -340,8 +341,7 @@ func synthesizePrefixInput(t *testing.T, re *regexp.Regexp) string {
 
 	// Fill earlier capture groups with a dummy argument; empty the last one.
 	groups := captureGroupRe.FindAllStringIndex(s, -1)
-	for idx := len(groups) - 1; idx >= 0; idx-- {
-		span := groups[idx]
+	for idx, span := range slices.Backward(groups) {
 		fill := "ctx1"
 		if idx == len(groups)-1 {
 			fill = ""

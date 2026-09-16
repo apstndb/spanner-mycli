@@ -95,7 +95,7 @@ func TestExecuteStatement_pagerCoversStreamedRows(t *testing.T) {
 	if !strings.Contains(out, "CLI_FORMAT") {
 		t.Fatalf("streamed CSV rows missing from output:\n%s", out)
 	}
-	for _, line := range strings.Split(strings.TrimSuffix(out, "\n"), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSuffix(out, "\n"), "\n") {
 		if !strings.HasPrefix(line, "paged:") {
 			t.Errorf("line bypassed the pager: %q", line)
 		}

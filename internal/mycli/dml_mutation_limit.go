@@ -110,7 +110,7 @@ func cloneDMLStatement(stmt spanner.Statement) spanner.Statement {
 	if len(stmt.Params) == 0 {
 		return out
 	}
-	out.Params = make(map[string]interface{}, len(stmt.Params))
+	out.Params = make(map[string]any, len(stmt.Params))
 	for name, v := range stmt.Params {
 		if gcv, ok := v.(spanner.GenericColumnValue); ok {
 			out.Params[name] = cloneGenericColumnValue(gcv)
