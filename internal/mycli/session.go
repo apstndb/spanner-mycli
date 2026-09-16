@@ -683,7 +683,7 @@ func (s *Session) InstanceExists(ctx context.Context) (bool, error) {
 	}
 
 	// Check if it's an iterator.Done error (no databases but instance exists)
-	if listErr == iterator.Done {
+	if errors.Is(listErr, iterator.Done) {
 		return true, nil
 	}
 
