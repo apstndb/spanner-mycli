@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -121,11 +122,16 @@ func (s *Session) usesPartitionedDMLTimeout(stmt Statement) bool {
 
 // Session represents a database session with transaction management.
 type Session struct {
-	mode            SessionMode
-	client          *spanner.Client // can be nil in Detached mode
-	adminClient     *adminapi.DatabaseAdminClient
-	clientConfig    spanner.ClientConfig
-	clientOpts      []option.ClientOption
+	mode         SessionMode
+	client       *spanner.Client // can be nil in Detached mode
+	adminClient  *adminapi.DatabaseAdminClient
+	clientConfig spanner.ClientConfig
+	clientOpts   []option.ClientOption
+	// baseClientOpts is the immutable option slice passed into session
+	// construction before insecure, gRPC logging, and defaultClientOpts are
+	// appended. USE/DETACH must compose from this copy so those extras are not
+	// re-appended onto the already-effective clientOpts.
+	baseClientOpts  []option.ClientOption
 	txn             *TransactionManager // transaction lifecycle + query execution
 	systemVariables *systemVariables
 	// connection is the construction identity (project, instance, database,
@@ -243,11 +249,17 @@ func (h *SessionHandler) createCandidateSession(ctx context.Context, identity Co
 		return h.constructCandidate(ctx, identity)
 	}
 
-	var opts []option.ClientOption
+	return createSessionWithIdentity(ctx, h.systemVariables, identity, h.candidateClientOpts()...)
+}
+
+// candidateClientOpts returns the immutable pre-composition client options for
+// a USE/DETACH replacement session. Composing from the effective clientOpts
+// would re-append insecure, logging, and default options on every switch.
+func (h *SessionHandler) candidateClientOpts() []option.ClientOption {
 	if current := h.Session; current != nil {
-		opts = current.clientOpts
+		return slices.Clone(current.baseClientOpts)
 	}
-	return createSessionWithIdentity(ctx, h.systemVariables, identity, opts...)
+	return nil
 }
 
 // validateSessionSwitch rejects USE/DETACH while a transaction or batch is
@@ -408,13 +420,14 @@ func clientConfigForIdentity(sysVars *systemVariables, identity ConnectionVars) 
 }
 
 func appendSessionClientOptions(sysVars *systemVariables, opts []option.ClientOption) []option.ClientOption {
+	out := slices.Clone(opts)
 	if sysVars.Config.Insecure && len(sysVars.Config.EmbeddedClientOptions) == 0 {
-		opts = append(opts, option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())))
+		out = append(out, option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())))
 	}
 	if sysVars.Config.LogGrpc {
-		opts = append(opts, logGrpcClientOptions()...)
+		out = append(out, logGrpcClientOptions()...)
 	}
-	return append(opts, defaultClientOpts...)
+	return append(out, defaultClientOpts...)
 }
 
 func newConstructedSession(
@@ -439,6 +452,11 @@ func newConstructedSession(
 	return s
 }
 
+func finishConstructedSession(s *Session, baseOpts []option.ClientOption) *Session {
+	s.baseClientOpts = slices.Clone(baseOpts)
+	return s
+}
+
 func newSessionWithFactories(
 	ctx context.Context,
 	sysVars *systemVariables,
@@ -449,7 +467,8 @@ func newSessionWithFactories(
 	opts ...option.ClientOption,
 ) (*Session, error) {
 	clientConfig := clientConfigForIdentity(sysVars, identity)
-	opts = appendSessionClientOptions(sysVars, opts)
+	baseOpts := slices.Clone(opts)
+	opts = appendSessionClientOptions(sysVars, baseOpts)
 	client, err := clientFactory(ctx, identity.DatabasePath(), clientConfig, opts...)
 	if err != nil {
 		return nil, err
@@ -461,7 +480,7 @@ func newSessionWithFactories(
 		return nil, err
 	}
 
-	return newConstructedSession(DatabaseConnected, client, adminClient, clientConfig, opts, sysVars, identity), nil
+	return finishConstructedSession(newConstructedSession(DatabaseConnected, client, adminClient, clientConfig, opts, sysVars, identity), baseOpts), nil
 }
 
 func NewAdminSession(ctx context.Context, sysVars *systemVariables, opts ...option.ClientOption) (*Session, error) {
@@ -500,13 +519,14 @@ func newAdminSessionWithFactories(
 	opts ...option.ClientOption,
 ) (*Session, error) {
 	clientConfig := clientConfigForIdentity(sysVars, identity)
-	opts = appendSessionClientOptions(sysVars, opts)
+	baseOpts := slices.Clone(opts)
+	opts = appendSessionClientOptions(sysVars, baseOpts)
 	adminClient, err := adminClientFactory(ctx, opts...)
 	if err != nil {
 		return nil, err
 	}
 
-	return newConstructedSession(Detached, nil, adminClient, clientConfig, opts, sysVars, identity), nil
+	return finishConstructedSession(newConstructedSession(Detached, nil, adminClient, clientConfig, opts, sysVars, identity), baseOpts), nil
 }
 
 func (s *Session) Mode() SessionMode {
