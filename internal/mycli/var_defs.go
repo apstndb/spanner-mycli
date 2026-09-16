@@ -966,21 +966,10 @@ var varDefs = []varDef{
 		desc:  "Go template for analyzing column data.",
 		scope: scopeSession,
 		bind: func(sv *systemVariables) Variable {
-			return &TemplateVar{
-				stringPtr: &sv.Display.AnalyzeColumns,
-				parsedPtr: &sv.Display.ParsedAnalyzeColumns,
-				parseFunc: func(value string) error {
-					parsed, err := parseAnalyzeColumns(value)
-					if err != nil {
-						return err
-					}
-					sv.Display.ParsedAnalyzeColumns = parsed
-					return nil
-				},
-				prepareFunc: func(value string) error {
-					_, err := parseAnalyzeColumns(value)
-					return err
-				},
+			return &TemplateVar[[]columnRenderDef]{
+				raw:    &sv.Display.AnalyzeColumns,
+				parsed: &sv.Display.ParsedAnalyzeColumns,
+				parse:  parseAnalyzeColumns,
 			}
 		},
 	},
@@ -989,32 +978,10 @@ var varDefs = []varDef{
 		desc:  "<name>:<template>, ...",
 		scope: scopeSession,
 		bind: func(sv *systemVariables) Variable {
-			return &TemplateVar{
-				stringPtr: &sv.Display.InlineStats,
-				parsedPtr: &sv.Display.ParsedInlineStats,
-				parseFunc: func(value string) error {
-					// Empty means "no inline stats". parseInlineStats would reject
-					// "" (it requires "<name>:<template>"), which would make the
-					// default value fail to Set back and break the SET LOCAL
-					// Get->Set round-trip; treat it as clearing instead.
-					if value == "" {
-						sv.Display.ParsedInlineStats = nil
-						return nil
-					}
-					parsed, err := parseInlineStats(value)
-					if err != nil {
-						return err
-					}
-					sv.Display.ParsedInlineStats = parsed
-					return nil
-				},
-				prepareFunc: func(value string) error {
-					if value == "" {
-						return nil
-					}
-					_, err := parseInlineStats(value)
-					return err
-				},
+			return &TemplateVar[[]inlineStatsDef]{
+				raw:    &sv.Display.InlineStats,
+				parsed: &sv.Display.ParsedInlineStats,
+				parse:  parseInlineStats,
 			}
 		},
 	},
