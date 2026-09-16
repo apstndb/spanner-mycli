@@ -16,8 +16,6 @@ package mycli
 
 import (
 	"context"
-	"errors"
-	"net"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -27,12 +25,9 @@ import (
 	"cloud.google.com/go/spanner"
 	adminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
-	"google.golang.org/api/option"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
-	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -218,34 +213,14 @@ func directedReadFakeRow(sql string, cycleFK bool) (*sppb.ResultSetMetadata, []*
 func startDirectedReadWire(t *testing.T) (*directedReadWireServer, *spanner.Client) {
 	t.Helper()
 	srv := &directedReadWireServer{partitionFanInServer: partitionFanInServer{nPartitions: 1, rowsPer: 1}}
-	listener := bufconn.Listen(1 << 20)
-	grpcServer := grpc.NewServer()
-	sppb.RegisterSpannerServer(grpcServer, srv)
-	adminpb.RegisterDatabaseAdminServer(grpcServer, &directedReadAdminServer{})
-	go func() {
-		if err := grpcServer.Serve(listener); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
-			t.Errorf("serve: %v", err)
-		}
-	}()
-	t.Cleanup(func() {
-		grpcServer.Stop()
-		_ = listener.Close()
-	})
-	conn, err := grpc.NewClient("passthrough:///directed-read-wire",
-		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }),
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = conn.Close() })
-	client, err := spanner.NewClientWithConfig(t.Context(), "projects/test/instances/test/databases/test",
-		spanner.ClientConfig{DisableNativeMetrics: true}, option.WithGRPCConn(conn))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(client.Close)
+	client := newBufconnSpannerClient(t, "projects/test/instances/test/databases/test", srv, registerDirectedReadAdmin)
 	return srv, client
+}
+
+// registerDirectedReadAdmin adds the stub DatabaseAdmin service the directed
+// read fixtures need next to the fake Spanner service.
+func registerDirectedReadAdmin(s *grpc.Server) {
+	adminpb.RegisterDatabaseAdminServer(s, &directedReadAdminServer{})
 }
 
 func consumeDirectedReadRequest(t *testing.T, srv *directedReadWireServer, it *spanner.RowIterator, want *sppb.DirectedReadOptions) *sppb.ExecuteSqlRequest {
