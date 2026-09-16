@@ -1,7 +1,6 @@
 package mycli
 
 import (
-	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -388,7 +387,7 @@ func TestTransactionHelperErrorHandling(t *testing.T) {
 				t.Fatalf("unknown test type: %s", tt.testType)
 			}
 
-			if !errors.Is(err, tt.wantErr) {
+			if err != tt.wantErr {
 				t.Errorf("%s helper error = %v, wantErr %v", tt.testType, err, tt.wantErr)
 			}
 		})

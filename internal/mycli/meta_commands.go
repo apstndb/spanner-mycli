@@ -71,8 +71,7 @@ func (s *ShellMetaCommand) Execute(ctx context.Context, session *Session, out Op
 		// The command's own stderr has already been printed. We can consider this
 		// a "successful" execution from the CLI's perspective and not print a
 		// redundant error message.
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
+		if _, ok := err.(*exec.ExitError); ok {
 			return &Result{}, nil
 		}
 		// For other errors (e.g., command not found), it's a genuine execution error.

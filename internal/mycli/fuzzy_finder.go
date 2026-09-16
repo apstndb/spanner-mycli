@@ -16,7 +16,6 @@ package mycli
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -1000,7 +999,7 @@ func (f *fuzzyFinderCommand) fetchSchemaObjectCandidates(ctx context.Context, qu
 	var items []fzfItem
 	for {
 		row, err := iter.Next()
-		if errors.Is(err, iterator.Done) {
+		if err == iterator.Done {
 			break
 		}
 		if err != nil {
@@ -1080,7 +1079,7 @@ func (f *fuzzyFinderCommand) fetchSchemaCandidates(ctx context.Context) ([]fzfIt
 	var items []fzfItem
 	for {
 		row, err := iter.Next()
-		if errors.Is(err, iterator.Done) {
+		if err == iterator.Done {
 			break
 		}
 		if err != nil {
