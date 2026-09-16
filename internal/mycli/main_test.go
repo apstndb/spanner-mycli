@@ -27,9 +27,10 @@ func ptrCaseInsensitiveEnumValue(s string) *caseInsensitiveEnumValue {
 }
 
 func Test_initializeSystemVariables(t *testing.T) {
-	// NOTE: Most test cases below hardcode expected values instead of using newSystemVariablesWithDefaults()
-	// This means they need updating when defaults change (like TablePreviewRows).
-	// Consider using newSystemVariablesWithDefaults() as a base and only override tested fields.
+	// Expectations are deltas from newSystemVariablesWithDefaults().
+	// Test_newSystemVariablesWithDefaults remains the independent literal pin
+	// of those defaults. Do not derive these overrides by calling
+	// initializeSystemVariables.
 
 	// Helper to convert ast.Node map to string map for comparison
 	nodeMapToStringMap := func(m map[string]ast.Node) map[string]string {
@@ -46,18 +47,12 @@ func Test_initializeSystemVariables(t *testing.T) {
 	tests := []struct {
 		name    string
 		opts    *spannerOptions
-		want    systemVariables
+		want    func(*systemVariables)
 		wantErr bool
 	}{
 		{
 			name: "default values",
 			opts: &spannerOptions{},
-			want: func() systemVariables {
-				// Use the actual defaults function to avoid hardcoding values
-				// This test verifies that initializeSystemVariables preserves defaults
-				return newSystemVariablesWithDefaults()
-			}(),
-			wantErr: false,
 		},
 		{
 			name: "explicitly set values",
@@ -94,87 +89,53 @@ func Test_initializeSystemVariables(t *testing.T) {
 				ImpersonateServiceAccount: "test-sa@example.com",
 				EnablePartitionedDML:      true,
 			},
-			want: systemVariables{
-				Connection: ConnectionVars{
-					Project:  "test-project",
-					Instance: "test-instance",
-					Database: "test-database",
-					Role:     "test-role",
-				},
-				Config: StartupConfig{
-					Host:                      "test-endpoint",
-					Port:                      443,
-					Insecure:                  true,
-					ImpersonateServiceAccount: "test-sa@example.com",
-					EnableADCPlus:             true,
-					SpannerMetricsExporter:    "off",
-					SpannerTracesExporter:     "off",
-					SpannerTracesSampleRatio:  0.01,
-					LogGrpc:                   true,
-				},
-				Display: DisplayVars{
-					DumpCyclicMaxBytes:   67108864,
-					Verbose:              true,
-					Prompt:               "my-prompt> ",
-					Prompt2:              "my-prompt2> ",
-					HistoryFile:          "/path/to/history.txt",
-					CLIFormat:            enums.DisplayModeVertical,
-					AnalyzeColumns:       DefaultAnalyzeColumns,
-					ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
-					ExplainHangingIndent: true,
-					TypeStylesRaw:        defaultTypeStyles,
-					OutputTemplateFile:   "",
-					OutputTemplate:       defaultOutputFormat,
-				},
-				Query: QueryVars{
-					RPCPriority:       sppb.RequestOptions_PRIORITY_HIGH,
-					QueryMode:         sppb.ExecuteSqlRequest_PLAN.Enum(),
-					ReadOnlyStaleness: lo.ToPtr(spanner.StrongRead()),
-					DirectedRead: &sppb.DirectedReadOptions{
-						Replicas: &sppb.DirectedReadOptions_IncludeReplicas_{
-							IncludeReplicas: &sppb.DirectedReadOptions_IncludeReplicas{
-								ReplicaSelections: []*sppb.DirectedReadOptions_ReplicaSelection{
-									{
-										Location: "us-east1",
-										Type:     sppb.DirectedReadOptions_ReplicaSelection_READ_ONLY,
-									},
+			want: func(sv *systemVariables) {
+				sv.Connection.Project = "test-project"
+				sv.Connection.Instance = "test-instance"
+				sv.Connection.Database = "test-database"
+				sv.Connection.Role = "test-role"
+				sv.Config.Host = "test-endpoint"
+				sv.Config.Port = 443
+				sv.Config.Insecure = true
+				sv.Config.ImpersonateServiceAccount = "test-sa@example.com"
+				sv.Config.LogGrpc = true
+				sv.Display.Verbose = true
+				sv.Display.Prompt = "my-prompt> "
+				sv.Display.Prompt2 = "my-prompt2> "
+				sv.Display.HistoryFile = "/path/to/history.txt"
+				sv.Display.CLIFormat = enums.DisplayModeVertical
+				sv.Query.RPCPriority = sppb.RequestOptions_PRIORITY_HIGH
+				sv.Query.QueryMode = sppb.ExecuteSqlRequest_PLAN.Enum()
+				sv.Query.ReadOnlyStaleness = lo.ToPtr(spanner.StrongRead())
+				sv.Query.DirectedRead = &sppb.DirectedReadOptions{
+					Replicas: &sppb.DirectedReadOptions_IncludeReplicas_{
+						IncludeReplicas: &sppb.DirectedReadOptions_IncludeReplicas{
+							ReplicaSelections: []*sppb.DirectedReadOptions_ReplicaSelection{
+								{
+									Location: "us-east1",
+									Type:     sppb.DirectedReadOptions_ReplicaSelection_READ_ONLY,
 								},
-								AutoFailoverDisabled: true,
 							},
+							AutoFailoverDisabled: true,
 						},
 					},
-					TablePreviewRows: 50,
-				},
-				Transaction: TransactionVars{
-					ReturnCommitStats:       true,
-					AutoBatchDMLUpdateCount: 1,
-					KeepTransactionAlive:    true,
-					Autocommit:              true,
-					AutocommitDMLMode:       enums.AutocommitDMLModePartitionedNonAtomic,
-					ReadOnly:                true,
-				},
-				Feature: FeatureVars{
-					LogLevel:            slog.LevelInfo,
-					DatabaseDialect:     databasepb.DatabaseDialect_POSTGRESQL,
-					FuzzyFinderKey:      "C_T",
-					DDLAsyncWaitTimeout: defaultDDLAsyncWaitTimeout,
-				},
-				Internal: InternalVars{
-					ProtoDescriptorFile: []string{"testdata/protos/singer.proto"},
-				},
-				Params: map[string]ast.Node{
+				}
+				sv.Transaction.AutocommitDMLMode = enums.AutocommitDMLModePartitionedNonAtomic
+				sv.Transaction.ReadOnly = true
+				sv.Feature.LogLevel = slog.LevelInfo
+				sv.Feature.DatabaseDialect = databasepb.DatabaseDialect_POSTGRESQL
+				sv.Internal.ProtoDescriptorFile = []string{"testdata/protos/singer.proto"}
+				sv.Params = map[string]ast.Node{
 					"p1": lo.Must(memefish.ParseExpr("", "'string_value'")),
 					"p2": lo.Must(memefish.ParseType("", "FLOAT64")),
-				},
+				}
 			},
-			wantErr: false,
 		},
 		{
 			name: "error: invalid log level",
 			opts: &spannerOptions{
 				LogLevel: "INVALID",
 			},
-			want:    systemVariables{},
 			wantErr: true,
 		},
 		{
@@ -183,52 +144,15 @@ func Test_initializeSystemVariables(t *testing.T) {
 				Strong:        true,
 				ReadTimestamp: "2023-01-01T00:00:00Z",
 			},
-			want: systemVariables{
-				Config: StartupConfig{
-					EnableADCPlus:            true,
-					SpannerMetricsExporter:   "off",
-					SpannerTracesExporter:    "off",
-					SpannerTracesSampleRatio: 0.01,
-				},
-				Display: DisplayVars{
-					DumpCyclicMaxBytes:   67108864,
-					Prompt:               defaultPrompt,
-					Prompt2:              defaultPrompt2,
-					HistoryFile:          defaultHistoryFile(),
-					CLIFormat:            enums.DisplayModeTable,
-					AnalyzeColumns:       DefaultAnalyzeColumns,
-					ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
-					ExplainHangingIndent: true,
-					TypeStylesRaw:        defaultTypeStyles,
-					OutputTemplateFile:   "",
-					OutputTemplate:       defaultOutputFormat,
-				},
-				Query: QueryVars{
-					RPCPriority:       defaultPriority,
-					ReadOnlyStaleness: lo.ToPtr(spanner.ReadTimestamp(lo.Must(time.Parse(time.RFC3339Nano, "2023-01-01T00:00:00Z")))),
-					TablePreviewRows:  50,
-				},
-				Transaction: TransactionVars{
-					ReturnCommitStats:       true,
-					AutoBatchDMLUpdateCount: 1,
-					KeepTransactionAlive:    true,
-					Autocommit:              true,
-				},
-				Feature: FeatureVars{
-					LogLevel:            slog.LevelWarn,
-					FuzzyFinderKey:      "C_T",
-					DDLAsyncWaitTimeout: defaultDDLAsyncWaitTimeout,
-				},
-				Params: make(map[string]ast.Node),
+			want: func(sv *systemVariables) {
+				sv.Query.ReadOnlyStaleness = lo.ToPtr(spanner.ReadTimestamp(lo.Must(time.Parse(time.RFC3339Nano, "2023-01-01T00:00:00Z"))))
 			},
-			wantErr: false,
 		},
 		{
 			name: "error: invalid read-timestamp format",
 			opts: &spannerOptions{
 				ReadTimestamp: "invalid-timestamp",
 			},
-			want:    systemVariables{},
 			wantErr: true,
 		},
 		{
@@ -236,7 +160,6 @@ func Test_initializeSystemVariables(t *testing.T) {
 			opts: &spannerOptions{
 				Priority: "INVALID",
 			},
-			want:    systemVariables{},
 			wantErr: true,
 		},
 		{
@@ -244,45 +167,9 @@ func Test_initializeSystemVariables(t *testing.T) {
 			opts: &spannerOptions{
 				Timeout: "30s",
 			},
-			want: systemVariables{
-				Config: StartupConfig{
-					EnableADCPlus:            true,
-					SpannerMetricsExporter:   "off",
-					SpannerTracesExporter:    "off",
-					SpannerTracesSampleRatio: 0.01,
-				},
-				Display: DisplayVars{
-					DumpCyclicMaxBytes:   67108864,
-					Prompt:               defaultPrompt,
-					Prompt2:              defaultPrompt2,
-					HistoryFile:          defaultHistoryFile(),
-					CLIFormat:            enums.DisplayModeTable,
-					AnalyzeColumns:       DefaultAnalyzeColumns,
-					ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
-					ExplainHangingIndent: true,
-					TypeStylesRaw:        defaultTypeStyles,
-					OutputTemplateFile:   "",
-					OutputTemplate:       defaultOutputFormat,
-				},
-				Query: QueryVars{
-					RPCPriority:      defaultPriority,
-					StatementTimeout: lo.ToPtr(30 * time.Second),
-					TablePreviewRows: 50,
-				},
-				Transaction: TransactionVars{
-					ReturnCommitStats:       true,
-					AutoBatchDMLUpdateCount: 1,
-					KeepTransactionAlive:    true,
-					Autocommit:              true,
-				},
-				Feature: FeatureVars{
-					LogLevel:            slog.LevelWarn,
-					FuzzyFinderKey:      "C_T",
-					DDLAsyncWaitTimeout: defaultDDLAsyncWaitTimeout,
-				},
-				Params: make(map[string]ast.Node),
+			want: func(sv *systemVariables) {
+				sv.Query.StatementTimeout = lo.ToPtr(30 * time.Second)
 			},
-			wantErr: false,
 		},
 		{
 			name: "insecure flag precedence - both true",
@@ -290,44 +177,9 @@ func Test_initializeSystemVariables(t *testing.T) {
 				Insecure:      lo.ToPtr(true),
 				SkipTlsVerify: lo.ToPtr(true),
 			},
-			want: systemVariables{
-				Config: StartupConfig{
-					Insecure:                 true, // --insecure takes precedence
-					EnableADCPlus:            true,
-					SpannerMetricsExporter:   "off",
-					SpannerTracesExporter:    "off",
-					SpannerTracesSampleRatio: 0.01,
-				},
-				Display: DisplayVars{
-					DumpCyclicMaxBytes:   67108864,
-					Prompt:               defaultPrompt,
-					Prompt2:              defaultPrompt2,
-					HistoryFile:          defaultHistoryFile(),
-					CLIFormat:            enums.DisplayModeTable,
-					AnalyzeColumns:       DefaultAnalyzeColumns,
-					ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
-					ExplainHangingIndent: true,
-					TypeStylesRaw:        defaultTypeStyles,
-					OutputTemplateFile:   "",
-					OutputTemplate:       defaultOutputFormat,
-				},
-				Query: QueryVars{
-					RPCPriority:      defaultPriority,
-					TablePreviewRows: 50,
-				},
-				Transaction: TransactionVars{
-					ReturnCommitStats:       true,
-					AutoBatchDMLUpdateCount: 1,
-					KeepTransactionAlive:    true,
-					Autocommit:              true,
-				},
-				Feature: FeatureVars{
-					LogLevel:            slog.LevelWarn,
-					FuzzyFinderKey:      "C_T",
-					DDLAsyncWaitTimeout: defaultDDLAsyncWaitTimeout,
-				},
+			want: func(sv *systemVariables) {
+				sv.Config.Insecure = true // --insecure takes precedence
 			},
-			wantErr: false,
 		},
 		{
 			name: "insecure flag precedence - insecure false, skip-tls-verify true",
@@ -335,96 +187,24 @@ func Test_initializeSystemVariables(t *testing.T) {
 				Insecure:      lo.ToPtr(false),
 				SkipTlsVerify: lo.ToPtr(true),
 			},
-			want: systemVariables{
-				Config: StartupConfig{
-					Insecure:                 false, // --insecure takes precedence even when false
-					EnableADCPlus:            true,
-					SpannerMetricsExporter:   "off",
-					SpannerTracesExporter:    "off",
-					SpannerTracesSampleRatio: 0.01,
-				},
-				Display: DisplayVars{
-					DumpCyclicMaxBytes:   67108864,
-					Prompt:               defaultPrompt,
-					Prompt2:              defaultPrompt2,
-					HistoryFile:          defaultHistoryFile(),
-					CLIFormat:            enums.DisplayModeTable,
-					AnalyzeColumns:       DefaultAnalyzeColumns,
-					ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
-					ExplainHangingIndent: true,
-					TypeStylesRaw:        defaultTypeStyles,
-					OutputTemplateFile:   "",
-					OutputTemplate:       defaultOutputFormat,
-				},
-				Query: QueryVars{
-					RPCPriority:      defaultPriority,
-					TablePreviewRows: 50,
-				},
-				Transaction: TransactionVars{
-					ReturnCommitStats:       true,
-					AutoBatchDMLUpdateCount: 1,
-					KeepTransactionAlive:    true,
-					Autocommit:              true,
-				},
-				Feature: FeatureVars{
-					LogLevel:            slog.LevelWarn,
-					FuzzyFinderKey:      "C_T",
-					DDLAsyncWaitTimeout: defaultDDLAsyncWaitTimeout,
-				},
+			want: func(sv *systemVariables) {
+				sv.Config.Insecure = false // --insecure takes precedence even when false
 			},
-			wantErr: false,
 		},
 		{
 			name: "only skip-tls-verify set",
 			opts: &spannerOptions{
 				SkipTlsVerify: lo.ToPtr(true),
 			},
-			want: systemVariables{
-				Connection: ConnectionVars{},
-				Config: StartupConfig{
-					Insecure:                 true, // Uses skip-tls-verify value
-					EnableADCPlus:            true,
-					SpannerMetricsExporter:   "off",
-					SpannerTracesExporter:    "off",
-					SpannerTracesSampleRatio: 0.01,
-				},
-				Display: DisplayVars{
-					DumpCyclicMaxBytes:   67108864,
-					Prompt:               defaultPrompt,
-					Prompt2:              defaultPrompt2,
-					HistoryFile:          defaultHistoryFile(),
-					CLIFormat:            enums.DisplayModeTable,
-					AnalyzeColumns:       DefaultAnalyzeColumns,
-					ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
-					ExplainHangingIndent: true,
-					TypeStylesRaw:        defaultTypeStyles,
-					OutputTemplateFile:   "",
-					OutputTemplate:       defaultOutputFormat,
-				},
-				Query: QueryVars{
-					RPCPriority:      defaultPriority,
-					TablePreviewRows: 50,
-				},
-				Transaction: TransactionVars{
-					ReturnCommitStats:       true,
-					AutoBatchDMLUpdateCount: 1,
-					KeepTransactionAlive:    true,
-					Autocommit:              true,
-				},
-				Feature: FeatureVars{
-					LogLevel:            slog.LevelWarn,
-					FuzzyFinderKey:      "C_T",
-					DDLAsyncWaitTimeout: defaultDDLAsyncWaitTimeout,
-				},
+			want: func(sv *systemVariables) {
+				sv.Config.Insecure = true // Uses skip-tls-verify value
 			},
-			wantErr: false,
 		},
 		{
 			name: "error: invalid timeout format",
 			opts: &spannerOptions{
 				Timeout: "invalid",
 			},
-			want:    systemVariables{},
 			wantErr: true,
 		},
 		{
@@ -432,57 +212,21 @@ func Test_initializeSystemVariables(t *testing.T) {
 			opts: &spannerOptions{
 				DirectedRead: "invalid-option",
 			},
-			want: systemVariables{
-				Config: StartupConfig{
-					EnableADCPlus:            true,
-					SpannerMetricsExporter:   "off",
-					SpannerTracesExporter:    "off",
-					SpannerTracesSampleRatio: 0.01,
-				},
-				Display: DisplayVars{
-					DumpCyclicMaxBytes:   67108864,
-					Prompt:               defaultPrompt,
-					Prompt2:              defaultPrompt2,
-					HistoryFile:          defaultHistoryFile(),
-					CLIFormat:            enums.DisplayModeTable,
-					AnalyzeColumns:       DefaultAnalyzeColumns,
-					ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
-					ExplainHangingIndent: true,
-					TypeStylesRaw:        defaultTypeStyles,
-					OutputTemplateFile:   "",
-					OutputTemplate:       defaultOutputFormat,
-				},
-				Query: QueryVars{
-					RPCPriority: defaultPriority,
-					DirectedRead: &sppb.DirectedReadOptions{
-						Replicas: &sppb.DirectedReadOptions_IncludeReplicas_{
-							IncludeReplicas: &sppb.DirectedReadOptions_IncludeReplicas{
-								ReplicaSelections: []*sppb.DirectedReadOptions_ReplicaSelection{
-									{
-										Location: "invalid-option",
-										Type:     sppb.DirectedReadOptions_ReplicaSelection_TYPE_UNSPECIFIED,
-									},
+			want: func(sv *systemVariables) {
+				sv.Query.DirectedRead = &sppb.DirectedReadOptions{
+					Replicas: &sppb.DirectedReadOptions_IncludeReplicas_{
+						IncludeReplicas: &sppb.DirectedReadOptions_IncludeReplicas{
+							ReplicaSelections: []*sppb.DirectedReadOptions_ReplicaSelection{
+								{
+									Location: "invalid-option",
+									Type:     sppb.DirectedReadOptions_ReplicaSelection_TYPE_UNSPECIFIED,
 								},
-								AutoFailoverDisabled: true,
 							},
+							AutoFailoverDisabled: true,
 						},
 					},
-					TablePreviewRows: 50,
-				},
-				Transaction: TransactionVars{
-					ReturnCommitStats:       true,
-					AutoBatchDMLUpdateCount: 1,
-					KeepTransactionAlive:    true,
-					Autocommit:              true,
-				},
-				Feature: FeatureVars{
-					LogLevel:            slog.LevelWarn,
-					FuzzyFinderKey:      "C_T",
-					DDLAsyncWaitTimeout: defaultDDLAsyncWaitTimeout,
-				},
-				Params: make(map[string]ast.Node),
+				}
 			},
-			wantErr: false,
 		},
 		{
 			name: "error: invalid set value",
@@ -491,7 +235,6 @@ func Test_initializeSystemVariables(t *testing.T) {
 					"READONLY": "not-a-bool",
 				},
 			},
-			want:    systemVariables{},
 			wantErr: true,
 		},
 		{
@@ -499,7 +242,6 @@ func Test_initializeSystemVariables(t *testing.T) {
 			opts: &spannerOptions{
 				ProtoDescriptorFile: "non-existent-file.proto",
 			},
-			want:    systemVariables{},
 			wantErr: true,
 		},
 		{
@@ -511,98 +253,24 @@ func Test_initializeSystemVariables(t *testing.T) {
 				DatabaseId:       "user-database",
 				Insecure:         lo.ToPtr(false), // should be overridden by embedded emulator
 			},
-			want: systemVariables{
-				Connection: ConnectionVars{
-					Project:  "user-project",
-					Instance: "user-instance",
-					Database: "user-database",
-				},
-				Config: StartupConfig{
-					Insecure:                 true, // embedded emulator always sets this
-					EnableADCPlus:            true,
-					SpannerMetricsExporter:   "off",
-					SpannerTracesExporter:    "off",
-					SpannerTracesSampleRatio: 0.01,
-				},
-				Display: DisplayVars{
-					DumpCyclicMaxBytes:   67108864,
-					Prompt:               defaultPrompt,
-					Prompt2:              defaultPrompt2,
-					HistoryFile:          defaultHistoryFile(),
-					CLIFormat:            enums.DisplayModeTable,
-					AnalyzeColumns:       DefaultAnalyzeColumns,
-					ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
-					ExplainHangingIndent: true,
-					TypeStylesRaw:        defaultTypeStyles,
-					OutputTemplateFile:   "",
-					OutputTemplate:       defaultOutputFormat,
-				},
-				Query: QueryVars{
-					RPCPriority:      defaultPriority,
-					TablePreviewRows: 50,
-				},
-				Transaction: TransactionVars{
-					ReturnCommitStats:       true,
-					AutoBatchDMLUpdateCount: 1,
-					KeepTransactionAlive:    true,
-					Autocommit:              true,
-				},
-				Feature: FeatureVars{
-					LogLevel:            slog.LevelWarn,
-					FuzzyFinderKey:      "C_T",
-					DDLAsyncWaitTimeout: defaultDDLAsyncWaitTimeout,
-				},
+			want: func(sv *systemVariables) {
+				sv.Connection.Project = "user-project"
+				sv.Connection.Instance = "user-instance"
+				sv.Connection.Database = "user-database"
+				sv.Config.Insecure = true // embedded emulator always sets this
 			},
-			wantErr: false,
 		},
 		{
 			name: "embedded emulator with no user values",
 			opts: &spannerOptions{
 				EmbeddedEmulator: true,
 			},
-			want: systemVariables{
-				Connection: ConnectionVars{
-					Project:  "emulator-project",  // Default value set in initializeSystemVariables
-					Instance: "emulator-instance", // Default value set in initializeSystemVariables
-					Database: "emulator-database", // Default value set in initializeSystemVariables
-				},
-				Config: StartupConfig{
-					Insecure:                 true,
-					EnableADCPlus:            true,
-					SpannerMetricsExporter:   "off",
-					SpannerTracesExporter:    "off",
-					SpannerTracesSampleRatio: 0.01,
-				},
-				Display: DisplayVars{
-					DumpCyclicMaxBytes:   67108864,
-					Prompt:               defaultPrompt,
-					Prompt2:              defaultPrompt2,
-					HistoryFile:          defaultHistoryFile(),
-					CLIFormat:            enums.DisplayModeTable,
-					AnalyzeColumns:       DefaultAnalyzeColumns,
-					ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
-					ExplainHangingIndent: true,
-					TypeStylesRaw:        defaultTypeStyles,
-					OutputTemplateFile:   "",
-					OutputTemplate:       defaultOutputFormat,
-				},
-				Query: QueryVars{
-					RPCPriority:      defaultPriority,
-					TablePreviewRows: 50,
-				},
-				Transaction: TransactionVars{
-					ReturnCommitStats:       true,
-					AutoBatchDMLUpdateCount: 1,
-					KeepTransactionAlive:    true,
-					Autocommit:              true,
-				},
-				Feature: FeatureVars{
-					LogLevel:            slog.LevelWarn,
-					FuzzyFinderKey:      "C_T",
-					DDLAsyncWaitTimeout: defaultDDLAsyncWaitTimeout,
-				},
+			want: func(sv *systemVariables) {
+				sv.Connection.Project = "emulator-project"   // Default value set in initializeSystemVariables
+				sv.Connection.Instance = "emulator-instance" // Default value set in initializeSystemVariables
+				sv.Connection.Database = "emulator-database" // Default value set in initializeSystemVariables
+				sv.Config.Insecure = true
 			},
-			wantErr: false,
 		},
 		{
 			name: "embedded emulator with detached mode",
@@ -610,98 +278,24 @@ func Test_initializeSystemVariables(t *testing.T) {
 				EmbeddedEmulator: true,
 				Detached:         true,
 			},
-			want: systemVariables{
-				Connection: ConnectionVars{
-					Project:  "emulator-project",  // Default set for emulator
-					Instance: "emulator-instance", // Default set for emulator
-					Database: "",                  // Empty - respects detached mode
-				},
-				Config: StartupConfig{
-					Insecure:                 true,
-					EnableADCPlus:            true,
-					SpannerMetricsExporter:   "off",
-					SpannerTracesExporter:    "off",
-					SpannerTracesSampleRatio: 0.01,
-				},
-				Display: DisplayVars{
-					DumpCyclicMaxBytes:   67108864,
-					Prompt:               defaultPrompt,
-					Prompt2:              defaultPrompt2,
-					HistoryFile:          defaultHistoryFile(),
-					CLIFormat:            enums.DisplayModeTable,
-					AnalyzeColumns:       DefaultAnalyzeColumns,
-					ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
-					ExplainHangingIndent: true,
-					TypeStylesRaw:        defaultTypeStyles,
-					OutputTemplateFile:   "",
-					OutputTemplate:       defaultOutputFormat,
-				},
-				Query: QueryVars{
-					RPCPriority:      defaultPriority,
-					TablePreviewRows: 50,
-				},
-				Transaction: TransactionVars{
-					ReturnCommitStats:       true,
-					AutoBatchDMLUpdateCount: 1,
-					KeepTransactionAlive:    true,
-					Autocommit:              true,
-				},
-				Feature: FeatureVars{
-					LogLevel:            slog.LevelWarn,
-					FuzzyFinderKey:      "C_T",
-					DDLAsyncWaitTimeout: defaultDDLAsyncWaitTimeout,
-				},
+			want: func(sv *systemVariables) {
+				sv.Connection.Project = "emulator-project"   // Default set for emulator
+				sv.Connection.Instance = "emulator-instance" // Default set for emulator
+				sv.Connection.Database = ""                  // Empty - respects detached mode
+				sv.Config.Insecure = true
 			},
-			wantErr: false,
 		},
 		{
 			name: "embedded omni with no user values",
 			opts: &spannerOptions{
 				EmbeddedOmni: true,
 			},
-			want: systemVariables{
-				Connection: ConnectionVars{
-					Project:  "default",
-					Instance: "default",
-					Database: "emulator-database",
-				},
-				Config: StartupConfig{
-					Insecure:                 true,
-					EnableADCPlus:            true,
-					SpannerMetricsExporter:   "off",
-					SpannerTracesExporter:    "off",
-					SpannerTracesSampleRatio: 0.01,
-				},
-				Display: DisplayVars{
-					DumpCyclicMaxBytes:   67108864,
-					Prompt:               defaultPrompt,
-					Prompt2:              defaultPrompt2,
-					HistoryFile:          defaultHistoryFile(),
-					CLIFormat:            enums.DisplayModeTable,
-					AnalyzeColumns:       DefaultAnalyzeColumns,
-					ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
-					ExplainHangingIndent: true,
-					TypeStylesRaw:        defaultTypeStyles,
-					OutputTemplateFile:   "",
-					OutputTemplate:       defaultOutputFormat,
-				},
-				Query: QueryVars{
-					RPCPriority:      defaultPriority,
-					TablePreviewRows: 50,
-				},
-				Transaction: TransactionVars{
-					ReturnCommitStats:       true,
-					AutoBatchDMLUpdateCount: 1,
-					KeepTransactionAlive:    true,
-					Autocommit:              true,
-				},
-				Feature: FeatureVars{
-					LogLevel:            slog.LevelWarn,
-					FuzzyFinderKey:      "C_T",
-					DDLAsyncWaitTimeout: defaultDDLAsyncWaitTimeout,
-				},
+			want: func(sv *systemVariables) {
+				sv.Connection.Project = "default"
+				sv.Connection.Instance = "default"
+				sv.Connection.Database = "emulator-database"
+				sv.Config.Insecure = true
 			},
-			wantErr: false,
 		},
 		{
 			name: "embedded omni with detached mode",
@@ -709,49 +303,12 @@ func Test_initializeSystemVariables(t *testing.T) {
 				EmbeddedOmni: true,
 				Detached:     true,
 			},
-			want: systemVariables{
-				Connection: ConnectionVars{
-					Project:  "default",
-					Instance: "default",
-					Database: "",
-				},
-				Config: StartupConfig{
-					Insecure:                 true,
-					EnableADCPlus:            true,
-					SpannerMetricsExporter:   "off",
-					SpannerTracesExporter:    "off",
-					SpannerTracesSampleRatio: 0.01,
-				},
-				Display: DisplayVars{
-					DumpCyclicMaxBytes:   67108864,
-					Prompt:               defaultPrompt,
-					Prompt2:              defaultPrompt2,
-					HistoryFile:          defaultHistoryFile(),
-					CLIFormat:            enums.DisplayModeTable,
-					AnalyzeColumns:       DefaultAnalyzeColumns,
-					ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
-					ExplainHangingIndent: true,
-					TypeStylesRaw:        defaultTypeStyles,
-					OutputTemplateFile:   "",
-					OutputTemplate:       defaultOutputFormat,
-				},
-				Query: QueryVars{
-					RPCPriority:      defaultPriority,
-					TablePreviewRows: 50,
-				},
-				Transaction: TransactionVars{
-					ReturnCommitStats:       true,
-					AutoBatchDMLUpdateCount: 1,
-					KeepTransactionAlive:    true,
-					Autocommit:              true,
-				},
-				Feature: FeatureVars{
-					LogLevel:            slog.LevelWarn,
-					FuzzyFinderKey:      "C_T",
-					DDLAsyncWaitTimeout: defaultDDLAsyncWaitTimeout,
-				},
+			want: func(sv *systemVariables) {
+				sv.Connection.Project = "default"
+				sv.Connection.Instance = "default"
+				sv.Connection.Database = ""
+				sv.Config.Insecure = true
 			},
-			wantErr: false,
 		},
 		{
 			name: "CLI_ANALYZE_COLUMNS set",
@@ -760,86 +317,20 @@ func Test_initializeSystemVariables(t *testing.T) {
 					"CLI_ANALYZE_COLUMNS": "Col1:{{.Col1}},Col2:{{.Col2}}",
 				},
 			},
-			want: systemVariables{
-				Config: StartupConfig{
-					EnableADCPlus:            true,
-					SpannerMetricsExporter:   "off",
-					SpannerTracesExporter:    "off",
-					SpannerTracesSampleRatio: 0.01,
-				},
-				Display: DisplayVars{
-					DumpCyclicMaxBytes:   67108864,
-					Prompt:               defaultPrompt,
-					Prompt2:              defaultPrompt2,
-					HistoryFile:          defaultHistoryFile(),
-					CLIFormat:            enums.DisplayModeTable,
-					AnalyzeColumns:       "Col1:{{.Col1}},Col2:{{.Col2}}",
-					ParsedAnalyzeColumns: lo.Must(customListToTableRenderDefs("Col1:{{.Col1}},Col2:{{.Col2}}")),
-					ExplainHangingIndent: true,
-					TypeStylesRaw:        defaultTypeStyles,
-					OutputTemplateFile:   "",
-					OutputTemplate:       defaultOutputFormat,
-				},
-				Query: QueryVars{
-					RPCPriority:      defaultPriority,
-					TablePreviewRows: 50,
-				},
-				Transaction: TransactionVars{
-					ReturnCommitStats:       true,
-					AutoBatchDMLUpdateCount: 1,
-					KeepTransactionAlive:    true,
-					Autocommit:              true,
-				},
-				Feature: FeatureVars{
-					LogLevel:            slog.LevelWarn,
-					FuzzyFinderKey:      "C_T",
-					DDLAsyncWaitTimeout: defaultDDLAsyncWaitTimeout,
-				},
+			want: func(sv *systemVariables) {
+				sv.Display.AnalyzeColumns = "Col1:{{.Col1}},Col2:{{.Col2}}"
+				sv.Display.ParsedAnalyzeColumns = lo.Must(customListToTableRenderDefs("Col1:{{.Col1}},Col2:{{.Col2}}"))
 			},
-			wantErr: false,
 		},
 		{
 			name: "CLI_OUTPUT_TEMPLATE_FILE set",
 			opts: &spannerOptions{
 				OutputTemplate: "output_full.tmpl",
 			},
-			want: systemVariables{
-				Config: StartupConfig{
-					EnableADCPlus:            true,
-					SpannerMetricsExporter:   "off",
-					SpannerTracesExporter:    "off",
-					SpannerTracesSampleRatio: 0.01,
-				},
-				Display: DisplayVars{
-					DumpCyclicMaxBytes: 67108864,
-					Prompt:             defaultPrompt,
-					Prompt2:            defaultPrompt2,
-					HistoryFile:        defaultHistoryFile(),
-					CLIFormat:          enums.DisplayModeTable,
-					AnalyzeColumns:     DefaultAnalyzeColumns,
-					OutputTemplateFile: "output_full.tmpl",
-					// OutputTemplate:       should be parsed from file, hard to compare directly
-					ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
-					ExplainHangingIndent: true,
-					TypeStylesRaw:        defaultTypeStyles,
-				},
-				Query: QueryVars{
-					RPCPriority:      defaultPriority,
-					TablePreviewRows: 50,
-				},
-				Transaction: TransactionVars{
-					ReturnCommitStats:       true,
-					AutoBatchDMLUpdateCount: 1,
-					KeepTransactionAlive:    true,
-					Autocommit:              true,
-				},
-				Feature: FeatureVars{
-					LogLevel:            slog.LevelWarn,
-					FuzzyFinderKey:      "C_T",
-					DDLAsyncWaitTimeout: defaultDDLAsyncWaitTimeout,
-				},
+			want: func(sv *systemVariables) {
+				sv.Display.OutputTemplateFile = "output_full.tmpl"
+				// OutputTemplate: should be parsed from file, hard to compare directly
 			},
-			wantErr: false,
 		},
 		{
 			name: "CLI_OUTPUT_TEMPLATE_FILE set to NULL",
@@ -848,43 +339,6 @@ func Test_initializeSystemVariables(t *testing.T) {
 					"CLI_OUTPUT_TEMPLATE_FILE": "NULL",
 				},
 			},
-			want: systemVariables{
-				Config: StartupConfig{
-					EnableADCPlus:            true,
-					SpannerMetricsExporter:   "off",
-					SpannerTracesExporter:    "off",
-					SpannerTracesSampleRatio: 0.01,
-				},
-				Display: DisplayVars{
-					DumpCyclicMaxBytes:   67108864,
-					Prompt:               defaultPrompt,
-					Prompt2:              defaultPrompt2,
-					HistoryFile:          defaultHistoryFile(),
-					CLIFormat:            enums.DisplayModeTable,
-					AnalyzeColumns:       DefaultAnalyzeColumns,
-					ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
-					ExplainHangingIndent: true,
-					TypeStylesRaw:        defaultTypeStyles,
-					OutputTemplateFile:   "",
-					OutputTemplate:       defaultOutputFormat,
-				},
-				Query: QueryVars{
-					RPCPriority:      defaultPriority,
-					TablePreviewRows: 50,
-				},
-				Transaction: TransactionVars{
-					ReturnCommitStats:       true,
-					AutoBatchDMLUpdateCount: 1,
-					KeepTransactionAlive:    true,
-					Autocommit:              true,
-				},
-				Feature: FeatureVars{
-					LogLevel:            slog.LevelWarn,
-					FuzzyFinderKey:      "C_T",
-					DDLAsyncWaitTimeout: defaultDDLAsyncWaitTimeout,
-				},
-			},
-			wantErr: false,
 		},
 		{
 			name: "CLI_OUTPUT_TEMPLATE_FILE set to empty string",
@@ -893,43 +347,6 @@ func Test_initializeSystemVariables(t *testing.T) {
 					"CLI_OUTPUT_TEMPLATE_FILE": "",
 				},
 			},
-			want: systemVariables{
-				Config: StartupConfig{
-					EnableADCPlus:            true,
-					SpannerMetricsExporter:   "off",
-					SpannerTracesExporter:    "off",
-					SpannerTracesSampleRatio: 0.01,
-				},
-				Display: DisplayVars{
-					DumpCyclicMaxBytes:   67108864,
-					Prompt:               defaultPrompt,
-					Prompt2:              defaultPrompt2,
-					HistoryFile:          defaultHistoryFile(),
-					CLIFormat:            enums.DisplayModeTable,
-					AnalyzeColumns:       DefaultAnalyzeColumns,
-					ParsedAnalyzeColumns: DefaultParsedAnalyzeColumns,
-					ExplainHangingIndent: true,
-					TypeStylesRaw:        defaultTypeStyles,
-					OutputTemplateFile:   "",
-					OutputTemplate:       defaultOutputFormat,
-				},
-				Query: QueryVars{
-					RPCPriority:      defaultPriority,
-					TablePreviewRows: 50,
-				},
-				Transaction: TransactionVars{
-					ReturnCommitStats:       true,
-					AutoBatchDMLUpdateCount: 1,
-					KeepTransactionAlive:    true,
-					Autocommit:              true,
-				},
-				Feature: FeatureVars{
-					LogLevel:            slog.LevelWarn,
-					FuzzyFinderKey:      "C_T",
-					DDLAsyncWaitTimeout: defaultDDLAsyncWaitTimeout,
-				},
-			},
-			wantErr: false,
 		},
 	}
 
@@ -950,14 +367,19 @@ func Test_initializeSystemVariables(t *testing.T) {
 				return
 			}
 
+			want := newSystemVariablesWithDefaults()
+			if tt.want != nil {
+				tt.want(&want)
+			}
+
 			// Convert Params map to string map for comparison and compare separately
 			gotParamsStr := nodeMapToStringMap(got.Params)
-			wantParamsStr := nodeMapToStringMap(tt.want.Params)
+			wantParamsStr := nodeMapToStringMap(want.Params)
 
 			// Use cmp.Diff for comparison, ignoring unexported fields and specific fields
 			// that are hard to compare directly (e.g., *template.Template, *descriptorpb.FileDescriptorSet)
 			// and those that are set later in run() (e.g., EnableProgressBar, WithoutAuthentication)
-			if diff := cmp.Diff(tt.want, *got,
+			if diff := cmp.Diff(want, *got,
 				cmpopts.IgnoreUnexported(systemVariables{}),
 				cmpopts.IgnoreFields(systemVariables{}, "Display.OutputTemplate", "Internal.ProtoDescriptor", "Display.EnableProgressBar", "Config.WithoutAuthentication", "Config.EmbeddedLogLevel", "Registry"), // Removed Params from here
 				cmpopts.IgnoreFields(systemVariables{}, "Display.ParsedAnalyzeColumns", "Display.ExplainPrintSections", "Display.ParsedExplainPrintSections"),

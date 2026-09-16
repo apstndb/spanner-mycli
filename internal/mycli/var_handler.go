@@ -71,17 +71,25 @@ func (h *VarHandler[T]) Get() (string, error) {
 	return h.format(*h.ptr), nil
 }
 
-// Set parses and sets the value
-func (h *VarHandler[T]) Set(value string) error {
+// parseAndValidate parses and optionally validates without assigning.
+func (h *VarHandler[T]) parseAndValidate(value string) (T, error) {
 	parsed, err := h.parse(value)
 	if err != nil {
-		return err
+		return parsed, err
 	}
-
 	if h.validate != nil {
 		if err := h.validate(parsed); err != nil {
-			return err
+			return parsed, err
 		}
+	}
+	return parsed, nil
+}
+
+// Set parses and sets the value
+func (h *VarHandler[T]) Set(value string) error {
+	parsed, err := h.parseAndValidate(value)
+	if err != nil {
+		return err
 	}
 
 	*h.ptr = parsed
@@ -95,14 +103,8 @@ func (h *VarHandler[T]) Set(value string) error {
 
 // PrepareReset parses and validates without assigning to the live pointer.
 func (h *VarHandler[T]) PrepareReset(value string) error {
-	parsed, err := h.parse(value)
-	if err != nil {
-		return err
-	}
-	if h.validate != nil {
-		return h.validate(parsed)
-	}
-	return nil
+	_, err := h.parseAndValidate(value)
+	return err
 }
 
 // ValidValues returns the constrained valid values, if any.
