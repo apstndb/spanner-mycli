@@ -47,7 +47,7 @@ func createRow(t *testing.T, values []any) *spanner.Row {
 
 	// column names are not important in this test, so use dummy name
 	names := make([]string, len(values))
-	for i := 0; i < len(names); i++ {
+	for i := range names {
 		names[i] = "dummy"
 	}
 
@@ -77,7 +77,7 @@ func equalStringSlice(a []string, b []string) bool {
 	if len(a) != len(b) {
 		return false
 	}
-	for i := 0; i < len(a); i++ {
+	for i := range a {
 		if a[i] != b[i] {
 			return false
 		}
