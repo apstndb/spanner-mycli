@@ -71,11 +71,11 @@ func dumpInsertTargets(output string) []string {
 			continue
 		}
 		rest := strings.TrimPrefix(line, prefix)
-		idx := strings.Index(rest, " (")
-		if idx < 0 {
+		before, _, ok := strings.Cut(rest, " (")
+		if !ok {
 			continue
 		}
-		targets = append(targets, rest[:idx])
+		targets = append(targets, before)
 	}
 	return targets
 }

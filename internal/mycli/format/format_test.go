@@ -820,7 +820,7 @@ func testWrappedStyledSGRCarryOver(t *testing.T, text, style, kind string) {
 	output := buf.String()
 	t.Logf("Table output:\n%s", output)
 
-	for _, line := range strings.Split(output, "\n") {
+	for line := range strings.SplitSeq(output, "\n") {
 		if !strings.HasPrefix(line, "|") {
 			continue
 		}

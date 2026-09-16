@@ -114,7 +114,7 @@ func TestStreamManager_ManyFileSwitches(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Switch between many files
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		teeFile := filepath.Join(tmpDir, fmt.Sprintf("file-%d.log", i))
 		if err := sm.EnableTee(teeFile, false); err != nil {
 			t.Fatalf("Failed to enable tee for file %d: %v", i, err)
@@ -139,7 +139,7 @@ func TestStreamManager_ManyFileSwitches(t *testing.T) {
 		}
 	}()
 
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		f, err := os.Open(filepath.Join(tmpDir, fmt.Sprintf("file-%d.log", i)))
 		if err != nil {
 			t.Fatalf("Failed to open file %d (possible fd leak): %v", i, err)

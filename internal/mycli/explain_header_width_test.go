@@ -97,7 +97,7 @@ func TestExplainNarrowHeaderRenderedTable(t *testing.T) {
 		t.Fatalf("unexpected narrow plan table:\n%s", out.String())
 	}
 	// WIDTH limits the operator content, not ID, borders or cell padding.
-	for _, line := range strings.Split(strings.TrimSpace(out.String()), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(out.String()), "\n") {
 		if len(line) > 30 {
 			t.Errorf("long header still widens WIDTH20 table: %q", line)
 		}

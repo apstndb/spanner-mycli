@@ -420,9 +420,9 @@ func (s *heartbeatRPCServer) beginObservations() []beginObservation {
 }
 
 func lastSQLObservation(obs []sqlObservation, sql string) (sqlObservation, bool) {
-	for i := len(obs) - 1; i >= 0; i-- {
-		if obs[i].sql == sql {
-			return obs[i], true
+	for _, ob := range slices.Backward(obs) {
+		if ob.sql == sql {
+			return ob, true
 		}
 	}
 	return sqlObservation{}, false

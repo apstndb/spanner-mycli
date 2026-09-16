@@ -161,7 +161,7 @@ func (s *ShowQueryProfileStatement) Execute(ctx context.Context, session *Sessio
 FROM SPANNER_SYS.QUERY_PROFILES_TOP_HOUR
 WHERE TEXT_FINGERPRINT = @fprint
 ORDER BY INTERVAL_END DESC`,
-		Params: map[string]interface{}{"fprint": s.Fprint},
+		Params: map[string]any{"fprint": s.Fprint},
 	}
 
 	iter, _, err := session.txn.RunQuery(ctx, stmt)

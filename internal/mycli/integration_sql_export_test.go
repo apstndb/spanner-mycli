@@ -320,7 +320,7 @@ CREATE TABLE ComplexDest (
 			}(),
 			// JSON
 			func() spanner.GenericColumnValue {
-				v, _ := gcvctor.JSONValue(map[string]interface{}{"key": "value"})
+				v, _ := gcvctor.JSONValue(map[string]any{"key": "value"})
 				return v
 			}(),
 			// BYTES

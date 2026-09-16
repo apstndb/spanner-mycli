@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"testing"
 
@@ -482,12 +483,7 @@ func TestFetchSchemaObjectCandidates(t *testing.T) {
 }
 
 func containsString(ss []string, want string) bool {
-	for _, s := range ss {
-		if s == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(ss, want)
 }
 
 func containsFzfValue(items []fzfItem, want string) bool {

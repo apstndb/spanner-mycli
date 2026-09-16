@@ -258,10 +258,7 @@ func (rs *replayState) rollbackToMarker(idx int) {
 	if rs == nil || idx < 0 || idx >= len(rs.savepoints) {
 		return
 	}
-	position := rs.savepoints[idx].position
-	if position > len(rs.entries) {
-		position = len(rs.entries)
-	}
+	position := min(rs.savepoints[idx].position, len(rs.entries))
 	for _, e := range rs.entries[position:] {
 		rs.retainedBytes -= e.payloadBytes
 	}

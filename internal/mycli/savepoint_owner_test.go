@@ -17,6 +17,7 @@ package mycli
 import (
 	"errors"
 	"io"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -477,8 +478,7 @@ func assertFrozenSQLMode(t *testing.T, tm *TransactionManager, capture bool, sql
 		}
 		return
 	}
-	for i := len(entries) - 1; i >= 0; i-- {
-		e := entries[i]
+	for _, e := range slices.Backward(entries) {
 		if e.kind != replayKindSQL || e.stmt.SQL != sql {
 			continue
 		}
