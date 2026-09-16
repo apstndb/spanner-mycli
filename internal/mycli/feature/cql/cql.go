@@ -108,21 +108,95 @@ func newCQLStatement(cql string) *CQLStatement {
 type cqlSessionHolder struct {
 	mu      sync.Mutex
 	session *gocql.Session
+	cluster *gocql.ClusterConfig
+
+	// Optional construction/close hooks. Production leaves them nil so
+	// go-spanner-cassandra NewCluster / CreateSession / CloseCluster are used.
+	newCluster    func(*spancql.Options) *gocql.ClusterConfig
+	createSession func(*gocql.ClusterConfig) (*gocql.Session, error)
+	closeCluster  func(*gocql.ClusterConfig)
 }
 
-// Close closes the cached gocql session, if any. The cluster is not closed
-// separately (matching the pre-extraction in-core lifecycle, which closed only
-// cqlSession). Satisfies io.Closer so the feature store closes it at the end of
+func (h *cqlSessionHolder) newClusterFn() func(*spancql.Options) *gocql.ClusterConfig {
+	if h.newCluster != nil {
+		return h.newCluster
+	}
+	return spancql.NewCluster
+}
+
+func (h *cqlSessionHolder) createSessionFn() func(*gocql.ClusterConfig) (*gocql.Session, error) {
+	if h.createSession != nil {
+		return h.createSession
+	}
+	return func(c *gocql.ClusterConfig) (*gocql.Session, error) {
+		return c.CreateSession()
+	}
+}
+
+func (h *cqlSessionHolder) closeClusterFn() func(*gocql.ClusterConfig) {
+	if h.closeCluster != nil {
+		return h.closeCluster
+	}
+	return spancql.CloseCluster
+}
+
+// Close closes the cached gocql session and adapter proxy, if any, exactly
+// once. Satisfies io.Closer so the feature store closes it at the end of
 // Session.Close.
 func (h *cqlSessionHolder) Close() error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if h.session == nil {
-		return nil
-	}
-	h.session.Close()
+	session := h.session
+	cluster := h.cluster
 	h.session = nil
+	h.cluster = nil
+	if session != nil {
+		session.Close()
+	}
+	if cluster != nil {
+		h.closeClusterFn()(cluster)
+	}
 	return nil
+}
+
+// openCluster builds the Cassandra adapter cluster and gocql session.
+// spancql.NewCluster panics on adapter or logger setup failure; that panic is
+// recovered into an error. Every successfully created cluster is closed if
+// session creation later fails, including when CreateSession panics.
+func (h *cqlSessionHolder) openCluster(databaseURI string) (cluster *gocql.ClusterConfig, session *gocql.Session, err error) {
+	closeOpened := func() {
+		if cluster == nil {
+			return
+		}
+		h.closeClusterFn()(cluster)
+		cluster = nil
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			closeOpened()
+			session = nil
+			err = fmt.Errorf("failed to create Cassandra adapter cluster: %v", r)
+		}
+	}()
+
+	cluster = h.newClusterFn()(&spancql.Options{
+		LogLevel:    zapcore.WarnLevel.String(),
+		DatabaseUri: databaseURI,
+	})
+	if cluster == nil {
+		return nil, nil, fmt.Errorf("failed to create Cassandra adapter cluster")
+	}
+
+	// You can still configure your cluster as usual after connecting to your
+	// spanner database
+	cluster.Timeout = 5 * time.Second
+
+	session, err = h.createSessionFn()(cluster)
+	if err != nil {
+		closeOpened()
+		return nil, nil, err
+	}
+	return cluster, session, nil
 }
 
 // get returns the CQL session, building the Cassandra adapter cluster and gocql
@@ -137,22 +211,11 @@ func (h *cqlSessionHolder) get(session *mycli.Session) (*gocql.Session, error) {
 		return h.session, nil
 	}
 
-	cluster := spancql.NewCluster(&spancql.Options{
-		LogLevel:    zapcore.WarnLevel.String(),
-		DatabaseUri: session.DatabasePath(),
-	})
-	if cluster == nil {
-		return nil, fmt.Errorf("failed to create cluster")
-	}
-
-	// You can still configure your cluster as usual after connecting to your
-	// spanner database
-	cluster.Timeout = 5 * time.Second
-
-	s, err := cluster.CreateSession()
+	cluster, s, err := h.openCluster(session.DatabasePath())
 	if err != nil {
 		return nil, err
 	}
+	h.cluster = cluster
 	h.session = s
 	return s, nil
 }
