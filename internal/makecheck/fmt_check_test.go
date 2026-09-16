@@ -127,7 +127,7 @@ if golangci-lint fmt --diff . | grep -q "^diff"; then
 else
 	echo "Code formatting is correct"
 fi`
-	cmd := exec.Command("sh", "-c", script)
+	cmd := exec.CommandContext(t.Context(), "sh", "-c", script)
 	cmd.Dir = root
 	cmd.Env = isolatedEnv(stubDir, tmpDir, "error")
 	out, err := cmd.CombinedOutput()
@@ -149,7 +149,7 @@ fi`
 func runFmtCheck(t *testing.T, root, mode string) (output string, exitCode, calls int) {
 	t.Helper()
 	stubDir, countFile, tmpDir := installFormatterStub(t, mode)
-	cmd := exec.Command("make", "fmt-check")
+	cmd := exec.CommandContext(t.Context(), "make", "fmt-check")
 	cmd.Dir = root
 	cmd.Env = isolatedEnv(stubDir, tmpDir, mode)
 	out, err := cmd.CombinedOutput()

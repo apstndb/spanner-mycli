@@ -7,17 +7,22 @@ formatters:
 
 linters:
   # The "standard" default group (errcheck, govet, ineffassign, staticcheck,
-  # unused) is already active in golangci-lint v2. The five linters below are
-  # listed explicitly so they stay enabled (and the codebase stays clean of
-  # their findings) even if `default` is ever changed. All five report zero
-  # violations as of enabling.
+  # unused) is already active in golangci-lint v2. Linters listed below are
+  # enabled explicitly so they stay on (and the codebase stays clean of their
+  # findings) even if `default` is ever changed. Each reports zero violations
+  # as of enabling.
   enable:
+    - bodyclose    # HTTP response bodies must be closed
     - copyloopvar  # Detects unnecessary loop variable copies (Go 1.22+)
     - errcheck     # Unchecked errors (see exclude-functions below)
     - govet        # Suspicious constructs (roughly `go vet`)
     - ineffassign  # Assignments whose values are never used
+    - misspell     # Common English misspellings
+    - noctx        # net/http, net, and os/exec calls missing context
     - staticcheck  # staticcheck rule set
+    - unconvert    # Unnecessary type conversions
     - unused       # Unused constants, variables, functions, and types
+    - usestdlibvars # Prefer stdlib named constants (http.MethodGet, ...)
   settings:
     copyloopvar:
       check-alias: true  # Also check aliased loop variables

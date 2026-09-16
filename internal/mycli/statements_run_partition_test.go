@@ -702,7 +702,7 @@ func startRunPartitionTCP(t *testing.T, server *runPartitionWireServer) (addr st
 	if server.rowsPer == 0 {
 		server.rowsPer = 1
 	}
-	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	lis, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
