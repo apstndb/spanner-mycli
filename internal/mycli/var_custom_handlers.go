@@ -290,7 +290,7 @@ func parseInlineStats(value string) ([]inlineStatsDef, error) {
 // TemplateVar handles template variables like CLI_ANALYZE_COLUMNS
 type TemplateVar struct {
 	stringPtr   *string
-	parsedPtr   interface{} // Will be type-asserted based on usage
+	parsedPtr   any // Will be type-asserted based on usage
 	parseFunc   func(string) error
 	prepareFunc func(string) error
 }

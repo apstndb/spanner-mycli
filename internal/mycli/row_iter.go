@@ -30,7 +30,7 @@ func parseQueryStats(stats map[string]any) (QueryStats, error) {
 }
 
 // consumeRowIterDiscard calls iter.Stop().
-func consumeRowIterDiscard(iter *spanner.RowIterator) (queryStats map[string]interface{}, rowCount int64, metadata *sppb.ResultSetMetadata, queryPlan *sppb.QueryPlan, err error) {
+func consumeRowIterDiscard(iter *spanner.RowIterator) (queryStats map[string]any, rowCount int64, metadata *sppb.ResultSetMetadata, queryPlan *sppb.QueryPlan, err error) {
 	result, err := spaniter.DrainRowIterator(iter)
 	if err != nil {
 		return nil, 0, nil, nil, err
@@ -39,11 +39,11 @@ func consumeRowIterDiscard(iter *spanner.RowIterator) (queryStats map[string]int
 }
 
 // consumeRowIter calls iter.Stop().
-func consumeRowIter(iter *spanner.RowIterator, f func(*spanner.Row) error) (queryStats map[string]interface{}, rowCount int64, metadata *sppb.ResultSetMetadata, queryPlan *sppb.QueryPlan, err error) {
+func consumeRowIter(iter *spanner.RowIterator, f func(*spanner.Row) error) (queryStats map[string]any, rowCount int64, metadata *sppb.ResultSetMetadata, queryPlan *sppb.QueryPlan, err error) {
 	return consumeRowIterObserving(iter, f, nil)
 }
 
-func consumeRowIterObserving(iter *spanner.RowIterator, f func(*spanner.Row) error, rec *operationReceipt) (queryStats map[string]interface{}, rowCount int64, metadata *sppb.ResultSetMetadata, queryPlan *sppb.QueryPlan, err error) {
+func consumeRowIterObserving(iter *spanner.RowIterator, f func(*spanner.Row) error, rec *operationReceipt) (queryStats map[string]any, rowCount int64, metadata *sppb.ResultSetMetadata, queryPlan *sppb.QueryPlan, err error) {
 	var result spaniter.RowIteratorResult
 	for row, rowErr := range spaniter.RowIteratorSeq(iter, spaniter.WithResult(&result)) {
 		if rowErr != nil {
@@ -69,11 +69,11 @@ func consumeRowIterObserving(iter *spanner.RowIterator, f func(*spanner.Row) err
 	return result.Stats.QueryStats, result.Stats.RowCount, result.Metadata, result.Stats.QueryPlan, nil
 }
 
-func consumeRowIterCollect[T any](iter *spanner.RowIterator, f func(*spanner.Row) (T, error)) (rows []T, queryStats map[string]interface{}, rowCount int64, metadata *sppb.ResultSetMetadata, queryPlan *sppb.QueryPlan, err error) {
+func consumeRowIterCollect[T any](iter *spanner.RowIterator, f func(*spanner.Row) (T, error)) (rows []T, queryStats map[string]any, rowCount int64, metadata *sppb.ResultSetMetadata, queryPlan *sppb.QueryPlan, err error) {
 	return consumeRowIterCollectObserving(iter, f, nil)
 }
 
-func consumeRowIterCollectObserving[T any](iter *spanner.RowIterator, f func(*spanner.Row) (T, error), rec *operationReceipt) (rows []T, queryStats map[string]interface{}, rowCount int64, metadata *sppb.ResultSetMetadata, queryPlan *sppb.QueryPlan, err error) {
+func consumeRowIterCollectObserving[T any](iter *spanner.RowIterator, f func(*spanner.Row) (T, error), rec *operationReceipt) (rows []T, queryStats map[string]any, rowCount int64, metadata *sppb.ResultSetMetadata, queryPlan *sppb.QueryPlan, err error) {
 	var results []T
 	stats, count, metadata, plan, err := consumeRowIterObserving(iter, func(row *spanner.Row) error {
 		v, err := f(row)
@@ -87,7 +87,7 @@ func consumeRowIterCollectObserving[T any](iter *spanner.RowIterator, f func(*sp
 	return results, stats, count, metadata, plan, err
 }
 
-func consumeRowIterCollectObservingWithMetrics[T any](iter *spanner.RowIterator, f func(*spanner.Row) (T, error), m *metrics.ExecutionMetrics, rec *operationReceipt) (rows []T, queryStats map[string]interface{}, rowCount int64, metadata *sppb.ResultSetMetadata, queryPlan *sppb.QueryPlan, err error) {
+func consumeRowIterCollectObservingWithMetrics[T any](iter *spanner.RowIterator, f func(*spanner.Row) (T, error), m *metrics.ExecutionMetrics, rec *operationReceipt) (rows []T, queryStats map[string]any, rowCount int64, metadata *sppb.ResultSetMetadata, queryPlan *sppb.QueryPlan, err error) {
 	var results []T
 	firstRow := true
 

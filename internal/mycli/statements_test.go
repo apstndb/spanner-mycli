@@ -57,7 +57,7 @@ func TestNewStatement(t *testing.T) {
 			},
 			want: spanner.Statement{
 				SQL: "SELECT @n",
-				Params: map[string]interface{}{
+				Params: map[string]any{
 					"n": gcvctor.Int64Value(1),
 				},
 			},
@@ -74,7 +74,7 @@ func TestNewStatement(t *testing.T) {
 			},
 			want: spanner.Statement{
 				SQL: "SELECT @n",
-				Params: map[string]interface{}{
+				Params: map[string]any{
 					"n": gcvctor.Int64Value(1),
 				},
 			},
@@ -90,7 +90,7 @@ func TestNewStatement(t *testing.T) {
 			},
 			want: spanner.Statement{
 				SQL: "SELECT @mixedcase",
-				Params: map[string]interface{}{
+				Params: map[string]any{
 					"mixedcase": gcvctor.Int64Value(42),
 				},
 			},
@@ -105,7 +105,7 @@ func TestNewStatement(t *testing.T) {
 			},
 			want: spanner.Statement{
 				SQL: "SELECT @MixedCase AS exact_match, @mixedcase AS folded_match",
-				Params: map[string]interface{}{
+				Params: map[string]any{
 					"MixedCase": gcvctor.Int64Value(42),
 				},
 			},
@@ -120,7 +120,7 @@ func TestNewStatement(t *testing.T) {
 			},
 			want: spanner.Statement{
 				SQL: "SELECT @MixedCase /* @ignored */, '@also'",
-				Params: map[string]interface{}{
+				Params: map[string]any{
 					"MixedCase": gcvctor.Int64Value(1),
 				},
 			},
@@ -135,7 +135,7 @@ func TestNewStatement(t *testing.T) {
 			},
 			want: spanner.Statement{
 				SQL: "INSERT INTO T (id) VALUES (@mixedcase)",
-				Params: map[string]interface{}{
+				Params: map[string]any{
 					"mixedcase": gcvctor.Int64Value(7),
 				},
 			},
@@ -151,7 +151,7 @@ func TestNewStatement(t *testing.T) {
 			},
 			want: spanner.Statement{
 				SQL: "SELECT @mixedtype",
-				Params: map[string]interface{}{
+				Params: map[string]any{
 					"mixedtype": gcvctor.NullOf(typector.CodeToSimpleType(sppb.TypeCode_INT64)),
 				},
 			},

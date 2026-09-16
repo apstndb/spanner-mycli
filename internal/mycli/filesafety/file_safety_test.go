@@ -37,7 +37,7 @@ func (f mockFileInfo) Size() int64        { return f.size }
 func (f mockFileInfo) Mode() os.FileMode  { return f.mode }
 func (f mockFileInfo) ModTime() time.Time { return time.Time{} }
 func (f mockFileInfo) IsDir() bool        { return false }
-func (f mockFileInfo) Sys() interface{}   { return nil }
+func (f mockFileInfo) Sys() any           { return nil }
 
 func TestValidateFileSafety(t *testing.T) {
 	t.Parallel()

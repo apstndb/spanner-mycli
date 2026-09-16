@@ -167,7 +167,7 @@ func getWritableColumnsWithTxn(ctx context.Context, txn *spanner.ReadOnlyTransac
 
 	stmt := spanner.Statement{
 		SQL: query,
-		Params: map[string]interface{}{
+		Params: map[string]any{
 			"schema": id.Schema,
 			"table":  id.Name,
 		},

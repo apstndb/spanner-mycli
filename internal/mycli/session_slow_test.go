@@ -451,7 +451,7 @@ func TestInstanceExists(t *testing.T) {
 
 // requestRecorder is a recorder to retain gRPC requests for spannertest.Server.
 type requestRecorder struct {
-	requests []interface{}
+	requests []any
 }
 
 func (r *requestRecorder) flush() {
@@ -459,7 +459,7 @@ func (r *requestRecorder) flush() {
 }
 
 func recordRequestsInterceptors(recorder *requestRecorder) (grpc.UnaryClientInterceptor, grpc.StreamClientInterceptor) {
-	unary := func(ctx context.Context, method string, req interface{}, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+	unary := func(ctx context.Context, method string, req any, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		recorder.requests = append(recorder.requests, req)
 		return invoker(ctx, method, req, reply, cc, opts...)
 	}
@@ -475,7 +475,7 @@ type recordRequestsStream struct {
 	grpc.ClientStream
 }
 
-func (s *recordRequestsStream) SendMsg(m interface{}) error {
+func (s *recordRequestsStream) SendMsg(m any) error {
 	s.recorder.requests = append(s.recorder.requests, m)
 	return s.ClientStream.SendMsg(m)
 }

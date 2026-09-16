@@ -271,7 +271,7 @@ func TestExplainOperatorHeaderBuildersAndRenderedOutput(t *testing.T) {
 
 	session := newSessionForLocalVarTest(t)
 	session.systemVariables.Display.ExplainOperatorHeader = "Op"
-	session.systemVariables.LastResult.QueryCache = &LastQueryCache{QueryPlan: plan, QueryStats: map[string]interface{}{}}
+	session.systemVariables.LastResult.QueryCache = &LastQueryCache{QueryPlan: plan, QueryStats: map[string]any{}}
 	last, err := (&ExplainLastQueryStatement{Width: 20}).Execute(t.Context(), session, OperationOutput{})
 	if err != nil {
 		t.Fatal(err)

@@ -194,7 +194,7 @@ func testQueryPlan(t *testing.T) *sppb.QueryPlan {
 				Index:       1,
 				DisplayName: "Scan",
 				Kind:        sppb.PlanNode_RELATIONAL,
-				Metadata:    mustNewStruct(map[string]interface{}{"scan_type": "TableScan", "scan_target": "Songs"}),
+				Metadata:    mustNewStruct(map[string]any{"scan_type": "TableScan", "scan_target": "Songs"}),
 			},
 		},
 	}
