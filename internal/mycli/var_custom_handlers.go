@@ -282,39 +282,44 @@ func parseAnalyzeColumns(value string) ([]columnRenderDef, error) {
 	return customListToTableRenderDefs(value)
 }
 
-// parseInlineStats parses inline stats definition
+// parseInlineStats parses CLI_INLINE_STATS. Empty means "no inline stats":
+// parseInlineStatsDefs would reject "" (it requires "<name>:<template>"), which
+// would make the default value fail to Set back and break the SET LOCAL
+// Get->Set round-trip; treat it as clearing instead.
 func parseInlineStats(value string) ([]inlineStatsDef, error) {
+	if value == "" {
+		return nil, nil
+	}
 	return parseInlineStatsDefs(value)
 }
 
-// TemplateVar handles template variables like CLI_ANALYZE_COLUMNS
-type TemplateVar struct {
-	stringPtr   *string
-	parsedPtr   any // Will be type-asserted based on usage
-	parseFunc   func(string) error
-	prepareFunc func(string) error
+// TemplateVar handles template variables like CLI_ANALYZE_COLUMNS.
+// parse is a pure function: it returns the parsed value without mutating live
+// state. Set assigns raw and parsed together after success.
+type TemplateVar[T any] struct {
+	raw    *string
+	parsed *T
+	parse  func(string) (T, error)
 }
 
-func (t *TemplateVar) Get() (string, error) {
-	return *t.stringPtr, nil
+func (t *TemplateVar[T]) Get() (string, error) {
+	return *t.raw, nil
 }
 
-func (t *TemplateVar) Set(value string) error {
-	if t.parseFunc != nil {
-		if err := t.parseFunc(value); err != nil {
-			return err
-		}
+func (t *TemplateVar[T]) Set(value string) error {
+	parsed, err := t.parse(value)
+	if err != nil {
+		return err
 	}
-	*t.stringPtr = value
+	*t.raw = value
+	*t.parsed = parsed
 	return nil
 }
 
-// PrepareReset validates the template string without writing parsed state.
-func (t *TemplateVar) PrepareReset(value string) error {
-	if t.prepareFunc != nil {
-		return t.prepareFunc(value)
-	}
-	return errResetUnsupported
+// PrepareReset parses the template string without writing parsed state.
+func (t *TemplateVar[T]) PrepareReset(value string) error {
+	_, err := t.parse(value)
+	return err
 }
 
 // AutocommitDMLModeVar handles AUTOCOMMIT_DML_MODE using enumer-generated methods

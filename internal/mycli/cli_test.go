@@ -486,127 +486,102 @@ Empty set
 		}
 	})
 
-	t.Run("DisplayModeVertical", func(t *testing.T) {
-		out := &bytes.Buffer{}
-		result := &Result{
-			TableHeader: toTableHeader("foo", "bar"), Body: PresentationBody(sliceOf(
-				toRow("1", "2"),
-				toRow("3", "4"),
-			)),
-		}
-		err := printResult(&systemVariables{Display: DisplayVars{CLIFormat: enums.DisplayModeVertical}}, math.MaxInt, out, result, false)
-		if err != nil {
-			t.Errorf("printResult() unexpected error: %v", err)
-		}
-
-		expected := strings.TrimPrefix(`
+	printFormatCases := []struct {
+		name            string
+		format          enums.DisplayMode
+		skipColumnNames bool
+		result          *Result
+		expected        string
+	}{
+		{
+			name:   "DisplayModeVertical",
+			format: enums.DisplayModeVertical,
+			result: &Result{
+				TableHeader: toTableHeader("foo", "bar"), Body: PresentationBody(sliceOf(
+					toRow("1", "2"),
+					toRow("3", "4"),
+				)),
+			},
+			expected: strings.TrimPrefix(`
 *************************** 1. row ***************************
 foo: 1
 bar: 2
 *************************** 2. row ***************************
 foo: 3
 bar: 4
-`, "\n")
-
-		got := out.String()
-		if got != expected {
-			t.Errorf("invalid print: expected = %s, but got = %s", expected, got)
-		}
-	})
-
-	t.Run("DisplayModeTab", func(t *testing.T) {
-		out := &bytes.Buffer{}
-		result := &Result{
-			TableHeader: toTableHeader("foo", "bar"), Body: PresentationBody(sliceOf(
-				toRow("1", "2"),
-				toRow("3", "4"),
-			)),
-		}
-		err := printResult(&systemVariables{Display: DisplayVars{CLIFormat: enums.DisplayModeTab}}, math.MaxInt, out, result, false)
-		if err != nil {
-			t.Errorf("printResult() unexpected error: %v", err)
-		}
-
-		expected := "foo\tbar\n" +
-			"1\t2\n" +
-			"3\t4\n"
-
-		got := out.String()
-		if got != expected {
-			t.Errorf("invalid print: expected = %s, but got = %s", expected, got)
-		}
-	})
-
-	t.Run("DisplayModeTSV", func(t *testing.T) {
-		out := &bytes.Buffer{}
-		result := &Result{
-			TableHeader: toTableHeader("foo", "bar"), Body: PresentationBody(sliceOf(
-				toRow("tab\there", "line\nbreak"),
-				toRow("back\\slash", "NULL"),
-			)),
-		}
-		err := printResult(&systemVariables{Display: DisplayVars{CLIFormat: enums.DisplayModeTSV}}, math.MaxInt, out, result, false)
-		if err != nil {
-			t.Errorf("printResult() unexpected error: %v", err)
-		}
-
-		expected := "foo\tbar\n" +
-			"tab\\there\tline\\nbreak\n" +
-			"back\\\\slash\tNULL\n"
-
-		got := out.String()
-		if got != expected {
-			t.Errorf("invalid print: expected = %s, but got = %s", expected, got)
-		}
-	})
-
-	t.Run("SkipColumnNames with DisplayModeTable", func(t *testing.T) {
-		out := &bytes.Buffer{}
-		result := &Result{
-			TableHeader: toTableHeader("foo", "bar"), Body: PresentationBody(sliceOf(
-				toRow("1", "2"),
-				toRow("3", "4"),
-			)),
-		}
-		err := printResult(&systemVariables{Display: DisplayVars{CLIFormat: enums.DisplayModeTable, SkipColumnNames: true}}, math.MaxInt, out, result, false)
-		if err != nil {
-			t.Errorf("printResult() unexpected error: %v", err)
-		}
-
-		expected := strings.TrimPrefix(`
+`, "\n"),
+		},
+		{
+			name:   "DisplayModeTab",
+			format: enums.DisplayModeTab,
+			result: &Result{
+				TableHeader: toTableHeader("foo", "bar"), Body: PresentationBody(sliceOf(
+					toRow("1", "2"),
+					toRow("3", "4"),
+				)),
+			},
+			expected: "foo\tbar\n" +
+				"1\t2\n" +
+				"3\t4\n",
+		},
+		{
+			name:   "DisplayModeTSV",
+			format: enums.DisplayModeTSV,
+			result: &Result{
+				TableHeader: toTableHeader("foo", "bar"), Body: PresentationBody(sliceOf(
+					toRow("tab\there", "line\nbreak"),
+					toRow("back\\slash", "NULL"),
+				)),
+			},
+			expected: "foo\tbar\n" +
+				"tab\\there\tline\\nbreak\n" +
+				"back\\\\slash\tNULL\n",
+		},
+		{
+			name:            "SkipColumnNames with DisplayModeTable",
+			format:          enums.DisplayModeTable,
+			skipColumnNames: true,
+			result: &Result{
+				TableHeader: toTableHeader("foo", "bar"), Body: PresentationBody(sliceOf(
+					toRow("1", "2"),
+					toRow("3", "4"),
+				)),
+			},
+			expected: strings.TrimPrefix(`
 +---+---+
 | 1 | 2 |
 | 3 | 4 |
 +---+---+
-`, "\n")
+`, "\n"),
+		},
+		{
+			name:            "SkipColumnNames with DisplayModeTab",
+			format:          enums.DisplayModeTab,
+			skipColumnNames: true,
+			result: &Result{
+				TableHeader: toTableHeader("foo", "bar"), Body: PresentationBody(sliceOf(
+					toRow("1", "2"),
+					toRow("3", "4"),
+				)),
+			},
+			expected: "1\t2\n" +
+				"3\t4\n",
+		},
+	}
+	for _, test := range printFormatCases {
+		t.Run(test.name, func(t *testing.T) {
+			out := &bytes.Buffer{}
+			err := printResult(&systemVariables{Display: DisplayVars{CLIFormat: test.format, SkipColumnNames: test.skipColumnNames}}, math.MaxInt, out, test.result, false)
+			if err != nil {
+				t.Errorf("printResult() unexpected error: %v", err)
+			}
 
-		got := out.String()
-		if got != expected {
-			t.Errorf("invalid print: expected = %s, but got = %s", expected, got)
-		}
-	})
-
-	t.Run("SkipColumnNames with DisplayModeTab", func(t *testing.T) {
-		out := &bytes.Buffer{}
-		result := &Result{
-			TableHeader: toTableHeader("foo", "bar"), Body: PresentationBody(sliceOf(
-				toRow("1", "2"),
-				toRow("3", "4"),
-			)),
-		}
-		err := printResult(&systemVariables{Display: DisplayVars{CLIFormat: enums.DisplayModeTab, SkipColumnNames: true}}, math.MaxInt, out, result, false)
-		if err != nil {
-			t.Errorf("printResult() unexpected error: %v", err)
-		}
-
-		expected := "1\t2\n" +
-			"3\t4\n"
-
-		got := out.String()
-		if got != expected {
-			t.Errorf("invalid print: expected = %s, but got = %s", expected, got)
-		}
-	})
+			got := out.String()
+			if got != test.expected {
+				t.Errorf("invalid print: expected = %s, but got = %s", test.expected, got)
+			}
+		})
+	}
 }
 
 func TestResultLine(t *testing.T) {

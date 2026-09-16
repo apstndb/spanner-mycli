@@ -791,50 +791,27 @@ func TestStyledCellInTable(t *testing.T) {
 
 func TestStyledCellWrappedStyled(t *testing.T) {
 	t.Parallel()
-
 	// Use a narrow screen to force StyledCell text to wrap.
 	// This verifies SGR carry-over: each wrapped line should have styling.
-	rows := []Row{
-		{PlainCell{Text: "1"}, StyledCell{Text: "long styled text", Style: "\033[32m"}},
-	}
-	columns := []string{"id", "data"}
-
-	var buf bytes.Buffer
-	err := WriteTable(&buf, rows, columns, FormatConfig{Styled: true}, 20, ModeTable)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	output := buf.String()
-	t.Logf("Table output:\n%s", output)
-
-	// Each data line with styled text should have both open and close SGR
-	for line := range strings.SplitSeq(output, "\n") {
-		if !strings.HasPrefix(line, "|") {
-			continue
-		}
-		if strings.Contains(line, "\033[32m") {
-			if !strings.Contains(line, "\033[0m") {
-				t.Errorf("line has style without reset: %q", line)
-			}
-		}
-	}
-
-	verifyTableAlignment(t, output)
+	testWrappedStyledSGRCarryOver(t, "long styled text", "\033[32m", "style")
 }
 
 func TestNullStyledWrappedStyled(t *testing.T) {
 	t.Parallel()
-
 	// Use a narrow screen to force NULL styled text to wrap.
 	// This verifies SGR carry-over: each wrapped line should have dim styling.
+	// screenWidth=20 forces "NULL value" to wrap
+	testWrappedStyledSGRCarryOver(t, "NULL value", "\033[2m", "dim")
+}
+
+func testWrappedStyledSGRCarryOver(t *testing.T, text, style, kind string) {
+	t.Helper()
 	rows := []Row{
-		{PlainCell{Text: "1"}, StyledCell{Text: "NULL value", Style: "\033[2m"}},
+		{PlainCell{Text: "1"}, StyledCell{Text: text, Style: style}},
 	}
 	columns := []string{"id", "data"}
 
 	var buf bytes.Buffer
-	// screenWidth=20 forces "NULL value" to wrap
 	err := WriteTable(&buf, rows, columns, FormatConfig{Styled: true}, 20, ModeTable)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -843,15 +820,13 @@ func TestNullStyledWrappedStyled(t *testing.T) {
 	output := buf.String()
 	t.Logf("Table output:\n%s", output)
 
-	// Each visible line containing NULL/value text should have ANSI dim codes
 	for line := range strings.SplitSeq(output, "\n") {
 		if !strings.HasPrefix(line, "|") {
 			continue
 		}
-		// Data lines containing dim text should have both open and close
-		if strings.Contains(line, "\033[2m") {
+		if strings.Contains(line, style) {
 			if !strings.Contains(line, "\033[0m") {
-				t.Errorf("line has dim without reset: %q", line)
+				t.Errorf("line has %s without reset: %q", kind, line)
 			}
 		}
 	}

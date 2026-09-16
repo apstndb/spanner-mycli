@@ -29,20 +29,23 @@ func (e *EnumVar[T]) Get() (string, error) {
 	return fmt.Sprintf("%v", *e.ptr), nil
 }
 
-func (e *EnumVar[T]) Set(value string) error {
+func (e *EnumVar[T]) lookup(value string) (T, error) {
 	upperValue := strings.ToUpper(value)
-	v, ok := e.values[upperValue]
-	if !ok {
-		// Try without case conversion for some enums
-		v, ok = e.values[value]
-		if !ok {
-			validValues := make([]string, 0, len(e.values))
-			for k := range e.values {
-				validValues = append(validValues, k)
-			}
-			slices.Sort(validValues)
-			return fmt.Errorf("invalid value \"%s\", must be one of: %s", value, strings.Join(validValues, ", "))
-		}
+	if v, ok := e.values[upperValue]; ok {
+		return v, nil
+	}
+	// Try without case conversion for some enums
+	if v, ok := e.values[value]; ok {
+		return v, nil
+	}
+	var zero T
+	return zero, fmt.Errorf("invalid value \"%s\", must be one of: %s", value, strings.Join(slices.Sorted(maps.Keys(e.values)), ", "))
+}
+
+func (e *EnumVar[T]) Set(value string) error {
+	v, err := e.lookup(value)
+	if err != nil {
+		return err
 	}
 	*e.ptr = v
 	return nil
@@ -50,19 +53,8 @@ func (e *EnumVar[T]) Set(value string) error {
 
 // PrepareReset validates the enum without assigning to the live pointer.
 func (e *EnumVar[T]) PrepareReset(value string) error {
-	upperValue := strings.ToUpper(value)
-	if _, ok := e.values[upperValue]; ok {
-		return nil
-	}
-	if _, ok := e.values[value]; ok {
-		return nil
-	}
-	validValues := make([]string, 0, len(e.values))
-	for k := range e.values {
-		validValues = append(validValues, k)
-	}
-	slices.Sort(validValues)
-	return fmt.Errorf("invalid value \"%s\", must be one of: %s", value, strings.Join(validValues, ", "))
+	_, err := e.lookup(value)
+	return err
 }
 
 // ValidValues returns sorted valid values as GoogleSQL string literals.
