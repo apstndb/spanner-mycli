@@ -17,11 +17,9 @@ package mycli
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
 	"slices"
 	"strings"
 	"sync"
@@ -36,37 +34,18 @@ import (
 	"github.com/apstndb/spanner-mycli/internal/mycli/streamio"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/proto"
 )
 
 func startDirectedReadDial(t *testing.T) (*directedReadWireServer, []option.ClientOption) {
 	t.Helper()
 	srv := &directedReadWireServer{partitionFanInServer: partitionFanInServer{nPartitions: 1, rowsPer: 1}}
-	listener := bufconn.Listen(1 << 20)
-	grpcServer := grpc.NewServer()
-	sppb.RegisterSpannerServer(grpcServer, srv)
-	adminpb.RegisterDatabaseAdminServer(grpcServer, &directedReadAdminServer{})
-	go func() {
-		if err := grpcServer.Serve(listener); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
-			t.Errorf("serve: %v", err)
-		}
-	}()
-	t.Cleanup(func() {
-		grpcServer.Stop()
-		_ = listener.Close()
-	})
 	// Per-client dialer options so USE/DETACH/RecreateClient can close a
 	// session without shutting down the shared in-memory listener.
-	opts := []option.ClientOption{
-		option.WithoutAuthentication(),
-		option.WithEndpoint("bufnet"),
-		option.WithGRPCDialOption(grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
-			return listener.Dial()
-		})),
-		option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())),
-	}
+	opts := bufconnClientOptions(t, func(s *grpc.Server) {
+		sppb.RegisterSpannerServer(s, srv)
+		registerDirectedReadAdmin(s)
+	})
 	return srv, opts
 }
 

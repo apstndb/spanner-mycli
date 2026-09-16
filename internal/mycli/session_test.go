@@ -1190,3 +1190,83 @@ func TestSwitchSessionValidatesBeforePublishing(t *testing.T) {
 		}
 	})
 }
+
+func TestSessionClientOptionsStableAcrossTwoRecreations(t *testing.T) {
+	t.Parallel()
+
+	identity := ConnectionVars{Project: "p", Instance: "i", Database: "d"}
+	sysVars := &systemVariables{
+		Connection: identity,
+		Config:     StartupConfig{Insecure: true, LogGrpc: true},
+	}
+	base := []option.ClientOption{option.WithoutAuthentication()}
+
+	countDatabase := func(t *testing.T, from []option.ClientOption) (int, *Session) {
+		t.Helper()
+		var n int
+		s, err := newSessionWithFactories(
+			t.Context(),
+			sysVars,
+			identity,
+			func(_ context.Context, _ string, _ spanner.ClientConfig, opts ...option.ClientOption) (*spanner.Client, error) {
+				n = len(opts)
+				return &spanner.Client{}, nil
+			},
+			func(context.Context, ...option.ClientOption) (*adminapi.DatabaseAdminClient, error) {
+				return &adminapi.DatabaseAdminClient{}, nil
+			},
+			func(*spanner.Client) {},
+			from...,
+		)
+		if err != nil {
+			t.Fatalf("database session: %v", err)
+		}
+		return n, s
+	}
+
+	countDetached := func(t *testing.T, from []option.ClientOption) (int, *Session) {
+		t.Helper()
+		var n int
+		detached := identity
+		detached.Database = ""
+		detached.Role = ""
+		s, err := newAdminSessionWithFactories(
+			t.Context(),
+			sysVars,
+			detached,
+			func(_ context.Context, opts ...option.ClientOption) (*adminapi.DatabaseAdminClient, error) {
+				n = len(opts)
+				return &adminapi.DatabaseAdminClient{}, nil
+			},
+			from...,
+		)
+		if err != nil {
+			t.Fatalf("detached session: %v", err)
+		}
+		return n, s
+	}
+
+	n1, first := countDatabase(t, base)
+	n2, detached := countDetached(t, NewSessionHandler(first).candidateClientOpts())
+	n3, reused := countDatabase(t, NewSessionHandler(detached).candidateClientOpts())
+	if n1 != n2 || n2 != n3 {
+		t.Fatalf("client option count changed across two recreations: first=%d detach=%d use=%d", n1, n2, n3)
+	}
+
+	want := len(base) + 1 + len(logGrpcClientOptions()) + len(defaultClientOpts)
+	if n1 != want {
+		t.Fatalf("composed option count = %d, want %d (base+insecure+logGrpc+default)", n1, want)
+	}
+
+	// Re-appending onto the effective clientOpts is the previous USE/DETACH
+	// composition. The growth proves this test would fail on that path.
+	grown := appendSessionClientOptions(sysVars, first.clientOpts)
+	if len(grown) <= n1 {
+		t.Fatalf("re-appending onto effective clientOpts did not grow (%d -> %d)", n1, len(grown))
+	}
+
+	reused.clientOpts = append(reused.clientOpts, option.WithoutAuthentication())
+	if got, wantLen := len(NewSessionHandler(reused).candidateClientOpts()), len(reused.baseClientOpts); got != wantLen {
+		t.Fatalf("candidateClientOpts len = %d, want immutable base %d (effective %d)", got, wantLen, len(reused.clientOpts))
+	}
+}

@@ -17,7 +17,6 @@ package mycli
 import (
 	"context"
 	"errors"
-	"net"
 	"slices"
 	"strings"
 	"sync"
@@ -25,14 +24,9 @@ import (
 	"time"
 
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
-	adminapi "cloud.google.com/go/spanner/admin/database/apiv1"
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"github.com/google/go-cmp/cmp"
-	"google.golang.org/api/option"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/descriptorpb"
 	"google.golang.org/protobuf/types/known/anypb"
@@ -796,33 +790,7 @@ func (s *protoBundleAdminServer) GetOperation(_ context.Context, req *longrunnin
 func newProtoBundleAdminSession(t *testing.T, schema *databasepb.GetDatabaseDdlResponse) (*Session, *protoBundleAdminServer) {
 	t.Helper()
 	server := &protoBundleAdminServer{schema: schema}
-	lis := bufconn.Listen(1 << 20)
-	gs := grpc.NewServer()
-	databasepb.RegisterDatabaseAdminServer(gs, server)
-	longrunningpb.RegisterOperationsServer(gs, server)
-	go func() {
-		if err := gs.Serve(lis); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
-			t.Errorf("serve: %v", err)
-		}
-	}()
-	t.Cleanup(func() {
-		gs.Stop()
-		_ = lis.Close()
-	})
-	conn, err := grpc.NewClient("passthrough:///proto-bundle",
-		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return lis.Dial() }),
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = conn.Close() })
-	admin, err := adminapi.NewDatabaseAdminClient(t.Context(), option.WithGRPCConn(conn))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = admin.Close() })
 	session := newSessionForLocalVarTest(t)
-	session.adminClient = admin
+	session.adminClient = newBufconnAdminClient(t, server)
 	return session, server
 }
