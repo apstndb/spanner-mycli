@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -179,9 +180,9 @@ func echoExecutedDDLRows(ddls []string, timestamps []*timestamppb.Timestamp) []R
 }
 
 func lastCommitTimestamp(timestamps []*timestamppb.Timestamp) (ts *timestamppb.Timestamp) {
-	for i := len(timestamps) - 1; i >= 0; i-- {
-		if !isEmptyCommitTimestamp(timestamps[i]) {
-			return timestamps[i]
+	for _, timestamp := range slices.Backward(timestamps) {
+		if !isEmptyCommitTimestamp(timestamp) {
+			return timestamp
 		}
 	}
 	return nil

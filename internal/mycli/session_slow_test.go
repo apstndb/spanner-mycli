@@ -3,6 +3,7 @@ package mycli
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -262,8 +263,8 @@ func TestExportDataRequestUsesIsolatedSingleUseOptions(t *testing.T) {
 		t.Fatalf("failed to consume query after EXPORT DATA: %v", err)
 	}
 	foundFollowingSelect := false
-	for i := len(recorder.requests) - 1; i >= 0; i-- {
-		execute, ok := recorder.requests[i].(*sppb.ExecuteSqlRequest)
+	for _, v := range slices.Backward(recorder.requests) {
+		execute, ok := v.(*sppb.ExecuteSqlRequest)
 		if !ok || execute.GetSql() != "SELECT 1" {
 			continue
 		}
