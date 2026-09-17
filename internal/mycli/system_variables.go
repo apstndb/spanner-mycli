@@ -162,6 +162,7 @@ type DisplayVars struct {
 	EnableHighlight            bool                  // CLI_ENABLE_HIGHLIGHT
 	UsePager                   bool                  // CLI_USE_PAGER
 	AutoWrap                   bool                  // CLI_AUTOWRAP
+	Ellipsis                   bool                  // CLI_ELLIPSIS
 	FixedWidth                 *int64                // CLI_FIXED_WIDTH
 	MultilineProtoText         bool                  // CLI_PROTOTEXT_MULTILINE
 	MarkdownCodeblock          bool                  // CLI_MARKDOWN_CODEBLOCK
@@ -172,6 +173,7 @@ type DisplayVars struct {
 	ExplainWrapWidth           int64                 // CLI_EXPLAIN_WRAP_WIDTH
 	ExplainOperatorHeader      string                // CLI_EXPLAIN_OPERATOR_HEADER
 	ExplainHangingIndent       bool                  // CLI_EXPLAIN_HANGING_INDENT
+	ExplainConciseMetadata     bool                  // CLI_EXPLAIN_CONCISE_METADATA
 	ExplainPrintSections       string                // CLI_EXPLAIN_PRINT_SECTIONS
 	ParsedExplainPrintSections planref.PrintSections
 	OutputTemplateFile         string // CLI_OUTPUT_TEMPLATE_FILE (computed getter/setter)
@@ -363,6 +365,7 @@ func (sv *systemVariables) toFormatConfig() format.FormatConfig {
 		Styled:          styled,
 		WidthStrategy:   sv.Display.WidthStrategy,
 		TabVisualize:    sv.Display.TabVisualize,
+		Ellipsis:        sv.Display.Ellipsis,
 	}
 }
 

@@ -123,6 +123,7 @@ type FormatConfig struct {
 	Styled          bool                // When true, table output uses Cell.Format() (may include ANSI codes). When false, uses RawText().
 	WidthStrategy   enums.WidthStrategy // Column width allocation algorithm. Zero value = GreedyFrequency (default).
 	TabVisualize    bool                // When true, visualize tab characters with → symbol in table output.
+	Ellipsis        bool                // When true and the screen is constrained, end-truncate TABLE family cells instead of wrapping.
 }
 
 // StreamingFormatter defines the interface for format-specific streaming output.

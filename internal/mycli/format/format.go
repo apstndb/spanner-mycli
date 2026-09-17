@@ -10,11 +10,16 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strings"
 
 	"github.com/apstndb/go-tabwrap"
 	"github.com/apstndb/spanner-mycli/internal/mycli/iterutil"
 	"github.com/olekukonko/tablewriter/tw"
 )
+
+// ellipsisMarker is the go-tabwrap tail for CLI_ELLIPSIS. Widths 1 and 2
+// shrink it to "." / ".." so the result still fits the allocated column.
+const ellipsisMarker = "..."
 
 // TableParams holds additional parameters for table formatting that are not
 // part of the standard FormatConfig (used only by table format).
@@ -37,6 +42,46 @@ func WriteTable(w io.Writer, rows []Row, columnNames []string, config FormatConf
 func WriteTableWithParams(w io.Writer, rows []Row, columnNames []string, config FormatConfig, screenWidth int, mode Mode, params TableParams) error {
 	formatter := NewTableFormatterForBuffered(w, config, screenWidth, mode, params)
 	return ExecuteWithFormatter(formatter, rows, columnNames, config)
+}
+
+// fitCell wraps or end-truncates text to width. Truncation is per existing
+// line because Condition.Truncate flattens newlines.
+func fitCell(cond *tabwrap.Condition, text string, width int, ellipsis bool) string {
+	if ellipsis {
+		return truncateLines(cond, text, width)
+	}
+	return cond.Wrap(text, width)
+}
+
+func truncateLines(cond *tabwrap.Condition, text string, width int) string {
+	if !strings.Contains(text, "\n") {
+		return cond.Truncate(text, width, ellipsisMarker)
+	}
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		lines[i] = cond.Truncate(line, width, ellipsisMarker)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// fitRowPreserving applies wrap or per-line truncate to RawText, then
+// WithText so Cell adapter types and metadata survive the fit step.
+func fitRowPreserving(row Row, widths []int, rw *tabwrap.Condition, ellipsis bool) Row {
+	if len(widths) == 0 {
+		return row
+	}
+	fittedTexts := slices.Collect(iterutil.ZipShortestBy(slices.Values(Texts(row)), slices.Values(widths), func(text string, width int) string {
+		return fitCell(rw, text, width, ellipsis)
+	}))
+	result := make(Row, len(fittedTexts))
+	for i, text := range fittedTexts {
+		if i < len(row) {
+			result[i] = row[i].WithText(text)
+		} else {
+			result[i] = PlainCell{Text: text}
+		}
+	}
+	return result
 }
 
 // wrapRowStyled wraps styled (ANSI-coded) cell text with ControlSequences-aware Wrap.
@@ -70,21 +115,7 @@ func wrapRowStyled(row Row, widths []int, rw *tabwrap.Condition) Row {
 // This is the key function that enables per-cell styling through the width-wrapping step:
 // the wrapped text replaces the original, but the Cell adapter type is preserved via WithText().
 func wrapRowPreserving(row Row, widths []int, rw *tabwrap.Condition) Row {
-	if len(widths) == 0 {
-		return row
-	}
-	wrappedTexts := slices.Collect(iterutil.ZipShortestBy(slices.Values(Texts(row)), slices.Values(widths), func(text string, width int) string {
-		return rw.Wrap(text, width)
-	}))
-	result := make(Row, len(wrappedTexts))
-	for i, text := range wrappedTexts {
-		if i < len(row) {
-			result[i] = row[i].WithText(text)
-		} else {
-			result[i] = PlainCell{Text: text}
-		}
-	}
-	return result
+	return fitRowPreserving(row, widths, rw, false)
 }
 
 // ExecuteWithFormatter executes buffered formatting using a streaming formatter.

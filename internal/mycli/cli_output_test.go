@@ -419,3 +419,48 @@ func TestSuppressResultLinesDMLAndDDL(t *testing.T) {
 		})
 	}
 }
+
+func TestCLIEllipsisLeavesExportsUnchanged(t *testing.T) {
+	t.Parallel()
+	result := &Result{
+		TableHeader:      toTableHeader("col"),
+		SQLExportAllowed: true,
+		Body:             PresentationBody([]Row{toRow("abcdefghijklmnop")}),
+	}
+	render := func(t *testing.T, mode enums.DisplayMode, ellipsis bool) string {
+		t.Helper()
+		sv := &systemVariables{
+			Display: DisplayVars{
+				CLIFormat:    mode,
+				AutoWrap:     true,
+				Ellipsis:     ellipsis,
+				SQLTableName: "t",
+			},
+		}
+		var buf bytes.Buffer
+		if err := printTableData(sv, 20, &buf, result); err != nil {
+			t.Fatalf("printTableData %v ellipsis=%v: %v", mode, ellipsis, err)
+		}
+		return buf.String()
+	}
+	for _, mode := range []enums.DisplayMode{
+		enums.DisplayModeCSV,
+		enums.DisplayModeJSONL,
+		enums.DisplayModeSQLInsert,
+	} {
+		t.Run(mode.String(), func(t *testing.T) {
+			t.Parallel()
+			off := render(t, mode, false)
+			on := render(t, mode, true)
+			if off != on {
+				t.Fatalf("export changed with CLI_ELLIPSIS\noff:\n%s\non:\n%s", off, on)
+			}
+			if !strings.Contains(off, "abcdefghijklmnop") {
+				t.Fatalf("export lost full value: %q", off)
+			}
+			if strings.Contains(off, "abcde...") {
+				t.Fatalf("export truncated a table cell: %q", off)
+			}
+		})
+	}
+}

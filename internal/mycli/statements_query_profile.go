@@ -92,7 +92,7 @@ func (s *ShowQueryProfilesStatement) Execute(ctx context.Context, session *Sessi
 
 	var resultRows []Row
 	for _, queryProfileRow := range rows {
-		planRows, _, appendices, err := processPlanWithoutStats(queryProfileRow.QueryProfile.QueryPlan, session.systemVariables.Display.ExplainFormat, session.systemVariables.Display.ExplainWrapWidth, session.systemVariables.Display.ExplainHangingIndent, resolveExplainPrintSections(session.systemVariables, nil))
+		planRows, _, appendices, err := processPlanWithoutStats(queryProfileRow.QueryProfile.QueryPlan, session.systemVariables.Display.ExplainFormat, session.systemVariables.Display.ExplainWrapWidth, session.systemVariables.Display.ExplainHangingIndent, resolveExplainPrintSections(session.systemVariables, nil), queryPlanOptionsFromDisplay(session.systemVariables)...)
 		if err != nil {
 			return nil, err
 		}

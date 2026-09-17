@@ -241,6 +241,12 @@ var varDefs = []varDef{
 		bind:  func(sv *systemVariables) Variable { return BoolVar(&sv.Display.AutoWrap) },
 	},
 	{
+		name:  "CLI_ELLIPSIS",
+		desc:  "Enable end-truncation of TABLE, TABLE_COMMENT, and TABLE_DETAIL_COMMENT cells to the widths already allocated by CLI_WIDTH_STRATEGY, using ASCII ellipsis (...). Default FALSE keeps wrapping. Truncation runs only on a finite constrained screen (CLI_AUTOWRAP plus TTY width or CLI_FIXED_WIDTH). AUTOWRAP off or unknown terminal width remain wrap-only so later streaming rows are not cut. CSV, JSONL, and SQL exports are unchanged. Truncation omits visible data on purpose.",
+		scope: scopeSession,
+		bind:  func(sv *systemVariables) Variable { return BoolVar(&sv.Display.Ellipsis) },
+	},
+	{
 		name:  "CLI_ENABLE_HIGHLIGHT",
 		desc:  "Enable syntax highlighting.",
 		scope: scopeSession,
@@ -341,6 +347,12 @@ var varDefs = []varDef{
 		desc:  "Use hanging indent for wrapped query plan lines in EXPLAIN, EXPLAIN ANALYZE, and query profile rendering. Only affects output when CLI_EXPLAIN_WRAP_WIDTH or WIDTH is set.",
 		scope: scopeSession,
 		bind:  func(sv *systemVariables) Variable { return BoolVar(&sv.Display.ExplainHangingIndent) },
+	},
+	{
+		name:  "CLI_EXPLAIN_CONCISE_METADATA",
+		desc:  "Omit exact seekable_key_size: 0 and scan_method Auto/Automatic from EXPLAIN, EXPLAIN ANALYZE, last-plan, and WITH_PLAN_AND_STATS plan titles. Default FALSE keeps those values visible. Independent of CURRENT/TRADITIONAL/COMPACT layout. Does not change plan protos, last-query caches, raw exports, or other metadata.",
+		scope: scopeSession,
+		bind:  func(sv *systemVariables) Variable { return BoolVar(&sv.Display.ExplainConciseMetadata) },
 	},
 	{
 		name:  "CLI_FUZZY_FINDER_KEY",
