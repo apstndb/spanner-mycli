@@ -162,6 +162,7 @@ type DisplayVars struct {
 	EnableHighlight            bool                  // CLI_ENABLE_HIGHLIGHT
 	UsePager                   bool                  // CLI_USE_PAGER
 	AutoWrap                   bool                  // CLI_AUTOWRAP
+	Ellipsis                   bool                  // CLI_ELLIPSIS
 	FixedWidth                 *int64                // CLI_FIXED_WIDTH
 	MultilineProtoText         bool                  // CLI_PROTOTEXT_MULTILINE
 	MarkdownCodeblock          bool                  // CLI_MARKDOWN_CODEBLOCK
@@ -364,6 +365,7 @@ func (sv *systemVariables) toFormatConfig() format.FormatConfig {
 		Styled:          styled,
 		WidthStrategy:   sv.Display.WidthStrategy,
 		TabVisualize:    sv.Display.TabVisualize,
+		Ellipsis:        sv.Display.Ellipsis,
 	}
 }
 

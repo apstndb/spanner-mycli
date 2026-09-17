@@ -241,6 +241,12 @@ var varDefs = []varDef{
 		bind:  func(sv *systemVariables) Variable { return BoolVar(&sv.Display.AutoWrap) },
 	},
 	{
+		name:  "CLI_ELLIPSIS",
+		desc:  "Enable end-truncation of TABLE, TABLE_COMMENT, and TABLE_DETAIL_COMMENT cells to the widths already allocated by CLI_WIDTH_STRATEGY, using ASCII ellipsis (...). Default FALSE keeps wrapping. Truncation runs only on a finite constrained screen (CLI_AUTOWRAP plus TTY width or CLI_FIXED_WIDTH). AUTOWRAP off or unknown terminal width remain wrap-only so later streaming rows are not cut. CSV, JSONL, and SQL exports are unchanged. Truncation omits visible data on purpose.",
+		scope: scopeSession,
+		bind:  func(sv *systemVariables) Variable { return BoolVar(&sv.Display.Ellipsis) },
+	},
+	{
 		name:  "CLI_ENABLE_HIGHLIGHT",
 		desc:  "Enable syntax highlighting.",
 		scope: scopeSession,

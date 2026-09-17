@@ -279,6 +279,50 @@ func TestResetDirectedReadWhenIdle(t *testing.T) {
 	}
 }
 
+func TestResetCLIEllipsis(t *testing.T) {
+	t.Parallel()
+	sv := newSystemVariablesWithDefaultsForTest()
+	if err := sv.CaptureStartupSnapshots(); err != nil {
+		t.Fatal(err)
+	}
+	got, err := sv.Get("CLI_ELLIPSIS")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["CLI_ELLIPSIS"] != "FALSE" {
+		t.Fatalf("default CLI_ELLIPSIS = %q, want FALSE", got["CLI_ELLIPSIS"])
+	}
+	if sv.toFormatConfig().Ellipsis {
+		t.Fatal("default toFormatConfig Ellipsis should be false")
+	}
+	if err := sv.SetFromSimple("CLI_ELLIPSIS", "TRUE"); err != nil {
+		t.Fatal(err)
+	}
+	if !sv.Display.Ellipsis || !sv.toFormatConfig().Ellipsis {
+		t.Fatal("SET CLI_ELLIPSIS=TRUE did not copy through Display and FormatConfig")
+	}
+	got, err = sv.Get("CLI_ELLIPSIS")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["CLI_ELLIPSIS"] != "TRUE" {
+		t.Fatalf("after SET CLI_ELLIPSIS = %q, want TRUE", got["CLI_ELLIPSIS"])
+	}
+	if err := sv.Reset("CLI_ELLIPSIS"); err != nil {
+		t.Fatal(err)
+	}
+	got, err = sv.Get("CLI_ELLIPSIS")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["CLI_ELLIPSIS"] != "FALSE" {
+		t.Fatalf("after RESET CLI_ELLIPSIS = %q, want FALSE", got["CLI_ELLIPSIS"])
+	}
+	if sv.toFormatConfig().Ellipsis {
+		t.Fatal("RESET should restore FormatConfig Ellipsis to false")
+	}
+}
+
 func TestResetKeepTransactionAlive(t *testing.T) {
 	t.Parallel()
 	sv := newSystemVariablesWithDefaultsForTest()

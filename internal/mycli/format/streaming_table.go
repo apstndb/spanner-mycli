@@ -299,27 +299,41 @@ func naturalPreviewWidths(cond *tabwrap.Condition, headers []string, rows []Row)
 	return out
 }
 
-// wrapHeaders wraps headers according to calculated widths.
+func (f *TableStreamingFormatter) ellipsisFit() bool {
+	return f.config.Ellipsis && constrainedScreen(f.screenWidth)
+}
+
+// wrapHeaders wraps or end-truncates headers according to calculated widths.
 func (f *TableStreamingFormatter) wrapHeaders(headers []string) []string {
 	if len(f.widths) == 0 {
 		return headers
 	}
 
 	rw := f.newCondition()
+	ellipsis := f.ellipsisFit()
 	return slices.Collect(iterutil.ZipShortestBy(slices.Values(headers), slices.Values(f.widths), func(header string, width int) string {
-		return rw.Wrap(header, width)
+		return fitCell(rw, header, width, ellipsis)
 	}))
 }
 
-// wrapRow wraps row columns according to calculated widths, preserving cell metadata.
+// wrapRow wraps or end-truncates row columns according to calculated widths, preserving cell metadata.
 func (f *TableStreamingFormatter) wrapRow(row Row) Row {
 	if len(f.widths) == 0 {
 		return row
 	}
 
 	rw := f.newCondition()
+	ellipsis := f.ellipsisFit()
 	if f.config.Styled {
+		if ellipsis {
+			// Truncate RawText first; splitting Format() would cut SGR. Existing
+			// wrapRowStyled then replays ANSI-aware wrapping on the remaining text.
+			row = fitRowPreserving(row, f.widths, rw, true)
+		}
 		return wrapRowStyled(row, f.widths, rw)
+	}
+	if ellipsis {
+		return fitRowPreserving(row, f.widths, rw, true)
 	}
 	return wrapRowPreserving(row, f.widths, rw)
 }
