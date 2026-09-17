@@ -343,6 +343,12 @@ var varDefs = []varDef{
 		bind:  func(sv *systemVariables) Variable { return BoolVar(&sv.Display.ExplainHangingIndent) },
 	},
 	{
+		name:  "CLI_EXPLAIN_CONCISE_METADATA",
+		desc:  "Omit exact seekable_key_size: 0 and scan_method Auto/Automatic from EXPLAIN, EXPLAIN ANALYZE, last-plan, and WITH_PLAN_AND_STATS plan titles. Default FALSE keeps those values visible. Independent of CURRENT/TRADITIONAL/COMPACT layout. Does not change plan protos, last-query caches, raw exports, or other metadata.",
+		scope: scopeSession,
+		bind:  func(sv *systemVariables) Variable { return BoolVar(&sv.Display.ExplainConciseMetadata) },
+	},
+	{
 		name:  "CLI_FUZZY_FINDER_KEY",
 		desc:  "Key binding for fuzzy finder. Uses go-readline-ny key names (e.g., C_T, M_F, F1). Set to empty string to disable. The default is C_T (Ctrl+T).",
 		scope: scopeSession,

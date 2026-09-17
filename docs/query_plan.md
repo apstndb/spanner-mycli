@@ -578,9 +578,12 @@ keeps the plan-rendering details; do not treat the list as a second inventory.
 - [`CLI_INLINE_STATS`](system_variables.md#reference): Define inline statistics display within operator column. Examples: [Inline stats](#inline-stats)
 - [`CLI_LINT_PLAN`](system_variables.md#reference): Enable heuristic query plan linter for EXPLAIN and EXPLAIN ANALYZE
 - [`CLI_EXPLAIN_FORMAT`](system_variables.md#reference): Control EXPLAIN format (TRADITIONAL vs default concise format)
+- [`CLI_EXPLAIN_CONCISE_METADATA`](system_variables.md#reference): Opt-in omission of exact `seekable_key_size: 0` and `scan_method: Auto`/`Automatic` from rendered plan titles; default `FALSE` keeps them visible. Independent of CURRENT/TRADITIONAL/COMPACT. Does not change plan protos, last-query caches, or raw exports
 - [`CLI_EXPLAIN_HANGING_INDENT`](system_variables.md#reference): Use hanging indent for wrapped plan lines; default is `TRUE`, and `FALSE` restores tree-aligned wrapped continuation lines
 - [`CLI_EXPLAIN_OPERATOR_HEADER`](system_variables.md#reference): Literal Operator column header; empty keeps the WIDTH-dependent name. WIDTH wraps operator cells and does not truncate a long header
 - [`CLI_EXPLAIN_PRINT_SECTIONS`](system_variables.md#reference): Select query plan appendix preset or sections (`basic`, `enhanced`, `full`, `none`, or comma-separated `predicates`, `ordering`, `aggregate`, `typed`, `full`)
+
+Default `CLI_EXPLAIN_CONCISE_METADATA=FALSE` keeps `seekable_key_size: 0` and `scan_method: Auto`/`Automatic` in rendered titles because those values can be useful. `TRUE` omits only those exact strings; nonzero, nondefault, unknown, and differently cased metadata stay visible. The setting is independent of CURRENT/TRADITIONAL/COMPACT and does not rewrite plan protos, last-query caches, raw plan files, or `SHOW LAST QUERY PLAN` exports.
 
 ### Statement Options
 - `FORMAT`: Control output format
