@@ -107,7 +107,7 @@ mycli>
 
 - Changes the prompt immediately for the current session
 - Updates the `CLI_PROMPT` system variable
-- Supports the same percent expansion patterns as the `--prompt` flag (see README.md for details)
+- Supports the same percent expansion patterns as the `--prompt` flag (see [prompt customization](../README.md#customize-prompt))
 - The change persists for the duration of the session
 
 ### Examples
@@ -229,4 +229,4 @@ spanner> \O                   -- Disable using \O (symmetric with \t)
 | `\o file` | Prompts/progress/errors only | Yes | Export clean SQL while keeping status messages visible |
 | Neither | Yes | No | Normal interactive work |
 
-For detailed information about output functionality (what gets logged, file handling, error handling), see [Output logging and redirection](../README.md#output-logging-and-redirection) in the README.
+For detailed information about output functionality (what gets logged, file handling, error handling), see [Output logging and redirection](../README.md#output-logging-and-redirection).

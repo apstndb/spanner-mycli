@@ -69,11 +69,20 @@ Behavior that depends on `term.IsTerminal()` needs a real PTY; use the
 
 ## Testing Unmockable Spanner Types
 
-Spanner transaction types have unexported fields and cannot be mocked. Use
-two tiers: unit tests for error paths and locking behavior (no real
-transaction needed), and emulator integration tests for actual behavior. See
-transaction_manager_test.go and
-session_transaction_helpers_integration_test.go.
+Spanner transaction types have unexported fields. Choose the smallest fixture
+that reaches the behavior under test:
+
+- Pure state/error/locking checks need no RPCs; see transaction_manager_test.go.
+- RPC requests, metadata, cancellation, and server errors can use the real SDK
+  against an in-process fake gRPC server (`bufconn_test.go`, query_cache_test.go,
+  stream_width_test.go, statements_schema_rpc_test.go). These run under `-short`
+  and need no Docker. Reuse existing server and session helpers.
+- SQL semantics and emulator-supported transaction behavior belong in emulator
+  integration tests, such as session_transaction_helpers_integration_test.go.
+
+Assert the error cause and relevant RPC sequence, not merely that an error
+occurred. Isolate environment variables with `t.Setenv`, and synchronize on
+observable events or channels instead of fixed sleeps.
 
 ## Coverage Analysis
 
@@ -81,23 +90,13 @@ session_transaction_helpers_integration_test.go.
   (excluding enumer-generated files) and prints the total;
   `make test-coverage-open` opens the HTML report. On PRs, octocov comments
   with the coverage delta.
-- Use `go tool cover -func` for a quick, readable summary of function-level coverage
-- Use `go tool cover -html` for detailed line-by-line analysis
-- Before and after test refactoring, always verify coverage doesn't decrease:
-
-```bash
-# Before changes
-go test ./... -coverprofile=tmp/coverage_before.out
-go tool cover -func=tmp/coverage_before.out | tail -1  # Total coverage
-
-# After changes
-go test ./... -coverprofile=tmp/coverage_after.out
-go tool cover -func=tmp/coverage_after.out | tail -1   # Compare with before
-
-# Detailed comparison for specific files
-go tool cover -func=tmp/coverage_before.out | grep "filename.go"
-go tool cover -func=tmp/coverage_after.out | grep "filename.go"
-```
+- Use the same `make test-coverage` target before and after test refactoring,
+  preserving the first `tmp/coverage.out` for comparison. This keeps the
+  cross-package instrumentation and generated-file exclusions consistent with
+  CI; plain `go test -coverprofile` produces a different denominator.
+- Inspect functions with `go tool cover -func=tmp/coverage.out` or lines with
+  `go tool cover -html=tmp/coverage.out`. Check both total coverage and the
+  affected functions; a higher aggregate alone does not preserve test quality.
 
 ## Test File Organization
 
@@ -124,9 +123,6 @@ Avoid boolean parameters - use descriptive wrapper functions:
 ### Signal-to-Noise Ratio
 - Signal: Clear test names, obvious assertions, easy-to-understand failures
 - Noise: Boilerplate code, repetitive setup, unclear names
-
-### Helper Functions
-Must be genuinely reusable (used in multiple places).
 
 ### Pointer-Based Expectations
 Use nil to skip checks in test structs:

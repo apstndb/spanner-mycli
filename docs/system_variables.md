@@ -59,8 +59,7 @@ no flag, TOML key, or environment variable. Some flags are presence-dependent:
 key and `--set STATEMENT_TIMEOUT` also omit a value. The same rule applies to
 `--idle-transaction-timeout` / `CLI_IDLE_TRANSACTION_TIMEOUT`. Do not assume a
 TOML key exists for every `CLI_*` name; use `--set` or SQL `SET`.
-README: [Config file](../README.md#config-file) and
-[Configuration Precedence](../README.md#configuration-precedence).
+For TOML examples, see [Config file](../README.md#config-file).
 
 ## Stored values, snapshots, and effective behavior
 
@@ -338,7 +337,8 @@ documented with examples in:
   - The deadline is preserved across physical reconstruction (`ROLLBACK TO`) and is not restarted by later statements.
   - SQL, Batch DML, commit, and replay RPCs receive the minimum of the caller context, `STATEMENT_TIMEOUT`, and the remaining transaction budget.
   - Expiry cancels in-flight RPCs without waiting for the transaction mutex, retires only the matching logical owner, stops its heartbeat, and restores `SET LOCAL` at the serialized session safe point (start and end of `ExecuteStatement`, and `Close`). Timer goroutines never call `Registry.Set`.
-  - ABORTED retries (#293) are not implemented. A later retry path must reuse the remaining budget.
+  - Opt-in ABORTED retries preserve the same remaining budget; see
+    [retry behavior](savepoint.md#explicit-aborted-retry).
 
 #### CLI_IDLE_TRANSACTION_TIMEOUT
 - **Type**: STRING (duration or `NULL`)
@@ -577,26 +577,6 @@ documented with examples in:
   - Explicit newlines are kept; each existing line is truncated independently (verbose `Name\nSTRING` headers keep both lines).
   - This is deliberate visual data omission in the table display. CSV, JSONL, and SQL exports are unchanged.
 
-### Interactive / Fuzzy Finder Variables
-
-#### CLI_FUZZY_FINDER_OPTIONS
-- **Type**: STRING
-- **Default**: (empty)
-- **Description**: Additional fzf options passed to the fuzzy finder
-- **Access**: Read/Write
-- **Usage**:
-  ```sql
-  SET CLI_FUZZY_FINDER_OPTIONS = '--color=dark';
-  SET CLI_FUZZY_FINDER_OPTIONS = '--no-select-1 --no-cycle';  -- Override defaults
-  SET CLI_FUZZY_FINDER_OPTIONS = '';  -- Reset to defaults only
-  ```
-- **Notes**:
-  - Options are appended after built-in defaults, so user options take precedence (last wins)
-  - Uses standard fzf option syntax (space-separated flags)
-  - Built-in defaults: `--reverse`, `--no-sort`, `--height=<computed>`, `--border=rounded`, `--info=inline-right`, `--select-1`, `--exit-0`, `--highlight-line`, `--cycle`, and `--header-border=inline` when a header is shown
-  - Useful for customizing appearance (colors, layout) or behavior (sorting, preview)
-  - `--tmux` and `--popup` are **not supported** because the fuzzy finder runs fzf in-process via the Go library
-
 #### CLI_TYPE_STYLES
 - **Type**: STRING
 - **Default**: `"NULL=dim"`
@@ -666,6 +646,26 @@ documented with examples in:
   - Typed NULL cells keep their no-wrap/dim styling. The quoted STRING is not a NULL cell
   - CSV, TSV, JSONL, SQL export, TAB, HTML, and XML bytes are unchanged. Preformatted plan/stat/presentation rows and column headers are unchanged
   - Follows ordinary SET / SHOW / RESET / SET LOCAL semantics
+
+### Interactive / Fuzzy Finder Variables
+
+#### CLI_FUZZY_FINDER_OPTIONS
+- **Type**: STRING
+- **Default**: (empty)
+- **Description**: Additional fzf options passed to the fuzzy finder
+- **Access**: Read/Write
+- **Usage**:
+  ```sql
+  SET CLI_FUZZY_FINDER_OPTIONS = '--color=dark';
+  SET CLI_FUZZY_FINDER_OPTIONS = '--no-select-1 --no-cycle';  -- Override defaults
+  SET CLI_FUZZY_FINDER_OPTIONS = '';  -- Reset to defaults only
+  ```
+- **Notes**:
+  - Options are appended after built-in defaults, so user options take precedence (last wins)
+  - Uses standard fzf option syntax (space-separated flags)
+  - Built-in defaults: `--reverse`, `--no-sort`, `--height=<computed>`, `--border=rounded`, `--info=inline-right`, `--select-1`, `--exit-0`, `--highlight-line`, `--cycle`, and `--header-border=inline` when a header is shown
+  - Useful for customizing appearance (colors, layout) or behavior (sorting, preview)
+  - `--tmux` and `--popup` are **not supported** because the fuzzy finder runs fzf in-process via the Go library
 
 ### DDL_EXECUTION_MODE
 
