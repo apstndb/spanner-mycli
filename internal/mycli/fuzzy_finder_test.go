@@ -659,6 +659,13 @@ func TestDetectFuzzyContext(t *testing.T) {
 			wantArgStartPos:    0,
 		},
 		{
+			name:               "SHOW CHANGE STREAMS falls through to statement name",
+			input:              "SHOW CHANGE STREAMS",
+			wantCompletionType: 0,
+			wantArgPrefix:      "SHOW CHANGE STREAMS",
+			wantArgStartPos:    0,
+		},
+		{
 			name:               "SHOW VARIABLES falls through to statement name",
 			input:              "SHOW VARIABLES",
 			wantCompletionType: 0,

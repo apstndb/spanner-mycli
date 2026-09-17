@@ -300,6 +300,19 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 	{
 		Descriptions: []clientSideStatementDescription{
 			{
+				Usage:  `List change streams`,
+				Syntax: `SHOW CHANGE STREAMS`,
+				Note:   `Columns are Schema, Name, and All (TRUE if the stream tracks the entire database). Use SHOW CREATE CHANGE STREAM <name> for configuration.`,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^SHOW\s+CHANGE\s+STREAMS$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			return &ShowChangeStreamsStatement{}, nil
+		},
+	},
+	{
+		Descriptions: []clientSideStatementDescription{
+			{
 				Usage:  `Show columns`,
 				Syntax: `SHOW COLUMNS FROM <table_fqn>`,
 			},

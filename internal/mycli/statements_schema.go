@@ -8,11 +8,29 @@ import (
 	"strings"
 
 	"cloud.google.com/go/spanner"
+	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"github.com/apstndb/spanner-mycli/internal/mycli/decoder"
 	"github.com/apstndb/spanvalue"
 	"github.com/samber/lo"
 	loi "github.com/samber/lo/it"
 )
+
+// showChangeStreamsGoogleSQL lists change streams for GoogleSQL-dialect databases.
+// `ALL` is reserved and must be quoted; the view already describes the current
+// database, so there is no catalog predicate.
+const showChangeStreamsGoogleSQL = "SELECT CHANGE_STREAM_SCHEMA AS Schema, CHANGE_STREAM_NAME AS Name, `ALL` AS `All` FROM INFORMATION_SCHEMA.CHANGE_STREAMS ORDER BY CHANGE_STREAM_SCHEMA, CHANGE_STREAM_NAME"
+
+// showChangeStreamsPostgreSQL lists change streams for PostgreSQL-dialect databases.
+// information_schema.change_streams.all is YES/NO text; compare to YES so the
+// result column is BOOL like GoogleSQL. Quote identifiers with double quotes.
+const showChangeStreamsPostgreSQL = `SELECT change_stream_schema AS "Schema", change_stream_name AS "Name", ("all" = 'YES') AS "All" FROM information_schema.change_streams ORDER BY change_stream_schema, change_stream_name`
+
+func showChangeStreamsSQL(dialect databasepb.DatabaseDialect) string {
+	if dialect == databasepb.DatabaseDialect_POSTGRESQL {
+		return showChangeStreamsPostgreSQL
+	}
+	return showChangeStreamsGoogleSQL
+}
 
 type ShowCreateStatement struct {
 	ObjectType string
@@ -60,6 +78,13 @@ func (s *ShowTablesStatement) Execute(ctx context.Context, session *Session, out
 	}
 
 	return executeInformationSchemaBasedStatement(ctx, session, "SHOW TABLES", stmt, nil)
+}
+
+type ShowChangeStreamsStatement struct{}
+
+func (s *ShowChangeStreamsStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
+	stmt := spanner.Statement{SQL: showChangeStreamsSQL(session.systemVariables.Feature.DatabaseDialect)}
+	return executeInformationSchemaBasedStatement(ctx, session, "SHOW CHANGE STREAMS", stmt, nil)
 }
 
 type ShowColumnsStatement struct {
