@@ -94,9 +94,8 @@ handles itself instead of sending to Spanner. Each entry in
 
 ## Configuration
 
-- Sources, highest precedence first: command-line flags, `SPANNER_*`
-  environment variables, `.spanner_mycli.toml` (home directory, then current
-  directory), built-in defaults.
+- See [configuration sources and precedence](../docs/system_variables.md#configuration-sources-and-precedence)
+  for file, environment, flag, `--set`, and initialization-command ordering.
 - Startup validation happens in three stages, and different error classes
   surface at different stages: kong parsing (`parseFlags`), business rules
   (`ValidateSpannerOptions`), and value/type validation

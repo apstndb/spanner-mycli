@@ -2,6 +2,10 @@
 
 This document describes the query plan analysis and visualization features in spanner-mycli.
 
+The Cloud Spanner Emulator does not return the plans needed by `EXPLAIN` or
+`EXPLAIN ANALYZE`; these commands report an error when plan data is absent.
+See [emulator limitations](../README.md#using-with-the-cloud-spanner-emulator).
+
 ## EXPLAIN
 
 You can see query plan without query execution using the `EXPLAIN` client side statement.

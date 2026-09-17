@@ -93,7 +93,7 @@ all: fmt check
 all-quick: fmt test-quick lint
 
 # Update README.md help sections and docs/system_variables.md reference table
-# go-flags uses ioctl(TIOCGWINSZ) for terminal width, so capture help through a PTY.
+# Capture terminal-formatted help through a PTY at a fixed width.
 docs-update:
 	@echo "Updating help output for README.md..."
 	@mkdir -p tmp

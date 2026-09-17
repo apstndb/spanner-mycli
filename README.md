@@ -376,14 +376,15 @@ id      name    active
 ```
 
 `TAB` writes values as-is, so values containing tabs or newlines break the row/column structure.
-Use `--format=TSV` for the same layout with lossless escaping: tab, newline, carriage return, and
+Use `--format=TSV` for the same layout with delimiter escaping: tab, newline, carriage return, and
 backslash inside values are escaped as `\t`, `\n`, `\r`, and `\\`, guaranteeing one row per line
-and one field per tab-separated column.
+and one field per tab-separated column. SQL NULL and the STRING `NULL` remain
+indistinguishable in TAB/TSV; see [format contracts](docs/system_variables.md#cli_format).
 
 With `--skip-column-names` option, column headers are suppressed in output (useful for scripting).
 
 ```
-$ spanner-mycli -p myproject -i myinstance -d mydb -e 'SELECT * FROM users;' --skip-column-names
+$ spanner-mycli -p myproject -i myinstance -d mydb -e 'SELECT * FROM users;' --format=TAB --skip-column-names
 1       foo     true
 2       bar     false
 
@@ -555,72 +556,26 @@ spanner> SELECT 1 AS test;
 
 ### EXPLAIN
 
-> [!WARNING]
-> The Cloud Spanner Emulator does not return query plans in PLAN mode (the field is absent in the API response). While the API itself succeeds and returns other metadata like row types, `EXPLAIN` will error in spanner-mycli as it requires query plan data to produce meaningful output. See [emulator limitations](https://github.com/GoogleCloudPlatform/cloud-spanner-emulator/blob/master/README.md#features-and-limitations) for details.
+`EXPLAIN` shows the query plan without executing the query:
 
-You can see query plan without query execution using the `EXPLAIN` client side statement.
-
-For advanced query plan features and configuration options, see [docs/query_plan.md](docs/query_plan.md).
-System-variable names for those options are listed in
-[docs/system_variables.md](docs/system_variables.md#query-plan-display).
-
-```
-spanner> EXPLAIN
-         SELECT SingerId, FirstName FROM Singers WHERE FirstName LIKE "A%";
-+----+-------------------------------------------------------------------------------------------+
-| ID | Query_Execution_Plan                                                                      |
-+----+-------------------------------------------------------------------------------------------+
-| *0 | Distributed Union <Row> (distribution_table: indexOnSingers, split_ranges_aligned: false) |
-|  1 | +- Local Distributed Union <Row>                                                          |
-|  2 |    +- Serialize Result <Row>                                                              |
-|  3 |       +- Filter Scan <Row> (seekable_key_size: 1)                                         |
-| *4 |          +- Index Scan <Row> (Index: indexOnSingers, scan_method: Row)                    |
-+----+-------------------------------------------------------------------------------------------+
-Predicates(identified by ID):
- 0: Split Range: STARTS_WITH($FirstName, 'A')
- 4: Seek Condition: STARTS_WITH($FirstName, 'A')
-
-5 rows in set (0.86 sec)
+```sql
+EXPLAIN SELECT SingerId, FirstName FROM Singers WHERE FirstName LIKE "A%";
 ```
 
-Note: `<Row>` or `<Batch>` after the operator name mean [execution method](https://cloud.google.com/spanner/docs/sql-best-practices#optimize-query-execution) of the operator node.
+The Cloud Spanner Emulator does not return query plans, so `EXPLAIN` and
+`EXPLAIN ANALYZE` report an error there. See [query plan examples and settings](docs/query_plan.md)
+for complete output, execution-method labels, and display options.
 
 ### EXPLAIN ANALYZE
 
-> [!WARNING]
-> The Cloud Spanner Emulator does not return query plans in PROFILE mode (the field is absent in the API response). While the API itself succeeds and returns other metadata like row types, `EXPLAIN ANALYZE` will error in spanner-mycli as it requires query plan data to produce meaningful output. See [emulator limitations](https://github.com/GoogleCloudPlatform/cloud-spanner-emulator/blob/master/README.md#features-and-limitations) for details.
+`EXPLAIN ANALYZE` executes the query and shows its plan and execution profile:
 
-You can see query plan and execution profile using the `EXPLAIN ANALYZE` client side statement.
-You should know that it requires executing the query.
-
-For advanced query plan features and configuration options, see [docs/query_plan.md](docs/query_plan.md).
-System-variable names for those options are listed in
-[docs/system_variables.md](docs/system_variables.md#query-plan-display).
-
+```sql
+EXPLAIN ANALYZE SELECT SingerId, FirstName FROM Singers WHERE FirstName LIKE "A%";
 ```
-spanner> EXPLAIN ANALYZE
-         SELECT SingerId, FirstName FROM Singers WHERE FirstName LIKE "A%";
-+----+-------------------------------------------------------------------------------------------+---------------+------------+---------------+
-| ID | Query_Execution_Plan                                                                      | Rows_Returned | Executions | Total_Latency |
-+----+-------------------------------------------------------------------------------------------+---------------+------------+---------------+
-| *0 | Distributed Union <Row> (distribution_table: indexOnSingers, split_ranges_aligned: false) | 235           | 1          | 1.17 msecs    |
-|  1 | +- Local Distributed Union <Row>                                                          | 235           | 1          | 1.12 msecs    |
-|  2 |    +- Serialize Result <Row>                                                              | 235           | 1          | 1.1 msecs     |
-|  3 |       +- Filter Scan <Row> (seekable_key_size: 1)                                         | 235           | 1          | 1.05 msecs    |
-| *4 |          +- Index Scan <Row> (Index: indexOnSingers, scan_method: Row)                    | 235           | 1          | 1.02 msecs    |
-+----+-------------------------------------------------------------------------------------------+---------------+------------+---------------+
-Predicates(identified by ID):
- 0: Split Range: STARTS_WITH($FirstName, 'A')
- 4: Seek Condition: STARTS_WITH($FirstName, 'A')
 
-5 rows in set (4.49 msecs)
-timestamp:            2025-04-16T01:07:59.137819+09:00
-cpu time:             3.73 msecs
-rows scanned:         235 rows
-deleted rows scanned: 0 rows
-optimizer version:    7
-optimizer statistics: auto_20250413_15_34_23UTC
-```
+See [execution profile examples](docs/query_plan.md#explain-analyze) and
+[query plan variables](docs/system_variables.md#query-plan-display).
 
 ### Directed reads mode
 
@@ -788,7 +743,7 @@ Escape sequences:
 Example:
 
 ```
-$ spanner-mycli -p myproject -i myinstance -d mydb --prompt='[%p:%i:%d]%n\t%% '
+$ spanner-mycli -p myproject -i myinstance -d mydb --prompt='[%p:%i:%d]%n%t%% '
 Connected.
 [myproject:myinstance:mydb]
 %
@@ -873,28 +828,15 @@ prompt = "[%p:%i:%d]%t> "
 
 ## Configuration Precedence
 
-For a **dedicated flag / TOML key / env alias** (for example `--project`,
-`SPANNER_PROJECT_ID`, `project` in `.spanner_mycli.toml`), sources are listed
-in descending priority:
+For dedicated flags, TOML keys, and environment aliases, later sources override
+earlier ones: built-in defaults, home `.spanner_mycli.toml`, current-directory
+`.spanner_mycli.toml`, environment variables, then command-line flags.
+`--set NAME=VALUE` applies after those sources. Initialization SQL runs after the
+RESET startup snapshot has been captured, so its assignments are resettable.
 
-1. Command-line flags
-2. Environment variables (`SPANNER_*` and flag-mapped env)
-3. `.spanner_mycli.toml` in the current directory
-4. `.spanner_mycli.toml` in the home directory
-5. Built-in / flag defaults
-
-`--set NAME=VALUE` overrides the same system-variable name after those dedicated
-sources. `--init-command` and `--init-command-add` then run as ordinary SQL
-**after** the RESET startup snapshot is captured; `RESET` / `RESET ALL` can undo
-those init assignments.
-
-Not every system variable has a flag, TOML key, or environment variable. Names
-that exist only as system variables are set with `--set` or SQL `SET`. Some flags
-are presence-dependent (for example `--enable-partitioned-dml` sets
-`AUTOCOMMIT_DML_MODE` only when given). Omitting `--timeout` or
-`--idle-transaction-timeout` leaves the matching timeout stored as `NULL` only
-when the corresponding config key and `--set` also omit a value. See
-[docs/system_variables.md](docs/system_variables.md#configuration-sources-and-precedence).
+Not every system variable has a flag, TOML key, or environment alias. See
+[configuration sources and precedence](docs/system_variables.md#configuration-sources-and-precedence)
+for the full rules and [RESET snapshots](docs/system_variables.md#stored-values-snapshots-and-effective-behavior).
 
 ## Request Priority
 
@@ -918,20 +860,18 @@ BEGIN RO PRIORITY LOW;
 BEGIN RO 60 PRIORITY MEDIUM;
 
 # Read-only transaction with exact timestamp and medium priority
-BEGIN RO 2021-04-01T23:47:44+00:00 PRIORITY MEDIUM;
+BEGIN RO "2021-04-01T23:47:44+00:00" PRIORITY MEDIUM;
 ```
 
 Note that transaction-level priority takes precedence over command-level priority.
 
-`COMMIT_PRIORITY` overrides only the Commit RPC. `HIGH`, `MEDIUM`, and `LOW` set that override. `UNSPECIFIED` (the default) inherits the resolved transaction RPC priority, matching previous mycli behavior. That is not the go-sql-spanner default: the Go driver's unset `commit_priority` is `UNSPECIFIED` and does not inherit RPC priority. The effective commit priority is frozen when the physical read-write attempt is constructed, including SAVEPOINT reconstruction. Changing the session default does not alter an active attempt. Query, DML, heartbeat, partitioned DML, read-only, and Admin RPCs keep using their existing priority fields. `SET LOCAL COMMIT_PRIORITY` is not supported.
+Related transaction settings are documented in the variable reference:
 
-`KEEP_TRANSACTION_ALIVE` controls whether an explicit read-write owner schedules keepalive heartbeats after the first user SQL. `TRUE` (the default) preserves existing mycli behavior. `FALSE` prevents heartbeat scheduling for that owner without changing user SQL, COMMIT, ROLLBACK, or cancellation. Java `KEEP_TRANSACTION_ALIVE` defaults to false; this CLI default is intentionally true. The policy is frozen on the logical owner with the constructor snapshot, including SAVEPOINT reconstruction. Changing the session default does not alter an active owner. `CLI_IDLE_TRANSACTION_TIMEOUT` is an independent user-idle quiet interval and still expires when keepalive is disabled. `TRANSACTION_TIMEOUT` is a separate logical-owner budget and is not implied by this variable. `SET LOCAL KEEP_TRANSACTION_ALIVE` is not supported.
+- [COMMIT_PRIORITY](docs/system_variables.md#commit_priority) overrides Commit RPC priority; default `UNSPECIFIED` inherits the transaction priority.
+- [KEEP_TRANSACTION_ALIVE](docs/system_variables.md#keep_transaction_alive) controls explicit read-write heartbeats; default `TRUE` preserves existing behavior.
+- [TRANSACTION_TIMEOUT](docs/system_variables.md#transaction_timeout) adds a logical-transaction deadline, disabled by default. Its remaining budget is preserved across SAVEPOINT reconstruction and opt-in ABORTED retries.
 
-`TRANSACTION_TIMEOUT` is a logical read/write deadline (`10s`, `5m`, or `NULL`). `NULL` or `0` means no additional transaction deadline. The duration is captured for the logical owner. The single total budget starts at the first real database RPC, including the statement-based constructor `BeginTransaction`, and is preserved across physical reconstruction (`ROLLBACK TO`). Client-only `BEGIN`/`SHOW` and buffering automatic DML without a transaction RPC do not start it. A pending `SET LOCAL` may select the duration before the first RPC; changing it after the budget starts is rejected. Session `SET` or `RESET` after `BEGIN` applies to a later owner. Every SQL, Batch DML, commit, and replay RPC receives the remaining budget together with the caller and `STATEMENT_TIMEOUT` deadlines. Expiry cancels in-flight RPCs without waiting for the transaction mutex, retires only the matching owner, stops its heartbeat, and restores `SET LOCAL` at the next session safe point (start/end of `ExecuteStatement`, or `Close`). Distinct from `CLI_IDLE_TRANSACTION_TIMEOUT` (#357). ABORTED retries (#293) are not implemented; a later retry path must reuse the remaining budget.
-
-`CLI_IDLE_TRANSACTION_TIMEOUT` is a sliding user-idle quiet interval (`60s`, `5m`, or `NULL`). `NULL` or `0` disables it; there is no default 60-second expiry. The duration is captured at `BEGIN`. Session `SET` or `RESET` after `BEGIN` applies to a later owner. `SET LOCAL` may change the captured duration before admitted user or database work and then freezes. Successful explicit `BEGIN RW` or `BEGIN RO` that acquired a server transaction starts the first quiet interval; a resource-free pending `BEGIN` does not arm until work. Completed admitted work rearms the interval, including successful buffered DML/`MUTATE` and successful `SAVEPOINT` / `RELEASE` / `ROLLBACK TO`. Heartbeat `SELECT 1` and client-only `SHOW` / `SET` / `RESET` do not reset it. Expiry holds through the user RPC, iterator consumption, and CLI result rendering or pager, and is not an RPC context deadline. The next ordinary command reports a one-shot error without executing; `ROLLBACK` / `CLOSE` / `BEGIN` / `USE` / `DETACH` acknowledge the notice. The timer runs even when `KEEP_TRANSACTION_ALIVE` is `FALSE`. `--idle-transaction-timeout` maps the same duration strings as `--timeout`.
-
-`CLI_DDL_IN_TRANSACTION_MODE` controls whether DDL may run while a logical transaction owner exists. `FAIL` (the default) rejects DDL while any owner exists and intentionally differs from Java `ALLOW_IN_EMPTY_TRANSACTION`. `ALLOW_IN_EMPTY_TRANSACTION` retires an empty pending owner without constructing or committing, or rolls back a constructor-only empty RW owner, then runs DDL. `AUTO_COMMIT_TRANSACTION` no-op-retires empty pending, or flushes eligible automatic DML and commits a RW owner, then runs DDL. The policy is captured on the logical owner at creation, including pending `BEGIN`. Session `SET` after `BEGIN` applies to a later owner. `SET LOCAL` may change this owner only before user work. Manual DML batch, read-only owners, and SAVEPOINT recovery reject with zero Admin RPCs. Empty BulkDdl is a no-op and does not commit. `START BATCH DDL` is admitted before batch state changes; `RUN BATCH` validates descriptors and rechecks admission before `Commit`, then carries that preparation receipt through Admin. After a successful commit, a later DDL failure cannot be rolled back. `CreateDatabase` is out of scope. EOF, `EXIT`, and `Close` never auto-commit because of this variable. SYNC default-sequence repair is `DEFAULT_SEQUENCE_KIND` (#984), not this variable.
+See [SAVEPOINT and retry limits](docs/savepoint.md) for recovery guarantees.
 
 ## Transaction Tags and Request Tags
 
@@ -1105,50 +1045,13 @@ RESET ALL;
 HELP VARIABLES;
 ```
 
-Parser-valid samples (not defaults):
+Detailed values, examples, and restrictions are maintained in the variable reference:
 
-| Name | Example |
-|------|---------|
-| `CLI_FORMAT` | `'TABLE'` |
-| `CLI_DATABASE_DIALECT` | `'GOOGLE_STANDARD_SQL'` (`POSTGRESQL` and `DATABASE_DIALECT_UNSPECIFIED` are also accepted; `TRUE` is not) |
-| `STATEMENT_TIMEOUT` | `'2m'` or `NULL` (`NULL` when `--timeout`, config, and `--set` all omit a value) |
-| `CLI_IDLE_TRANSACTION_TIMEOUT` | `'60s'` or `NULL` (`NULL` when `--idle-transaction-timeout`, config, and `--set` all omit a value) |
-| `CLI_STRING_QUOTE_MODE` | `'NONE'` (`AUTO`, `ALWAYS`) |
-| `RPC_PRIORITY` | `'HIGH'` (`MEDIUM`, `LOW`; prefer the short form) |
-| `READ_ONLY_STALENESS` | `'STRONG'` |
-| `CLI_QUERY_MODE` | `'PLAN'` |
-
-> **Note**: `CLI_BIGQUERY_PROJECT` defaults to `CLI_PROJECT` when empty. `CLI_BIGQUERY_LOCATION` and `CLI_BIGQUERY_MAX_BYTES_BILLED` are optional BigQuery job settings.
-
-> **Note**: `CLI_SPANNER_METRICS_EXPORTER` defaults to `off` and does not start a MeterProvider. `OTEL_*` environment variables alone do not enable export. `otlp` requires `CLI_SPANNER_METRICS_ENDPOINT` (absolute `http`/`https` URL; missing/root path becomes `/v1/metrics`). After explicit opt-in, other standard OTLP HTTP exporter settings may still apply; destination, path, and scheme come only from the CLI URL. `SPANNER_EMULATOR_HOST` suppresses SDK caller-owned client metrics. Native Cloud Monitoring stays disabled. There is no `SHOW METRICS`.
-
-> **Note**: `CLI_FORMAT` accepts the following values:
-> - `TABLE` - ASCII table with borders (default for both interactive and batch modes)
-> - `TABLE_COMMENT` - Table wrapped in /* */ comments  
-> - `TABLE_DETAIL_COMMENT` - Table and execution details wrapped in /* */ comments (useful for embedding results in SQL code blocks)
-> - `VERTICAL` - Vertical format (column: value pairs)
-> - `TAB` - Tab-separated values (raw; values containing tabs or newlines break the row/column structure)
-> - `TSV` - Tab-separated values with escaping (tab, newline, carriage return, and backslash in values are escaped as `\t`, `\n`, `\r`, `\\`)
-> - `HTML` - HTML table format (compatible with Google Cloud Spanner CLI)
-> - `XML` - XML format (compatible with Google Cloud Spanner CLI)
-> - `CSV` - Comma-separated values (RFC 4180 compliant with automatic escaping)
-> - `JSONL` - JSON Lines (one JSON object per row with type-aware values)
-> - `SQL_INSERT` - SQL INSERT statements
-> - `SQL_INSERT_OR_IGNORE` - SQL INSERT OR IGNORE statements
-> - `SQL_INSERT_OR_UPDATE` - SQL INSERT OR UPDATE statements
->
-> You can change the output format at runtime using `SET CLI_FORMAT = 'CSV';` or use command-line flags `--table`, `--html`, `--xml`, `--csv`, or `--format`.
-
-> **Note**: `CLI_TABLE_STREAMING` controls table streaming output mode:
-> - `AUTO` (default) - Buffers Table formats for accurate column width calculation; non-table formats stream
-> - `TRUE` - Streams Table formats too (reduces memory usage, faster time-to-first-byte)
-> - `FALSE` - Buffers Table formats; non-table formats still stream
->
-> For Table formats with streaming enabled, `CLI_TABLE_PREVIEW_ROWS` (default: 50) controls how many rows are used to calculate column widths before streaming the rest.
-
-> **Note**: `CLI_FUZZY_FINDER_OPTIONS` passes additional fzf options to the fuzzy finder. Options are appended after built-in defaults, so user options take precedence (last wins).
-> Built-in defaults: `--reverse`, `--no-sort`, `--height=<computed>`, `--select-1`, `--exit-0`, `--highlight-line`, `--cycle`, `--border=rounded`, `--info=inline-right`, and `--header-border=inline` when a header is shown.
-> `--tmux` and `--popup` are not supported because the fuzzy finder runs fzf in-process via the Go library.
+- [Output formats](docs/system_variables.md#cli_format) and [table streaming](docs/system_variables.md#cli_table_streaming)
+- [Statement timeout](docs/system_variables.md#statement_timeout) and [idle transaction timeout](docs/system_variables.md#cli_idle_transaction_timeout)
+- [Client metrics](docs/system_variables.md#cli_spanner_metrics_exporter--cli_spanner_metrics_endpoint) (opt-in; disabled by default)
+- [Fuzzy finder options](docs/system_variables.md#cli_fuzzy_finder_options)
+- [Type styling](docs/system_variables.md#cli_type_styles) and [string quoting](docs/system_variables.md#cli_string_quote_mode) (default `NONE`; CSV/TSV/JSONL/SQL exports are unchanged)
 
 After a query or `EXPLAIN ANALYZE` has cached a plan, type `SHOW PLAN NODE `
 and press `Ctrl+T` to select a node by ID, kind, or operator name. Only its ID
@@ -1165,17 +1068,6 @@ Duplicates keep the newest interval's preview. This is a bounded network
 completion and is not cached. `SHOW QUERY PROFILES` is unchanged. A missing
 session, no rows, fetch failure, cancellation, or an active read-write
 transaction leaves the input unchanged.
-
-> **Note**: `CLI_TYPE_STYLES` configures ANSI styling for query result values based on their Spanner type. Format: colon-separated `TYPE=STYLE` pairs.
-> - Named colors/attributes: `red`, `green`, `bold`, `dim`, `italic`, `underline`, etc.
-> - Raw SGR numbers: `38;5;214` (256-color), `38;2;R;G;B` (truecolor)
-> - Combined: `bold;green`
-> - Supported types: `BOOL`, `INT64`, `FLOAT32`, `FLOAT64`, `NUMERIC`, `STRING`, `BYTES`, `JSON`, `DATE`, `TIMESTAMP`, `ARRAY`, `STRUCT`, `PROTO`, `ENUM`, `INTERVAL`, `UUID`, `NULL`
-> - Example: `SET CLI_TYPE_STYLES = 'STRING=green:INT64=cyan:NULL=dim';`
-> - Set to empty string to disable all type styling.
-> - See [docs/system_variables.md](docs/system_variables.md) for full reference.
-
-> **Note**: `CLI_STRING_QUOTE_MODE` (default `NONE`) is an opt-in TABLE/VERTICAL STRING quoting policy: `NONE` keeps current bytes, `AUTO` quotes ambiguous strings, `ALWAYS` quotes every non-NULL STRING. AUTO and ALWAYS share `strconv.Quote` (Go-style display escaping, not JSON or SQL encoding). SQL NULL stays `NULL`. CSV, TSV, JSONL, SQL export, TAB, HTML, and XML are unchanged. See [docs/system_variables.md](docs/system_variables.md#cli_string_quote_mode).
 
 Table width calculation and wrapping account for 7-bit ANSI escape sequences
 already present in values or headers, independently of CLI-added type styling.
@@ -1853,74 +1745,16 @@ spanner> SHOW SPLIT POINTS;
 
 ### Configurable query stats
 
-The detail lines are customizable using Go text/template.
-Note: You need to know `OutputContext` in spanner-mycli and `spanstats.QueryStats`.
-Prefer `OutputContext.ReadTimestamp` and `OutputContext.CommitTimestamp` in custom templates.
-`OutputContext.Timestamp` remains a compatibility alias for whichever of those fields is present.
-The bundled [output_full.tmpl](internal/mycli/output_full.tmpl) uses the explicit fields.
+Customize result detail lines with a Go text/template passed to `--output-template`.
+The bundled [output_full.tmpl](internal/mycli/output_full.tmpl) is the complete
+example for `OutputContext` and `spanstats.QueryStats`; copy it to
+`output_timestamp.tmpl` and edit it to make a custom template.
+Prefer `ReadTimestamp` and `CommitTimestamp`; `Timestamp` is a compatibility
+alias for whichever is present.
 
+```sh
+spanner-mycli -t -v --output-template output_timestamp.tmpl -e 'SELECT 1'
 ```
-$ cat output_timestamp.tmpl
-{{- /*gotype: github.com/apstndb/spanner-mycli.OutputContext */ -}}
-{{if .Verbose -}}
-{{with .ReadTimestamp -}}                   read_timestamp:       {{.}}{{"\n"}}{{end -}}
-{{with .CommitTimestamp -}}                 commit_timestamp:     {{.}}{{"\n"}}{{end -}}
-{{with .CommitStats.GetMutationCount -}}    mutation_count:       {{.}}{{"\n"}}{{end -}}
-{{with .Stats.ElapsedTime -}}               elapsed time:         {{.}}{{"\n"}}{{end -}}
-{{with .Stats.CPUTime -}}                   cpu time:             {{.}}{{"\n"}}{{end -}}
-{{with .Stats.RowsReturned -}}              rows returned:        {{.}}{{"\n"}}{{end -}}
-{{with .Stats.RowsScanned -}}               rows scanned:         {{.}}{{"\n"}}{{end -}}
-{{with .Stats.DeletedRowsScanned -}}        deleted rows scanned: {{.}}{{"\n"}}{{end -}}
-{{with .Stats.OptimizerVersion -}}          optimizer version:    {{.}}{{"\n"}}{{end -}}
-{{with .Stats.OptimizerStatisticsPackage -}}optimizer statistics: {{.}}{{"\n"}}{{end -}}
-{{with .Stats.RemoteServerCalls -}}         remote server calls:  {{.}}{{"\n"}}{{end -}}
-{{with .Stats.MemoryPeakUsageBytes -}}      peak memory usage:    {{.}} bytes{{"\n"}}{{end -}}
-{{with .Stats.TotalMemoryPeakUsageByte -}}  total peak memory:    {{.}} bytes{{"\n"}}{{end -}}
-{{with .Stats.BytesReturned -}}             bytes returned:       {{.}} bytes{{"\n"}}{{end -}}
-{{with .Stats.RuntimeCreationTime -}}       runtime creation:     {{.}}{{"\n"}}{{end -}}
-{{with .Stats.StatisticsLoadTime -}}        statistics load:      {{.}}{{"\n"}}{{end -}}
-{{with .Stats.MemoryUsagePercentage -}}     memory usage:         {{.}} %{{"\n"}}{{end -}}
-{{with .Stats.FilesystemDelaySeconds -}}    filesystem delay:     {{.}}{{"\n"}}{{end -}}
-{{with .Stats.LockingDelay -}}              locking delay:        {{.}}{{"\n"}}{{end -}}
-{{with .Stats.QueryPlanCreationTime -}}     plan creation time:   {{.}}{{"\n"}}{{end -}}
-{{with .Stats.ServerQueueDelay -}}          server queue delay:   {{.}}{{"\n"}}{{end -}}
-{{with .Stats.DataBytesRead -}}             data bytes read:      {{.}} bytes{{"\n"}}{{end -}}
-{{with .Stats.IsGraphQuery -}}              is graph query:       {{.}}{{"\n"}}{{end -}}
-{{with .Stats.RuntimeCached -}}             runtime cached:       {{.}}{{"\n"}}{{end -}}
-{{with .Stats.QueryPlanCached -}}           query plan cached:    {{.}}{{"\n"}}{{end -}}
-{{with .Stats.Unknown -}}                   unknown:              {{.}}{{"\n"}}{{end -}}
-{{end -}}
-
-$ spanner-mycli -t -v --output-template output_timestamp.tmpl -e 'SELECT 1'
-+-------+
-| n     |
-| INT64 |
-+-------+
-| 1     |
-+-------+
-1 rows in set (2.21 msecs)
-timestamp:            2025-05-04T02:46:40.457385+09:00
-elapsed time:         2.21 msecs
-cpu time:             1.53 msecs
-rows returned:        1
-rows scanned:         0
-deleted rows scanned: 0
-optimizer version:    7
-optimizer statistics: auto_20250430_23_51_48UTC
-remote server calls:  0/0
-peak memory usage:    4 bytes
-total peak memory:    4 bytes
-bytes returned:       8 bytes
-runtime creation:     0.04 msecs
-statistics load:      0
-memory usage:         0.000 %
-filesystem delay:     0 msecs
-locking delay:        0 msecs
-plan creation time:   1.05 msecs
-server queue delay:   0.02 msecs
-is graph query:       false
-```
-
 
 ### memefish integration
 
@@ -2509,61 +2343,13 @@ In principle, spanner-mycli accepts the same input as spanner-cli, but some comp
 
 ### Tab character handling
 
-spanner-mycli expands tab characters to whitespaces.
-Tab width can be configured using `CLI_TAB_WIDTH` system variable. (default: 4)
+Table output expands tabs to spaces. `CLI_TAB_WIDTH` sets the display tab width
+(default 4):
 
+```sql
+SET CLI_TAB_WIDTH = 2;
+SELECT 'a\tb' AS example;
 ```
-spanner> SET CLI_TAB_WIDTH = 2;
 
-Empty set (0.00 sec)
-
-spanner> SELECT "a\tb\tc\td\te\tf\t\n"||
-      ->        "あ\tい\tう\tえ\tお\tか\t\n"||
-      ->        "abc\tdef\tghi\tjkl\tmno\tpqr\t\n"||
-      ->        "あい\tうえ\tおか\tきく\tけこ\tさし\t" AS s;
-+--------------------------------------+
-| s                                    |
-+--------------------------------------+
-| a b c d e f                          |
-| あ  い  う  え  お  か               |
-| abc def ghi jkl mno pqr              |
-| あい  うえ  おか  きく  けこ  さし   |
-+--------------------------------------+
-1 rows in set (2.81 msecs)
-
-spanner> SET CLI_TAB_WIDTH = 4;
-
-Empty set (0.00 sec)
-
-spanner> SELECT "a\tb\tc\td\te\tf\t\n"||
-      ->        "あ\tい\tう\tえ\tお\tか\t\n"||
-      ->        "abc\tdef\tghi\tjkl\tmno\tpqr\t\n"||
-      ->        "あい\tうえ\tおか\tきく\tけこ\tさし\t" AS s;
-+--------------------------------------------------+
-| s                                                |
-+--------------------------------------------------+
-| a   b   c   d   e   f                            |
-| あ  い  う  え  お  か                           |
-| abc def ghi jkl mno pqr                          |
-| あい    うえ    おか    きく    けこ    さし     |
-+--------------------------------------------------+
-1 rows in set (2.31 msecs)
-
-spanner> SET CLI_TAB_WIDTH = 8;
-
-Empty set (0.00 sec)
-
-spanner> SELECT "a\tb\tc\td\te\tf\t\n"||
-      ->        "あ\tい\tう\tえ\tお\tか\t\n"||
-      ->        "abc\tdef\tghi\tjkl\tmno\tpqr\t\n"||
-      ->        "あい\tうえ\tおか\tきく\tけこ\tさし\t" AS s;
-+--------------------------------------------------+
-| s                                                |
-+--------------------------------------------------+
-| a       b       c       d       e       f        |
-| あ      い      う      え      お      か       |
-| abc     def     ghi     jkl     mno     pqr      |
-| あい    うえ    おか    きく    けこ    さし     |
-+--------------------------------------------------+
-1 rows in set (2.76 msecs)
-```
+This does not change the export escaping rules of
+[TAB and TSV](docs/system_variables.md#cli_format).

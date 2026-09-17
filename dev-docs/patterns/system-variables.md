@@ -39,8 +39,7 @@ struct must never be copied. USE/DETACH mutate it in place
 4. **Document**: the reference table in docs/system_variables.md is generated
    from the registry (via the hidden `--sysvars-help` flag); run
    `make docs-update` after registering, so the description doubles as user
-   documentation. The README system-variables table is hand-maintained; add a
-   row there. Add a detailed section to docs/system_variables.md if the
+   documentation. Add a detailed section to docs/system_variables.md if the
    variable needs more than one line of explanation.
 5. **Test**: see Testing below.
 

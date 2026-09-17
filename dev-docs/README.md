@@ -42,7 +42,8 @@ dev-docs/
 - A fact about one specific type or function belongs in its doc comment, not
   here. These docs should carry only cross-cutting knowledge an agent cannot
   learn from the code.
-- `make docs-update` regenerates the help sections in the top-level README.md
+- `make docs-update` regenerates the help sections in README.md and the variable reference table
+  in docs/system_variables.md
   (output also written to `./tmp/` for inspection).
 
 ## Related Documentation
