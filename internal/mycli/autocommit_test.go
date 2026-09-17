@@ -129,104 +129,62 @@ func TestAutocommitResetToggleRejectedBeforeAssign(t *testing.T) {
 
 func TestLazyAutocommitEligibilityDispatch(t *testing.T) {
 	t.Parallel()
-	session := &Session{systemVariables: newSystemVariablesWithDefaultsForTest()}
-
-	if !lazyAutocommitEligible(session, &SelectStatement{Query: "SELECT 1"}) {
-		t.Fatal("ordinary SELECT must be eligible")
-	}
-	if !lazyAutocommitEligible(session, &DmlStatement{Dml: "INSERT INTO T (id) VALUES (1)"}) {
-		t.Fatal("ordinary DML must be eligible")
-	}
-	if !lazyAutocommitEligible(session, &MutateStatement{Table: "T", Operation: "INSERT"}) {
-		t.Fatal("MUTATE must be eligible")
-	}
-	if !lazyAutocommitEligible(session, &ExplainAnalyzeStatement{Query: "SELECT 1"}) {
-		t.Fatal("EXPLAIN ANALYZE SELECT must be eligible")
-	}
-	if !lazyAutocommitEligible(session, &ExplainAnalyzeDmlStatement{Dml: "UPDATE T SET x=1 WHERE true"}) {
-		t.Fatal("EXPLAIN ANALYZE DML must be eligible")
-	}
-	if !lazyAutocommitEligible(session, &SavepointStatement{Name: "keep"}) {
-		t.Fatal("SAVEPOINT must be eligible")
-	}
-	if !lazyAutocommitEligible(session, &BatchDMLStatement{DMLs: []spanner.Statement{spanner.NewStatement("INSERT INTO T (id) VALUES (1)")}}) {
-		t.Fatal("nonempty BatchDML must be eligible")
-	}
-	if lazyAutocommitEligible(session, &BatchDMLStatement{}) {
-		t.Fatal("empty BatchDML must not be eligible")
-	}
-	if lazyAutocommitEligible(session, &ExplainStatement{Explain: "SELECT 1"}) {
-		t.Fatal("EXPLAIN PLAN SELECT must not be eligible")
-	}
-	if lazyAutocommitEligible(session, &ExplainStatement{Explain: "UPDATE T SET x=1 WHERE true", IsDML: true}) {
-		t.Fatal("EXPLAIN PLAN DML must not be eligible")
-	}
-	if lazyAutocommitEligible(session, &PartitionedDmlStatement{Dml: "UPDATE T SET x=1 WHERE true"}) {
-		t.Fatal("explicit PDML must not be eligible")
-	}
-	if lazyAutocommitEligible(session, &TruncateTableStatement{Table: "T"}) {
-		t.Fatal("TRUNCATE must not be eligible")
-	}
-	if lazyAutocommitEligible(session, &BeginStatement{}) {
-		t.Fatal("BEGIN must not be eligible")
-	}
-	if lazyAutocommitEligible(session, &CommitStatement{}) {
-		t.Fatal("COMMIT must not be eligible")
-	}
-	if lazyAutocommitEligible(session, &ShowVariablesStatement{}) {
-		t.Fatal("SHOW VARIABLES must not be eligible")
-	}
-	if lazyAutocommitEligible(session, &HelpStatement{}) {
-		t.Fatal("HELP must not be eligible")
-	}
-	if lazyAutocommitEligible(session, &DdlStatement{Ddl: "CREATE TABLE T (id INT64) PRIMARY KEY (id)"}) {
-		t.Fatal("DDL must not be eligible")
-	}
-	if lazyAutocommitEligible(session, &SyncProtoStatement{}) {
-		t.Fatal("SYNC PROTO BUNDLE must not be eligible")
-	}
 
 	plan := sppb.ExecuteSqlRequest_PLAN
-	session.systemVariables.Query.QueryMode = &plan
-	if lazyAutocommitEligible(session, &SelectStatement{Query: "SELECT 1"}) {
-		t.Fatal("CLI_QUERY_MODE=PLAN SELECT must not be eligible")
-	}
-	if lazyAutocommitEligible(session, &DmlStatement{Dml: "UPDATE T SET x=1 WHERE true"}) {
-		t.Fatal("CLI_QUERY_MODE=PLAN DML must not be eligible")
-	}
-
-	session.systemVariables.Query.QueryMode = nil
-	session.systemVariables.Query.TryPartitionQuery = true
-	if lazyAutocommitEligible(session, &SelectStatement{Query: "SELECT 1"}) {
-		t.Fatal("TRY PARTITION QUERY SELECT must not be eligible")
-	}
-
-	session.systemVariables.Query.TryPartitionQuery = false
-	session.batch.SetCurrent(&BatchDMLStatement{})
-	if lazyAutocommitEligible(session, &DmlStatement{Dml: "INSERT INTO T (id) VALUES (1)"}) {
-		t.Fatal("manual-batch DML enqueue must not acquire an owner")
-	}
 	profile := sppb.ExecuteSqlRequest_PROFILE
-	session.systemVariables.Query.QueryMode = &profile
-	if !lazyAutocommitEligible(session, &DmlStatement{Dml: "UPDATE T SET x=1 WHERE true"}) {
-		t.Fatal("PROFILE DML in a manual batch must join an owner")
+	insert := spanner.NewStatement("INSERT INTO T (id) VALUES (1)")
+	createTable := "CREATE TABLE T (id INT64) PRIMARY KEY (id)"
+
+	tests := []struct {
+		name              string
+		stmt              Statement
+		queryMode         *sppb.ExecuteSqlRequest_QueryMode
+		tryPartitionQuery bool
+		batch             Statement
+		want              bool
+	}{
+		{name: "ordinary SELECT", stmt: &SelectStatement{Query: "SELECT 1"}, want: true},
+		{name: "ordinary DML", stmt: &DmlStatement{Dml: "INSERT INTO T (id) VALUES (1)"}, want: true},
+		{name: "MUTATE", stmt: &MutateStatement{Table: "T", Operation: "INSERT"}, want: true},
+		{name: "EXPLAIN ANALYZE SELECT", stmt: &ExplainAnalyzeStatement{Query: "SELECT 1"}, want: true},
+		{name: "EXPLAIN ANALYZE DML", stmt: &ExplainAnalyzeDmlStatement{Dml: "UPDATE T SET x=1 WHERE true"}, want: true},
+		{name: "SAVEPOINT", stmt: &SavepointStatement{Name: "keep"}, want: true},
+		{name: "nonempty BatchDML", stmt: &BatchDMLStatement{DMLs: []spanner.Statement{insert}}, want: true},
+		{name: "empty BatchDML", stmt: &BatchDMLStatement{}, want: false},
+		{name: "EXPLAIN PLAN SELECT", stmt: &ExplainStatement{Explain: "SELECT 1"}, want: false},
+		{name: "EXPLAIN PLAN DML", stmt: &ExplainStatement{Explain: "UPDATE T SET x=1 WHERE true", IsDML: true}, want: false},
+		{name: "explicit PDML", stmt: &PartitionedDmlStatement{Dml: "UPDATE T SET x=1 WHERE true"}, want: false},
+		{name: "TRUNCATE", stmt: &TruncateTableStatement{Table: "T"}, want: false},
+		{name: "BEGIN", stmt: &BeginStatement{}, want: false},
+		{name: "COMMIT", stmt: &CommitStatement{}, want: false},
+		{name: "SHOW VARIABLES", stmt: &ShowVariablesStatement{}, want: false},
+		{name: "HELP", stmt: &HelpStatement{}, want: false},
+		{name: "DDL", stmt: &DdlStatement{Ddl: createTable}, want: false},
+		{name: "SYNC PROTO BUNDLE", stmt: &SyncProtoStatement{}, want: false},
+		{name: "CLI_QUERY_MODE=PLAN SELECT", stmt: &SelectStatement{Query: "SELECT 1"}, queryMode: &plan, want: false},
+		{name: "CLI_QUERY_MODE=PLAN DML", stmt: &DmlStatement{Dml: "UPDATE T SET x=1 WHERE true"}, queryMode: &plan, want: false},
+		{name: "TRY PARTITION QUERY SELECT", stmt: &SelectStatement{Query: "SELECT 1"}, tryPartitionQuery: true, want: false},
+		{name: "manual-batch DML enqueue", stmt: &DmlStatement{Dml: "INSERT INTO T (id) VALUES (1)"}, batch: &BatchDMLStatement{}, want: false},
+		{name: "PROFILE DML in a manual batch", stmt: &DmlStatement{Dml: "UPDATE T SET x=1 WHERE true"}, queryMode: &profile, batch: &BatchDMLStatement{}, want: true},
+		{name: "PLAN DML in a manual batch", stmt: &DmlStatement{Dml: "UPDATE T SET x=1 WHERE true"}, queryMode: &plan, batch: &BatchDMLStatement{}, want: false},
+		{name: "empty RUN BATCH", stmt: &RunBatchStatement{}, batch: &BatchDMLStatement{}, want: false},
+		{name: "nonempty RUN BATCH DML", stmt: &RunBatchStatement{}, batch: &BatchDMLStatement{DMLs: []spanner.Statement{insert}}, want: true},
+		{name: "RUN BATCH DDL", stmt: &RunBatchStatement{}, batch: &BulkDdlStatement{Ddls: []string{createTable}}, want: false},
 	}
-	planInBatch := sppb.ExecuteSqlRequest_PLAN
-	session.systemVariables.Query.QueryMode = &planInBatch
-	if lazyAutocommitEligible(session, &DmlStatement{Dml: "UPDATE T SET x=1 WHERE true"}) {
-		t.Fatal("PLAN DML in a manual batch must stay one-shot")
-	}
-	session.systemVariables.Query.QueryMode = nil
-	if lazyAutocommitEligible(session, &RunBatchStatement{}) {
-		t.Fatal("empty RUN BATCH must not be eligible")
-	}
-	session.batch.SetCurrent(&BatchDMLStatement{DMLs: []spanner.Statement{spanner.NewStatement("INSERT INTO T (id) VALUES (1)")}})
-	if !lazyAutocommitEligible(session, &RunBatchStatement{}) {
-		t.Fatal("nonempty RUN BATCH DML must be eligible")
-	}
-	session.batch.SetCurrent(&BulkDdlStatement{Ddls: []string{"CREATE TABLE T (id INT64) PRIMARY KEY (id)"}})
-	if lazyAutocommitEligible(session, &RunBatchStatement{}) {
-		t.Fatal("RUN BATCH DDL must not be eligible")
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			session := &Session{systemVariables: newSystemVariablesWithDefaultsForTest()}
+			session.systemVariables.Query.QueryMode = tc.queryMode
+			session.systemVariables.Query.TryPartitionQuery = tc.tryPartitionQuery
+			if tc.batch != nil {
+				session.batch.SetCurrent(tc.batch)
+			}
+			if got := lazyAutocommitEligible(session, tc.stmt); got != tc.want {
+				t.Fatalf("lazyAutocommitEligible() = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 
