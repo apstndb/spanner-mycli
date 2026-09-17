@@ -27,20 +27,30 @@ import (
 	"time"
 )
 
+const telemetryShutdownWarning = "WARNING: Spanner telemetry shutdown failed"
+
 // stuckExporterCase is one exporter configuration for the startup-failure and
 // cancellation runners. Do not add t.Parallel: metricsRunTest hooks and the
 // tracer provider are process-global.
+//
+// wantReturnedShutdownError is true when PeriodicReader (or a joint hang that
+// includes metrics) is expected to return Export/Shutdown errors to the app
+// warning path. Traces-only hangs do not: batchSpanProcessor reports
+// ExportSpans failures through otel.Handle, so Shutdown may return nil when
+// the internal export timeout finishes first.
 type stuckExporterCase struct {
-	name          string
-	restoreTracer bool
-	opts          func(host string, port int, collectorURL string) *spannerOptions
+	name                      string
+	restoreTracer             bool
+	wantReturnedShutdownError bool
+	opts                      func(host string, port int, collectorURL string) *spannerOptions
 }
 
 func stuckExporterCases() []stuckExporterCase {
 	return []stuckExporterCase{
 		{
-			name: "metrics-only",
-			opts: metricsLifecycleOpts,
+			name:                      "metrics-only",
+			wantReturnedShutdownError: true,
+			opts:                      metricsLifecycleOpts,
 		},
 		{
 			name:          "traces-only",
@@ -82,7 +92,10 @@ func TestRunWithOutputPreservesStartupErrorAfterStuckExport(t *testing.T) {
 				t.Fatalf("startup diagnostics missing original read-only failure; stderr=%q", stderr)
 			}
 			requirePreservedCommandResult(t, err)
-			requireOneBoundedShutdownDiagnostic(t, stderr, elapsed)
+			requireBoundedCleanup(t, elapsed)
+			if tc.wantReturnedShutdownError {
+				requireOneShutdownDiagnostic(t, stderr)
+			}
 			waitFor(t, saw, tc.name+": stuck exporter never received a flush")
 		})
 	}
@@ -137,7 +150,10 @@ func TestRunWithOutputPreservesCancelAfterStuckExport(t *testing.T) {
 				t.Fatal("command error = nil, want the cancelled batch result")
 			}
 			requirePreservedCommandResult(t, got.err)
-			requireOneBoundedShutdownDiagnostic(t, stderr, got.elapsed)
+			requireBoundedCleanup(t, got.elapsed)
+			if tc.wantReturnedShutdownError {
+				requireOneShutdownDiagnostic(t, stderr)
+			}
 			waitFor(t, saw, tc.name+": stuck exporter never received a flush")
 		})
 	}
@@ -205,15 +221,26 @@ func newHangingOTLPServer() (*httptest.Server, <-chan struct{}) {
 	return srv, saw
 }
 
-func requireOneBoundedShutdownDiagnostic(t *testing.T, stderr string, elapsed time.Duration) {
+func requireOneShutdownDiagnostic(t *testing.T, stderr string) {
 	t.Helper()
-	const warning = "WARNING: Spanner telemetry shutdown failed"
-	if n := strings.Count(stderr, warning); n != 1 {
+	if n := strings.Count(stderr, telemetryShutdownWarning); n != 1 {
 		t.Fatalf("shutdown diagnostics = %d, want 1; stderr=%q", n, stderr)
 	}
+}
+
+func requireBoundedCleanup(t *testing.T, elapsed time.Duration) {
+	t.Helper()
 	if elapsed < 4*time.Second || elapsed > spannerMetricsCleanupBound+2*time.Second {
 		t.Fatalf("cleanup elapsed %s, want one bound near %s", elapsed, spannerMetricsCleanupBound)
 	}
+}
+
+// requireOneBoundedShutdownDiagnostic is for cases where Shutdown is expected
+// to return an error (metrics hang or a joint hang that includes metrics).
+func requireOneBoundedShutdownDiagnostic(t *testing.T, stderr string, elapsed time.Duration) {
+	t.Helper()
+	requireOneShutdownDiagnostic(t, stderr)
+	requireBoundedCleanup(t, elapsed)
 }
 
 func waitFor(t *testing.T, ch <-chan struct{}, msg string) {

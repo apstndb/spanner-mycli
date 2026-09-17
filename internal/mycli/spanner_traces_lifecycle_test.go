@@ -49,6 +49,8 @@ func TestRunWithOutputSharedBudgetWhenMetricsAndTracesHang(t *testing.T) {
 		t.Fatalf("startup diagnostics missing original read-only failure; stderr=%q", stderr)
 	}
 	requirePreservedCommandResult(t, err)
+	// Joint hang includes metrics; PeriodicReader returns Export errors, so the
+	// application warning remains part of this assertion.
 	requireOneBoundedShutdownDiagnostic(t, stderr, elapsed)
 	waitFor(t, saw, "stuck telemetry exporter never received a flush")
 }
