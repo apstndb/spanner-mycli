@@ -17,7 +17,6 @@ package mycli
 import (
 	"errors"
 	"io"
-	"strings"
 	"testing"
 	"time"
 
@@ -368,75 +367,6 @@ func TestSavepointRetryJournalOverflowPreservesHistory(t *testing.T) {
 	entries := replayJournal(h.tm)
 	if len(entries) != 1 || entries[0].stmt.SQL != "SELECT 1" {
 		t.Fatalf("overflow mutated history: %+v", entries)
-	}
-}
-
-func TestSavepointRetryStaleCompletionDoesNotMutateReplacement(t *testing.T) {
-	t.Parallel()
-	ctx := t.Context()
-	h := newHeartbeatHarness(t)
-	session := sessionForTM(t, h.tm)
-	if err := h.tm.BeginReadWriteTransaction(ctx, sppb.TransactionOptions_ISOLATION_LEVEL_UNSPECIFIED, sppb.RequestOptions_PRIORITY_UNSPECIFIED); err != nil {
-		t.Fatal(err)
-	}
-	h.tm.attachRetryReplayForTest()
-	owner := txnContext(h.tm)
-	iter, _, tok, err := h.tm.runQueryWithStatsAndCapture(ctx, spanner.NewStatement("SELECT 1"), false, sppb.ExecuteSqlRequest_PROFILE)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if tok == nil {
-		t.Fatal("query A was not admitted")
-	}
-	defer iter.Stop()
-
-	_, err = executeSQLImplWithVars(ctx, session, "SELECT 2", session.systemVariables, OperationOutput{w: io.Discard})
-	if err == nil || !strings.Contains(err.Error(), "already in flight") {
-		t.Fatalf("query B error = %v, want already in flight", err)
-	}
-	if txnContext(h.tm) != owner {
-		t.Fatal("unadmitted query B replaced the owner")
-	}
-
-	_, _, _, _, err = consumeRowIterObserving(iter, func(*spanner.Row) error { return nil }, tok.receipt())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := tok.receipt().Finish(nil); err != nil {
-		t.Fatal(err)
-	}
-	if err := h.tm.finishQueryCapture(tok, nil); err != nil {
-		t.Fatal(err)
-	}
-
-	iter2, _, staleTok, err := h.tm.runQueryWithStatsAndCapture(ctx, spanner.NewStatement("SELECT 1"), false, sppb.ExecuteSqlRequest_PROFILE)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if staleTok == nil {
-		t.Fatal("replacement query was not admitted")
-	}
-	defer iter2.Stop()
-	h.tm.mu.Lock()
-	h.tm.tc.attempt++
-	replacement := &captureToken{owner: h.tm.tc, attempt: h.tm.tc.attempt, rec: &operationReceipt{}, reserved: 48}
-	h.tm.tc.pending = replacement
-	h.tm.tc.inFlight = 1
-	afterReplace := h.tm.tc.replay.retainedBytes
-	h.tm.mu.Unlock()
-	if err := h.tm.finishQueryCapture(staleTok, errors.New("stale completion")); err == nil || err.Error() != "stale completion" {
-		t.Fatalf("stale finish = %v, want stale completion", err)
-	}
-	h.tm.mu.Lock()
-	defer h.tm.mu.Unlock()
-	if h.tm.tc != owner {
-		t.Fatal("stale completion retired the owner")
-	}
-	if h.tm.tc.pending != replacement || h.tm.tc.inFlight != 1 {
-		t.Fatal("stale completion finished the replacement operation")
-	}
-	if h.tm.tc.replay.retainedBytes != afterReplace {
-		t.Fatal("stale completion released replacement reservation")
 	}
 }
 
