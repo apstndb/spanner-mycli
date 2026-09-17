@@ -27,81 +27,120 @@ import (
 	"time"
 )
 
-func TestRunWithOutputPreservesStartupErrorAfterStuckExport(t *testing.T) {
-	clearSpannerEmulatorHost(t)
-	host, port, stop := startFakeMetricsSpanner(t)
-	t.Cleanup(stop)
+// stuckExporterCase is one exporter configuration for the startup-failure and
+// cancellation runners. Do not add t.Parallel: metricsRunTest hooks and the
+// tracer provider are process-global.
+type stuckExporterCase struct {
+	name          string
+	restoreTracer bool
+	opts          func(host string, port int, collectorURL string) *spannerOptions
+}
 
-	collector, saw := newHangingOTLPServer()
-	t.Cleanup(collector.Close)
-
-	opts := metricsLifecycleOpts(host, port, collector.URL)
-	opts.InitCommand = "SET CLI_VERSION = 'x'"
-
-	var diag lockedBuffer
-	installMetricsRunTestHooks(t, &diag)
-
-	started := time.Now()
-	err := runWithOutput(context.Background(), opts, io.Discard)
-	elapsed := time.Since(started)
-	stderr := diag.String()
-
-	// executeStartupSQL prints the read-only failure, then returns the same
-	// ExitCodeError batch path used for a failed --init-command.
-	if !strings.Contains(stderr, "read-only") {
-		t.Fatalf("startup diagnostics missing original read-only failure; stderr=%q", stderr)
+func stuckExporterCases() []stuckExporterCase {
+	return []stuckExporterCase{
+		{
+			name: "metrics-only",
+			opts: metricsLifecycleOpts,
+		},
+		{
+			name:          "traces-only",
+			restoreTracer: true,
+			opts: func(host string, port int, collectorURL string) *spannerOptions {
+				return tracesLifecycleOpts(host, port, "", collectorURL)
+			},
+		},
 	}
-	requirePreservedCommandResult(t, err)
-	requireOneBoundedShutdownDiagnostic(t, stderr, elapsed)
-	waitFor(t, saw, "stuck exporter never received a flush")
+}
+
+func TestRunWithOutputPreservesStartupErrorAfterStuckExport(t *testing.T) {
+	for _, tc := range stuckExporterCases() {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.restoreTracer {
+				restoreTestTracerProvider(t)
+			}
+			clearSpannerEmulatorHost(t)
+			host, port, stop := startFakeMetricsSpanner(t)
+			t.Cleanup(stop)
+
+			collector, saw := newHangingOTLPServer()
+			t.Cleanup(collector.Close)
+
+			opts := tc.opts(host, port, collector.URL)
+			opts.InitCommand = "SET CLI_VERSION = 'x'"
+
+			var diag lockedBuffer
+			installMetricsRunTestHooks(t, &diag)
+
+			started := time.Now()
+			err := runWithOutput(context.Background(), opts, io.Discard)
+			elapsed := time.Since(started)
+			stderr := diag.String()
+
+			// executeStartupSQL prints the read-only failure, then returns the same
+			// ExitCodeError batch path used for a failed --init-command.
+			if !strings.Contains(stderr, "read-only") {
+				t.Fatalf("startup diagnostics missing original read-only failure; stderr=%q", stderr)
+			}
+			requirePreservedCommandResult(t, err)
+			requireOneBoundedShutdownDiagnostic(t, stderr, elapsed)
+			waitFor(t, saw, tc.name+": stuck exporter never received a flush")
+		})
+	}
 }
 
 func TestRunWithOutputPreservesCancelAfterStuckExport(t *testing.T) {
-	clearSpannerEmulatorHost(t)
-	queryStarted := make(chan struct{}, 1)
-	host, port, stop := startFakeMetricsSpannerServer(t, &fakeMetricsSpanner{queryStarted: queryStarted})
-	t.Cleanup(stop)
+	for _, tc := range stuckExporterCases() {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.restoreTracer {
+				restoreTestTracerProvider(t)
+			}
+			clearSpannerEmulatorHost(t)
+			queryStarted := make(chan struct{}, 1)
+			host, port, stop := startFakeMetricsSpannerServer(t, &fakeMetricsSpanner{queryStarted: queryStarted})
+			t.Cleanup(stop)
 
-	collector, saw := newHangingOTLPServer()
-	t.Cleanup(collector.Close)
+			collector, saw := newHangingOTLPServer()
+			t.Cleanup(collector.Close)
 
-	opts := metricsLifecycleOpts(host, port, collector.URL)
-	opts.Execute = "SELECT 1"
+			opts := tc.opts(host, port, collector.URL)
+			opts.Execute = "SELECT 1"
 
-	var diag lockedBuffer
-	installMetricsRunTestHooks(t, &diag)
+			var diag lockedBuffer
+			installMetricsRunTestHooks(t, &diag)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
+			ctx, cancel := context.WithCancel(context.Background())
+			t.Cleanup(cancel)
 
-	type outcome struct {
-		err     error
-		elapsed time.Duration
+			type outcome struct {
+				err     error
+				elapsed time.Duration
+			}
+			done := make(chan outcome, 1)
+			go func() {
+				started := time.Now()
+				err := runWithOutput(ctx, opts, io.Discard)
+				done <- outcome{err: err, elapsed: time.Since(started)}
+			}()
+
+			waitFor(t, queryStarted, "command never reached the fake ExecuteSql RPC")
+			cancel()
+
+			var got outcome
+			select {
+			case got = <-done:
+			case <-time.After(spannerTelemetryCleanupBound + 3*time.Second):
+				t.Fatalf("%s: runWithOutput did not return after cancel and bounded cleanup", tc.name)
+			}
+
+			stderr := diag.String()
+			if got.err == nil {
+				t.Fatal("command error = nil, want the cancelled batch result")
+			}
+			requirePreservedCommandResult(t, got.err)
+			requireOneBoundedShutdownDiagnostic(t, stderr, got.elapsed)
+			waitFor(t, saw, tc.name+": stuck exporter never received a flush")
+		})
 	}
-	done := make(chan outcome, 1)
-	go func() {
-		started := time.Now()
-		err := runWithOutput(ctx, opts, io.Discard)
-		done <- outcome{err: err, elapsed: time.Since(started)}
-	}()
-
-	waitFor(t, queryStarted, "command never reached the fake ExecuteSql RPC")
-	cancel()
-
-	var got outcome
-	select {
-	case got = <-done:
-	case <-time.After(spannerMetricsCleanupBound + 3*time.Second):
-		t.Fatal("runWithOutput did not return after cancel and bounded cleanup")
-	}
-
-	stderr := diag.String()
-	if got.err == nil {
-		t.Fatal("command error = nil, want the cancelled batch result")
-	}
-	requirePreservedCommandResult(t, got.err)
-	requireOneBoundedShutdownDiagnostic(t, stderr, got.elapsed)
-	waitFor(t, saw, "stuck exporter never received a flush")
 }
 
 func installMetricsRunTestHooks(t *testing.T, errStream io.Writer) {
