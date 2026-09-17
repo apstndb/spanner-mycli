@@ -18,7 +18,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"net"
 	"os"
 	"strings"
 	"sync"
@@ -27,17 +26,12 @@ import (
 	"time"
 
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
-	adminapi "cloud.google.com/go/spanner/admin/database/apiv1"
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spanner-mycli/internal/mycli/streamio"
-	"google.golang.org/api/option"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
-	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -683,40 +677,5 @@ func (s *ddlAdminTestServer) GetOperation(ctx context.Context, _ *longrunningpb.
 
 func newDDLAdminSession(t *testing.T, server *ddlAdminTestServer) *Session {
 	t.Helper()
-	listener := bufconn.Listen(1 << 20)
-	grpcServer := grpc.NewServer()
-	databasepb.RegisterDatabaseAdminServer(grpcServer, server)
-	longrunningpb.RegisterOperationsServer(grpcServer, server)
-	go func() {
-		if err := grpcServer.Serve(listener); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
-			t.Errorf("serve ddl admin: %v", err)
-		}
-	}()
-	t.Cleanup(func() {
-		grpcServer.Stop()
-		_ = listener.Close()
-	})
-	conn, err := grpc.NewClient("passthrough:///ddl-admin",
-		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }),
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = conn.Close() })
-	adminClient, err := adminapi.NewDatabaseAdminClient(t.Context(), option.WithGRPCConn(conn))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = adminClient.Close() })
-
-	sysVars := newSystemVariablesWithDefaultsForTest()
-	identity := ConnectionVars{Project: "test", Instance: "test", Database: "test"}
-	sysVars.Connection = identity
-	session := &Session{
-		adminClient:     adminClient,
-		systemVariables: sysVars,
-		connection:      identity,
-	}
-	return session
+	return newBufconnAdminSession(t, server)
 }

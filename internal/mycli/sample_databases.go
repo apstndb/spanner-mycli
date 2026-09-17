@@ -211,8 +211,8 @@ func loadSampleFromMetadata(metadataPath string) (*SampleDatabase, error) {
 // loadFromURI loads content from various URI schemes (for single URI compatibility)
 func loadFromURI(ctx context.Context, uri string) ([]byte, error) {
 	// Handle embedded:// URIs directly here to avoid unnecessary parallelism setup
-	if strings.HasPrefix(uri, "embedded://") {
-		path := strings.TrimPrefix(uri, "embedded://")
+	if after, ok := strings.CutPrefix(uri, "embedded://"); ok {
+		path := after
 		return embeddedSamples.ReadFile(filepath.Join("samples", path))
 	}
 
@@ -377,7 +377,7 @@ func loadFromHTTPWithLimit(ctx context.Context, uri string, maxSize int64) ([]by
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "GET", uri, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, uri, nil)
 	if err != nil {
 		return nil, err
 	}

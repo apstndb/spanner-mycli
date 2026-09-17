@@ -590,7 +590,7 @@ func TestStartPagerHelperPathWithSpaces(t *testing.T) {
 	if err := os.Chmod(dst, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command(dst, "-test.run=^TestStartPagerCompleteConsumption$", "-test.count=1", "-test.v")
+	cmd := exec.CommandContext(t.Context(), dst, "-test.run=^TestStartPagerCompleteConsumption$", "-test.count=1", "-test.v")
 	cmd.Env = filterEnv(os.Environ(), pagerHelperEnv, pagerReadyFailEnv, pagerStopFirstEnv, pagerUnquotedEnv)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -620,7 +620,7 @@ func TestStartPagerHelperPathWithSpacesUnquotedFails(t *testing.T) {
 	if err := os.Chmod(dst, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command(dst, "-test.run=^TestStartPagerCompleteConsumption$", "-test.count=1")
+	cmd := exec.CommandContext(t.Context(), dst, "-test.run=^TestStartPagerCompleteConsumption$", "-test.count=1")
 	cmd.Env = append(filterEnv(os.Environ(), pagerHelperEnv, pagerReadyFailEnv, pagerStopFirstEnv, pagerUnquotedEnv), pagerUnquotedEnv+"=1")
 	out, err := cmd.CombinedOutput()
 	if err == nil {
@@ -638,7 +638,7 @@ func pagerTestCommand(t *testing.T, run string) *exec.Cmd {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command(exe, "-test.run="+run, "-test.count=1", "-test.v")
+	cmd := exec.CommandContext(t.Context(), exe, "-test.run="+run, "-test.count=1", "-test.v")
 	cmd.Env = filterEnv(os.Environ(), pagerHelperEnv, pagerReadyFailEnv, pagerStopFirstEnv, pagerUnquotedEnv)
 	return cmd
 }

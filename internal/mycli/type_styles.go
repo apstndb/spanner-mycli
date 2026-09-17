@@ -87,7 +87,7 @@ func parseTypeStyles(s string) (typeStyleConfig, error) {
 
 	config.typeStyles = make(map[sppb.TypeCode]string)
 
-	for _, pair := range strings.Split(s, ":") {
+	for pair := range strings.SplitSeq(s, ":") {
 		pair = strings.TrimSpace(pair)
 		if pair == "" {
 			continue

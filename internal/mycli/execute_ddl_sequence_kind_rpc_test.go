@@ -17,7 +17,6 @@ package mycli
 import (
 	"context"
 	"errors"
-	"net"
 	"slices"
 	"strings"
 	"sync"
@@ -25,16 +24,11 @@ import (
 	"time"
 
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
-	adminapi "cloud.google.com/go/spanner/admin/database/apiv1"
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"github.com/apstndb/spanner-mycli/enums"
-	"google.golang.org/api/option"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
-	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/descriptorpb"
 	"google.golang.org/protobuf/types/known/anypb"
@@ -188,36 +182,7 @@ func mustEmptyAny() *anypb.Any {
 func newScriptedDDLSession(t *testing.T, step func(*databasepb.UpdateDatabaseDdlRequest, int) scriptedDDLStep) (*Session, *scriptedDDLServer) {
 	t.Helper()
 	server := &scriptedDDLServer{step: step}
-	lis := bufconn.Listen(1 << 20)
-	gs := grpc.NewServer()
-	databasepb.RegisterDatabaseAdminServer(gs, server)
-	longrunningpb.RegisterOperationsServer(gs, server)
-	go func() {
-		if err := gs.Serve(lis); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
-			t.Errorf("serve: %v", err)
-		}
-	}()
-	t.Cleanup(func() {
-		gs.Stop()
-		_ = lis.Close()
-	})
-	conn, err := grpc.NewClient("passthrough:///seq-kind",
-		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return lis.Dial() }),
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = conn.Close() })
-	admin, err := adminapi.NewDatabaseAdminClient(t.Context(), option.WithGRPCConn(conn))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = admin.Close() })
-	sysVars := newSystemVariablesWithDefaultsForTest()
-	identity := ConnectionVars{Project: "test", Instance: "test", Database: "test"}
-	sysVars.Connection = identity
-	return &Session{adminClient: admin, systemVariables: sysVars, connection: identity}, server
+	return newBufconnAdminSession(t, server), server
 }
 
 func enableKind(session *Session) {

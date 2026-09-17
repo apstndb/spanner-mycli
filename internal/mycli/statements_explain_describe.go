@@ -542,7 +542,7 @@ func executeExplainAnalyze(ctx context.Context, session *Session, sql string, fo
 	return result, nil
 }
 
-func generateExplainAnalyzeResult(sysVars *systemVariables, plan *sppb.QueryPlan, stats map[string]interface{},
+func generateExplainAnalyzeResult(sysVars *systemVariables, plan *sppb.QueryPlan, stats map[string]any,
 	format enums.ExplainFormat, width int64, printSections *planref.PrintSections,
 ) (*Result, error) {
 	queryStats, err := parseQueryStats(stats)

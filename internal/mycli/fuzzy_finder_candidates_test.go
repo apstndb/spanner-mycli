@@ -18,16 +18,13 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
-	"net"
+	"slices"
 	"strings"
 	"testing"
 
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
-	"cloud.google.com/go/spanner"
-	adminapi "cloud.google.com/go/spanner/admin/database/apiv1"
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/cloudspannerecosystem/memefish"
@@ -35,12 +32,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/hymkor/go-multiline-ny"
 	readline "github.com/nyaosorg/go-readline-ny"
-	"google.golang.org/api/option"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
-	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -490,12 +483,7 @@ func TestFetchSchemaObjectCandidates(t *testing.T) {
 }
 
 func containsString(ss []string, want string) bool {
-	for _, s := range ss {
-		if s == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(ss, want)
 }
 
 func containsFzfValue(items []fzfItem, want string) bool {
@@ -564,37 +552,11 @@ func (s *fuzzyAdminServer) ListOperations(_ context.Context, req *longrunningpb.
 
 func newFuzzyAdminSession(t *testing.T, server *fuzzyAdminServer) *Session {
 	t.Helper()
-	listener := bufconn.Listen(1 << 20)
-	grpcServer := grpc.NewServer()
-	databasepb.RegisterDatabaseAdminServer(grpcServer, server)
-	longrunningpb.RegisterOperationsServer(grpcServer, server)
-	go func() {
-		if err := grpcServer.Serve(listener); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
-			t.Errorf("serve: %v", err)
-		}
-	}()
-	t.Cleanup(func() {
-		grpcServer.Stop()
-		_ = listener.Close()
-	})
-	conn, err := grpc.NewClient("passthrough:///fuzzy-admin",
-		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }),
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = conn.Close() })
-	adminClient, err := adminapi.NewDatabaseAdminClient(t.Context(), option.WithGRPCConn(conn))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = adminClient.Close() })
 	sv := newSystemVariablesWithDefaultsForTest()
 	identity := ConnectionVars{Project: "p", Instance: "i", Database: "db"}
 	sv.Connection = identity
 	return &Session{
-		adminClient:     adminClient,
+		adminClient:     newBufconnAdminClient(t, server),
 		systemVariables: sv,
 		connection:      identity,
 	}
@@ -687,32 +649,7 @@ func fuzzySchemaFixture(sql string) ([]string, [][]string) {
 
 func newFuzzySchemaSession(t *testing.T, server *fuzzySchemaServer) *Session {
 	t.Helper()
-	listener := bufconn.Listen(1 << 20)
-	grpcServer := grpc.NewServer()
-	sppb.RegisterSpannerServer(grpcServer, server)
-	go func() {
-		if err := grpcServer.Serve(listener); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
-			t.Errorf("serve: %v", err)
-		}
-	}()
-	t.Cleanup(func() {
-		grpcServer.Stop()
-		_ = listener.Close()
-	})
-	conn, err := grpc.NewClient("passthrough:///fuzzy-schema",
-		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }),
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = conn.Close() })
-	client, err := spanner.NewClientWithConfig(t.Context(), "projects/p/instances/i/databases/db",
-		spanner.ClientConfig{DisableNativeMetrics: true}, option.WithGRPCConn(conn))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(client.Close)
+	client := newBufconnSpannerClient(t, "projects/p/instances/i/databases/db", server)
 	sv := newSystemVariablesWithDefaultsForTest()
 	sv.Connection = ConnectionVars{Project: "p", Instance: "i", Database: "db"}
 	return &Session{
@@ -720,6 +657,6 @@ func newFuzzySchemaSession(t *testing.T, server *fuzzySchemaServer) *Session {
 		client:          client,
 		systemVariables: sv,
 		connection:      sv.Connection,
-		txn:             NewTransactionManager(client, sv, spanner.ClientConfig{DisableNativeMetrics: true}),
+		txn:             NewTransactionManager(client, sv, bufconnSpannerClientConfig),
 	}
 }

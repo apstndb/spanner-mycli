@@ -108,7 +108,7 @@ func startFakeMetricsSpanner(t *testing.T) (host string, port int, stop func()) 
 
 func startFakeMetricsSpannerServer(t *testing.T, srv sppb.SpannerServer) (host string, port int, stop func()) {
 	t.Helper()
-	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	lis, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -57,6 +57,11 @@ func validateSavepointName(name string) error {
 
 func (tm *TransactionManager) rejectIfRecoveringLocked() error {
 	if tm.capturingLocked() && tm.tc.replay.needsRecovery() {
+		// Format recoveryRequired with %v, not %w. This refuses the current
+		// operation until ROLLBACK TO SAVEPOINT; it is not a fresh RPC
+		// failure. Wrapping a prior Spanner Aborted cause would change
+		// spanner.ErrCode from Unknown to Aborted and make errors.Is match
+		// that cause. printError and abort recovery in cli.go key off the code.
 		return fmt.Errorf("%w: %v", errSavepointRecovery, tm.tc.replay.recoveryRequired)
 	}
 	return nil

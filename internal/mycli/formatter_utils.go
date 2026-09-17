@@ -25,10 +25,8 @@ func streamingProcessorForMode(render queryRendering, out io.Writer, screenWidth
 
 	// Special handling for table formats with preview (need screenWidth)
 	if fmtMode.IsTableMode() {
-		previewSize := int(config.PreviewRows)
-		if previewSize < 0 {
-			previewSize = 0 // 0 means headers-only preview (stream all rows)
-		}
+		// 0 means headers-only preview (stream all rows)
+		previewSize := max(int(config.PreviewRows), 0)
 		tableFormatter := format.NewTableStreamingFormatter(out, config, screenWidth, previewSize, fmtMode)
 		return NewTablePreviewProcessor(tableFormatter, previewSize), nil
 	}

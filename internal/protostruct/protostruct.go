@@ -24,11 +24,11 @@ import (
 // DecodeToMap converts a pb.Struct to a map from strings to Go types.
 // DecodeToMap panics if s is invalid.
 // Note: This function is copied from Google's internal package and maintains original panic behavior.
-func DecodeToMap(s *pb.Struct) map[string]interface{} {
+func DecodeToMap(s *pb.Struct) map[string]any {
 	if s == nil {
 		return nil
 	}
-	m := map[string]interface{}{}
+	m := map[string]any{}
 	for k, v := range s.Fields {
 		m[k] = decodeValue(v)
 	}
@@ -37,7 +37,7 @@ func DecodeToMap(s *pb.Struct) map[string]interface{} {
 
 // decodeValue maintains original panic behavior from Google's internal package.
 // This is intentionally kept as-is to preserve compatibility with the upstream internal implementation.
-func decodeValue(v *pb.Value) interface{} {
+func decodeValue(v *pb.Value) any {
 	switch k := v.Kind.(type) {
 	case *pb.Value_NullValue:
 		return nil
@@ -50,7 +50,7 @@ func decodeValue(v *pb.Value) interface{} {
 	case *pb.Value_StructValue:
 		return DecodeToMap(k.StructValue)
 	case *pb.Value_ListValue:
-		s := make([]interface{}, len(k.ListValue.Values))
+		s := make([]any, len(k.ListValue.Values))
 		for i, e := range k.ListValue.Values {
 			s[i] = decodeValue(e)
 		}

@@ -17,26 +17,19 @@ package mycli
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
-	"net"
 	"strings"
 	"testing"
 	"time"
 
-	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spanner-mycli/internal/mycli/streamio"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"google.golang.org/api/option"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
-	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -410,44 +403,9 @@ func (s *queryCacheRPCServer) resultSet() *sppb.ResultSet {
 
 func newQueryCacheRPCSession(t *testing.T, plan *sppb.QueryPlan, stats map[string]any, execErr error) (*Session, *systemVariables) {
 	t.Helper()
-	listener := bufconn.Listen(1 << 20)
-	grpcServer := grpc.NewServer()
-	sppb.RegisterSpannerServer(grpcServer, &queryCacheRPCServer{
+	return newBufconnQuerySession(t, &queryCacheRPCServer{
 		plan:    plan,
 		stats:   mustNewStruct(stats),
 		execErr: execErr,
 	})
-	go func() {
-		if err := grpcServer.Serve(listener); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
-			t.Errorf("serve: %v", err)
-		}
-	}()
-	t.Cleanup(func() {
-		grpcServer.Stop()
-		_ = listener.Close()
-	})
-	conn, err := grpc.NewClient("passthrough:///qcache",
-		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }),
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = conn.Close() })
-	client, err := spanner.NewClientWithConfig(t.Context(), "projects/test/instances/test/databases/test",
-		spanner.ClientConfig{DisableNativeMetrics: true}, option.WithGRPCConn(conn))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(client.Close)
-
-	live := newSystemVariablesWithDefaultsForTest()
-	session := &Session{
-		mode:            DatabaseConnected,
-		client:          client,
-		systemVariables: live,
-		txn:             NewTransactionManager(client, live, spanner.ClientConfig{DisableNativeMetrics: true}),
-	}
-	live.inTransaction = session.txn.InTransaction
-	return session, live
 }

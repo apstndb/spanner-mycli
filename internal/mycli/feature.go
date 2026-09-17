@@ -267,8 +267,7 @@ func (st *featureStore) closeAll() {
 	st.mu.Lock()
 	order := st.order
 	st.mu.Unlock()
-	for i := len(order) - 1; i >= 0; i-- {
-		e := order[i]
+	for _, e := range slices.Backward(order) {
 		e.mu.Lock()
 		val := e.val
 		e.mu.Unlock()

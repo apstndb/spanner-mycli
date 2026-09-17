@@ -55,7 +55,7 @@ func TestTemplateMapFuncConcurrent(t *testing.T) {
 	}
 }
 
-func mustNewStruct(m map[string]interface{}) *structpb.Struct {
+func mustNewStruct(m map[string]any) *structpb.Struct {
 	if s, err := structpb.NewStruct(m); err != nil {
 		panic(err)
 	} else {
@@ -629,10 +629,10 @@ func TestRenderTreeWithStats(t *testing.T) {
 						},
 						DisplayName: "Distributed Union",
 						Kind:        sppb.PlanNode_RELATIONAL,
-						ExecutionStats: mustNewStruct(map[string]interface{}{
-							"latency":           map[string]interface{}{"total": "1", "unit": "msec"},
-							"rows":              map[string]interface{}{"total": "9"},
-							"execution_summary": map[string]interface{}{"num_executions": "1"},
+						ExecutionStats: mustNewStruct(map[string]any{
+							"latency":           map[string]any{"total": "1", "unit": "msec"},
+							"rows":              map[string]any{"total": "9"},
+							"execution_summary": map[string]any{"num_executions": "1"},
 						}),
 					},
 					{
@@ -642,11 +642,11 @@ func TestRenderTreeWithStats(t *testing.T) {
 						},
 						DisplayName: "Distributed Union",
 						Kind:        sppb.PlanNode_RELATIONAL,
-						Metadata:    mustNewStruct(map[string]interface{}{"call_type": "Local"}),
-						ExecutionStats: mustNewStruct(map[string]interface{}{
-							"latency":           map[string]interface{}{"total": "1", "unit": "msec"},
-							"rows":              map[string]interface{}{"total": "9"},
-							"execution_summary": map[string]interface{}{"num_executions": "1"},
+						Metadata:    mustNewStruct(map[string]any{"call_type": "Local"}),
+						ExecutionStats: mustNewStruct(map[string]any{
+							"latency":           map[string]any{"total": "1", "unit": "msec"},
+							"rows":              map[string]any{"total": "9"},
+							"execution_summary": map[string]any{"num_executions": "1"},
 						}),
 					},
 					{
@@ -656,22 +656,22 @@ func TestRenderTreeWithStats(t *testing.T) {
 						},
 						DisplayName: "Serialize Result",
 						Kind:        sppb.PlanNode_RELATIONAL,
-						ExecutionStats: mustNewStruct(map[string]interface{}{
-							"latency":           map[string]interface{}{"total": "1", "unit": "msec"},
-							"rows":              map[string]interface{}{"total": "9"},
-							"execution_summary": map[string]interface{}{"num_executions": "1"},
+						ExecutionStats: mustNewStruct(map[string]any{
+							"latency":           map[string]any{"total": "1", "unit": "msec"},
+							"rows":              map[string]any{"total": "9"},
+							"execution_summary": map[string]any{"num_executions": "1"},
 						}),
 					},
 					{
 						Index:       3,
 						DisplayName: "Scan",
 						Kind:        sppb.PlanNode_RELATIONAL,
-						Metadata:    mustNewStruct(map[string]interface{}{"scan_type": "IndexScan", "scan_target": "SongsBySingerAlbumSongNameDesc", "Full scan": "true"}),
-						ExecutionStats: mustNewStruct(map[string]interface{}{
-							"latency":           map[string]interface{}{"total": "1", "unit": "msec"},
-							"rows":              map[string]interface{}{"total": "9", "unit": "rows"},
-							"scanned_rows":      map[string]interface{}{"total": "9", "unit": "rows"},
-							"execution_summary": map[string]interface{}{"num_executions": "1"},
+						Metadata:    mustNewStruct(map[string]any{"scan_type": "IndexScan", "scan_target": "SongsBySingerAlbumSongNameDesc", "Full scan": "true"}),
+						ExecutionStats: mustNewStruct(map[string]any{
+							"latency":           map[string]any{"total": "1", "unit": "msec"},
+							"rows":              map[string]any{"total": "9", "unit": "rows"},
+							"scanned_rows":      map[string]any{"total": "9", "unit": "rows"},
+							"execution_summary": map[string]any{"num_executions": "1"},
 						}),
 					},
 				},
@@ -754,7 +754,7 @@ func TestNodeString(t *testing.T) {
 			"Distributed Union with call_type=Local",
 			&sppb.PlanNode{
 				DisplayName: "Distributed Union",
-				Metadata: mustNewStruct(map[string]interface{}{
+				Metadata: mustNewStruct(map[string]any{
 					"call_type":             "Local",
 					"subquery_cluster_node": "4",
 				}),
@@ -764,7 +764,7 @@ func TestNodeString(t *testing.T) {
 			"Scan with scan_type=IndexScan and Full scan=true",
 			&sppb.PlanNode{
 				DisplayName: "Scan",
-				Metadata: mustNewStruct(map[string]interface{}{
+				Metadata: mustNewStruct(map[string]any{
 					"scan_type":   "IndexScan",
 					"scan_target": "SongsBySongName",
 					"Full scan":   "true",
@@ -775,7 +775,7 @@ func TestNodeString(t *testing.T) {
 			"Scan with scan_type=TableScan",
 			&sppb.PlanNode{
 				DisplayName: "Scan",
-				Metadata: mustNewStruct(map[string]interface{}{
+				Metadata: mustNewStruct(map[string]any{
 					"scan_type":   "TableScan",
 					"scan_target": "Songs",
 				}),
@@ -785,7 +785,7 @@ func TestNodeString(t *testing.T) {
 			"Scan with scan_type=BatchScan",
 			&sppb.PlanNode{
 				DisplayName: "Scan",
-				Metadata: mustNewStruct(map[string]interface{}{
+				Metadata: mustNewStruct(map[string]any{
 					"scan_type":   "BatchScan",
 					"scan_target": "$v2",
 				}),
@@ -795,7 +795,7 @@ func TestNodeString(t *testing.T) {
 			"Sort Limit with call_type=Local",
 			&sppb.PlanNode{
 				DisplayName: "Sort Limit",
-				Metadata: mustNewStruct(map[string]interface{}{
+				Metadata: mustNewStruct(map[string]any{
 					"call_type": "Local",
 				}),
 			}, "Local Sort Limit",
@@ -804,7 +804,7 @@ func TestNodeString(t *testing.T) {
 			"Sort Limit with call_type=Global",
 			&sppb.PlanNode{
 				DisplayName: "Sort Limit",
-				Metadata: mustNewStruct(map[string]interface{}{
+				Metadata: mustNewStruct(map[string]any{
 					"call_type": "Global",
 				}),
 			}, "Global Sort Limit",
@@ -813,7 +813,7 @@ func TestNodeString(t *testing.T) {
 			"Aggregate with iterator_type=Stream",
 			&sppb.PlanNode{
 				DisplayName: "Aggregate",
-				Metadata: mustNewStruct(map[string]interface{}{
+				Metadata: mustNewStruct(map[string]any{
 					"iterator_type": "Stream",
 				}),
 			}, "Stream Aggregate",

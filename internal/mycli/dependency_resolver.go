@@ -527,8 +527,7 @@ func stronglyConnectedTableIDs(graph map[tableID][]tableID, nodes []tableID) [][
 			dfs2(v, comp)
 		}
 	}
-	for i := len(stack) - 1; i >= 0; i-- {
-		u := stack[i]
+	for _, u := range slices.Backward(stack) {
 		if visited[u] {
 			continue
 		}

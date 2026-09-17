@@ -115,15 +115,15 @@ func decodePartitionToken(token string, now time.Time) (decodedPartitionToken, e
 		return out, fmt.Errorf("unsupported partition token: missing smycli-part/ prefix (legacy GetPartitionToken-only values are not replayable)")
 	}
 	rest := strings.TrimPrefix(token, "smycli-part/")
-	slash := strings.IndexByte(rest, '/')
-	if slash < 0 {
+	before, after, ok := strings.Cut(rest, "/")
+	if !ok {
 		return out, fmt.Errorf("malformed partition token: missing version")
 	}
-	ver := rest[:slash]
+	ver := before
 	if ver != "1" {
 		return out, fmt.Errorf("unsupported partition token version %q", ver)
 	}
-	payload, err := base64.RawURLEncoding.DecodeString(rest[slash+1:])
+	payload, err := base64.RawURLEncoding.DecodeString(after)
 	if err != nil {
 		return out, fmt.Errorf("malformed partition token payload: %w", err)
 	}
