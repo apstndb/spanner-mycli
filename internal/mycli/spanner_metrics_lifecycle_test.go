@@ -27,7 +27,63 @@ import (
 	"time"
 )
 
+// stuckExporterCase is one exporter configuration for the startup-failure and
+// cancellation runners. Do not add t.Parallel: metricsRunTest hooks and the
+// tracer provider are process-global.
+type stuckExporterCase struct {
+	name           string
+	restoreTracer  bool
+	opts           func(host string, port int, collectorURL string) *spannerOptions
+	flushMsg       string
+	cancelGuard    time.Duration
+	cancelGuardMsg string
+}
+
+func stuckExporterCases() []stuckExporterCase {
+	return []stuckExporterCase{
+		{
+			name: "metrics-only",
+			opts: func(host string, port int, collectorURL string) *spannerOptions {
+				return metricsLifecycleOpts(host, port, collectorURL)
+			},
+			flushMsg:       "stuck exporter never received a flush",
+			cancelGuard:    spannerMetricsCleanupBound + 3*time.Second,
+			cancelGuardMsg: "runWithOutput did not return after cancel and bounded cleanup",
+		},
+		{
+			name:          "traces-only",
+			restoreTracer: true,
+			opts: func(host string, port int, collectorURL string) *spannerOptions {
+				return tracesLifecycleOpts(host, port, "", collectorURL)
+			},
+			flushMsg:       "stuck traces exporter never received a flush",
+			cancelGuard:    spannerTelemetryCleanupBound + 3*time.Second,
+			cancelGuardMsg: "runWithOutput did not return after cancel and bounded traces cleanup",
+		},
+	}
+}
+
 func TestRunWithOutputPreservesStartupErrorAfterStuckExport(t *testing.T) {
+	for _, tc := range stuckExporterCases() {
+		t.Run(tc.name, func(t *testing.T) {
+			runStuckExportStartup(t, tc)
+		})
+	}
+}
+
+func TestRunWithOutputPreservesCancelAfterStuckExport(t *testing.T) {
+	for _, tc := range stuckExporterCases() {
+		t.Run(tc.name, func(t *testing.T) {
+			runStuckExportCancel(t, tc)
+		})
+	}
+}
+
+func runStuckExportStartup(t *testing.T, tc stuckExporterCase) {
+	t.Helper()
+	if tc.restoreTracer {
+		restoreTestTracerProvider(t)
+	}
 	clearSpannerEmulatorHost(t)
 	host, port, stop := startFakeMetricsSpanner(t)
 	t.Cleanup(stop)
@@ -35,7 +91,7 @@ func TestRunWithOutputPreservesStartupErrorAfterStuckExport(t *testing.T) {
 	collector, saw := newHangingOTLPServer()
 	t.Cleanup(collector.Close)
 
-	opts := metricsLifecycleOpts(host, port, collector.URL)
+	opts := tc.opts(host, port, collector.URL)
 	opts.InitCommand = "SET CLI_VERSION = 'x'"
 
 	var diag lockedBuffer
@@ -53,10 +109,14 @@ func TestRunWithOutputPreservesStartupErrorAfterStuckExport(t *testing.T) {
 	}
 	requirePreservedCommandResult(t, err)
 	requireOneBoundedShutdownDiagnostic(t, stderr, elapsed)
-	waitFor(t, saw, "stuck exporter never received a flush")
+	waitFor(t, saw, tc.flushMsg)
 }
 
-func TestRunWithOutputPreservesCancelAfterStuckExport(t *testing.T) {
+func runStuckExportCancel(t *testing.T, tc stuckExporterCase) {
+	t.Helper()
+	if tc.restoreTracer {
+		restoreTestTracerProvider(t)
+	}
 	clearSpannerEmulatorHost(t)
 	queryStarted := make(chan struct{}, 1)
 	host, port, stop := startFakeMetricsSpannerServer(t, &fakeMetricsSpanner{queryStarted: queryStarted})
@@ -65,7 +125,7 @@ func TestRunWithOutputPreservesCancelAfterStuckExport(t *testing.T) {
 	collector, saw := newHangingOTLPServer()
 	t.Cleanup(collector.Close)
 
-	opts := metricsLifecycleOpts(host, port, collector.URL)
+	opts := tc.opts(host, port, collector.URL)
 	opts.Execute = "SELECT 1"
 
 	var diag lockedBuffer
@@ -91,8 +151,8 @@ func TestRunWithOutputPreservesCancelAfterStuckExport(t *testing.T) {
 	var got outcome
 	select {
 	case got = <-done:
-	case <-time.After(spannerMetricsCleanupBound + 3*time.Second):
-		t.Fatal("runWithOutput did not return after cancel and bounded cleanup")
+	case <-time.After(tc.cancelGuard):
+		t.Fatal(tc.cancelGuardMsg)
 	}
 
 	stderr := diag.String()
@@ -101,7 +161,7 @@ func TestRunWithOutputPreservesCancelAfterStuckExport(t *testing.T) {
 	}
 	requirePreservedCommandResult(t, got.err)
 	requireOneBoundedShutdownDiagnostic(t, stderr, got.elapsed)
-	waitFor(t, saw, "stuck exporter never received a flush")
+	waitFor(t, saw, tc.flushMsg)
 }
 
 func installMetricsRunTestHooks(t *testing.T, errStream io.Writer) {
