@@ -68,7 +68,7 @@ There are differences between spanner-mycli and spanner-cli that include not onl
     * System variables expansion
     * Prompt2 with margin and waiting status
   * Autowrap and auto adjust column width to fit within terminal width (overridable with `CLI_FIXED_WIDTH`) when
-    `CLI_AUTOWRAP = TRUE`. Pluggable width strategies via `CLI_WIDTH_STRATEGY` (`GREEDY_FREQUENCY`, `PROPORTIONAL`, `MARGINAL_COST`).
+    `CLI_AUTOWRAP = TRUE`. Opt-in end truncation with `CLI_ELLIPSIS = TRUE` on a finite width (TTY or `CLI_FIXED_WIDTH`); unconstrained output still wraps. Pluggable width strategies via `CLI_WIDTH_STRATEGY` (`GREEDY_FREQUENCY`, `PROPORTIONAL`, `MARGINAL_COST`).
   * Pager support when `CLI_USE_PAGER = TRUE`
   * Progress bar of DDL execution.
   * Syntax highlight when `CLI_ENABLE_HIGHLIGHT = TRUE`
