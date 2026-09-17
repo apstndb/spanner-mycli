@@ -168,147 +168,36 @@ func TestClientOverhead(t *testing.T) {
 }
 
 func TestMemoryUsedMB(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name string
-		m    ExecutionMetrics
-		want float64
-	}{
-		{
-			name: "with memory stats",
-			m: ExecutionMetrics{
-				MemoryBefore: &MemoryStats{AllocMB: 10},
-				MemoryAfter:  &MemoryStats{AllocMB: 25},
-			},
-			want: 15,
-		},
-		{
-			name: "no before stats",
-			m: ExecutionMetrics{
-				MemoryAfter: &MemoryStats{AllocMB: 25},
-			},
-			want: -1,
-		},
-		{
-			name: "no after stats",
-			m: ExecutionMetrics{
-				MemoryBefore: &MemoryStats{AllocMB: 10},
-			},
-			want: -1,
-		},
-		{
-			name: "neither stats",
-			m:    ExecutionMetrics{},
-			want: -1,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			got := tt.m.MemoryUsedMB()
-			if got != tt.want {
-				t.Errorf("MemoryUsedMB() = %v, want %v", got, tt.want)
-			}
+	runMemoryPresenceCases(t, "MemoryUsedMB",
+		func(m ExecutionMetrics) float64 { return m.MemoryUsedMB() },
+		[]memoryPresenceCase[float64]{
+			{name: "with memory stats", before: &MemoryStats{AllocMB: 10}, after: &MemoryStats{AllocMB: 25}, want: 15},
+			{name: "no before stats", after: &MemoryStats{AllocMB: 25}, want: -1},
+			{name: "no after stats", before: &MemoryStats{AllocMB: 10}, want: -1},
+			{name: "neither stats", want: -1},
 		})
-	}
 }
 
 func TestTotalAllocatedMB(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name string
-		m    ExecutionMetrics
-		want float64
-	}{
-		{
-			name: "with memory stats",
-			m: ExecutionMetrics{
-				MemoryBefore: &MemoryStats{TotalAllocMB: 100},
-				MemoryAfter:  &MemoryStats{TotalAllocMB: 150},
-			},
-			want: 50,
-		},
-		{
-			name: "no before stats",
-			m: ExecutionMetrics{
-				MemoryAfter: &MemoryStats{TotalAllocMB: 150},
-			},
-			want: -1,
-		},
-		{
-			name: "no after stats",
-			m: ExecutionMetrics{
-				MemoryBefore: &MemoryStats{TotalAllocMB: 100},
-			},
-			want: -1,
-		},
-		{
-			name: "no stats",
-			m:    ExecutionMetrics{},
-			want: -1,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			got := tt.m.TotalAllocatedMB()
-			if got != tt.want {
-				t.Errorf("TotalAllocatedMB() = %v, want %v", got, tt.want)
-			}
+	runMemoryPresenceCases(t, "TotalAllocatedMB",
+		func(m ExecutionMetrics) float64 { return m.TotalAllocatedMB() },
+		[]memoryPresenceCase[float64]{
+			{name: "with memory stats", before: &MemoryStats{TotalAllocMB: 100}, after: &MemoryStats{TotalAllocMB: 150}, want: 50},
+			{name: "no before stats", after: &MemoryStats{TotalAllocMB: 150}, want: -1},
+			{name: "no after stats", before: &MemoryStats{TotalAllocMB: 100}, want: -1},
+			{name: "no stats", want: -1},
 		})
-	}
 }
 
 func TestGCCount(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name string
-		m    ExecutionMetrics
-		want int32
-	}{
-		{
-			name: "with gc data",
-			m: ExecutionMetrics{
-				MemoryBefore: &MemoryStats{NumGC: 5},
-				MemoryAfter:  &MemoryStats{NumGC: 8},
-			},
-			want: 3,
-		},
-		{
-			name: "no before stats",
-			m: ExecutionMetrics{
-				MemoryAfter: &MemoryStats{NumGC: 8},
-			},
-			want: -1,
-		},
-		{
-			name: "no after stats",
-			m: ExecutionMetrics{
-				MemoryBefore: &MemoryStats{NumGC: 5},
-			},
-			want: -1,
-		},
-		{
-			name: "no stats",
-			m:    ExecutionMetrics{},
-			want: -1,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			got := tt.m.GCCount()
-			if got != tt.want {
-				t.Errorf("GCCount() = %v, want %v", got, tt.want)
-			}
+	runMemoryPresenceCases(t, "GCCount",
+		func(m ExecutionMetrics) int32 { return m.GCCount() },
+		[]memoryPresenceCase[int32]{
+			{name: "with gc data", before: &MemoryStats{NumGC: 5}, after: &MemoryStats{NumGC: 8}, want: 3},
+			{name: "no before stats", after: &MemoryStats{NumGC: 8}, want: -1},
+			{name: "no after stats", before: &MemoryStats{NumGC: 5}, want: -1},
+			{name: "no stats", want: -1},
 		})
-	}
 }
 
 func TestParseServerTime(t *testing.T) {
@@ -362,4 +251,25 @@ func TestGetMemoryStats(t *testing.T) {
 
 func durationPtr(d time.Duration) *time.Duration {
 	return &d
+}
+
+type memoryPresenceCase[T comparable] struct {
+	name   string
+	before *MemoryStats
+	after  *MemoryStats
+	want   T
+}
+
+func runMemoryPresenceCases[T comparable](t *testing.T, method string, get func(ExecutionMetrics) T, cases []memoryPresenceCase[T]) {
+	t.Helper()
+	t.Parallel()
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := get(ExecutionMetrics{MemoryBefore: tt.before, MemoryAfter: tt.after})
+			if got != tt.want {
+				t.Errorf("%s() = %v, want %v", method, got, tt.want)
+			}
+		})
+	}
 }

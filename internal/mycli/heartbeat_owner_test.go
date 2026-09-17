@@ -16,10 +16,8 @@ package mycli
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"maps"
-	"net"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -31,8 +29,6 @@ import (
 	"google.golang.org/api/option"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -424,9 +420,9 @@ func (s *heartbeatRPCServer) beginObservations() []beginObservation {
 }
 
 func lastSQLObservation(obs []sqlObservation, sql string) (sqlObservation, bool) {
-	for i := len(obs) - 1; i >= 0; i-- {
-		if obs[i].sql == sql {
-			return obs[i], true
+	for _, ob := range slices.Backward(obs) {
+		if ob.sql == sql {
+			return ob, true
 		}
 	}
 	return sqlObservation{}, false
@@ -907,36 +903,17 @@ func newHeartbeatHarness(t *testing.T) *heartbeatHarness {
 	server := &heartbeatRPCServer{
 		heartbeatStarted: make(chan struct{}),
 	}
-	listener := bufconn.Listen(1 << 20)
-	grpcServer := grpc.NewServer()
-	sppb.RegisterSpannerServer(grpcServer, server)
-	go func() {
-		if err := grpcServer.Serve(listener); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
-			t.Errorf("serve: %v", err)
-		}
-	}()
-	t.Cleanup(func() {
-		grpcServer.Stop()
-		_ = listener.Close()
-	})
-	conn, err := grpc.NewClient("passthrough:///heartbeat",
-		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }),
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = conn.Close() })
+	conn := dialBufconn(t, func(s *grpc.Server) { sppb.RegisterSpannerServer(s, server) })
 	clientOpts := []option.ClientOption{option.WithGRPCConn(conn)}
 	client, err := spanner.NewClientWithConfig(t.Context(), "projects/test/instances/test/databases/test",
-		spanner.ClientConfig{DisableNativeMetrics: true}, clientOpts...)
+		bufconnSpannerClientConfig, clientOpts...)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(client.Close)
 
 	sysVars := newSystemVariablesWithDefaultsForTest()
-	tm := NewTransactionManager(client, sysVars, spanner.ClientConfig{DisableNativeMetrics: true})
+	tm := NewTransactionManager(client, sysVars, bufconnSpannerClientConfig)
 	ticks := make(chan time.Time)
 	h := &heartbeatHarness{
 		tm:         tm,

@@ -34,6 +34,7 @@ import (
 	"log/slog"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -123,10 +124,8 @@ func (v *enumStringVar) PrepareReset(value string) error {
 	if _, ok := v.aliases[normalized]; ok {
 		return nil
 	}
-	for _, valid := range v.values {
-		if normalized == valid {
-			return nil
-		}
+	if slices.Contains(v.values, normalized) {
+		return nil
 	}
 	return fmt.Errorf("invalid value %q, must be one of: %s", value, strings.Join(v.values, ", "))
 }

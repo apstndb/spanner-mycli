@@ -118,7 +118,7 @@ func formatBigQueryValue(v bq.Value, fieldType bq.FieldType) string {
 		if !val.Valid {
 			return "NULL"
 		}
-		return string(val.JSONVal)
+		return val.JSONVal
 	default:
 		b, err := json.Marshal(v)
 		if err != nil {

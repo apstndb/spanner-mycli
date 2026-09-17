@@ -16,6 +16,7 @@ package mycli
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -420,9 +421,9 @@ func requireUserSQL(t *testing.T, h *heartbeatHarness, sql string) sqlObservatio
 
 func lastPartitionedUserSQL(h *heartbeatHarness) (sqlObservation, bool) {
 	obs := userSQLObservations(h.server.sqlObservations())
-	for i := len(obs) - 1; i >= 0; i-- {
-		if obs[i].partitioned {
-			return obs[i], true
+	for _, ob := range slices.Backward(obs) {
+		if ob.partitioned {
+			return ob, true
 		}
 	}
 	return sqlObservation{}, false

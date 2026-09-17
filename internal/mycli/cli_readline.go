@@ -81,7 +81,7 @@ func newPersistentHistoryWithFS(filename string, h *simplehistory.Container, fs 
 	if err != nil {
 		return nil, err
 	}
-	for _, s := range strings.Split(string(b), "\n") {
+	for s := range strings.SplitSeq(string(b), "\n") {
 		if s == "" {
 			continue
 		}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"strings"
 	"testing"
 	"time"
@@ -16,9 +15,7 @@ import (
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
-	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 )
@@ -535,46 +532,15 @@ func (s *showOperationTestServer) GetOperation(_ context.Context, _ *longrunning
 
 func newShowOperationTestSession(t *testing.T, server longrunningpb.OperationsServer) *Session {
 	t.Helper()
-
-	listener := bufconn.Listen(1 << 20)
-	grpcServer := grpc.NewServer()
-	longrunningpb.RegisterOperationsServer(grpcServer, server)
-	go func() {
-		if err := grpcServer.Serve(listener); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
-			t.Errorf("serve operation test server: %v", err)
-		}
-	}()
-	t.Cleanup(func() {
-		grpcServer.Stop()
-		_ = listener.Close()
-	})
-
-	conn, err := grpc.NewClient(
-		"passthrough:///show-operation-test",
-		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
-			return listener.Dial()
-		}),
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
-	if err != nil {
-		t.Fatalf("create gRPC test client: %v", err)
-	}
-	t.Cleanup(func() { _ = conn.Close() })
-
+	conn := dialBufconn(t, func(s *grpc.Server) { longrunningpb.RegisterOperationsServer(s, server) })
 	adminClient, err := adminapi.NewDatabaseAdminClient(t.Context(), option.WithGRPCConn(conn))
 	if err != nil {
 		t.Fatalf("create database admin client: %v", err)
 	}
 	t.Cleanup(func() { _ = adminClient.Close() })
-
-	identity := ConnectionVars{
-		Project:  "test",
-		Instance: "test",
-		Database: "test",
-	}
 	return &Session{
 		adminClient:     adminClient,
-		systemVariables: &systemVariables{Connection: identity},
-		connection:      identity,
+		systemVariables: &systemVariables{Connection: bufconnTestIdentity},
+		connection:      bufconnTestIdentity,
 	}
 }

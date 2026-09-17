@@ -233,7 +233,7 @@ func TestTransactionHelpersConcurrencyIntegration(t *testing.T) {
 	// Goroutine 3: Get transaction attributes
 	wg.Go(func() {
 		// This should not block or race
-		for i := 0; i < 10; i++ {
+		for range 10 {
 			attrs := session.txn.TransactionAttrsWithLock()
 			if attrs.mode != transactionModeReadWrite {
 				errors <- fmt.Errorf("unexpected transaction mode")

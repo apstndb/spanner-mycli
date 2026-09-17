@@ -511,7 +511,7 @@ func TestBuildStatement(t *testing.T) {
 		{
 			desc:  "BEGIN RO staleness statement",
 			input: "BEGIN RO 10",
-			want:  &BeginRoStatement{Staleness: time.Duration(10 * time.Second), TimestampBoundType: exactStaleness},
+			want:  &BeginRoStatement{Staleness: 10 * time.Second, TimestampBoundType: exactStaleness},
 		},
 		{
 			desc:          "BEGIN RO read timestamp statement",
@@ -528,7 +528,7 @@ func TestBuildStatement(t *testing.T) {
 			desc:  "BEGIN RO staleness with PRIORITY statement",
 			input: "BEGIN RO 10 PRIORITY HIGH",
 			want: &BeginRoStatement{
-				Staleness:          time.Duration(10 * time.Second),
+				Staleness:          10 * time.Second,
 				TimestampBoundType: exactStaleness,
 				Priority:           sppb.RequestOptions_PRIORITY_HIGH,
 			},
