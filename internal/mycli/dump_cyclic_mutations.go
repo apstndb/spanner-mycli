@@ -78,7 +78,7 @@ func dumpMutationFormatConfig() *spanvalue.FormatConfig {
 	// decoding them. Validate scalars (also inside arrays) before falling
 	// through to the shared literal policy, so malformed values fail before
 	// any dump output. Do not format the decoded wrapper: retain wire fidelity.
-	return sqlLiteralFormatConfig().WithComplexPlugin(spanvalue.PluginFromNullable(
+	return spanvalue.LiteralFormatConfig().WithComplexPlugin(spanvalue.PluginFromNullable(
 		func(spanvalue.NullableValue) (string, error) { return "", spanvalue.ErrFallthrough },
 	)).WithComplexPlugin(func(_ spanvalue.Formatter, value spanner.GenericColumnValue, _ bool) (string, error) {
 		if value.Value == nil || value.Value.Kind == nil {
