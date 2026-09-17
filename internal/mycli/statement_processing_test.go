@@ -697,6 +697,31 @@ func TestBuildStatement(t *testing.T) {
 			want:  &ShowTablesStatement{Schema: "sch1"},
 		},
 		{
+			desc:  "SHOW CHANGE STREAMS statement",
+			input: "SHOW CHANGE STREAMS",
+			want:  &ShowChangeStreamsStatement{},
+		},
+		{
+			desc:  "SHOW CHANGE STREAMS statement lowercase",
+			input: "show change streams",
+			want:  &ShowChangeStreamsStatement{},
+		},
+		{
+			desc:  "SHOW CREATE CHANGE STREAM statement",
+			input: "SHOW CREATE CHANGE STREAM MyStream",
+			want:  &ShowCreateStatement{ObjectType: "CHANGE STREAM", Name: "MyStream"},
+		},
+		{
+			desc:  "SHOW CREATE CHANGE STREAM statement with a named schema",
+			input: "SHOW CREATE CHANGE STREAM sch1.MyStream",
+			want:  &ShowCreateStatement{ObjectType: "CHANGE STREAM", Schema: "sch1", Name: "MyStream"},
+		},
+		{
+			desc:  "DESCRIBE CHANGE STREAM remains result-shape DESCRIBE",
+			input: "DESCRIBE CHANGE STREAM MyStream",
+			want:  &DescribeStatement{Statement: "CHANGE STREAM MyStream"},
+		},
+		{
 			desc:  "SHOW INDEX statement",
 			input: "SHOW INDEX FROM t1",
 			want:  &ShowIndexStatement{Table: "t1"},
@@ -1681,6 +1706,9 @@ func TestBuildStatement_InvalidCase(t *testing.T) {
 		// SHOW TABLES takes a bare schema name; a MySQL-style FROM clause
 		// previously misparsed as schema "FROM foo" and returned an empty result.
 		"SHOW TABLES FROM foo",
+		"SHOW CHANGE STREAMS leftover",
+		"SHOW CHANGE STREAMS sch1",
+		"SHOW CHANGE STREAM",
 		// Object names are limited to [<schema>.]<name>.
 		"SHOW CREATE TABLE a.b.c",
 		"SHOW COLUMNS FROM a.b.c",
