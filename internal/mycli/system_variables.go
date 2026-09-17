@@ -172,6 +172,7 @@ type DisplayVars struct {
 	ExplainWrapWidth           int64                 // CLI_EXPLAIN_WRAP_WIDTH
 	ExplainOperatorHeader      string                // CLI_EXPLAIN_OPERATOR_HEADER
 	ExplainHangingIndent       bool                  // CLI_EXPLAIN_HANGING_INDENT
+	ExplainConciseMetadata     bool                  // CLI_EXPLAIN_CONCISE_METADATA
 	ExplainPrintSections       string                // CLI_EXPLAIN_PRINT_SECTIONS
 	ParsedExplainPrintSections planref.PrintSections
 	OutputTemplateFile         string // CLI_OUTPUT_TEMPLATE_FILE (computed getter/setter)
