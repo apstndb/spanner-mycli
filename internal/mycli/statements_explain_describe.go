@@ -421,7 +421,7 @@ func executeExplain(ctx context.Context, session *Session, sql string, isDML boo
 func generateExplainResult(sysVars *systemVariables, queryPlan *sppb.QueryPlan, format enums.ExplainFormat, width int64, printSections *planref.PrintSections) (*Result, error) {
 	format = lo.Ternary(format != enums.ExplainFormatUnspecified, format, sysVars.Display.ExplainFormat)
 	width = lo.Ternary(width != 0, width, sysVars.Display.ExplainWrapWidth)
-	rows, predicates, appendices, err := processPlanWithoutStats(queryPlan, format, width, sysVars.Display.ExplainHangingIndent, resolveExplainPrintSections(sysVars, printSections))
+	rows, predicates, appendices, err := processPlanWithoutStats(queryPlan, format, width, sysVars.Display.ExplainHangingIndent, resolveExplainPrintSections(sysVars, printSections), queryPlanOptionsFromDisplay(sysVars)...)
 	if err != nil {
 		return nil, err
 	}
@@ -561,7 +561,7 @@ func buildExplainAnalyzeResult(sysVars *systemVariables, plan *sppb.QueryPlan, q
 	format = lo.Ternary(format != enums.ExplainFormatUnspecified, format, sysVars.Display.ExplainFormat)
 	width = lo.Ternary(width != 0, width, sysVars.Display.ExplainWrapWidth)
 
-	rows, predicates, appendices, err := processPlan(plan, def, inlines, format, width, sysVars.Display.ExplainHangingIndent, resolveExplainPrintSections(sysVars, printSections))
+	rows, predicates, appendices, err := processPlan(plan, def, inlines, format, width, sysVars.Display.ExplainHangingIndent, resolveExplainPrintSections(sysVars, printSections), queryPlanOptionsFromDisplay(sysVars)...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to process query plan: %w", err)
 	}
@@ -661,12 +661,19 @@ func executeExplainAnalyzeDML(ctx context.Context, session *Session, sql string,
 	return result, nil
 }
 
-func processPlanWithoutStats(plan *sppb.QueryPlan, format enums.ExplainFormat, width int64, hangingIndent bool, printSections planref.PrintSections) (rows []Row, predicates []string, appendices []ResultAppendix, err error) {
-	return processPlan(plan, nil, nil, format, width, hangingIndent, printSections)
+func queryPlanOptionsFromDisplay(sv *systemVariables) []spannerplan.Option {
+	if sv == nil {
+		return []spannerplan.Option{spannerplan.WithConciseMetadata(false)}
+	}
+	return []spannerplan.Option{spannerplan.WithConciseMetadata(sv.Display.ExplainConciseMetadata)}
 }
 
-func processPlan(plan *sppb.QueryPlan, columnRenderDefs []columnRenderDef, inlineStatsDefs []inlineStatsDef, format enums.ExplainFormat, width int64, hangingIndent bool, printSections planref.PrintSections) (rows []Row, predicates []string, appendices []ResultAppendix, err error) {
-	rowsWithPredicates, err := processPlanNodes(plan.GetPlanNodes(), inlineStatsDefs, format, width, hangingIndent)
+func processPlanWithoutStats(plan *sppb.QueryPlan, format enums.ExplainFormat, width int64, hangingIndent bool, printSections planref.PrintSections, extraQP ...spannerplan.Option) (rows []Row, predicates []string, appendices []ResultAppendix, err error) {
+	return processPlan(plan, nil, nil, format, width, hangingIndent, printSections, extraQP...)
+}
+
+func processPlan(plan *sppb.QueryPlan, columnRenderDefs []columnRenderDef, inlineStatsDefs []inlineStatsDef, format enums.ExplainFormat, width int64, hangingIndent bool, printSections planref.PrintSections, extraQP ...spannerplan.Option) (rows []Row, predicates []string, appendices []ResultAppendix, err error) {
+	rowsWithPredicates, err := processPlanNodes(plan.GetPlanNodes(), inlineStatsDefs, format, width, hangingIndent, extraQP...)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -811,7 +818,7 @@ func runAnalyzeQuery(ctx context.Context, session *Session, stmt spanner.Stateme
 	return result.Plan, result.CommitResponse.CommitTs, result.Metadata, nil
 }
 
-func processPlanNodes(nodes []*sppb.PlanNode, statsDefs []inlineStatsDef, format enums.ExplainFormat, width int64, hangingIndent bool) ([]plantree.RowWithPredicates, error) {
+func processPlanNodes(nodes []*sppb.PlanNode, statsDefs []inlineStatsDef, format enums.ExplainFormat, width int64, hangingIndent bool, extraQP ...spannerplan.Option) ([]plantree.RowWithPredicates, error) {
 	var options []plantree.Option
 	switch format {
 	case enums.ExplainFormatCurrent, enums.ExplainFormatUnspecified:
@@ -843,6 +850,9 @@ func processPlanNodes(nodes []*sppb.PlanNode, statsDefs []inlineStatsDef, format
 		options = append(options, plantree.WithQueryPlanOptions(
 			spannerplan.WithInlineStatsFunc(inlineStatsFunc(statsDefs)),
 		))
+	}
+	if len(extraQP) > 0 {
+		options = append(options, plantree.WithQueryPlanOptions(extraQP...))
 	}
 
 	qp, err := spannerplan.New(nodes)

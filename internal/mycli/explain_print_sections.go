@@ -103,7 +103,8 @@ func buildQueryPlanAppendix(sysVars *systemVariables, plan *sppb.QueryPlan) ([]R
 	sections := resolveExplainPrintSections(sysVars, nil)
 
 	rows, err := processPlanNodes(plan.GetPlanNodes(), sysVars.Display.ParsedInlineStats,
-		sysVars.Display.ExplainFormat, sysVars.Display.ExplainWrapWidth, sysVars.Display.ExplainHangingIndent)
+		sysVars.Display.ExplainFormat, sysVars.Display.ExplainWrapWidth, sysVars.Display.ExplainHangingIndent,
+		queryPlanOptionsFromDisplay(sysVars)...)
 	if err != nil {
 		return nil, err
 	}
