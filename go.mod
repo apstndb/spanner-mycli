@@ -44,7 +44,7 @@ require (
 	github.com/klauspost/compress v1.20.0
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/nyaosorg/go-readline-ny v1.16.1
-	github.com/olekukonko/tablewriter v1.1.4
+	github.com/olekukonko/tablewriter v1.1.5
 	github.com/pelletier/go-toml v1.9.5
 	github.com/samber/lo v1.53.0
 	github.com/sourcegraph/conc v0.3.0
