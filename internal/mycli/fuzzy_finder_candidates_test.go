@@ -395,7 +395,7 @@ func TestFetchAdminCandidates(t *testing.T) {
 		}
 		want := []fzfItem{{
 			Value: "op-1",
-			Label: "CREATE TABLE t (id INT64) PRIMARY KEY (id);\nCREATE INDEX i ON t (id);",
+			Label: "op-1\nCREATE TABLE t (id INT64) PRIMARY KEY (id);\nCREATE INDEX i ON t (id);",
 		}}
 		if diff := cmp.Diff(want, got); diff != "" {
 			t.Fatalf("operations mismatch (-want +got):\n%s", diff)
@@ -416,6 +416,51 @@ func TestFetchAdminCandidates(t *testing.T) {
 			t.Fatalf("err=%v", err)
 		}
 	})
+}
+
+func TestOperationCandidatesMatchByIDAndDDL(t *testing.T) {
+	t.Parallel()
+	statements := []string{
+		"CREATE TABLE t (id INT64) PRIMARY KEY (id)",
+		"CREATE INDEX i ON t (id)",
+	}
+	ddl, err := anypb.New(&databasepb.UpdateDatabaseDdlMetadata{Statements: statements})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := strings.Join(statements, ";\n") + ";"
+	session := newFuzzyAdminSession(t, &fuzzyAdminServer{
+		ops: []*longrunningpb.Operation{
+			{Name: "projects/p/instances/i/databases/db/operations/op-zzz", Metadata: ddl},
+			{Name: "projects/p/instances/i/databases/db/operations/op-qqq", Metadata: ddl},
+		},
+	})
+	f := fuzzyFinderForSession(session)
+	got, err := f.fetchOperationCandidates(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []fzfItem{
+		{Value: "op-zzz", Label: "op-zzz\n" + body},
+		{Value: "op-qqq", Label: "op-qqq\n" + body},
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Fatalf("operations mismatch (-want +got):\n%s", diff)
+	}
+	prepared := prepareFzfOptions(got, "Operations")
+	if prepared.formattedLines[0] != got[0].Value+fzfDelimiter+got[0].Label {
+		t.Fatalf("delimiter line = %q", prepared.formattedLines[0])
+	}
+
+	if diff := cmp.Diff([]string{"op-zzz"}, runFzfFilter(got, "zzz", "Operations", "")); diff != "" {
+		t.Fatalf("id match (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff([]string{"op-qqq"}, runFzfFilter(got, "qqq", "Operations", "")); diff != "" {
+		t.Fatalf("other id match (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff([]string{"op-zzz", "op-qqq"}, runFzfFilter(got, "CREATE INDEX", "Operations", "")); diff != "" {
+		t.Fatalf("ddl match (-want +got):\n%s", diff)
+	}
 }
 
 func TestFetchSchemaObjectCandidates(t *testing.T) {
