@@ -1097,7 +1097,8 @@ func (f *fuzzyFinderCommand) fetchSchemaCandidates(ctx context.Context) ([]fzfIt
 }
 
 // fetchOperationCandidates lists DDL operations from the current database.
-// Each candidate's Value is the operation ID (short form) and Label shows the DDL statements and status.
+// Value is the short operation ID and is what completion inserts.
+// Label starts with that same ID, then the DDL text, so either can be matched.
 func (f *fuzzyFinderCommand) fetchOperationCandidates(ctx context.Context) ([]fzfItem, error) {
 	session := f.cli.SessionHandler.GetSession()
 	if session == nil || session.adminClient == nil {
@@ -1121,12 +1122,11 @@ func (f *fuzzyFinderCommand) fetchOperationCandidates(ctx context.Context) ([]fz
 			continue
 		}
 
-		// Extract short operation ID from the full name.
+		// Short ID is the last path segment. Prefix it onto the label; keep
+		// the inserted Value as the ID and the DDL body multiline.
 		parts := strings.Split(op.GetName(), "/")
 		opID := parts[len(parts)-1]
-
-		// Build label from DDL statements with trailing semicolons.
-		label := strings.Join(md.GetStatements(), ";\n") + ";"
+		label := opID + "\n" + strings.Join(md.GetStatements(), ";\n") + ";"
 		items = append(items, fzfItem{Value: opID, Label: label})
 	}
 	return items, nil
