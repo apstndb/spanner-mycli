@@ -362,7 +362,7 @@ var varDefs = []varDef{
 	},
 	{
 		name:  "CLI_FUZZY_FINDER_OPTIONS",
-		desc:  "Additional fzf options passed to the fuzzy finder. Appended after built-in defaults, so user options take precedence. Example: --color=dark --no-select-1",
+		desc:  "Additional fzf options appended after built-in defaults. Completion titles and nonempty typed prefixes override header and query options afterward. Example: --color=dark --no-select-1",
 		scope: scopeSession,
 		bind:  func(sv *systemVariables) Variable { return StringVar(&sv.Feature.FuzzyFinderOptions) },
 	},
