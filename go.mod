@@ -4,10 +4,10 @@ go 1.26.8
 
 require (
 	cloud.google.com/go v0.123.0
-	cloud.google.com/go/bigquery v1.83.0
+	cloud.google.com/go/bigquery v1.84.0
 	cloud.google.com/go/longrunning v1.2.0
 	cloud.google.com/go/spanner v1.95.1
-	cloud.google.com/go/storage v1.67.1
+	cloud.google.com/go/storage v1.68.0
 	github.com/MakeNowJust/heredoc/v2 v2.0.1
 	github.com/alecthomas/kong v1.16.1
 	github.com/apstndb/adcplus v0.2.0
@@ -19,7 +19,7 @@ require (
 	github.com/apstndb/memebridge v0.7.0
 	github.com/apstndb/protoyaml v0.1.1
 	github.com/apstndb/spancodec v0.1.2
-	github.com/apstndb/spanemuboost v0.4.7
+	github.com/apstndb/spanemuboost v0.4.8
 	github.com/apstndb/spaniter v0.3.1
 	github.com/apstndb/spanner-docs-embed v0.0.0-20260312161525-0136df2da2a6
 	github.com/apstndb/spannerplan v0.3.2
@@ -30,7 +30,7 @@ require (
 	github.com/cloudspannerecosystem/memefish v0.8.1
 	github.com/creack/pty v1.1.24
 	github.com/fatih/color v1.19.0
-	github.com/go-sprout/sprout v1.1.1
+	github.com/go-sprout/sprout v1.1.2
 	github.com/goccy/go-yaml v1.19.2
 	github.com/gocql/gocql v1.7.0
 	github.com/google/go-cmp v0.7.0
@@ -60,7 +60,7 @@ require (
 	golang.org/x/time v0.16.0
 	google.golang.org/api v0.298.0
 	google.golang.org/genai v1.71.0
-	google.golang.org/grpc v1.83.2
+	google.golang.org/grpc v1.84.0
 	google.golang.org/protobuf v1.36.12
 )
 
@@ -80,7 +80,7 @@ require (
 	dario.cat/mergo v1.0.2 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
 	github.com/GoogleCloudPlatform/grpc-gcp-go/grpcgcp v1.6.0 // indirect
-	github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.33.0 // indirect
+	github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.34.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.57.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.57.0 // indirect
 	github.com/Masterminds/semver/v3 v3.4.0 // indirect
@@ -176,7 +176,7 @@ require (
 	github.com/spf13/cast v1.10.0 // indirect
 	github.com/spf13/cobra v1.9.1 // indirect
 	github.com/spf13/pflag v1.0.7 // indirect
-	github.com/spiffe/go-spiffe/v2 v2.7.0 // indirect
+	github.com/spiffe/go-spiffe/v2 v2.8.1 // indirect
 	github.com/testcontainers/testcontainers-go/modules/gcloud v0.42.0 // indirect
 	github.com/tklauser/go-sysconf v0.4.0 // indirect
 	github.com/tklauser/numcpus v0.12.0 // indirect
@@ -196,15 +196,15 @@ require (
 	go.opentelemetry.io/otel/trace v1.46.0
 	go.uber.org/multierr v1.11.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
-	golang.org/x/crypto v0.56.0 // indirect
+	golang.org/x/crypto v0.57.0 // indirect
 	golang.org/x/exp v0.0.0-20250620022241-b7579e27df2b // indirect
-	golang.org/x/mod v0.40.0 // indirect
+	golang.org/x/mod v0.41.0 // indirect
 	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
-	golang.org/x/sync v0.22.0 // indirect
+	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/telemetry v0.0.0-20260811182544-a038080d80e5 // indirect
-	golang.org/x/text v0.41.0 // indirect
+	golang.org/x/text v0.42.0 // indirect
 	golang.org/x/tools v0.49.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	google.golang.org/genproto v0.0.0-20260715232425-e75dac1f907d // indirect
