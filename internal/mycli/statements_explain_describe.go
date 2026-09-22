@@ -627,13 +627,15 @@ func executeExplainAnalyzeDML(ctx context.Context, session *Session, sql string,
 	var queryStats map[string]any
 	var prepared *Result
 	var presentationErr error
+	var capture *captureToken
 	dmlResult, err := session.txn.RunInNewOrExistRwTx(ctx, func(tx *spanner.ReadWriteStmtBasedTransaction, implicit bool) (int64, *sppb.QueryPlan, *sppb.ResultSetMetadata, error) {
 		updateResult, err := session.txn.runUpdateOnTransaction(ctx, tx, stmt, implicit, sppb.ExecuteSqlRequest_PROFILE)
 		if err != nil {
 			return 0, nil, nil, err
 		}
 		queryStats = updateResult.Stats
-		// Both values are overwritten on each attempt, including implicit abort retries.
+		// Overwritten on each attempt, including implicit abort retries.
+		capture = updateResult.capture
 		prepared, presentationErr = prepareExplainAnalyzeDMLResult(session.systemVariables, updateResult.Plan, queryStats, format, width, printSections)
 		if presentationErr != nil && implicit {
 			// Fail the callback so the implicit transaction rolls back before Commit.
@@ -649,6 +651,7 @@ func executeExplainAnalyzeDML(ctx context.Context, session *Session, sql string,
 		return nil, presentationErr
 	}
 
+	prepared.capture = capture
 	prepared.IsExecutedDML = true
 	prepared.AffectedRows = int(dmlResult.Affected)
 	prepared.AffectedRowsType = rowCountTypeExact
