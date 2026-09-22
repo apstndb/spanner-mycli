@@ -302,7 +302,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `List change streams`,
 				Syntax: `SHOW CHANGE STREAMS`,
-				Note:   `Columns are Schema, Name, and All (TRUE if the stream tracks the entire database). Use SHOW CREATE CHANGE STREAM <name> for configuration.`,
+				Note:   "Columns are Schema, Name, and All (TRUE if the stream tracks the entire database). Use `SHOW CREATE CHANGE STREAM <name>` for configuration.",
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^SHOW\s+CHANGE\s+STREAMS$`),
@@ -394,7 +394,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `Export specific tables as SQL statements`,
 				Syntax: `DUMP TABLES <table1> [, <table2>, ...]`,
-				Note:   `Table names are [<schema>.]<table>. Data only; no constraint changes or implicit inclusion of other tables. Invalid names are rejected before GetDatabaseDdl. Requires spanner.databases.getDdl only when a selected interleaved child has another selected BASE TABLE whose name matches the catalog parent basename. CLI_DUMP_CYCLIC_MODE defaults to REJECT; opt-in MUTATE pre-encodes selected cyclic groups and emits one unsplit transaction per populated group. Omitted parents and prerequisite target rows remain caller responsibilities. No service-quota prediction; earlier restore work may remain committed.`,
+				Note:   "Table names are `[<schema>.]<table>`. Data only; no constraint changes or implicit inclusion of other tables. Invalid names are rejected before GetDatabaseDdl. Requires spanner.databases.getDdl only when a selected interleaved child has another selected BASE TABLE whose name matches the catalog parent basename. CLI_DUMP_CYCLIC_MODE defaults to REJECT; opt-in MUTATE pre-encodes selected cyclic groups and emits one unsplit transaction per populated group. Omitted parents and prerequisite target rows remain caller responsibilities. No service-quota prediction; earlier restore work may remain committed.",
 			},
 			{
 				Usage:  `Export tables matching GoogleSQL LIKE/EXCEPT patterns`,
