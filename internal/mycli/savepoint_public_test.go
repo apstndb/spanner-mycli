@@ -859,6 +859,166 @@ func TestSavepointPublicBufferedOutputFailureRetractsMutateAndBatch(t *testing.T
 	}
 }
 
+func reviewOutputRecoveryCases() []struct {
+	name, sql string
+	setup     []string
+	kind      replayKind
+} {
+	const update = "UPDATE T SET v = 1 WHERE id = 1"
+	return []struct {
+		name, sql string
+		setup     []string
+		kind      replayKind
+	}{
+		{name: "ordinary_dml_control", sql: update, kind: replayKindSQL},
+		{name: "explain_analyze_dml", sql: "EXPLAIN ANALYZE " + update, kind: replayKindSQL},
+		{name: "profile_dml", sql: update, setup: []string{"SET CLI_QUERY_MODE = 'PROFILE'"}, kind: replayKindSQL},
+		{name: "manual_batch_control", sql: "RUN BATCH", setup: []string{"START BATCH DML", update}, kind: replayKindBatchDML},
+		{name: "automatic_batch", sql: "RUN BATCH", setup: []string{"SET AUTO_BATCH_DML = TRUE", update}, kind: replayKindBatchDML},
+	}
+}
+
+func TestReviewOutputRecovery(t *testing.T) {
+	t.Parallel()
+	for _, tc := range reviewOutputRecoveryCases() {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := t.Context()
+			h := newHeartbeatHarness(t)
+			h.server.setQueryPlan(&sppb.QueryPlan{PlanNodes: hangingIndentPlanNodes()})
+			session := sessionForTM(t, h.tm)
+			enableBufferedMarkdownOutput(session)
+			cli := &Cli{SessionHandler: NewSessionHandler(session), SystemVariables: session.systemVariables}
+			mustExec(t, ctx, session, "SET CLI_SAVEPOINT_SUPPORT = 'ENABLED'")
+			mustExec(t, ctx, session, "BEGIN RW")
+			mustExec(t, ctx, session, "SAVEPOINT keep")
+			owner := txnContext(h.tm)
+			prefix := len(replayJournal(h.tm))
+			for _, sql := range tc.setup {
+				mustExec(t, ctx, session, sql)
+			}
+			stmt, err := BuildStatement(tc.sql)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cause := errors.New("review injected disk-full writer failure")
+			_, err = cli.executeStatement(ctx, stmt, false, tc.sql, &resultFailureWriter{err: cause})
+			if !errors.Is(err, cause) {
+				t.Fatalf("display error = %v", err)
+			}
+			if txnContext(h.tm) != owner {
+				t.Fatal("buffered output failure retired the logical owner")
+			}
+			if !h.tm.NeedsRecovery() {
+				t.Fatal("buffered output failure did not enter recovery-required")
+			}
+			if entries := len(replayJournal(h.tm)); entries != prefix {
+				t.Fatalf("journal entries = %d, want %d after retracting %s", entries, prefix, tc.name)
+			}
+			if _, commitErr := execSQL(t, ctx, session, "COMMIT"); !errors.Is(commitErr, errSavepointRecovery) {
+				t.Fatalf("COMMIT = %v, want recovery rejection", commitErr)
+			}
+		})
+	}
+}
+
+func TestReviewOutputRecoveryRetainsReceipt(t *testing.T) {
+	t.Parallel()
+	for _, tc := range reviewOutputRecoveryCases() {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := t.Context()
+			h := newHeartbeatHarness(t)
+			h.server.setQueryPlan(&sppb.QueryPlan{PlanNodes: hangingIndentPlanNodes()})
+			session := sessionForTM(t, h.tm)
+			enableBufferedMarkdownOutput(session)
+			cli := &Cli{SessionHandler: NewSessionHandler(session), SystemVariables: session.systemVariables}
+			mustExec(t, ctx, session, "SET CLI_SAVEPOINT_SUPPORT = 'ENABLED'")
+			mustExec(t, ctx, session, "BEGIN RW")
+			mustExec(t, ctx, session, "SAVEPOINT keep")
+			prefix := len(replayJournal(h.tm))
+			for _, sql := range tc.setup {
+				mustExec(t, ctx, session, sql)
+			}
+			stmt, err := BuildStatement(tc.sql)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var ok bytes.Buffer
+			if _, err := cli.executeStatement(ctx, stmt, false, tc.sql, &ok); err != nil {
+				t.Fatalf("successful buffered output: %v", err)
+			}
+			if h.tm.NeedsRecovery() {
+				t.Fatal("successful buffered output entered recovery-required")
+			}
+			if ok.Len() == 0 {
+				t.Fatal("successful buffered output wrote nothing")
+			}
+			journal := replayJournal(h.tm)
+			if len(journal) != prefix+1 || journal[len(journal)-1].kind != tc.kind {
+				t.Fatalf("successful journal: %+v", journal)
+			}
+			if _, err := execSQL(t, ctx, session, "COMMIT"); err != nil {
+				t.Fatalf("COMMIT after successful output: %v", err)
+			}
+			if h.tm.NeedsRecovery() {
+				t.Fatal("COMMIT entered recovery-required")
+			}
+			if h.tm.InTransaction() {
+				t.Fatal("COMMIT left a transaction")
+			}
+		})
+	}
+}
+
+func TestReviewOutputRecoveryInternalFlushKeepsBatch(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	h := newHeartbeatHarness(t)
+	session := sessionForTM(t, h.tm)
+	enableBufferedMarkdownOutput(session)
+	cli := &Cli{SessionHandler: NewSessionHandler(session), SystemVariables: session.systemVariables}
+
+	mustExec(t, ctx, session, "SET CLI_SAVEPOINT_SUPPORT = 'ENABLED'")
+	mustExec(t, ctx, session, "BEGIN RW")
+	mustExec(t, ctx, session, "SAVEPOINT keep")
+	owner := txnContext(h.tm)
+	prefix := len(replayJournal(h.tm))
+	mustExec(t, ctx, session, "SET AUTO_BATCH_DML = TRUE")
+	mustExec(t, ctx, session, "UPDATE T SET v = 1 WHERE id = 1")
+
+	stmt, err := BuildStatement("SELECT 1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cause := errors.New("select markdown fence failed")
+	_, err = cli.executeStatement(ctx, stmt, false, "SELECT 1", &resultFailureWriter{err: cause})
+	if !errors.Is(err, cause) {
+		t.Fatalf("display error = %v", err)
+	}
+	if txnContext(h.tm) != owner {
+		t.Fatal("buffered output failure retired the logical owner")
+	}
+	if !h.tm.NeedsRecovery() {
+		t.Fatal("buffered output failure did not enter recovery-required")
+	}
+	journal := replayJournal(h.tm)
+	if len(journal) != prefix+1 || journal[len(journal)-1].kind != replayKindBatchDML {
+		t.Fatalf("internal flush journal = %+v, want the batch receipt without SELECT", journal)
+	}
+	if journal[len(journal)-1].stmt.SQL == "SELECT 1" {
+		t.Fatal("internal flush retracted the batch and kept SELECT")
+	}
+	for _, entry := range journal {
+		if entry.stmt.SQL == "SELECT 1" {
+			t.Fatalf("failed SELECT remained journaled: %+v", journal)
+		}
+	}
+	if _, commitErr := execSQL(t, ctx, session, "COMMIT"); !errors.Is(commitErr, errSavepointRecovery) {
+		t.Fatalf("COMMIT = %v, want recovery rejection", commitErr)
+	}
+}
+
 func TestSavepointPublicBufferedOutputFailureWithoutMarkerEndsTransaction(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
@@ -877,10 +1037,27 @@ func TestSavepointPublicBufferedOutputFailureWithoutMarkerEndsTransaction(t *tes
 				mustExec(t, ctx, session, "INSERT INTO T (id) VALUES (1)")
 			},
 		},
+		{name: "explain_analyze", sql: "EXPLAIN ANALYZE UPDATE T SET v = 1 WHERE id = 1"},
+		{
+			name: "profile",
+			sql:  "UPDATE T SET v = 1 WHERE id = 1",
+			prep: func(t *testing.T, ctx context.Context, session *Session) {
+				mustExec(t, ctx, session, "SET CLI_QUERY_MODE = 'PROFILE'")
+			},
+		},
+		{
+			name: "automatic_batch",
+			sql:  "RUN BATCH",
+			prep: func(t *testing.T, ctx context.Context, session *Session) {
+				mustExec(t, ctx, session, "SET AUTO_BATCH_DML = TRUE")
+				mustExec(t, ctx, session, "UPDATE T SET v = 1 WHERE id = 1")
+			},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			h := newHeartbeatHarness(t)
+			h.server.setQueryPlan(&sppb.QueryPlan{PlanNodes: hangingIndentPlanNodes()})
 			session := sessionForTM(t, h.tm)
 			enableBufferedMarkdownOutput(session)
 			cli := &Cli{SessionHandler: NewSessionHandler(session), SystemVariables: session.systemVariables}
