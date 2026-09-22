@@ -327,9 +327,18 @@ func formatCQLScannedRow(dests []any) []string {
 	return row
 }
 
+// cqlStringer, cqlFormatter, and cqlError identify pointer-receiver formatting.
+// Decimal and varint implement these on *inf.Dec and *big.Int. The concrete
+// struct does not, so fmt.Sprint must see the pointer.
+var (
+	cqlStringer  = reflect.TypeFor[fmt.Stringer]()
+	cqlFormatter = reflect.TypeFor[fmt.Formatter]()
+	cqlError     = reflect.TypeFor[error]()
+)
+
 func formatCQLValue(value any) string {
 	v := reflect.ValueOf(value)
-	for v.Kind() == reflect.Pointer {
+	for v.Kind() == reflect.Pointer && v.Elem().Kind() == reflect.Pointer {
 		if v.IsNil() {
 			return "NULL"
 		}
@@ -338,5 +347,26 @@ func formatCQLValue(value any) string {
 	if !v.IsValid() {
 		return "NULL"
 	}
-	return fmt.Sprint(v.Interface())
+	if v.Kind() != reflect.Pointer {
+		return fmt.Sprint(v.Interface())
+	}
+	if v.IsNil() {
+		return "NULL"
+	}
+	// Nullness is the nil pointer. Do not take the element when that
+	// pointer is what fmt uses for String or Format.
+	if cqlPointerFormats(v) {
+		return fmt.Sprint(v.Interface())
+	}
+	return fmt.Sprint(v.Elem().Interface())
+}
+
+func cqlPointerFormats(v reflect.Value) bool {
+	pointerType := v.Type()
+	elemType := v.Elem().Type()
+	return cqlHasFormatter(pointerType) && !cqlHasFormatter(elemType)
+}
+
+func cqlHasFormatter(t reflect.Type) bool {
+	return t.Implements(cqlStringer) || t.Implements(cqlFormatter) || t.Implements(cqlError)
 }

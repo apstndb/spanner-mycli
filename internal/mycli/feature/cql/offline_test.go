@@ -346,6 +346,44 @@ func displayScannedCQLRow(t *testing.T, cols []gocql.TypeInfo, data [][]byte) ([
 	return formatCQLScannedRow(dests), nulls
 }
 
+func TestCQLDecimalAndVarintFormatting(t *testing.T) {
+	t.Parallel()
+
+	const proto byte = 4
+	decimal := gocql.NewNativeType(proto, gocql.TypeDecimal, "")
+	varint := gocql.NewNativeType(proto, gocql.TypeVarint, "")
+
+	tests := []struct {
+		name     string
+		col      gocql.TypeInfo
+		data     []byte
+		want     string
+		wantNull bool
+	}{
+		{name: "decimal null", col: decimal, want: "NULL", wantNull: true},
+		{name: "decimal zero", col: decimal, data: []byte{0, 0, 0, 0, 0}, want: "0"},
+		{name: "decimal negative", col: decimal, data: []byte{0, 0, 0, 2, 0x85}, want: "-1.23"},
+		{name: "decimal nonzero", col: decimal, data: []byte{0, 0, 0, 2, 123}, want: "1.23"},
+		{name: "varint null", col: varint, want: "NULL", wantNull: true},
+		{name: "varint zero", col: varint, data: []byte{0}, want: "0"},
+		{name: "varint negative", col: varint, data: []byte{0xd6}, want: "-42"},
+		{name: "varint nonzero", col: varint, data: []byte{0x2a}, want: "42"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, nulls := displayScannedCQLRow(t, []gocql.TypeInfo{tt.col}, [][]byte{tt.data})
+			if len(got) != 1 || got[0] != tt.want {
+				t.Errorf("display = %#v, want %q", got, tt.want)
+			}
+			if len(nulls) != 1 || nulls[0] != tt.wantNull {
+				t.Errorf("null pointer = %v, want %v", nulls, tt.wantNull)
+			}
+		})
+	}
+}
+
 // scannedCQLPointerIsNil reports whether decoding stored NULL as a nil
 // pointer. A nil slice or other zero value is not NULL.
 func scannedCQLPointerIsNil(value any) bool {
