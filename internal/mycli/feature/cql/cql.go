@@ -308,7 +308,7 @@ func nullPreservingScanDests(values []any) []any {
 
 func nullPreservingScanDest(value any) any {
 	v := reflect.ValueOf(value)
-	if !v.IsValid() || (v.Kind() == reflect.Ptr && v.Type().Elem().Kind() == reflect.Ptr) {
+	if !v.IsValid() || (v.Kind() == reflect.Pointer && v.Type().Elem().Kind() == reflect.Pointer) {
 		return value
 	}
 	wrapped := reflect.New(v.Type())
@@ -329,7 +329,7 @@ func formatCQLScannedRow(dests []any) []string {
 
 func formatCQLValue(value any) string {
 	v := reflect.ValueOf(value)
-	for v.Kind() == reflect.Ptr {
+	for v.Kind() == reflect.Pointer {
 		if v.IsNil() {
 			return "NULL"
 		}

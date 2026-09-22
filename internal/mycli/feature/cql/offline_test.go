@@ -350,7 +350,7 @@ func displayScannedCQLRow(t *testing.T, cols []gocql.TypeInfo, data [][]byte) ([
 // pointer. A nil slice or other zero value is not NULL.
 func scannedCQLPointerIsNil(value any) bool {
 	v := reflect.ValueOf(value)
-	for v.Kind() == reflect.Ptr {
+	for v.Kind() == reflect.Pointer {
 		if v.IsNil() {
 			return true
 		}
