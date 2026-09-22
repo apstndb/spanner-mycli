@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -26,6 +27,7 @@ import (
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/samber/lo"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -1288,4 +1290,459 @@ func isTimeoutish(err error) bool {
 		status.Code(err) == codes.Canceled ||
 		strings.Contains(err.Error(), "deadline") ||
 		strings.Contains(err.Error(), "TRANSACTION_TIMEOUT"))
+}
+
+func readDeadlineWatcher(tm *TransactionManager) (deadline time.Time, watcher context.Context, armed bool, ctxErr error) {
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+	if tm.tc == nil {
+		return time.Time{}, nil, false, nil
+	}
+	watcher = tm.tc.deadlineCtx
+	if watcher != nil {
+		ctxErr = watcher.Err()
+	}
+	return tm.tc.deadline, watcher, tm.tc.deadlineCancel != nil, ctxErr
+}
+
+func ownerAttempt(tm *TransactionManager) uint64 {
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+	if tm.tc == nil {
+		return 0
+	}
+	return tm.tc.attempt
+}
+
+// deadlineReplayFixture observes the logical owner's real deadline watcher.
+// Waits use that deadline, not a polling sleep.
+type deadlineReplayFixture struct {
+	h           *heartbeatHarness
+	session     *Session
+	ctx         context.Context
+	owner       *transactionContext
+	deadline    time.Time
+	deadlineCtx context.Context
+	budget      time.Duration
+	expired     chan struct{}
+	callbacks   int
+}
+
+func newDeadlineReplayFixture(t *testing.T, timeout time.Duration) *deadlineReplayFixture {
+	t.Helper()
+	h := newHeartbeatHarness(t)
+	session := sessionForTM(t, h.tm)
+	ctx := t.Context()
+	mustExec(t, ctx, session, "SET CLI_SAVEPOINT_SUPPORT = 'ENABLED'")
+	mustExec(t, ctx, session, "SET CLI_IDLE_TRANSACTION_TIMEOUT = '1h'")
+	mustExec(t, ctx, session, "SET TRANSACTION_TIMEOUT = '"+timeout.String()+"'")
+	mustExec(t, ctx, session, "BEGIN RW")
+	mustExec(t, ctx, session, "SET LOCAL CLI_VERBOSE = TRUE")
+	return attachDeadlineWatch(t, h, session)
+}
+
+func attachDeadlineWatch(t *testing.T, h *heartbeatHarness, session *Session) *deadlineReplayFixture {
+	t.Helper()
+	owner := requireOwner(t, h.tm)
+	deadline, watcher, armed, ctxErr := readDeadlineWatcher(h.tm)
+	budget, captured, budgetArmed := ownerTimeout(h.tm)
+	if deadline.IsZero() || watcher == nil || !armed || ctxErr != nil || !captured || !budgetArmed || budget <= 0 {
+		t.Fatalf("owner deadline watcher is not running: deadline=%v armed=%v err=%v budget=%s captured=%v", deadline, armed, ctxErr, budget, captured)
+	}
+	f := &deadlineReplayFixture{
+		h:           h,
+		session:     session,
+		ctx:         t.Context(),
+		owner:       owner,
+		deadline:    deadline,
+		deadlineCtx: watcher,
+		budget:      budget,
+		expired:     make(chan struct{}, 1),
+	}
+	h.tm.timeoutAfterExpire = func(got *transactionContext) {
+		if got != owner {
+			return
+		}
+		f.callbacks++
+		select {
+		case f.expired <- struct{}{}:
+		default:
+		}
+	}
+	return f
+}
+
+func (f *deadlineReplayFixture) assertPreserved(t *testing.T) {
+	t.Helper()
+	if txnContext(f.h.tm) != f.owner {
+		t.Fatal("reconstruction replaced the logical owner")
+	}
+	deadline, watcher, armed, ctxErr := readDeadlineWatcher(f.h.tm)
+	if !deadline.Equal(f.deadline) {
+		t.Fatalf("reconstruction renewed the deadline: %v -> %v", f.deadline, deadline)
+	}
+	if watcher != f.deadlineCtx {
+		t.Fatal("reconstruction replaced the deadline watcher")
+	}
+	if !armed || ctxErr != nil {
+		t.Fatalf("deadline watcher stopped: armed=%v err=%v", armed, ctxErr)
+	}
+	d, captured, budgetArmed := ownerTimeout(f.h.tm)
+	if !captured || !budgetArmed || d != f.budget {
+		t.Fatalf("timeout snapshot d=%s captured=%v armed=%v, want %s", d, captured, budgetArmed, f.budget)
+	}
+}
+
+func (f *deadlineReplayFixture) assertIdlePreserved(t *testing.T) {
+	t.Helper()
+	d, captured, userWork, armed := ownerIdle(f.h.tm)
+	if !captured || d != time.Hour || !userWork || !armed {
+		t.Fatalf("idle policy d=%s captured=%v userWork=%v armed=%v", d, captured, userWork, armed)
+	}
+}
+
+func (f *deadlineReplayFixture) waitRetired(t *testing.T) {
+	t.Helper()
+	waitCtx, cancel := context.WithDeadline(f.ctx, f.deadline.Add(200*time.Millisecond))
+	defer cancel()
+	select {
+	case <-f.expired:
+	case <-waitCtx.Done():
+		t.Fatal("logical owner was not retired at its preserved transaction deadline")
+	}
+	if f.h.tm.InTransaction() {
+		t.Fatal("expiry left the logical owner live")
+	}
+	if f.callbacks != 1 {
+		t.Fatalf("expiry callbacks = %d, want 1", f.callbacks)
+	}
+}
+
+func assertLocalRestoredOnce(t *testing.T, session *Session, tm *TransactionManager) {
+	t.Helper()
+	if got := mustGetVar(t, session, "CLI_VERBOSE"); got != "TRUE" {
+		t.Fatalf("CLI_VERBOSE before safe point = %s, want TRUE", got)
+	}
+	if outstandingLocalUndo(tm) == 0 {
+		t.Fatal("expiry did not detach SET LOCAL undo")
+	}
+	tm.restoreLocalVarsIfIdle()
+	if got := mustGetVar(t, session, "CLI_VERBOSE"); got != "FALSE" {
+		t.Fatalf("CLI_VERBOSE after safe point = %s, want FALSE", got)
+	}
+	if outstandingLocalUndo(tm) != 0 {
+		t.Fatal("safe point left SET LOCAL undo")
+	}
+	tm.restoreLocalVarsIfIdle()
+	if got := mustGetVar(t, session, "CLI_VERBOSE"); got != "FALSE" {
+		t.Fatalf("second safe point changed CLI_VERBOSE to %s", got)
+	}
+	if outstandingLocalUndo(tm) != 0 {
+		t.Fatal("second safe point restored SET LOCAL again")
+	}
+}
+
+type heartbeatStart struct {
+	attempt uint64
+	done    chan struct{}
+}
+
+type heartbeatTracker struct {
+	mu         sync.Mutex
+	exits      map[uint64]chan struct{}
+	registered chan heartbeatStart
+}
+
+func installHeartbeatTracker(t *testing.T, owner *transactionContext) *heartbeatTracker {
+	t.Helper()
+	orig := owner.heartbeatFunc
+	if orig == nil {
+		t.Fatal("owner has no heartbeat function")
+	}
+	tr := &heartbeatTracker{
+		exits:      make(map[uint64]chan struct{}),
+		registered: make(chan heartbeatStart, 8),
+	}
+	owner.heartbeatFunc = func(ctx context.Context, attempt uint64) {
+		done := make(chan struct{})
+		tr.mu.Lock()
+		tr.exits[attempt] = done
+		tr.mu.Unlock()
+		tr.registered <- heartbeatStart{attempt: attempt, done: done}
+		orig(ctx, attempt)
+		close(done)
+	}
+	return tr
+}
+
+func (tr *heartbeatTracker) done(attempt uint64) <-chan struct{} {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	return tr.exits[attempt]
+}
+
+func (tr *heartbeatTracker) waitAttempt(t *testing.T, attempt uint64) <-chan struct{} {
+	t.Helper()
+	if ch := tr.done(attempt); ch != nil {
+		return ch
+	}
+	timer := time.NewTimer(10 * time.Second)
+	defer timer.Stop()
+	for {
+		select {
+		case ev := <-tr.registered:
+			if ev.attempt == attempt {
+				return ev.done
+			}
+		case <-timer.C:
+			t.Fatalf("heartbeat attempt %d did not start", attempt)
+		case <-t.Context().Done():
+			t.Fatalf("test cancelled waiting for heartbeat attempt %d: %v", attempt, t.Context().Err())
+		}
+	}
+}
+
+func assertNoHeartbeatTick(t *testing.T, ticks chan time.Time) {
+	t.Helper()
+	select {
+	case ticks <- time.Time{}:
+		t.Fatal("heartbeat accepted a tick after the owner was retired")
+	default:
+	}
+}
+
+func failBufferedSelect(t *testing.T, ctx context.Context, session *Session) {
+	t.Helper()
+	session.systemVariables.Display.CLIFormat = enums.DisplayModeTable
+	session.systemVariables.Query.StreamingMode = enums.StreamingModeFalse
+	session.systemVariables.Display.MarkdownCodeblock = true
+	cli := &Cli{SessionHandler: NewSessionHandler(session), SystemVariables: session.systemVariables}
+	stmt, err := BuildStatement("SELECT 1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cause := errors.New("opening markdown fence failed")
+	_, err = cli.executeStatement(ctx, stmt, false, "SELECT 1", &resultFailureWriter{err: cause})
+	if !errors.Is(err, cause) {
+		t.Fatalf("buffered display error = %v", err)
+	}
+}
+
+func TestTransactionTimeoutRollbackToRetiresOwner(t *testing.T) {
+	t.Parallel()
+	f := newDeadlineReplayFixture(t, 2*time.Second)
+	tr := installHeartbeatTracker(t, f.owner)
+	mustExec(t, f.ctx, f.session, "SELECT 1 AS keep")
+	attemptBefore := ownerAttempt(f.h.tm)
+	oldExit := tr.waitAttempt(t, attemptBefore)
+	idOld := lastUserSQLTxnID(f.h, "SELECT 1 AS keep")
+	mustExec(t, f.ctx, f.session, "SAVEPOINT keep")
+	mustExec(t, f.ctx, f.session, "SELECT 1 AS extra")
+	mustExec(t, f.ctx, f.session, "ROLLBACK TO SAVEPOINT keep")
+	waitChan(t, oldExit, "previous attempt heartbeat exit")
+	f.assertPreserved(t)
+	f.assertIdlePreserved(t)
+	attemptAfter := ownerAttempt(f.h.tm)
+	if attemptAfter <= attemptBefore {
+		t.Fatalf("ROLLBACK TO attempt %d -> %d", attemptBefore, attemptAfter)
+	}
+	idNew := lastUserSQLTxnID(f.h, "SELECT 1 AS keep")
+	if idNew == "" || idNew == idOld {
+		t.Fatalf("replay did not start a new physical attempt; old=%s new=%s", idOld, idNew)
+	}
+	if !ownerHeartbeatScheduled(f.h.tm) {
+		t.Fatal("ROLLBACK TO did not schedule heartbeat for the new attempt")
+	}
+	signaled := make(chan struct{}, 1)
+	f.h.tm.heartbeatAfterAttempt = func() {
+		select {
+		case signaled <- struct{}{}:
+		default:
+		}
+	}
+	sendTick(t, f.h.ticks)
+	waitChan(t, signaled, "reconstructed heartbeat")
+	if !slices.Contains(f.h.server.heartbeatIDs(), idNew) {
+		t.Fatalf("heartbeat attempts=%v, want %s", f.h.server.heartbeatIDs(), idNew)
+	}
+	newExit := tr.waitAttempt(t, attemptAfter)
+	f.waitRetired(t)
+	waitChan(t, newExit, "deadline stopped the reconstructed heartbeat")
+	assertNoHeartbeatTick(t, f.h.ticks)
+	assertLocalRestoredOnce(t, f.session, f.h.tm)
+}
+
+func TestTransactionTimeoutRepeatedRollbackToDoesNotRenewBudget(t *testing.T) {
+	t.Parallel()
+	f := newDeadlineReplayFixture(t, 2*time.Second)
+	mustExec(t, f.ctx, f.session, "SELECT 1 AS keep")
+	mustExec(t, f.ctx, f.session, "SAVEPOINT a")
+	mustExec(t, f.ctx, f.session, "SELECT 1 AS mid")
+	mustExec(t, f.ctx, f.session, "SAVEPOINT b")
+	mustExec(t, f.ctx, f.session, "SELECT 1 AS extra")
+	mustExec(t, f.ctx, f.session, "ROLLBACK TO SAVEPOINT b")
+	f.assertPreserved(t)
+	f.assertIdlePreserved(t)
+	mustExec(t, f.ctx, f.session, "ROLLBACK TO SAVEPOINT a")
+	f.assertPreserved(t)
+	f.assertIdlePreserved(t)
+	f.waitRetired(t)
+	assertLocalRestoredOnce(t, f.session, f.h.tm)
+}
+
+func TestTransactionTimeoutOutputFailureRecoveryPreservesWatcher(t *testing.T) {
+	t.Parallel()
+	t.Run("expire_during_recovery", func(t *testing.T) {
+		t.Parallel()
+		f := newDeadlineReplayFixture(t, 2*time.Second)
+		mustExec(t, f.ctx, f.session, "SAVEPOINT keep")
+		failBufferedSelect(t, f.ctx, f.session)
+		if !f.h.tm.NeedsRecovery() {
+			t.Fatal("buffered output failure did not enter recovery")
+		}
+		f.assertPreserved(t)
+		f.assertIdlePreserved(t)
+		if ownerHeartbeatScheduled(f.h.tm) {
+			t.Fatal("recovery kept a heartbeat without a physical attempt")
+		}
+		f.waitRetired(t)
+		assertLocalRestoredOnce(t, f.session, f.h.tm)
+	})
+	t.Run("rollback_to_after_recovery", func(t *testing.T) {
+		t.Parallel()
+		f := newDeadlineReplayFixture(t, 2*time.Second)
+		mustExec(t, f.ctx, f.session, "SAVEPOINT keep")
+		failBufferedSelect(t, f.ctx, f.session)
+		f.assertPreserved(t)
+		mustExec(t, f.ctx, f.session, "ROLLBACK TO SAVEPOINT keep")
+		if f.h.tm.NeedsRecovery() {
+			t.Fatal("ROLLBACK TO left recovery-required set")
+		}
+		f.assertPreserved(t)
+		f.assertIdlePreserved(t)
+		if !ownerHeartbeatScheduled(f.h.tm) {
+			t.Fatal("ROLLBACK TO after recovery did not restart heartbeat")
+		}
+		f.waitRetired(t)
+		assertLocalRestoredOnce(t, f.session, f.h.tm)
+	})
+}
+
+func TestTransactionTimeoutExplicitAbortRetryPreservesWatcher(t *testing.T) {
+	t.Parallel()
+	h := newHeartbeatHarness(t)
+	session := newRetryAbortsSession(t, h)
+	ctx := t.Context()
+	mustExec(t, ctx, session, "SET CLI_IDLE_TRANSACTION_TIMEOUT = '1h'")
+	mustExec(t, ctx, session, "SET TRANSACTION_TIMEOUT = '2s'")
+	beginExplicitRetry(t, ctx, session)
+	mustExec(t, ctx, session, "SET LOCAL CLI_VERBOSE = TRUE")
+	f := attachDeadlineWatch(t, h, session)
+	tr := installHeartbeatTracker(t, f.owner)
+	attemptBefore := ownerAttempt(h.tm)
+	h.server.setSQLRows("SELECT 1", []string{"1"})
+	h.server.setFailStreamingSQLTimes(1, abortedStatus("select aborted"))
+	if _, err := execSQL(t, ctx, session, "SELECT 1"); err != nil {
+		t.Fatalf("explicit abort retry: %v", err)
+	}
+	f.assertPreserved(t)
+	f.assertIdlePreserved(t)
+	attemptAfter := ownerAttempt(h.tm)
+	if attemptAfter <= attemptBefore {
+		t.Fatalf("explicit abort attempt %d -> %d", attemptBefore, attemptAfter)
+	}
+	if !ownerHeartbeatScheduled(h.tm) {
+		t.Fatal("explicit abort retry did not schedule heartbeat for the new attempt")
+	}
+	oldExit := tr.waitAttempt(t, attemptBefore)
+	waitChan(t, oldExit, "previous explicit-attempt heartbeat exit")
+	newExit := tr.waitAttempt(t, attemptAfter)
+	f.waitRetired(t)
+	waitChan(t, newExit, "deadline stopped the reconstructed heartbeat")
+	assertNoHeartbeatTick(t, h.ticks)
+	assertLocalRestoredOnce(t, session, h.tm)
+}
+
+func TestTransactionTimeoutTerminalCleanupCancelsWatcher(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		end  func(t *testing.T, ctx context.Context, session *Session)
+	}{
+		{name: "commit", end: func(t *testing.T, ctx context.Context, session *Session) {
+			t.Helper()
+			mustExec(t, ctx, session, "COMMIT")
+		}},
+		{name: "rollback", end: func(t *testing.T, ctx context.Context, session *Session) {
+			t.Helper()
+			mustExec(t, ctx, session, "ROLLBACK")
+		}},
+		{name: "close", end: func(t *testing.T, ctx context.Context, session *Session) {
+			t.Helper()
+			session.Close()
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			h := newHeartbeatHarness(t)
+			session := sessionForTM(t, h.tm)
+			ctx := t.Context()
+			mustExec(t, ctx, session, "SET CLI_SAVEPOINT_SUPPORT = 'ENABLED'")
+			mustExec(t, ctx, session, "SET CLI_IDLE_TRANSACTION_TIMEOUT = '1h'")
+			mustExec(t, ctx, session, "SET TRANSACTION_TIMEOUT = '30s'")
+			mustExec(t, ctx, session, "BEGIN RW")
+			mustExec(t, ctx, session, "SET LOCAL CLI_VERBOSE = TRUE")
+			owner := requireOwner(t, h.tm)
+			tr := installHeartbeatTracker(t, owner)
+			mustExec(t, ctx, session, "SAVEPOINT keep")
+			mustExec(t, ctx, session, "SELECT 1 AS keep")
+			attempt := ownerAttempt(h.tm)
+			exit := tr.waitAttempt(t, attempt)
+			fired := make(chan struct{}, 1)
+			h.tm.timeoutAfterExpire = func(got *transactionContext) {
+				if got == owner {
+					select {
+					case fired <- struct{}{}:
+					default:
+					}
+				}
+			}
+			tc.end(t, ctx, session)
+			waitChan(t, exit, "terminal cleanup stopped heartbeat")
+			var ctxErr error
+			if owner.deadlineCtx != nil {
+				ctxErr = owner.deadlineCtx.Err()
+			}
+			if !errors.Is(ctxErr, context.Canceled) {
+				t.Fatalf("terminal watcher error = %v, want context.Canceled", ctxErr)
+			}
+			if owner.deadlineCancel != nil || owner.idleCancel != nil || owner.heartbeatCancel != nil {
+				t.Fatal("terminal cleanup left a watcher handle")
+			}
+			select {
+			case <-fired:
+				t.Fatal("terminal cleanup retired the owner through the deadline hook")
+			default:
+			}
+			h.tm.restoreLocalVarsIfIdle()
+			mustExec(t, ctx, session, "SET TRANSACTION_TIMEOUT = '2h'")
+			mustExec(t, ctx, session, "BEGIN RW")
+			ownerB := requireOwner(t, h.tm)
+			if ownerB == owner {
+				t.Fatal("replacement reused the retired owner")
+			}
+			select {
+			case <-fired:
+				t.Fatal("canceled watcher retired the replacement owner")
+			default:
+			}
+			if txnContext(h.tm) != ownerB {
+				t.Fatal("replacement owner was retired")
+			}
+			d, _, _ := ownerTimeout(h.tm)
+			if d != 2*time.Hour {
+				t.Fatalf("replacement budget = %s, want 2h", d)
+			}
+		})
+	}
 }

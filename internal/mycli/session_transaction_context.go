@@ -180,17 +180,28 @@ func (tc *transactionContext) Tag() string {
 	return tc.attrs.tag
 }
 
-// Close stops the heartbeat goroutine and the transaction-deadline watcher
-// if they are running. This should be called when the transaction is
-// committed, rolled back, or expired.
+// stopPhysicalHeartbeat stops the keepalive goroutine for the current physical
+// attempt. Caller must hold the transaction-manager mutex. Deadline and idle
+// watchers belong to the logical owner and stay armed, so a later physical
+// attempt can schedule its own heartbeat against the same absolute deadline.
+func (tc *transactionContext) stopPhysicalHeartbeat() {
+	if tc == nil || tc.heartbeatCancel == nil {
+		return
+	}
+	tc.heartbeatCancel()
+	tc.heartbeatCancel = nil
+}
+
+// Close stops heartbeat, the transaction-deadline watcher, and the idle
+// watcher. It is terminal logical-owner cleanup: commit, rollback, expiry,
+// or session close. Physical replacement must call stopPhysicalHeartbeat
+// instead. Closing the deadline watcher here leaves a stored deadline with
+// no goroutine, and arming refuses to start another once that deadline is set.
 func (tc *transactionContext) Close() {
 	if tc == nil {
 		return
 	}
-	if tc.heartbeatCancel != nil {
-		tc.heartbeatCancel()
-		tc.heartbeatCancel = nil
-	}
+	tc.stopPhysicalHeartbeat()
 	if tc.deadlineCancel != nil {
 		tc.deadlineCancel()
 		tc.deadlineCancel = nil

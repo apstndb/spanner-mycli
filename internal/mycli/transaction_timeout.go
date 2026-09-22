@@ -84,7 +84,9 @@ func (tm *TransactionManager) applyLocalTransactionTimeout(d time.Duration) erro
 // positive. Caller must hold tm.mu. Pending BEGIN, SHOW, multiplexed
 // session take, and DML buffering do not call this. Read-only owners
 // never mark first use. Re-entry is a no-op so SAVEPOINT reconstruction
-// and later statements keep the original first-use / deadline.
+// and later statements keep the original first-use / deadline. Physical
+// replacement must leave the watcher running: a stored deadline does not
+// start another one, and a canceled watcher exits without retiring the owner.
 func (tm *TransactionManager) armTransactionDeadlineLocked() {
 	owner := tm.tc
 	if owner == nil {
