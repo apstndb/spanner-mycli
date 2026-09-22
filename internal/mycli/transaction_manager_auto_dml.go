@@ -106,9 +106,10 @@ func (tm *TransactionManager) TryEnqueueAutomaticDML(stmt spanner.Statement) (bo
 func (tm *TransactionManager) FlushAutomaticDML(ctx context.Context) (*Result, error) {
 	var dmls []spanner.Statement
 	var counts []int64
+	var capture *captureToken
 	err := tm.withTransactionContextWithLock(func(**transactionContext) error {
 		var flushErr error
-		dmls, counts, flushErr = tm.flushAutomaticDMLLocked(ctx)
+		dmls, counts, capture, flushErr = tm.flushAutomaticDMLCaptureLocked(ctx)
 		return flushErr
 	})
 	if err != nil {
@@ -117,30 +118,42 @@ func (tm *TransactionManager) FlushAutomaticDML(ctx context.Context) (*Result, e
 	if len(dmls) == 0 {
 		return nil, nil
 	}
-	return newBatchDMLResult(dmls, counts, &DMLResult{}), nil
+	out := newBatchDMLResult(dmls, counts, &DMLResult{})
+	out.capture = capture
+	return out, nil
 }
 
-// flushAutomaticDMLLocked takes the current context's automatic queue then
-// BatchUpdates it on that same RW owner. Caller must hold tm.mu. The queue is
-// cleared before the RPC so a failure cannot replay work. A missing RW owner
-// or owner replacement discards without executing so stale work cannot open a
-// new implicit transaction.
+// flushAutomaticDMLLocked is the internal flush used by flush-before-read,
+// SAVEPOINT, and physical commit. Those callers do not display a RUN BATCH
+// result, so the capture token is dropped here instead of being attached to
+// a later statement.
 func (tm *TransactionManager) flushAutomaticDMLLocked(ctx context.Context) ([]spanner.Statement, []int64, error) {
+	dmls, counts, _, err := tm.flushAutomaticDMLCaptureLocked(ctx)
+	return dmls, counts, err
+}
+
+// flushAutomaticDMLCaptureLocked takes the current context's automatic queue
+// then BatchUpdates it on that same RW owner. Caller must hold tm.mu. The
+// queue is cleared before the RPC so a failure cannot replay work. A missing
+// RW owner or owner replacement discards without executing so stale work
+// cannot open a new implicit transaction. The token identifies the journaled
+// batch for the displayed FlushAutomaticDML result only.
+func (tm *TransactionManager) flushAutomaticDMLCaptureLocked(ctx context.Context) ([]spanner.Statement, []int64, *captureToken, error) {
 	for {
 		owner := tm.tc
 		if owner == nil || len(owner.autoDML) == 0 {
-			return nil, nil, nil
+			return nil, nil, nil, nil
 		}
 		queued := owner.autoDML
 		owner.autoDML = nil
 		dmls := automaticDMLStatements(queued)
 
 		if owner != tm.tc || owner.txn == nil || owner.attrs.mode != transactionModeReadWrite {
-			return nil, nil, nil
+			return nil, nil, nil, nil
 		}
 		rwTxn, ok := owner.txn.(*spanner.ReadWriteStmtBasedTransaction)
 		if !ok {
-			return nil, nil, ErrNotInReadWriteTransaction
+			return nil, nil, nil, ErrNotInReadWriteTransaction
 		}
 
 		counts, err := tm.batchUpdateWithRemainingDeadline(ctx, rwTxn, dmls, spanner.QueryOptions{LastStatement: false})
@@ -150,8 +163,12 @@ func (tm *TransactionManager) flushAutomaticDMLLocked(ctx context.Context) ([]sp
 			// RPC or partial BatchUpdate errors keep their original cause.
 			err = verifyAutomaticDMLCounts(queued, counts)
 		}
-		if _, recErr := tm.completeBatchDMLLocked(counts, err); err == nil {
+		capture, recErr := tm.completeBatchDMLLocked(counts, err)
+		if err == nil {
 			err = recErr
+		}
+		if err != nil {
+			capture = nil
 		}
 		if tm.tc != nil {
 			tm.tc.EnableHeartbeat()
@@ -161,23 +178,23 @@ func (tm *TransactionManager) flushAutomaticDMLLocked(ctx context.Context) ([]sp
 				recovered, recErr := tm.recoverExplicitAbortLocked(ctx, err, false)
 				if recovered {
 					if restErr := tm.restoreAutomaticDMLForRetryLocked(queued); restErr != nil {
-						return nil, nil, restErr
+						return nil, nil, nil, restErr
 					}
 					continue
 				}
 				if tm.tc == owner {
 					tm.noteIdleUserWorkLocked(true)
 				}
-				return nil, nil, wrapAbortedKeepCause(recErr)
+				return nil, nil, nil, wrapAbortedKeepCause(recErr)
 			}
 			err = tm.handleOwnerFailureLocked(ctx, err)
 			if tm.tc != nil {
 				tm.noteIdleUserWorkLocked(true)
 			}
-			return nil, nil, fmt.Errorf("transaction was aborted: %w", err)
+			return nil, nil, nil, fmt.Errorf("transaction was aborted: %w", err)
 		}
 		tm.noteIdleUserWorkLocked(true)
-		return dmls, counts, nil
+		return dmls, counts, capture, nil
 	}
 }
 
