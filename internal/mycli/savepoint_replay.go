@@ -121,11 +121,17 @@ func (tm *TransactionManager) shouldEnterRecoveryLocked() bool {
 	return tm.hasValidRecoveryMarkerLocked() && !tm.tc.replay.needsRecovery()
 }
 
+// discardPhysicalLocked drops the current physical handle without retiring the
+// logical owner. Heartbeat is attempt-scoped, so it stops here; the caller
+// starts a new goroutine after publishPhysical when keepalive remains enabled.
+// Deadline and idle watchers stay armed. armTransactionDeadlineLocked will
+// not replace a watcher once the absolute deadline is stored, and canceling
+// it here would leave this owner without TRANSACTION_TIMEOUT retirement.
 func (tm *TransactionManager) discardPhysicalLocked(context.Context) {
 	if tm.tc == nil {
 		return
 	}
-	tm.tc.Close()
+	tm.tc.stopPhysicalHeartbeat()
 	cleanup, cancel := savepointCleanupContext()
 	defer cancel()
 	switch txn := tm.tc.txn.(type) {
