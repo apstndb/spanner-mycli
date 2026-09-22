@@ -265,15 +265,14 @@ func (cs *CQLStatement) Execute(ctx context.Context, session *mycli.Session, out
 			return nil, err
 		}
 
-		if !it.Scan(rd.Values...) {
+		// RowData destinations are *T. NULL decoded into *T becomes the zero
+		// value. Wrap them before Scan so Unmarshal keeps a nil inner pointer.
+		dests := nullPreservingScanDests(rd.Values)
+		if !it.Scan(dests...) {
 			break
 		}
 
-		var rowStrs []string
-		for _, value := range rd.Values {
-			rowStrs = append(rowStrs, fmt.Sprint(reflect.Indirect(reflect.ValueOf(value)).Interface()))
-		}
-		rows = append(rows, mycli.NewRow(rowStrs...))
+		rows = append(rows, mycli.NewRow(formatCQLScannedRow(dests)...))
 	}
 
 	result = &mycli.Result{TableHeader: mycli.NewTableHeader(headers...), Body: mycli.PresentationBody(rows), AffectedRows: len(rows)}
@@ -292,4 +291,82 @@ func formatCassandraTypeName(typeInfo gocql.TypeInfo) string {
 	} else {
 		return fmt.Sprint(typeInfo)
 	}
+}
+
+// nullPreservingScanDests wraps RowData values so Iter.Scan keeps CQL NULL
+// distinct from a decoded zero. gocql Unmarshal sets a pointer-to-pointer
+// destination to nil for NULL and otherwise decodes into the inner pointer.
+// Destinations that are already pointer-to-pointer, such as decimal and
+// varint, already select that path and are not wrapped again.
+func nullPreservingScanDests(values []any) []any {
+	dests := make([]any, len(values))
+	for i, value := range values {
+		dests[i] = nullPreservingScanDest(value)
+	}
+	return dests
+}
+
+func nullPreservingScanDest(value any) any {
+	v := reflect.ValueOf(value)
+	if !v.IsValid() || (v.Kind() == reflect.Pointer && v.Type().Elem().Kind() == reflect.Pointer) {
+		return value
+	}
+	wrapped := reflect.New(v.Type())
+	wrapped.Elem().Set(v)
+	return wrapped.Interface()
+}
+
+// formatCQLScannedRow renders one row produced by nullPreservingScanDests.
+// A nil pointer is NULL. Every other value uses fmt.Sprint, so an empty
+// string, 0, false, and an empty blob stay distinct from NULL.
+func formatCQLScannedRow(dests []any) []string {
+	row := make([]string, len(dests))
+	for i, value := range dests {
+		row[i] = formatCQLValue(value)
+	}
+	return row
+}
+
+// cqlStringer, cqlFormatter, and cqlError identify pointer-receiver formatting.
+// Decimal and varint implement these on *inf.Dec and *big.Int. The concrete
+// struct does not, so fmt.Sprint must see the pointer.
+var (
+	cqlStringer  = reflect.TypeFor[fmt.Stringer]()
+	cqlFormatter = reflect.TypeFor[fmt.Formatter]()
+	cqlError     = reflect.TypeFor[error]()
+)
+
+func formatCQLValue(value any) string {
+	v := reflect.ValueOf(value)
+	for v.Kind() == reflect.Pointer && v.Elem().Kind() == reflect.Pointer {
+		if v.IsNil() {
+			return "NULL"
+		}
+		v = v.Elem()
+	}
+	if !v.IsValid() {
+		return "NULL"
+	}
+	if v.Kind() != reflect.Pointer {
+		return fmt.Sprint(v.Interface())
+	}
+	if v.IsNil() {
+		return "NULL"
+	}
+	// Nullness is the nil pointer. Do not take the element when that
+	// pointer is what fmt uses for String or Format.
+	if cqlPointerFormats(v) {
+		return fmt.Sprint(v.Interface())
+	}
+	return fmt.Sprint(v.Elem().Interface())
+}
+
+func cqlPointerFormats(v reflect.Value) bool {
+	pointerType := v.Type()
+	elemType := v.Elem().Type()
+	return cqlHasFormatter(pointerType) && !cqlHasFormatter(elemType)
+}
+
+func cqlHasFormatter(t reflect.Type) bool {
+	return t.Implements(cqlStringer) || t.Implements(cqlFormatter) || t.Implements(cqlError)
 }
