@@ -1764,13 +1764,15 @@ spanner-mycli utilizes [memefish](https://github.com/cloudspannerecosystem/memef
 * comment stripper
 * statement separator
 
-Statement type detector behavior can be controlled by `CLI_PARSE_MODE` system variable.
+Statement type detector behavior can be controlled by the `CLI_PARSE_MODE` system variable.
 
-| CLI_PARSE_MODE | Description                        |
-|----------------|------------------------------------|
-| FALLBACK       | Use memefish but fallback if error |
-| NO_MEMEFISH    | Don't use memefish                 |
-| MEMEFISH_ONLY  | Use memefish and don't fallback    |
+| CLI_PARSE_MODE | Description                                      |
+|----------------|--------------------------------------------------|
+| NO_MEMEFISH    | Detect statement kind lexically (default)       |
+| FALLBACK       | Use memefish, then lexical detection on failure |
+| MEMEFISH_ONLY  | Use memefish without fallback                   |
+
+`NO_MEMEFISH` still uses memefish for input splitting and comment handling; it only skips memefish parsing for statement kind detection. `UNSPECIFIED` acts like the default. Parser fallback details are logged only at DEBUG level.
 
 ```
 spanner> SET CLI_PARSE_MODE = "MEMEFISH_ONLY";
@@ -1786,11 +1788,6 @@ spanner> SET CLI_PARSE_MODE = "FALLBACK";
 Empty set (0.00 sec)
 
 spanner> SELECT * FRM 1;
-2024/11/02 00:22:57 ignore memefish parse error, err: syntax error: :1:10: expected token: <eof>, but: <ident>
-
-  1:  SELECT * FRM 1
-               ^~~
-
 ERROR: spanner: code = "InvalidArgument", desc = "Syntax error: Expected end of input but got identifier \\\"FRM\\\" [at 1:10]\\nSELECT * FRM 1\\n         ^"
 spanner> SET CLI_PARSE_MODE = "NO_MEMEFISH";
 Empty set (0.00 sec)

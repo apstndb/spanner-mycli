@@ -378,7 +378,7 @@ func BuildCLIStatement(stripped, raw string) (Statement, error) {
 }
 
 func BuildStatementWithComments(stripped, raw string) (Statement, error) {
-	return BuildStatementWithCommentsWithMode(stripped, raw, enums.ParseModeFallback)
+	return BuildStatementWithCommentsWithMode(stripped, raw, enums.ParseModeNoMemefish)
 }
 
 func composeStatementParseFunc(funcs ...statementParseFunc) statementParseFunc {
@@ -406,7 +406,7 @@ func ignoreParseError(f statementParseFunc) statementParseFunc {
 		case errors.Is(err, errStatementNotMatched):
 			return nil, err
 		case err != nil:
-			slog.Warn("error ignored", "err", err)
+			// The caller logs the fallback and its cause at DEBUG level.
 			return nil, fmt.Errorf("error ignored: %w", errors.Join(err, errStatementNotMatched))
 		default:
 			return s, nil
@@ -417,7 +417,7 @@ func ignoreParseError(f statementParseFunc) statementParseFunc {
 // getParserForMode returns the appropriate StatementParser for the given mode
 func getParserForMode(mode enums.ParseMode) (statementParseFunc, error) {
 	switch mode {
-	case enums.ParseModeNoMemefish:
+	case enums.ParseModeNoMemefish, enums.ParseModeUnspecified:
 		return composeStatementParseFunc(
 			BuildCLIStatement,
 			BuildNativeStatementLexical,
@@ -427,7 +427,7 @@ func getParserForMode(mode enums.ParseMode) (statementParseFunc, error) {
 			BuildCLIStatement,
 			BuildNativeStatementMemefish,
 		), nil
-	case enums.ParseModeFallback, enums.ParseModeUnspecified:
+	case enums.ParseModeFallback:
 		return composeStatementParseFunc(
 			BuildCLIStatement,
 			ignoreParseError(BuildNativeStatementMemefish),

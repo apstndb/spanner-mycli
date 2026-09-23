@@ -731,7 +731,7 @@ var varDefs = []varDef{
 	},
 	{
 		name:  "CLI_PARSE_MODE",
-		desc:  "Controls statement parsing mode: FALLBACK (default), NO_MEMEFISH, MEMEFISH_ONLY, or UNSPECIFIED",
+		desc:  "Controls statement kind detection: NO_MEMEFISH (default; lexical detection), FALLBACK (memefish then lexical), MEMEFISH_ONLY, or UNSPECIFIED (same as default)",
 		scope: scopeSession,
 		bind:  func(sv *systemVariables) Variable { return ParseModeVar(&sv.Query.BuildStatementMode) },
 	},
