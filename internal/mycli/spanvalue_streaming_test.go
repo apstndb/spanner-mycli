@@ -16,6 +16,7 @@ package mycli
 
 import (
 	"bytes"
+	"errors"
 	"testing"
 
 	"cloud.google.com/go/spanner"
@@ -25,8 +26,10 @@ import (
 	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/apstndb/spanner-mycli/internal/mycli/decoder"
 	"github.com/apstndb/spanvalue"
+	"github.com/apstndb/spanvalue/gcvctor"
 	"github.com/apstndb/spanvalue/writer"
 	"github.com/google/go-cmp/cmp"
+	"google.golang.org/api/iterator"
 )
 
 type exportIdentRow struct {
@@ -208,6 +211,48 @@ func TestNewSpanvalueRowIteratorWriterForOutput(t *testing.T) {
 				t.Errorf("output mismatch (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+func TestJSONLWriterKeepsMultilineJSONOnOneRecord(t *testing.T) {
+	t.Parallel()
+	value, err := gcvctor.JSONStringValue("{\r\n \"a\": 1,\n \"b\": 2\r}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	row, err := spanner.NewRow([]string{"j"}, []any{value})
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadata := &sppb.ResultSetMetadata{RowType: &sppb.StructType{Fields: []*sppb.StructType_Field{{Name: "j", Type: value.Type}}}}
+	var out bytes.Buffer
+	w, handled, err := newSpanvalueRowIteratorWriterFor(&out, exportWriterOptions{CLIFormat: enums.DisplayModeJSONL}, decoder.JSONFormatConfig())
+	if err != nil || !handled {
+		t.Fatalf("JSONL writer: handled=%v err=%v", handled, err)
+	}
+	if _, err := writer.WriteRowSeq(metadata, writer.RowSeq(row), w); err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff("{\"j\":{\"a\":1,\"b\":2}}\n", out.String()); diff != "" {
+		t.Errorf("JSONL record (-want +got):\n%s", diff)
+	}
+}
+
+func TestJSONLWriterPreservesRowSequenceSourceError(t *testing.T) {
+	t.Parallel()
+	metadata := &sppb.ResultSetMetadata{RowType: &sppb.StructType{Fields: []*sppb.StructType_Field{{Name: "id", Type: &sppb.Type{Code: sppb.TypeCode_INT64}}}}}
+	var out bytes.Buffer
+	w, handled, err := newSpanvalueRowIteratorWriterFor(&out, exportWriterOptions{CLIFormat: enums.DisplayModeJSONL}, decoder.JSONFormatConfig())
+	if err != nil || !handled {
+		t.Fatalf("JSONL writer: handled=%v err=%v", handled, err)
+	}
+	rows := func(yield func(*spanner.Row, error) bool) { yield(nil, iterator.Done) }
+	_, err = writer.WriteRowSeq(metadata, rows, w)
+	if !errors.Is(err, iterator.Done) {
+		t.Fatalf("source error = %v, want iterator.Done", err)
+	}
+	if out.Len() != 0 {
+		t.Fatalf("source error wrote JSONL output: %q", out.String())
 	}
 }
 
