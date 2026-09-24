@@ -138,9 +138,10 @@ func (f *fuzzyFinderCommand) Call(ctx context.Context, B *readline.Buffer) readl
 	B.RepaintLastLine()
 
 	if !ok {
-		if outcome == fuzzyPickerNoMatch {
+		switch outcome {
+		case fuzzyPickerNoMatch:
 			f.showCompletionNotice(B, "No matches. Clear the search or adjust the prefix.")
-		} else if outcome == fuzzyPickerFailed {
+		case fuzzyPickerFailed:
 			f.showCompletionNotice(B, "Could not run fuzzy finder. Check CLI_FUZZY_FINDER_OPTIONS, then retry.")
 		}
 		return readline.CONTINUE
@@ -949,10 +950,7 @@ func (f *fuzzyFinderCommand) fetchSetTargetCandidates() []fzfItem {
 		{Value: "PARAM", Label: "PARAM (define query parameter)", Suffix: " "},
 		{Value: "LOCAL", Label: "LOCAL (transaction-scoped SET)", Suffix: " "},
 	}
-	for _, item := range f.fetchVariableCandidatesForScope("SET") {
-		items = append(items, item)
-	}
-	return items
+	return append(items, f.fetchVariableCandidatesForScope("SET")...)
 }
 
 // fetchVariableCandidatesForScope uses registry metadata as the source of
@@ -988,16 +986,16 @@ func (f *fuzzyFinderCommand) fetchVariableCandidatesForScope(scope string) []fzf
 	items := make([]fzfItem, 0, len(names))
 	for _, name := range names {
 		metadata := info[name]
-		label := name
+		item := fzfItem{Value: name, Label: name}
 		if description := compactCompletionText(metadata.Description, 96); description != "" {
-			label += " — " + description
+			item.Label += " — " + description
 		}
 		if value, ok := values[name]; ok && !secretLikeVariableName.MatchString(name) {
 			if value = compactCompletionText(value, 48); value != "" {
-				label += " [" + value + "]"
+				item.Label += " [" + value + "]"
 			}
 		}
-		items = append(items, fzfItem{Value: name, Label: label})
+		items = append(items, item)
 	}
 	return items
 }

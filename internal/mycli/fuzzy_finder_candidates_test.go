@@ -303,6 +303,7 @@ func (*fuzzyNoticeTestCommand) String() string { return "TEST_COMPLETION_NOTICE"
 func (c *fuzzyNoticeTestCommand) SetEditor(editor *multiline.Editor) {
 	c.finder.SetEditor(editor)
 }
+
 func (c *fuzzyNoticeTestCommand) Call(_ context.Context, b *readline.Buffer) readline.Result {
 	c.finder.showCompletionNotice(b, completionNotice(nil))
 	return readline.CONTINUE
@@ -324,6 +325,7 @@ func (tty *fixedFuzzyTTY) GetKey() (string, error) {
 	tty.keyIndex++
 	return key, nil
 }
+
 func (tty *fixedFuzzyTTY) Size() (int, int, error) {
 	return tty.width, tty.height, nil
 }
