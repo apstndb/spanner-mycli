@@ -18,7 +18,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"maps"
 	"regexp"
@@ -122,11 +121,11 @@ func (f *fuzzyFinderCommand) Call(ctx context.Context, B *readline.Buffer) readl
 	candidates, err := f.resolveCandidates(ctx, result.completionType, result.context)
 	if err != nil {
 		slog.Debug("fuzzy finder: failed to fetch candidates", "completionType", result.completionType, "err", err)
-		f.showCompletionNotice(completionNotice(err))
+		f.showCompletionNotice(B, completionNotice(err))
 		return readline.CONTINUE
 	}
 	if len(candidates) == 0 {
-		f.showCompletionNotice(completionNotice(nil))
+		f.showCompletionNotice(B, completionNotice(nil))
 		return readline.CONTINUE
 	}
 
@@ -174,34 +173,34 @@ func completionNotice(err error) string {
 		return ""
 	}
 	if errors.Is(err, errNoCachedPlan) {
-		return "No cached query plan. Run a query first."
+		return "No cached query plan. Try EXPLAIN or set CLI_QUERY_MODE = 'PLAN'."
 	}
 	if err != nil {
-		return "Could not load completion candidates."
+		return "Could not load completion candidates. Retry, or set CLI_LOG_LEVEL = 'DEBUG' for details."
 	}
-	if err == nil {
-		return "No completion candidates."
-	}
-	return ""
+	return "No completion candidates."
 }
 
 // showCompletionNotice writes below the active editor line and then restores
 // it, keeping completion feedback out of the editable input buffer.
-func (f *fuzzyFinderCommand) showCompletionNotice(message string) {
+func (f *fuzzyFinderCommand) showCompletionNotice(B *readline.Buffer, message string) {
 	if message == "" || f.editor == nil {
 		return
 	}
 	rewind := f.editor.GotoEndLine()
 	out := f.editor.Out()
-	writeCompletionNotice(out, message)
+	fmt.Fprintln(out, message)
 	if err := out.Flush(); err != nil {
 		slog.Debug("fuzzy finder: flush completion notice", "err", err)
 	}
 	rewind()
-}
-
-func writeCompletionNotice(out io.Writer, message string) {
-	fmt.Fprintln(out, message)
+	// GotoEndLine's rewind accounts for the editor's rows but not the extra
+	// newline printed after the notice. Move back to the input row, then repaint
+	// when the live readline buffer has a terminal writer.
+	fmt.Fprint(out, "\x1b[1F")
+	if B != nil && B.Out != nil {
+		B.RepaintLastLine()
+	}
 }
 
 // resolveCompletionSuffix returns the suffix to append after the chosen
@@ -249,8 +248,11 @@ func detectFuzzyContext(input string) fuzzyContextResult {
 			if numGroups > 1 {
 				context = input[loc[2]:loc[3]]
 			}
-			if comp.CompletionType == fuzzyCompleteVariable && strings.HasPrefix(strings.ToUpper(strings.TrimSpace(input)), "SET LOCAL ") {
-				context = "LOCAL"
+			if comp.CompletionType == fuzzyCompleteVariable {
+				words := strings.Fields(input)
+				if len(words) >= 2 && strings.EqualFold(words[0], "SET") && strings.EqualFold(words[1], "LOCAL") {
+					context = "LOCAL"
+				}
 			}
 
 			return fuzzyContextResult{
@@ -979,19 +981,20 @@ func (f *fuzzyFinderCommand) fetchVariableCandidatesForScope(scope string) []fzf
 	values := sv.Registry.ListVariables()
 	names := make([]string, 0, len(info))
 	for name, metadata := range info {
+		def := sv.Registry.lookupDef(name)
+		if def == nil || metadata.Unimplemented {
+			continue
+		}
 		switch strings.ToUpper(scope) {
 		case "LOCAL":
-			if !metadata.LocalAllowed {
+			if !def.localAllowed() || sv.Registry.checkSetPolicy(def) != nil {
 				continue
 			}
 		case "SET":
-			if metadata.ReadOnly {
+			if sv.Registry.checkSetPolicy(def) != nil {
 				continue
 			}
 		default:
-			continue
-		}
-		if metadata.Unimplemented {
 			continue
 		}
 		names = append(names, name)

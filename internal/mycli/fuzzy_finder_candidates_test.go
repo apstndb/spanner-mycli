@@ -253,15 +253,30 @@ func TestSetCachedCandidatesNilSession(t *testing.T) {
 func TestFuzzyFinderCallEmptyNetworkCompletion(t *testing.T) {
 	t.Parallel()
 	sv := newSystemVariablesWithDefaults()
+	var terminal bytes.Buffer
+	out := bufio.NewWriter(&terminal)
+	editor := &multiline.Editor{}
+	editor.LineEditor.Writer = &terminal
+	editor.LineEditor.Out = out
 	f := &fuzzyFinderCommand{
 		cli:    &Cli{SystemVariables: &sv, SessionHandler: NewSessionHandler(nil)},
-		editor: dummyFuzzyEditor(io.Discard),
+		editor: editor,
 	}
-	b := &readline.Buffer{Editor: &readline.Editor{}}
+	b := &readline.Buffer{Editor: &readline.Editor{Out: out}}
 	input := "USE "
 	b.Cursor = b.InsertString(0, input)
 	if result := f.Call(t.Context(), b); result != readline.CONTINUE || b.String() != input {
 		t.Fatalf("result=%v buffer=%q", result, b.String())
+	}
+	if err := out.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	got := terminal.String()
+	if !strings.Contains(got, "No completion candidates.") {
+		t.Fatalf("terminal notice missing from output: %q", got)
+	}
+	if strings.LastIndex(got, "No completion candidates.") > strings.LastIndex(got, "\r> ") {
+		t.Fatalf("input row was not repainted after the notice: %q", got)
 	}
 }
 
