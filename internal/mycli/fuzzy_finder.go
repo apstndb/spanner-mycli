@@ -141,7 +141,7 @@ func (f *fuzzyFinderCommand) Call(ctx context.Context, B *readline.Buffer) readl
 	if result.completionType != 0 {
 		// Argument completion replaces only the current token. A value, ROLE
 		// clause, comment, or terminator after the cursor remains in place.
-		replaceEnd = fuzzyArgumentEnd(B.SubString(B.Cursor, len(B.Buffer)), B.Cursor)
+		replaceEnd = fuzzyArgumentEnd(B.SubString(B.Cursor, len(B.Buffer)), B.Cursor, result.argPrefix)
 		right := B.SubString(replaceEnd, len(B.Buffer))
 		selected = chosen + fuzzyCompletionSuffix(resolveCompletionSuffix(candidates, chosen, result.suffix), right)
 	} else {
@@ -166,9 +166,27 @@ func (f *fuzzyFinderCommand) Call(ctx context.Context, B *readline.Buffer) readl
 // fuzzyArgumentEnd returns the end of the token under the cursor in editor
 // cells. The editor uses one cell per displayed character, which may contain
 // multiple Unicode code points; MojiCountInString keeps positions aligned.
-func fuzzyArgumentEnd(right string, cursor int) int {
+func fuzzyArgumentEnd(right string, cursor int, prefix string) int {
+	quote, escaped := fuzzyArgumentQuote(prefix)
 	for i, r := range right {
-		if unicode.IsSpace(r) || strings.ContainsRune("=,;()", r) ||
+		if escaped {
+			escaped = false
+			continue
+		}
+		if quote != 0 {
+			switch r {
+			case '\\':
+				escaped = true
+			case quote:
+				quote = 0
+			}
+			continue
+		}
+		if r == '\'' || r == '"' || r == '`' {
+			quote = r
+			continue
+		}
+		if unicode.IsSpace(r) || strings.ContainsRune("=,;()#", r) ||
 			strings.HasPrefix(right[i:], "--") || strings.HasPrefix(right[i:], "/*") {
 			return cursor + readline.MojiCountInString(right[:i])
 		}
@@ -176,10 +194,32 @@ func fuzzyArgumentEnd(right string, cursor int) int {
 	return cursor + readline.MojiCountInString(right)
 }
 
+func fuzzyArgumentQuote(prefix string) (rune, bool) {
+	var quote rune
+	escaped := false
+	for _, r := range prefix {
+		if escaped {
+			escaped = false
+			continue
+		}
+		if quote != 0 {
+			switch r {
+			case '\\':
+				escaped = true
+			case quote:
+				quote = 0
+			}
+		} else if r == '\'' || r == '"' || r == '`' {
+			quote = r
+		}
+	}
+	return quote, escaped
+}
+
 // Reuse an existing separator to avoid turning "SET name = value" into
 // "SET name =  = value" when completion runs before the equals sign.
 func fuzzyCompletionSuffix(suffix, right string) string {
-	if suffix == " = " && strings.HasPrefix(strings.TrimLeftFunc(right, unicode.IsSpace), "=") {
+	if suffix == " = " && strings.HasPrefix(fuzzySkipTrivia(right), "=") {
 		return ""
 	}
 	if suffix == " = " && right != "" && unicode.IsSpace([]rune(right)[0]) {
@@ -189,6 +229,30 @@ func fuzzyCompletionSuffix(suffix, right string) string {
 		return ""
 	}
 	return suffix
+}
+
+// fuzzySkipTrivia looks past SQL whitespace and comments when checking whether
+// an equals sign is already present. It leaves the original text untouched.
+func fuzzySkipTrivia(s string) string {
+	for {
+		s = strings.TrimLeftFunc(s, unicode.IsSpace)
+		switch {
+		case strings.HasPrefix(s, "/*"):
+			end := strings.Index(s[2:], "*/")
+			if end < 0 {
+				return ""
+			}
+			s = s[end+4:]
+		case strings.HasPrefix(s, "--") || strings.HasPrefix(s, "#"):
+			end := strings.IndexAny(s, "\r\n")
+			if end < 0 {
+				return ""
+			}
+			s = s[end+1:]
+		default:
+			return s
+		}
+	}
 }
 
 // resolveCompletionSuffix returns the suffix to append after the chosen

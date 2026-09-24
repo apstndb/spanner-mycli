@@ -63,6 +63,12 @@ func TestFuzzyArgumentReplacementPreservesRightHandText(t *testing.T) {
 			want:   "SET CLI_FORMAT =| value;",
 		},
 		{
+			name:   "SET name before commented equals",
+			input:  "SET CLI_FOR| /* note = */ = 'VERTICAL';",
+			chosen: "CLI_FORMAT",
+			want:   "SET CLI_FORMAT| /* note = */ = 'VERTICAL';",
+		},
+		{
 			name:   "SET PARAM item uses existing space",
 			input:  "SET PA|RAM foo STRING;",
 			chosen: "PARAM",
@@ -94,10 +100,28 @@ func TestFuzzyArgumentReplacementPreservesRightHandText(t *testing.T) {
 			want:   "SET CLI_FORMAT = VERTICAL|; -- note",
 		},
 		{
+			name:   "quoted value contains semicolon and space",
+			input:  "SET CLI_FORMAT = 'TA|B; LE'; -- note",
+			chosen: "'VERTICAL'",
+			want:   "SET CLI_FORMAT = 'VERTICAL'|; -- note",
+		},
+		{
+			name:   "quoted value escape crosses cursor",
+			input:  "SET CLI_FORMAT = 'TA\\|'B;'; -- note",
+			chosen: "'VERTICAL'",
+			want:   "SET CLI_FORMAT = 'VERTICAL'|; -- note",
+		},
+		{
 			name:   "comment immediately after token",
 			input:  "RESET CLI_FOR|/* note */;",
 			chosen: "CLI_FORMAT",
 			want:   "RESET CLI_FORMAT|/* note */;",
+		},
+		{
+			name:   "hash comment immediately after token",
+			input:  "RESET CLI_FOR|# note",
+			chosen: "CLI_FORMAT",
+			want:   "RESET CLI_FORMAT|# note",
 		},
 		{
 			name:   "Unicode before and inside token",
@@ -124,7 +148,7 @@ func TestFuzzyArgumentReplacementPreservesRightHandText(t *testing.T) {
 			if context.completionType == 0 {
 				t.Fatalf("input %q did not select argument completion", before)
 			}
-			end := fuzzyArgumentEnd(b.SubString(cursor, len(b.Buffer)), cursor)
+			end := fuzzyArgumentEnd(b.SubString(cursor, len(b.Buffer)), cursor, context.argPrefix)
 			right := b.SubString(end, len(b.Buffer))
 			suffix := context.suffix
 			if tt.suffix != "" {
@@ -142,6 +166,26 @@ func TestFuzzyArgumentReplacementPreservesRightHandText(t *testing.T) {
 			gotCursor := context.argStartPos + readline.MojiCountInString(inserted)
 			if gotCursor != readline.MojiCountInString(wantBefore) {
 				t.Errorf("cursor = %d, want %d", gotCursor, readline.MojiCountInString(wantBefore))
+			}
+		})
+	}
+}
+
+func TestFuzzyCompletionSuffixSkipsSQLTrivia(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		right string
+		want  string
+	}{
+		{"block comment", " /* note */ = 'VERTICAL';", ""},
+		{"line comment", " -- note\n = 'VERTICAL';", ""},
+		{"line comment with carriage return", " -- note\r = 'VERTICAL';", ""},
+		{"hash comment", " # note\n = 'VERTICAL';", ""},
+		{"no equals after comment", " /* note = */ value;", " ="},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := fuzzyCompletionSuffix(" = ", tt.right); got != tt.want {
+				t.Errorf("suffix before %q = %q, want %q", tt.right, got, tt.want)
 			}
 		})
 	}
