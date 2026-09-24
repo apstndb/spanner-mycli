@@ -672,6 +672,8 @@ documented with examples in:
   - The completion title is written to the header after parsing, so `--header` leaves that title in place. A nonempty prefix already typed for this completion is written to the query after parsing, so `--query` leaves that prefix in place. An empty prefix keeps a `--query` from this variable. Put a hint in `--footer`.
   - The list starts in input order. `--bind=ctrl-s:toggle-sort` toggles result sorting for this opening and shows `+S` or `-S` on the info line. That key is inside the finder. `CLI_FUZZY_FINDER_KEY` (Ctrl+T by default) opens it.
   - The finder inserts one value. `--multi` and `--accept-nth` can change the inserted text. `--delimiter` and `--with-nth` change the field the list shows. Color, border, height, info, and footer do not. `--tmux` and `--popup` are unsupported in the embedded finder. No preview command is built in.
+  - `SET` completion omits variables the current session cannot set; `SET LOCAL` lists only variables that support transaction-local changes. These rows show a short description and current value when available, omitting values for secret-like variable names.
+  - Empty results and missing query plans show a brief terminal hint. Fetch failures show a retry hint; set `CLI_LOG_LEVEL = 'DEBUG'` for details. Cancelling the finder leaves the input draft unchanged.
 
 ### DDL_EXECUTION_MODE
 

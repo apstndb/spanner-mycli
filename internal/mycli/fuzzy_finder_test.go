@@ -15,13 +15,182 @@
 package mycli
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/nyaosorg/go-readline-ny"
 	"github.com/stretchr/testify/assert"
 )
+
+func TestFuzzyArgumentReplacementPreservesRightHandText(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  string // | marks the cursor
+		chosen string
+		suffix string // non-empty overrides the completion entry suffix
+		want   string // | marks the cursor after completion
+	}{
+		{
+			name:   "SET name before equals",
+			input:  "SET CLI_FOR| = 'VERTICAL';",
+			chosen: "CLI_FORMAT",
+			want:   "SET CLI_FORMAT| = 'VERTICAL';",
+		},
+		{
+			name:   "cursor inside SET name",
+			input:  "SET CLI_F|OR = 'VERTICAL';",
+			chosen: "CLI_FORMAT",
+			want:   "SET CLI_FORMAT| = 'VERTICAL';",
+		},
+		{
+			name:   "cursor before existing SET name",
+			input:  "SET |CLI_FOR = 'VERTICAL';",
+			chosen: "CLI_FORMAT",
+			want:   "SET CLI_FORMAT| = 'VERTICAL';",
+		},
+		{
+			name:   "SET name with adjacent equals",
+			input:  "SET CLI_FOR|='VERTICAL';",
+			chosen: "CLI_FORMAT",
+			want:   "SET CLI_FORMAT|='VERTICAL';",
+		},
+		{
+			name:   "SET name before value without equals",
+			input:  "SET CLI_FOR| value;",
+			chosen: "CLI_FORMAT",
+			want:   "SET CLI_FORMAT =| value;",
+		},
+		{
+			name:   "SET name before commented equals",
+			input:  "SET CLI_FOR| /* note = */ = 'VERTICAL';",
+			chosen: "CLI_FORMAT",
+			want:   "SET CLI_FORMAT| /* note = */ = 'VERTICAL';",
+		},
+		{
+			name:   "SET PARAM item uses existing space",
+			input:  "SET PA|RAM foo STRING;",
+			chosen: "PARAM",
+			suffix: " ",
+			want:   "SET PARAM| foo STRING;",
+		},
+		{
+			name:   "USE preserves role and comment",
+			input:  "USE old| ROLE admin; -- note",
+			chosen: "newdb",
+			want:   "USE newdb| ROLE admin; -- note",
+		},
+		{
+			name:   "role token after cursor is replaced",
+			input:  "USE mydb ROLE ad|min; -- note",
+			chosen: "admin",
+			want:   "USE mydb ROLE admin|; -- note",
+		},
+		{
+			name:   "DUMP list separator remains",
+			input:  "DUMP TABLES Sing|ers, Albums;",
+			chosen: "Singers2",
+			want:   "DUMP TABLES Singers2|, Albums;",
+		},
+		{
+			name:   "value token and semicolon",
+			input:  "SET CLI_FORMAT = TA|BLE; -- note",
+			chosen: "VERTICAL",
+			want:   "SET CLI_FORMAT = VERTICAL|; -- note",
+		},
+		{
+			name:   "quoted value contains semicolon and space",
+			input:  "SET CLI_FORMAT = 'TA|B; LE'; -- note",
+			chosen: "'VERTICAL'",
+			want:   "SET CLI_FORMAT = 'VERTICAL'|; -- note",
+		},
+		{
+			name:   "quoted value escape crosses cursor",
+			input:  "SET CLI_FORMAT = 'TA\\|'B;'; -- note",
+			chosen: "'VERTICAL'",
+			want:   "SET CLI_FORMAT = 'VERTICAL'|; -- note",
+		},
+		{
+			name:   "comment immediately after token",
+			input:  "RESET CLI_FOR|/* note */;",
+			chosen: "CLI_FORMAT",
+			want:   "RESET CLI_FORMAT|/* note */;",
+		},
+		{
+			name:   "hash comment immediately after token",
+			input:  "RESET CLI_FOR|# note",
+			chosen: "CLI_FORMAT",
+			want:   "RESET CLI_FORMAT|# note",
+		},
+		{
+			name:   "Unicode before and inside token",
+			input:  "  USE 🧑‍💻東|京 ROLE admin;",
+			chosen: "大阪",
+			want:   "  USE 大阪| ROLE admin;",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			before, after, ok := strings.Cut(tt.input, "|")
+			if !ok {
+				t.Fatal("input needs a cursor marker")
+			}
+			input := before + after
+			cells := make([]readline.Cell, 0, len(input))
+			for _, m := range readline.StringToMoji(input) {
+				cells = append(cells, readline.Cell{Moji: m})
+			}
+			b := &readline.Buffer{Buffer: cells}
+			cursor := readline.MojiCountInString(before)
+			context := detectFuzzyContext(before)
+			if context.completionType == 0 {
+				t.Fatalf("input %q did not select argument completion", before)
+			}
+			end := fuzzyArgumentEnd(b.SubString(cursor, len(b.Buffer)), cursor, context.argPrefix)
+			right := b.SubString(end, len(b.Buffer))
+			suffix := context.suffix
+			if tt.suffix != "" {
+				suffix = tt.suffix
+			}
+			inserted := tt.chosen + fuzzyCompletionSuffix(suffix, right)
+			got := b.SubString(0, context.argStartPos) + inserted + right
+			wantBefore, wantAfter, ok := strings.Cut(tt.want, "|")
+			if !ok {
+				t.Fatal("want needs a cursor marker")
+			}
+			if got != wantBefore+wantAfter {
+				t.Errorf("completed input = %q, want %q", got, wantBefore+wantAfter)
+			}
+			gotCursor := context.argStartPos + readline.MojiCountInString(inserted)
+			if gotCursor != readline.MojiCountInString(wantBefore) {
+				t.Errorf("cursor = %d, want %d", gotCursor, readline.MojiCountInString(wantBefore))
+			}
+		})
+	}
+}
+
+func TestFuzzyCompletionSuffixSkipsSQLTrivia(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		right string
+		want  string
+	}{
+		{"block comment", " /* note */ = 'VERTICAL';", ""},
+		{"line comment", " -- note\n = 'VERTICAL';", ""},
+		{"line comment with carriage return", " -- note\r = 'VERTICAL';", ""},
+		{"hash comment", " # note\n = 'VERTICAL';", ""},
+		{"no equals after comment", " /* note = */ value;", " ="},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := fuzzyCompletionSuffix(" = ", tt.right); got != tt.want {
+				t.Errorf("suffix before %q = %q, want %q", tt.right, got, tt.want)
+			}
+		})
+	}
+}
 
 func TestDetectFuzzyContext(t *testing.T) {
 	tests := []struct {
@@ -89,6 +258,33 @@ func TestDetectFuzzyContext(t *testing.T) {
 			wantCompletionType: fuzzyCompleteSetTarget,
 			wantArgPrefix:      "",
 			wantArgStartPos:    4,
+			wantSuffix:         " = ",
+		},
+		{
+			name:               "SET LOCAL with partial name",
+			input:              "SET LOCAL CLI_",
+			wantCompletionType: fuzzyCompleteVariable,
+			wantArgPrefix:      "CLI_",
+			wantArgStartPos:    10,
+			wantContext:        "LOCAL",
+			wantSuffix:         " = ",
+		},
+		{
+			name:               "SET LOCAL with tab separators",
+			input:              "SET\tLOCAL\tCLI_",
+			wantCompletionType: fuzzyCompleteVariable,
+			wantArgPrefix:      "CLI_",
+			wantArgStartPos:    10,
+			wantContext:        "LOCAL",
+			wantSuffix:         " = ",
+		},
+		{
+			name:               "SET LOCAL with repeated spaces",
+			input:              "SET  LOCAL   CLI_",
+			wantCompletionType: fuzzyCompleteVariable,
+			wantArgPrefix:      "CLI_",
+			wantArgStartPos:    13,
+			wantContext:        "LOCAL",
 			wantSuffix:         " = ",
 		},
 		{
@@ -1169,6 +1365,7 @@ func TestFetchSetTargetCandidates(t *testing.T) {
 	t.Parallel()
 
 	sysVars := newSystemVariablesWithDefaults()
+	sysVars.ensureRegistry()
 	f := &fuzzyFinderCommand{cli: &Cli{SystemVariables: &sysVars}}
 
 	items := f.fetchSetTargetCandidates()
@@ -1192,6 +1389,115 @@ func TestFetchSetTargetCandidates(t *testing.T) {
 	}
 	if !sawVariable {
 		t.Errorf("candidates do not include system variable CLI_FORMAT")
+	}
+	for _, item := range items[2:] {
+		info := sysVars.Registry.ListVariableInfo()[item.Value]
+		if info.ReadOnly {
+			t.Errorf("read-only variable %q is offered as a SET target", item.Value)
+		}
+	}
+	var format fzfItem
+	for _, item := range items {
+		if item.Value == "CLI_FORMAT" {
+			format = item
+		}
+	}
+	if !strings.Contains(format.Label, "format") || !strings.Contains(format.Label, "TABLE") {
+		t.Errorf("CLI_FORMAT label = %q, want description and current value", format.Label)
+	}
+	if strings.Contains(format.Label, "\n") {
+		t.Errorf("candidate label contains newline: %q", format.Label)
+	}
+
+	local := f.fetchVariableCandidatesForScope("LOCAL")
+	localValues := make(map[string]bool, len(local))
+	for _, item := range local {
+		localValues[item.Value] = true
+		if !sysVars.Registry.ListVariableInfo()[item.Value].LocalAllowed {
+			t.Errorf("SET LOCAL offered ineligible variable %q", item.Value)
+		}
+	}
+	if !localValues["CLI_FORMAT"] {
+		t.Error("SET LOCAL candidates do not include CLI_FORMAT")
+	}
+	for name, metadata := range sysVars.Registry.ListVariableInfo() {
+		if metadata.ReadOnly && localValues[name] {
+			t.Errorf("SET LOCAL includes read-only variable %q", name)
+		}
+	}
+
+	containsCandidate := func(items []fzfItem, name string) bool {
+		for _, item := range items {
+			if item.Value == name {
+				return true
+			}
+		}
+		return false
+	}
+	if !containsCandidate(f.fetchSetTargetCandidates(), "CLI_ENABLE_ADC_PLUS") {
+		t.Error("pre-session SET candidates omit init-only CLI_ENABLE_ADC_PLUS")
+	}
+	sysVars.inTransaction = func() bool { return false }
+	if containsCandidate(f.fetchSetTargetCandidates(), "CLI_ENABLE_ADC_PLUS") {
+		t.Error("session SET candidates include init-only CLI_ENABLE_ADC_PLUS")
+	}
+	sysVars.inTransaction = func() bool { return true }
+	for _, name := range []string{"READONLY", "DIRECTED_READ", "CLI_SAVEPOINT_SUPPORT"} {
+		if containsCandidate(f.fetchSetTargetCandidates(), name) {
+			t.Errorf("transaction SET candidates include guarded variable %q", name)
+		}
+	}
+	sysVars.inTransaction = func() bool { return false }
+	sysVars.inManualBatch = func() bool { return true }
+	if containsCandidate(f.fetchSetTargetCandidates(), "CLI_SAVEPOINT_SUPPORT") {
+		t.Error("manual-batch SET candidates include guarded CLI_SAVEPOINT_SUPPORT")
+	}
+}
+
+func TestLocalCompletionHonorsCurrentMutationGuards(t *testing.T) {
+	t.Parallel()
+	sv := newSystemVariablesWithDefaults()
+	sv.featureVarDefs = append(sv.featureVarDefs, varDef{
+		name:       "CLI_TEST_LOCAL_BATCH_GUARD",
+		desc:       "test-only batch-guarded local variable",
+		scope:      scopeSession,
+		batchGuard: true,
+		bind:       func(sv *systemVariables) Variable { return BoolVar(&sv.Transaction.ReadOnly) },
+	})
+	manualBatch := false
+	sv.inManualBatch = func() bool { return manualBatch }
+	sv.ensureRegistry()
+	f := &fuzzyFinderCommand{cli: &Cli{SystemVariables: &sv}}
+	contains := func(items []fzfItem, name string) bool {
+		for _, item := range items {
+			if item.Value == name {
+				return true
+			}
+		}
+		return false
+	}
+	if !contains(f.fetchVariableCandidatesForScope("LOCAL"), "CLI_TEST_LOCAL_BATCH_GUARD") {
+		t.Fatal("local candidate missing while mutation policy allows it")
+	}
+	manualBatch = true
+	if contains(f.fetchVariableCandidatesForScope("LOCAL"), "CLI_TEST_LOCAL_BATCH_GUARD") {
+		t.Fatal("local candidate present while a manual batch blocks mutation")
+	}
+}
+
+func TestCompletionNoticeOutput(t *testing.T) {
+	t.Parallel()
+	if got := completionNotice(errNoCachedPlan); got != "No cached query plan. Try EXPLAIN or set CLI_QUERY_MODE = 'PLAN'." {
+		t.Fatalf("missing-plan notice = %q", got)
+	}
+	if got := completionNotice(fmt.Errorf("backend unavailable")); got != "Could not load completion candidates. Retry, or set CLI_LOG_LEVEL = 'DEBUG' for details." {
+		t.Fatalf("fetch-error notice = %q", got)
+	}
+	if got := completionNotice(nil); got != "No completion candidates." {
+		t.Fatalf("empty-result notice = %q", got)
+	}
+	if got := completionNotice(context.Canceled); got != "" {
+		t.Fatalf("cancellation notice = %q, want quiet", got)
 	}
 }
 

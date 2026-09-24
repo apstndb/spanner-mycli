@@ -113,6 +113,11 @@ func executeStatementHandler(cli *Cli) func(context.Context, *mcp.CallToolReques
 
 		// Parse the statement
 		statement := strings.TrimSuffix(strings.TrimSpace(params.Statement), ";")
+		// Interactive meta-command spelling stays distinct from the returned
+		// Statement type: \? reuses HelpTopicStatement so it can render normally.
+		if IsMetaCommand(strings.TrimSpace(statement)) {
+			return mcpApplicationErrorResult("ERROR: meta commands are not supported by MCP execute_statement"), nil, nil
+		}
 		stmt, err := cli.parseStatement(&inputStatement{statement: statement, statementWithoutComments: statement, delim: ";"})
 		if err != nil {
 			slog.Debug("MCP request failed during parsing",

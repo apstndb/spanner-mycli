@@ -100,6 +100,11 @@ func ParseMetaCommand(input string) (Statement, error) {
 	}
 
 	switch command {
+	case "?":
+		if args != "" {
+			return nil, errors.New("\\? does not accept arguments")
+		}
+		return &HelpTopicStatement{Topic: "KEYS"}, nil
 	case "!":
 		if args == "" {
 			return nil, errors.New("\\! requires a shell command")

@@ -32,6 +32,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/hymkor/go-multiline-ny"
 	readline "github.com/nyaosorg/go-readline-ny"
+	"github.com/nyaosorg/go-readline-ny/keys"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/anypb"
@@ -108,13 +109,19 @@ func TestPrepareFzfOptions_EmptyLabelUsesValue(t *testing.T) {
 func TestRunFzfRejectsInvalidExtraOptions(t *testing.T) {
 	t.Parallel()
 	candidates := []fzfItem{{Value: "alpha"}}
-	got, ok := runFzf(candidates, "", "", "--header='unclosed")
+	got, ok, outcome := runFzf(candidates, "", "", "--header='unclosed")
 	if ok || got != "" {
 		t.Fatalf("unclosed quote: got (%q, %v), want empty/false", got, ok)
 	}
-	got, ok = runFzf(candidates, "alpha", "Statements", "--no-such-fzf-flag")
+	if outcome != fuzzyPickerFailed {
+		t.Fatalf("unclosed quote outcome = %v, want failed", outcome)
+	}
+	got, ok, outcome = runFzf(candidates, "alpha", "Statements", "--no-such-fzf-flag")
 	if ok || got != "" {
 		t.Fatalf("unknown flag: got (%q, %v), want empty/false", got, ok)
+	}
+	if outcome != fuzzyPickerFailed {
+		t.Fatalf("unknown flag outcome = %v, want failed", outcome)
 	}
 }
 
@@ -250,20 +257,79 @@ func TestSetCachedCandidatesNilSession(t *testing.T) {
 	}
 }
 
-func TestFuzzyFinderCallEmptyNetworkCompletion(t *testing.T) {
+func TestCompletionNoticePreservesNarrowEditorInput(t *testing.T) {
 	t.Parallel()
 	sv := newSystemVariablesWithDefaults()
+	var terminal bytes.Buffer
+	out := bufio.NewWriter(&terminal)
+	editor := &multiline.Editor{}
+	editor.LineEditor.Writer = &terminal
+	editor.LineEditor.Out = out
 	f := &fuzzyFinderCommand{
-		cli:    &Cli{SystemVariables: &sv, SessionHandler: NewSessionHandler(nil)},
-		editor: dummyFuzzyEditor(io.Discard),
+		cli: &Cli{SystemVariables: &sv, SessionHandler: NewSessionHandler(nil)},
 	}
-	b := &readline.Buffer{Editor: &readline.Editor{}}
+	editor.SetTty(&fixedFuzzyTTY{width: 24, height: 20, keys: []string{keys.CtrlT, keys.CtrlJ}})
+	noticeCommand := &fuzzyNoticeTestCommand{finder: f}
+	if err := editor.BindKey(keys.CtrlT, noticeCommand); err != nil {
+		t.Fatal(err)
+	}
 	input := "USE "
-	b.Cursor = b.InsertString(0, input)
-	if result := f.Call(t.Context(), b); result != readline.CONTINUE || b.String() != input {
-		t.Fatalf("result=%v buffer=%q", result, b.String())
+	editor.SetDefault([]string{input})
+	lines, err := editor.Read(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff([]string{input}, lines); diff != "" {
+		t.Fatalf("submitted lines mismatch (-want +got):\n%s", diff)
+	}
+	if err := out.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	got := terminal.String()
+	notice := "No completion candidates."
+	if !strings.Contains(got, notice) {
+		t.Fatalf("terminal notice missing from output: %q", got)
+	}
+	if strings.LastIndex(got, notice) > strings.LastIndex(got, input) {
+		t.Fatalf("editor input was not redrawn after the notice: %q", got)
 	}
 }
+
+type fuzzyNoticeTestCommand struct {
+	finder *fuzzyFinderCommand
+}
+
+func (*fuzzyNoticeTestCommand) String() string { return "TEST_COMPLETION_NOTICE" }
+func (c *fuzzyNoticeTestCommand) SetEditor(editor *multiline.Editor) {
+	c.finder.SetEditor(editor)
+}
+
+func (c *fuzzyNoticeTestCommand) Call(_ context.Context, b *readline.Buffer) readline.Result {
+	c.finder.showCompletionNotice(b, completionNotice(nil))
+	return readline.CONTINUE
+}
+
+type fixedFuzzyTTY struct {
+	width, height int
+	keys          []string
+	keyIndex      int
+}
+
+func (fixedFuzzyTTY) IsOpen() bool              { return true }
+func (fixedFuzzyTTY) Open(func(int, int)) error { return nil }
+func (tty *fixedFuzzyTTY) GetKey() (string, error) {
+	if tty.keyIndex >= len(tty.keys) {
+		return "", io.EOF
+	}
+	key := tty.keys[tty.keyIndex]
+	tty.keyIndex++
+	return key, nil
+}
+
+func (tty *fixedFuzzyTTY) Size() (int, int, error) {
+	return tty.width, tty.height, nil
+}
+func (fixedFuzzyTTY) Close() error { return nil }
 
 func TestResolveCandidatesShowsLoadingThenCaches(t *testing.T) {
 	t.Parallel()

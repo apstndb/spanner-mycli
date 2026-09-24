@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -564,7 +565,7 @@ func TestValidateInteractiveInput(t *testing.T) {
 			},
 			wantStmt:  nil,
 			wantErr:   true,
-			errString: "sql queries are limited to single statements in interactive mode",
+			errString: "sql queries are limited to single statements in interactive mode; use \\. file.sql or --file file.sql for a script",
 		},
 	}
 
@@ -1421,6 +1422,43 @@ func newIsolatedReadlineEditor(t *testing.T, keys []string, onGetKey func() erro
 	ed.SetWriter(io.Discard)
 	ed.SetTty(&scriptedTTY{keys: keys, onGetKey: onGetKey})
 	return ed
+}
+
+func TestReadInteractiveInput_preservesRejectedDraft(t *testing.T) {
+	for _, input := range []string{"SELECT 1; SELECT 2;", "SELECT \x00;", "-- note\nSELECT 1;\nSELECT 2;"} {
+		t.Run(input, func(t *testing.T) {
+			ed := newIsolatedReadlineEditor(t, []string{"\r", "\r"}, nil)
+			ed.SubmitOnEnterWhen(func([]string, int) bool { return true })
+			ed.SetDefault(strings.Split(input, "\n"))
+			cli := newReadlineTestCli(t)
+			_, err := cli.readInputLine(t.Context(), ed)
+			require.Error(t, err)
+			// Reading again with only Enter proves the whole draft was retained,
+			// rather than a reconstructed or previously successful statement.
+			lines, err := ed.Read(t.Context())
+			require.NoError(t, err)
+			require.Equal(t, input, strings.Join(lines, "\n"))
+		})
+	}
+}
+
+func TestReadInteractiveInput_consumesDraft(t *testing.T) {
+	for _, key := range []string{"\r", "\x03"} {
+		t.Run(fmt.Sprintf("key_%x", key), func(t *testing.T) {
+			ed := newIsolatedReadlineEditor(t, []string{key, "\r"}, nil)
+			ed.SubmitOnEnterWhen(func([]string, int) bool { return true })
+			ed.SetDefault([]string{"SELECT 1;"})
+			_, err := readInteractiveInput(t.Context(), ed)
+			if key == "\r" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorIs(t, err, readline.CtrlC)
+			}
+			lines, err := ed.Read(t.Context())
+			require.NoError(t, err)
+			require.Empty(t, strings.Join(lines, "\n"))
+		})
+	}
 }
 
 func TestInitializeMultilineEditor(t *testing.T) {
