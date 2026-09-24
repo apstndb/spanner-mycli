@@ -455,9 +455,10 @@ func newSystemVariablesWithDefaults() systemVariables {
 			TypeStylesRaw:              defaultTypeStyles,
 		},
 		Query: QueryVars{
-			RPCPriority:      defaultPriority,
-			StreamingMode:    enums.StreamingModeAuto, // Default to automatic selection based on format
-			TablePreviewRows: 50,                      // Default to 50 rows - enough to fit on one screen while prioritizing proper table formatting
+			RPCPriority:        defaultPriority,
+			StreamingMode:      enums.StreamingModeAuto, // Default to automatic selection based on format
+			TablePreviewRows:   50,                      // Default to 50 rows - enough to fit on one screen while prioritizing proper table formatting
+			BuildStatementMode: enums.ParseModeNoMemefish,
 		},
 		Transaction: TransactionVars{
 			ReturnCommitStats:       true,

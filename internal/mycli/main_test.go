@@ -459,8 +459,9 @@ func Test_newSystemVariablesWithDefaults(t *testing.T) {
 			TypeStylesRaw:        defaultTypeStyles,
 		},
 		Query: QueryVars{
-			RPCPriority:      defaultPriority,
-			TablePreviewRows: 50,
+			RPCPriority:        defaultPriority,
+			TablePreviewRows:   50,
+			BuildStatementMode: enums.ParseModeNoMemefish,
 		},
 		Transaction: TransactionVars{
 			ReturnCommitStats:       true,
