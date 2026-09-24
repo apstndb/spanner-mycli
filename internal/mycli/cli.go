@@ -135,8 +135,8 @@ func (c *Cli) RunInteractive(ctx context.Context) error {
 				fmt.Fprintln(c.GetWriter(), "Bye")
 				return NewExitCodeError(c.handleExit())
 			case isInterrupted(err):
-				// This section is currently redundant but keep as intended
-				c.PrintInteractiveError(err)
+				// Ctrl+C while editing is an intentional discard, not a query
+				// execution failure. Execution errors still use the normal path.
 				continue
 			default:
 				c.PrintInteractiveError(err)

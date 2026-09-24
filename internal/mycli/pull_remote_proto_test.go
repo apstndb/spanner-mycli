@@ -462,7 +462,7 @@ func TestPullRemoteProtoExecuteFreshCacheBatchAndDetached(t *testing.T) {
 			t.Fatal(err)
 		}
 		_, err = session.ExecuteStatement(t.Context(), stmt)
-		if err == nil || !strings.Contains(err.Error(), "not compatible with detached session mode") {
+		if err == nil || !strings.Contains(err.Error(), "no database selected; use USE <database>;") {
 			t.Fatalf("err=%v", err)
 		}
 		assertDescriptorState(t, session.systemVariables, beforeGraph, beforeFiles)

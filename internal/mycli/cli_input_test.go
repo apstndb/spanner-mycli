@@ -249,7 +249,7 @@ func TestCli_executeStatementInteractive_error(t *testing.T) {
 	t.Parallel()
 	cli := newDetachedEchoCli(t, io.Discard)
 	_, err := cli.executeStatementInteractive(context.Background(), &SelectStatement{Query: "SELECT 1"}, &inputStatement{statement: "SELECT 1"})
-	if err == nil || !strings.Contains(err.Error(), "not compatible with detached session mode") {
+	if err == nil || !strings.Contains(err.Error(), "no database selected; use USE <database>;") {
 		t.Fatalf("error = %v, want detached-mode rejection", err)
 	}
 }

@@ -101,7 +101,7 @@ func (r *VarRegistry) GetVariable(name string) Variable {
 func (r *VarRegistry) Get(name string) (string, error) {
 	rv, ok := r.vars[strings.ToUpper(name)]
 	if !ok {
-		return "", &ErrUnknownVariable{Name: name}
+		return "", r.unknownVariable(name)
 	}
 	value, err := rv.v.Get()
 	if err != nil {
@@ -116,7 +116,7 @@ func (r *VarRegistry) Set(name, value string, isGoogleSQL bool) error {
 	rv, ok := r.vars[upperName]
 	if !ok {
 		slog.Debug("Variable not found in registry", "name", upperName, "availableVars", maps.Keys(r.vars))
-		return &ErrUnknownVariable{Name: name}
+		return r.unknownVariable(name)
 	}
 
 	if err := r.checkSetPolicy(rv.def); err != nil {
@@ -163,7 +163,7 @@ func (r *VarRegistry) Add(name, value string) error {
 	// First check if the variable exists
 	rv, ok := r.vars[upperName]
 	if !ok {
-		return &ErrUnknownVariable{Name: name}
+		return r.unknownVariable(name)
 	}
 
 	// ADD is a mutation, so it must clear the same policy guards as SET; otherwise
@@ -185,7 +185,7 @@ func (r *VarRegistry) Add(name, value string) error {
 func (r *VarRegistry) GetDescription(name string) (string, error) {
 	rv, ok := r.vars[strings.ToUpper(name)]
 	if !ok {
-		return "", &ErrUnknownVariable{Name: name}
+		return "", r.unknownVariable(name)
 	}
 	return rv.def.desc, nil
 }
@@ -194,7 +194,7 @@ func (r *VarRegistry) GetDescription(name string) (string, error) {
 func (r *VarRegistry) IsReadOnly(name string) (bool, error) {
 	rv, ok := r.vars[strings.ToUpper(name)]
 	if !ok {
-		return false, &ErrUnknownVariable{Name: name}
+		return false, r.unknownVariable(name)
 	}
 	return !rv.def.settable(), nil
 }
