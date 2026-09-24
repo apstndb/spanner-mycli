@@ -118,3 +118,71 @@ func TestHelpTopicsInteractiveExamplesAndMetaEntry(t *testing.T) {
 		t.Fatalf("unknown topic error = %v", err)
 	}
 }
+
+func TestHelpKeysConfiguredValueDoesNotClaimLiveBinding(t *testing.T) {
+	t.Parallel()
+	var out bytes.Buffer
+	cli := newConnectedTestCli(t, &out)
+	for _, tc := range []struct {
+		name, value, want string
+	}{
+		{"changed stored value", "M_F", "M_F (stored value; active binding may differ)"},
+		{"empty stored value", "", "(empty; disables completion when set before editor startup)"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := cli.SystemVariables.SetFromSimple("CLI_FUZZY_FINDER_KEY", tc.value); err != nil {
+				t.Fatal(err)
+			}
+			out.Reset()
+			if _, err := cli.executeStatement(t.Context(), &HelpTopicStatement{Topic: "KEYS"}, false, "HELP KEYS;", &out); err != nil {
+				t.Fatal(err)
+			}
+			text := out.String()
+			for _, want := range []string{tc.want, "configured once when the interactive editor starts", "--set CLI_FUZZY_FINDER_KEY=M_F at startup", "In-session SET/RESET does not rebind"} {
+				if !strings.Contains(text, want) {
+					t.Errorf("HELP KEYS output missing %q in %s", want, text)
+				}
+			}
+		})
+	}
+}
+
+func TestHelpTopicInitOnlyAndUnavailableValue(t *testing.T) {
+	t.Parallel()
+	var out bytes.Buffer
+	cli := newConnectedTestCli(t, &out)
+	for _, tc := range []struct {
+		name string
+		want []string
+		omit []string
+	}{
+		{
+			name: "CLI_ENABLE_ADC_PLUS",
+			want: []string{"write before session creation only", "--set CLI_ENABLE_ADC_PLUS=FALSE", "interactive SET is not supported"},
+			omit: []string{"SET CLI_ENABLE_ADC_PLUS = <value>"},
+		},
+		{
+			name: "COMMIT_RESPONSE",
+			want: []string{"Unavailable (no value yet)"},
+			omit: []string{"Unavailable: ignored"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			out.Reset()
+			if _, err := cli.executeStatement(t.Context(), &HelpTopicStatement{Topic: tc.name}, false, "HELP "+tc.name+";", &out); err != nil {
+				t.Fatal(err)
+			}
+			text := out.String()
+			for _, want := range tc.want {
+				if !strings.Contains(text, want) {
+					t.Errorf("output missing %q in %s", want, text)
+				}
+			}
+			for _, omit := range tc.omit {
+				if strings.Contains(text, omit) {
+					t.Errorf("output contains %q in %s", omit, text)
+				}
+			}
+		})
+	}
+}

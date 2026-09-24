@@ -16,6 +16,7 @@ package mycli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -53,17 +54,10 @@ func (s *HelpTopicStatement) Execute(ctx context.Context, session *Session, out 
 			{"Run a script", `\. file.sql in the interactive CLI; --file file.sql at startup.`},
 		}
 	case "KEYS":
-		completion := "Ctrl+T (default) opens fuzzy completion."
-		if session != nil {
-			key := session.systemVariables.Feature.FuzzyFinderKey
-			if key == "" {
-				completion = "Fuzzy completion is disabled (CLI_FUZZY_FINDER_KEY is empty)."
-			} else if key != "C_T" {
-				completion = key + " (CLI_FUZZY_FINDER_KEY) opens fuzzy completion."
-			}
-		}
 		rows = []helpDetailRow{
-			{"Complete a statement or argument", completion},
+			{"Complete a statement or argument", "Ctrl+T by default; configured once when the interactive editor starts."},
+			{"Choose a different key", "--set CLI_FUZZY_FINDER_KEY=M_F at startup (or use startup config)."},
+			{"Change active binding", "In-session SET/RESET does not rebind; configure at startup and relaunch."},
 			{"Cancel editing", "Ctrl+C interrupts the current input and returns to the prompt."},
 			{"Insert a line", "Ctrl+J inserts a newline without submitting the statement."},
 			{"Tab", "Inserts indentation; it does not invoke completion."},
@@ -74,6 +68,13 @@ func (s *HelpTopicStatement) Execute(ctx context.Context, session *Session, out 
 			{"Change prompt", `\R mycli> changes the prompt.`},
 			{"Output to file", `\o results.txt redirects; \O restores screen output.`},
 			{"Copy output", `\T session.log tees to file; \t stops tee.`},
+		}
+		if session != nil {
+			configured := session.systemVariables.Feature.FuzzyFinderKey
+			if configured == "" {
+				configured = "(empty; disables completion when set before editor startup)"
+			}
+			rows = append(rows, helpDetailRow{"Configured key now", configured + " (stored value; active binding may differ)"})
 		}
 	default:
 		var sysVars *systemVariables
@@ -91,14 +92,20 @@ func (s *HelpTopicStatement) Execute(ctx context.Context, session *Session, out 
 		}
 		name := def.name
 		info := sysVars.ListVariableInfo()[name]
+		access := info.operations()
+		if def.initOnly && !info.ReadOnly && !info.Unimplemented {
+			access += " (write before session creation only)"
+		}
 		rows = []helpDetailRow{
 			{"Variable", name},
 			{"Description", info.Description},
-			{"Access", info.operations()},
+			{"Access", access},
 		}
 		if session != nil {
 			if value, err := currentHelpValue(sysVars.Registry, name); err == nil {
 				rows = append(rows, helpDetailRow{"Current value", value})
+			} else if errors.Is(err, errIgnored) {
+				rows = append(rows, helpDetailRow{"Current value", "Unavailable (no value yet)"})
 			} else {
 				rows = append(rows, helpDetailRow{"Current value", "Unavailable: " + err.Error()})
 			}
@@ -121,7 +128,13 @@ func (s *HelpTopicStatement) Execute(ctx context.Context, session *Session, out 
 			rows = append(rows, helpDetailRow{"Allowed values", strings.Join(values, ", ")})
 		}
 		rows = append(rows, helpDetailRow{"Inspect", "SHOW VARIABLE " + name + ";"})
-		if !info.ReadOnly && !info.Unimplemented {
+		if def.initOnly && !info.ReadOnly && !info.Unimplemented {
+			example := "--set " + name + "=<value>"
+			if name == "CLI_ENABLE_ADC_PLUS" {
+				example = "--set CLI_ENABLE_ADC_PLUS=FALSE"
+			}
+			rows = append(rows, helpDetailRow{"Change before session creation", example + " (at startup; interactive SET is not supported)"})
+		} else if !info.ReadOnly && !info.Unimplemented {
 			example := "SET " + name + " = <value>;"
 			if name == "CLI_FORMAT" {
 				example = "SET CLI_FORMAT = 'VERTICAL';"
