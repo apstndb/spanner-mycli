@@ -1414,6 +1414,15 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 	},
 	{
 		Descriptions: []clientSideStatementDescription{
+			{Usage: `Show help for a variable or task (OUTPUT or KEYS)`, Syntax: `HELP <name>`},
+		},
+		Pattern: regexp.MustCompile(`(?is)^HELP\s+(?P<topic>[A-Z_][A-Z_0-9]*)$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			return &HelpTopicStatement{Topic: strings.ToUpper(groups["topic"])}, nil
+		},
+	},
+	{
+		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `Exit CLI`,
 				Syntax: `EXIT`,

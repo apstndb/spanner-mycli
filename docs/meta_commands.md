@@ -4,6 +4,11 @@ Meta commands are special commands that start with a backslash (`\`) and are pro
 
 **Note**: Meta commands are only supported in interactive mode. They cannot be used in batch mode (with `--execute` or `--file` flags).
 
+Enter `\?` for a short keyboard and meta-command guide. It is equivalent to
+`HELP KEYS;` and needs no semicolon. Use `HELP OUTPUT;` for output formats,
+redirection, and script examples, or `HELP CLI_FORMAT;` for the current format,
+allowed values, and its startup RESET baseline.
+
 ## Shell Command Execution (`\!`)
 
 The `\!` meta command allows you to execute shell commands without leaving the CLI:
