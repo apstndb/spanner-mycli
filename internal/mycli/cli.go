@@ -146,6 +146,9 @@ func (c *Cli) RunInteractive(ctx context.Context) error {
 
 		stmt, err := c.parseStatement(input)
 		if err != nil {
+			// Keep the original editor text, including comments and delimiters,
+			// available for correction without adding rejected SQL to history.
+			ed.SetDefault(ed.Lines())
 			c.PrintInteractiveError(err)
 			continue
 		}
@@ -177,10 +180,6 @@ func (c *Cli) RunInteractive(ctx context.Context) error {
 // readInputLine reads and processes an input line from the editor.
 func (c *Cli) readInputLine(ctx context.Context, ed *multiline.Editor) (*inputStatement, error) {
 	input, err := readInteractiveInput(ctx, ed)
-
-	// reset for next input before continue
-	ed.SetDefault(nil)
-
 	if err != nil {
 		return nil, err
 	}
