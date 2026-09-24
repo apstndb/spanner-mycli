@@ -76,12 +76,20 @@ func TestPlanNodeCompletionCandidates(t *testing.T) {
 	// No SessionHandler, client or editor: local resolution cannot use their
 	// network/loading paths. Re-read the current cache on every invocation.
 	f := &fuzzyFinderCommand{cli: &Cli{SystemVariables: &sv}}
-	for _, cache := range []*LastQueryCache{nil, {}, {QueryPlan: &sppb.QueryPlan{}}} {
+	for _, cache := range []*LastQueryCache{{QueryPlan: &sppb.QueryPlan{}}} {
 		sv.LastResult.QueryCache = cache
 		got, err := f.resolveCandidates(t.Context(), fuzzyCompletePlanNode, "")
 		if err != nil || len(got) != 0 {
 			t.Fatalf("empty cache: %v, %v", got, err)
 		}
+	}
+	sv.LastResult.QueryCache = &LastQueryCache{}
+	if got, err := f.resolveCandidates(t.Context(), fuzzyCompletePlanNode, ""); !errors.Is(err, errNoCachedPlan) || len(got) != 0 {
+		t.Fatalf("missing plan: %v, %v", got, err)
+	}
+	sv.LastResult.QueryCache = nil
+	if got, err := f.resolveCandidates(t.Context(), fuzzyCompletePlanNode, ""); !errors.Is(err, errNoCachedPlan) || len(got) != 0 {
+		t.Fatalf("missing cache: %v, %v", got, err)
 	}
 	nodes := []*sppb.PlanNode{
 		{Index: 0, Kind: sppb.PlanNode_RELATIONAL, DisplayName: "Scan"},
@@ -126,7 +134,7 @@ func TestPlanNodeCompletionCandidates(t *testing.T) {
 	}
 	sv.LastResult.QueryCache = &LastQueryCache{}
 	got, err = f.resolveCandidates(t.Context(), fuzzyCompletePlanNode, "")
-	if err != nil || len(got) != 0 {
+	if !errors.Is(err, errNoCachedPlan) || len(got) != 0 {
 		t.Fatalf("planless replacement: %v %v", got, err)
 	}
 	ctx, cancel := context.WithCancel(t.Context())

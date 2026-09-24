@@ -16,6 +16,7 @@ package mycli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -40,6 +41,8 @@ const (
 	fuzzyFetchTimeout = 10 * time.Second
 	fuzzyCacheTTL     = 30 * time.Second
 )
+
+var errNoCachedPlan = errors.New("no cached query plan")
 
 // fuzzyCacheEntry holds cached completion candidates with expiry metadata.
 type fuzzyCacheEntry struct {
@@ -117,22 +120,29 @@ func (f *fuzzyFinderCommand) Call(ctx context.Context, B *readline.Buffer) readl
 	candidates, err := f.resolveCandidates(ctx, result.completionType, result.context)
 	if err != nil {
 		slog.Debug("fuzzy finder: failed to fetch candidates", "completionType", result.completionType, "err", err)
+		f.showCompletionNotice(B, completionNotice(err))
 		return readline.CONTINUE
 	}
 	if len(candidates) == 0 {
+		f.showCompletionNotice(B, completionNotice(nil))
 		return readline.CONTINUE
 	}
 
 	// Terminal handoff: move cursor below editor, run fzf, then restore
 	rewind := f.editor.GotoEndLine()
 
-	chosen, ok := runFzf(candidates, result.argPrefix, completionHeader(result.completionType), f.cli.SystemVariables.Feature.FuzzyFinderOptions)
+	chosen, ok, outcome := runFzf(candidates, result.argPrefix, completionHeader(result.completionType), f.cli.SystemVariables.Feature.FuzzyFinderOptions)
 
 	rewind()
 	B.RepaintLastLine()
 
 	if !ok {
-		// User cancelled (Escape/Ctrl+C) or no match
+		switch outcome {
+		case fuzzyPickerNoMatch:
+			f.showCompletionNotice(B, "No matches. Clear the search or adjust the prefix.")
+		case fuzzyPickerFailed:
+			f.showCompletionNotice(B, "Could not run fuzzy finder. Check CLI_FUZZY_FINDER_OPTIONS, then retry.")
+		}
 		return readline.CONTINUE
 	}
 
@@ -300,6 +310,12 @@ func detectFuzzyContext(input string) fuzzyContextResult {
 			if numGroups > 1 {
 				context = input[loc[2]:loc[3]]
 			}
+			if comp.CompletionType == fuzzyCompleteVariable {
+				words := strings.Fields(input)
+				if len(words) >= 2 && strings.EqualFold(words[0], "SET") && strings.EqualFold(words[1], "LOCAL") {
+					context = "LOCAL"
+				}
+			}
 
 			return fuzzyContextResult{
 				completionType: comp.CompletionType,
@@ -466,13 +482,23 @@ func extractValue(line string, hasLabels bool) string {
 	return line
 }
 
+type fuzzyPickerOutcome int
+
+const (
+	fuzzyPickerFailed fuzzyPickerOutcome = iota
+	fuzzyPickerSelected
+	fuzzyPickerNoMatch
+	fuzzyPickerCancelled
+)
+
 // runFzf runs the fzf fuzzy finder with the given candidates and optional initial query.
 // When candidates have separate Label and Value, fzf displays/searches the Label
 // but the returned string is the Value (for insertion into the buffer).
 // extraOptions is an optional string of additional fzf flags (from CLI_FUZZY_FINDER_OPTIONS)
 // that are appended after built-in defaults so user options take precedence.
-// Returns the selected Value and true, or ("", false) if cancelled or no match.
-func runFzf(candidates []fzfItem, query string, header string, extraOptions string) (string, bool) {
+// Returns the selected Value and its outcome, distinguishing no match, cancellation,
+// and other failures so only actionable cases are shown to the user.
+func runFzf(candidates []fzfItem, query string, header string, extraOptions string) (string, bool, fuzzyPickerOutcome) {
 	prepared := prepareFzfOptions(candidates, header)
 
 	args := prepared.args
@@ -480,7 +506,7 @@ func runFzf(candidates []fzfItem, query string, header string, extraOptions stri
 		extra, err := shlex.Split(extraOptions)
 		if err != nil {
 			slog.Debug("fuzzy finder: parse extra options", "err", err)
-			return "", false
+			return "", false, fuzzyPickerFailed
 		}
 		args = append(args, extra...)
 	}
@@ -488,7 +514,7 @@ func runFzf(candidates []fzfItem, query string, header string, extraOptions stri
 	opts, err := fzf.ParseOptions(false, args)
 	if err != nil {
 		slog.Debug("fuzzy finder: parse fzf options", "err", err)
-		return "", false
+		return "", false, fuzzyPickerFailed
 	}
 	if query != "" {
 		opts.Query = query
@@ -523,9 +549,15 @@ func runFzf(candidates []fzfItem, query string, header string, extraOptions stri
 
 	if selected {
 		result = extractValue(result, prepared.hasLabels)
+		return result, true, fuzzyPickerSelected
 	}
-
-	return result, selected
+	if code == fzf.ExitNoMatch {
+		return "", false, fuzzyPickerNoMatch
+	}
+	if code == fzf.ExitInterrupt {
+		return "", false, fuzzyPickerCancelled
+	}
+	return "", false, fuzzyPickerFailed
 }
 
 // runFzfFilter runs fzf in non-interactive --filter mode for testing.
@@ -822,6 +854,9 @@ func (f *fuzzyFinderCommand) fetchCandidates(ctx context.Context, ct fuzzyComple
 	case fuzzyCompleteDatabase:
 		return f.fetchDatabaseCandidates(ctx)
 	case fuzzyCompleteVariable:
+		if strings.EqualFold(completionContext, "LOCAL") {
+			return f.fetchVariableCandidatesForScope("LOCAL"), nil
+		}
 		return toFzfItems(f.fetchVariableCandidates()), nil
 	case fuzzyCompleteTable:
 		return f.fetchTableCandidates(ctx)
@@ -864,8 +899,8 @@ func (f *fuzzyFinderCommand) fetchPlanNodeCandidates(ctx context.Context) ([]fzf
 		return nil, err
 	}
 	cache := f.cli.SystemVariables.LastResult.QueryCache
-	if cache == nil {
-		return nil, nil
+	if cache == nil || cache.QueryPlan == nil {
+		return nil, errNoCachedPlan
 	}
 	var items []fzfItem
 	for i, node := range cache.QueryPlan.GetPlanNodes() {
@@ -1007,11 +1042,66 @@ func (f *fuzzyFinderCommand) fetchSetTargetCandidates() []fzfItem {
 		{Value: "PARAM", Label: "PARAM (define query parameter)", Suffix: " "},
 		{Value: "LOCAL", Label: "LOCAL (transaction-scoped SET)", Suffix: " "},
 	}
-	for _, name := range f.fetchVariableCandidates() {
-		items = append(items, fzfItem{Value: name})
+	return append(items, f.fetchVariableCandidatesForScope("SET")...)
+}
+
+// fetchVariableCandidatesForScope uses registry metadata as the source of
+// truth for SET eligibility. "LOCAL" requests transaction-local candidates.
+func (f *fuzzyFinderCommand) fetchVariableCandidatesForScope(scope string) []fzfItem {
+	sv := f.cli.SystemVariables
+	if sv == nil || sv.Registry == nil {
+		return nil
+	}
+	info := sv.Registry.ListVariableInfo()
+	values := sv.Registry.ListVariables()
+	names := make([]string, 0, len(info))
+	for name, metadata := range info {
+		def := sv.Registry.lookupDef(name)
+		if def == nil || metadata.Unimplemented {
+			continue
+		}
+		switch strings.ToUpper(scope) {
+		case "LOCAL":
+			if !def.localAllowed() || sv.Registry.checkSetPolicy(def) != nil {
+				continue
+			}
+		case "SET":
+			if sv.Registry.checkSetPolicy(def) != nil {
+				continue
+			}
+		default:
+			continue
+		}
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	items := make([]fzfItem, 0, len(names))
+	for _, name := range names {
+		metadata := info[name]
+		item := fzfItem{Value: name, Label: name}
+		if description := compactCompletionText(metadata.Description, 96); description != "" {
+			item.Label += " — " + description
+		}
+		if value, ok := values[name]; ok && !secretLikeVariableName.MatchString(name) {
+			if value = compactCompletionText(value, 48); value != "" {
+				item.Label += " [" + value + "]"
+			}
+		}
+		items = append(items, item)
 	}
 	return items
 }
+
+func compactCompletionText(value string, limit int) string {
+	value = strings.Join(strings.FieldsFunc(value, func(r rune) bool { return unicode.IsControl(r) || unicode.IsSpace(r) }), " ")
+	runes := []rune(value)
+	if len(runes) > limit {
+		return string(runes[:limit]) + "…"
+	}
+	return value
+}
+
+var secretLikeVariableName = regexp.MustCompile(`(?i)(password|secret|token|credential|private.?key|api.?key)`)
 
 // fetchVariableCandidates returns sorted system variable names from the registry.
 func (f *fuzzyFinderCommand) fetchVariableCandidates() []string {
@@ -1248,4 +1338,45 @@ func (f *fuzzyFinderCommand) fetchParamCandidates() []fzfItem {
 		})
 	}
 	return items
+}
+
+func completionNotice(err error) string {
+	if errors.Is(err, context.Canceled) {
+		return ""
+	}
+	if errors.Is(err, errNoCachedPlan) {
+		return "No cached query plan. Try EXPLAIN or set CLI_QUERY_MODE = 'PLAN'."
+	}
+	if err != nil {
+		return "Could not load completion candidates. Retry, or set CLI_LOG_LEVEL = 'DEBUG' for details."
+	}
+	return "No completion candidates."
+}
+
+// showCompletionNotice writes below the active editor line and then redraws
+// the visible editor rows, keeping feedback out of the editable input buffer.
+func (f *fuzzyFinderCommand) showCompletionNotice(B *readline.Buffer, message string) {
+	if message == "" || f.editor == nil {
+		return
+	}
+	out := f.editor.Out()
+	if B != nil {
+		f.editor.Sync(B.String())
+	}
+	f.editor.GotoEndLine()
+	fmt.Fprintln(out, message)
+	if err := out.Flush(); err != nil {
+		slog.Debug("fuzzy finder: flush completion notice", "err", err)
+	}
+	rows := f.editor.PrintFromLine(f.editor.Headline())
+	rows -= f.editor.CursorLine() - f.editor.Headline()
+	if rows > 0 {
+		fmt.Fprintf(out, "\x1b[%dF", rows)
+	}
+	if B != nil && B.Out != nil {
+		B.RepaintLastLine()
+	}
+	if err := out.Flush(); err != nil {
+		slog.Debug("fuzzy finder: restore completion input", "err", err)
+	}
 }

@@ -15,6 +15,7 @@
 package mycli
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -257,6 +258,33 @@ func TestDetectFuzzyContext(t *testing.T) {
 			wantCompletionType: fuzzyCompleteSetTarget,
 			wantArgPrefix:      "",
 			wantArgStartPos:    4,
+			wantSuffix:         " = ",
+		},
+		{
+			name:               "SET LOCAL with partial name",
+			input:              "SET LOCAL CLI_",
+			wantCompletionType: fuzzyCompleteVariable,
+			wantArgPrefix:      "CLI_",
+			wantArgStartPos:    10,
+			wantContext:        "LOCAL",
+			wantSuffix:         " = ",
+		},
+		{
+			name:               "SET LOCAL with tab separators",
+			input:              "SET\tLOCAL\tCLI_",
+			wantCompletionType: fuzzyCompleteVariable,
+			wantArgPrefix:      "CLI_",
+			wantArgStartPos:    10,
+			wantContext:        "LOCAL",
+			wantSuffix:         " = ",
+		},
+		{
+			name:               "SET LOCAL with repeated spaces",
+			input:              "SET  LOCAL   CLI_",
+			wantCompletionType: fuzzyCompleteVariable,
+			wantArgPrefix:      "CLI_",
+			wantArgStartPos:    13,
+			wantContext:        "LOCAL",
 			wantSuffix:         " = ",
 		},
 		{
@@ -1337,6 +1365,7 @@ func TestFetchSetTargetCandidates(t *testing.T) {
 	t.Parallel()
 
 	sysVars := newSystemVariablesWithDefaults()
+	sysVars.ensureRegistry()
 	f := &fuzzyFinderCommand{cli: &Cli{SystemVariables: &sysVars}}
 
 	items := f.fetchSetTargetCandidates()
@@ -1360,6 +1389,115 @@ func TestFetchSetTargetCandidates(t *testing.T) {
 	}
 	if !sawVariable {
 		t.Errorf("candidates do not include system variable CLI_FORMAT")
+	}
+	for _, item := range items[2:] {
+		info := sysVars.Registry.ListVariableInfo()[item.Value]
+		if info.ReadOnly {
+			t.Errorf("read-only variable %q is offered as a SET target", item.Value)
+		}
+	}
+	var format fzfItem
+	for _, item := range items {
+		if item.Value == "CLI_FORMAT" {
+			format = item
+		}
+	}
+	if !strings.Contains(format.Label, "format") || !strings.Contains(format.Label, "TABLE") {
+		t.Errorf("CLI_FORMAT label = %q, want description and current value", format.Label)
+	}
+	if strings.Contains(format.Label, "\n") {
+		t.Errorf("candidate label contains newline: %q", format.Label)
+	}
+
+	local := f.fetchVariableCandidatesForScope("LOCAL")
+	localValues := make(map[string]bool, len(local))
+	for _, item := range local {
+		localValues[item.Value] = true
+		if !sysVars.Registry.ListVariableInfo()[item.Value].LocalAllowed {
+			t.Errorf("SET LOCAL offered ineligible variable %q", item.Value)
+		}
+	}
+	if !localValues["CLI_FORMAT"] {
+		t.Error("SET LOCAL candidates do not include CLI_FORMAT")
+	}
+	for name, metadata := range sysVars.Registry.ListVariableInfo() {
+		if metadata.ReadOnly && localValues[name] {
+			t.Errorf("SET LOCAL includes read-only variable %q", name)
+		}
+	}
+
+	containsCandidate := func(items []fzfItem, name string) bool {
+		for _, item := range items {
+			if item.Value == name {
+				return true
+			}
+		}
+		return false
+	}
+	if !containsCandidate(f.fetchSetTargetCandidates(), "CLI_ENABLE_ADC_PLUS") {
+		t.Error("pre-session SET candidates omit init-only CLI_ENABLE_ADC_PLUS")
+	}
+	sysVars.inTransaction = func() bool { return false }
+	if containsCandidate(f.fetchSetTargetCandidates(), "CLI_ENABLE_ADC_PLUS") {
+		t.Error("session SET candidates include init-only CLI_ENABLE_ADC_PLUS")
+	}
+	sysVars.inTransaction = func() bool { return true }
+	for _, name := range []string{"READONLY", "DIRECTED_READ", "CLI_SAVEPOINT_SUPPORT"} {
+		if containsCandidate(f.fetchSetTargetCandidates(), name) {
+			t.Errorf("transaction SET candidates include guarded variable %q", name)
+		}
+	}
+	sysVars.inTransaction = func() bool { return false }
+	sysVars.inManualBatch = func() bool { return true }
+	if containsCandidate(f.fetchSetTargetCandidates(), "CLI_SAVEPOINT_SUPPORT") {
+		t.Error("manual-batch SET candidates include guarded CLI_SAVEPOINT_SUPPORT")
+	}
+}
+
+func TestLocalCompletionHonorsCurrentMutationGuards(t *testing.T) {
+	t.Parallel()
+	sv := newSystemVariablesWithDefaults()
+	sv.featureVarDefs = append(sv.featureVarDefs, varDef{
+		name:       "CLI_TEST_LOCAL_BATCH_GUARD",
+		desc:       "test-only batch-guarded local variable",
+		scope:      scopeSession,
+		batchGuard: true,
+		bind:       func(sv *systemVariables) Variable { return BoolVar(&sv.Transaction.ReadOnly) },
+	})
+	manualBatch := false
+	sv.inManualBatch = func() bool { return manualBatch }
+	sv.ensureRegistry()
+	f := &fuzzyFinderCommand{cli: &Cli{SystemVariables: &sv}}
+	contains := func(items []fzfItem, name string) bool {
+		for _, item := range items {
+			if item.Value == name {
+				return true
+			}
+		}
+		return false
+	}
+	if !contains(f.fetchVariableCandidatesForScope("LOCAL"), "CLI_TEST_LOCAL_BATCH_GUARD") {
+		t.Fatal("local candidate missing while mutation policy allows it")
+	}
+	manualBatch = true
+	if contains(f.fetchVariableCandidatesForScope("LOCAL"), "CLI_TEST_LOCAL_BATCH_GUARD") {
+		t.Fatal("local candidate present while a manual batch blocks mutation")
+	}
+}
+
+func TestCompletionNoticeOutput(t *testing.T) {
+	t.Parallel()
+	if got := completionNotice(errNoCachedPlan); got != "No cached query plan. Try EXPLAIN or set CLI_QUERY_MODE = 'PLAN'." {
+		t.Fatalf("missing-plan notice = %q", got)
+	}
+	if got := completionNotice(fmt.Errorf("backend unavailable")); got != "Could not load completion candidates. Retry, or set CLI_LOG_LEVEL = 'DEBUG' for details." {
+		t.Fatalf("fetch-error notice = %q", got)
+	}
+	if got := completionNotice(nil); got != "No completion candidates." {
+		t.Fatalf("empty-result notice = %q", got)
+	}
+	if got := completionNotice(context.Canceled); got != "" {
+		t.Fatalf("cancellation notice = %q, want quiet", got)
 	}
 }
 
