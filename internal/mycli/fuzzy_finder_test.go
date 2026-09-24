@@ -21,8 +21,176 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nyaosorg/go-readline-ny"
 	"github.com/stretchr/testify/assert"
 )
+
+func TestFuzzyArgumentReplacementPreservesRightHandText(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  string // | marks the cursor
+		chosen string
+		suffix string // non-empty overrides the completion entry suffix
+		want   string // | marks the cursor after completion
+	}{
+		{
+			name:   "SET name before equals",
+			input:  "SET CLI_FOR| = 'VERTICAL';",
+			chosen: "CLI_FORMAT",
+			want:   "SET CLI_FORMAT| = 'VERTICAL';",
+		},
+		{
+			name:   "cursor inside SET name",
+			input:  "SET CLI_F|OR = 'VERTICAL';",
+			chosen: "CLI_FORMAT",
+			want:   "SET CLI_FORMAT| = 'VERTICAL';",
+		},
+		{
+			name:   "cursor before existing SET name",
+			input:  "SET |CLI_FOR = 'VERTICAL';",
+			chosen: "CLI_FORMAT",
+			want:   "SET CLI_FORMAT| = 'VERTICAL';",
+		},
+		{
+			name:   "SET name with adjacent equals",
+			input:  "SET CLI_FOR|='VERTICAL';",
+			chosen: "CLI_FORMAT",
+			want:   "SET CLI_FORMAT|='VERTICAL';",
+		},
+		{
+			name:   "SET name before value without equals",
+			input:  "SET CLI_FOR| value;",
+			chosen: "CLI_FORMAT",
+			want:   "SET CLI_FORMAT =| value;",
+		},
+		{
+			name:   "SET name before commented equals",
+			input:  "SET CLI_FOR| /* note = */ = 'VERTICAL';",
+			chosen: "CLI_FORMAT",
+			want:   "SET CLI_FORMAT| /* note = */ = 'VERTICAL';",
+		},
+		{
+			name:   "SET PARAM item uses existing space",
+			input:  "SET PA|RAM foo STRING;",
+			chosen: "PARAM",
+			suffix: " ",
+			want:   "SET PARAM| foo STRING;",
+		},
+		{
+			name:   "USE preserves role and comment",
+			input:  "USE old| ROLE admin; -- note",
+			chosen: "newdb",
+			want:   "USE newdb| ROLE admin; -- note",
+		},
+		{
+			name:   "role token after cursor is replaced",
+			input:  "USE mydb ROLE ad|min; -- note",
+			chosen: "admin",
+			want:   "USE mydb ROLE admin|; -- note",
+		},
+		{
+			name:   "DUMP list separator remains",
+			input:  "DUMP TABLES Sing|ers, Albums;",
+			chosen: "Singers2",
+			want:   "DUMP TABLES Singers2|, Albums;",
+		},
+		{
+			name:   "value token and semicolon",
+			input:  "SET CLI_FORMAT = TA|BLE; -- note",
+			chosen: "VERTICAL",
+			want:   "SET CLI_FORMAT = VERTICAL|; -- note",
+		},
+		{
+			name:   "quoted value contains semicolon and space",
+			input:  "SET CLI_FORMAT = 'TA|B; LE'; -- note",
+			chosen: "'VERTICAL'",
+			want:   "SET CLI_FORMAT = 'VERTICAL'|; -- note",
+		},
+		{
+			name:   "quoted value escape crosses cursor",
+			input:  "SET CLI_FORMAT = 'TA\\|'B;'; -- note",
+			chosen: "'VERTICAL'",
+			want:   "SET CLI_FORMAT = 'VERTICAL'|; -- note",
+		},
+		{
+			name:   "comment immediately after token",
+			input:  "RESET CLI_FOR|/* note */;",
+			chosen: "CLI_FORMAT",
+			want:   "RESET CLI_FORMAT|/* note */;",
+		},
+		{
+			name:   "hash comment immediately after token",
+			input:  "RESET CLI_FOR|# note",
+			chosen: "CLI_FORMAT",
+			want:   "RESET CLI_FORMAT|# note",
+		},
+		{
+			name:   "Unicode before and inside token",
+			input:  "  USE 🧑‍💻東|京 ROLE admin;",
+			chosen: "大阪",
+			want:   "  USE 大阪| ROLE admin;",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			before, after, ok := strings.Cut(tt.input, "|")
+			if !ok {
+				t.Fatal("input needs a cursor marker")
+			}
+			input := before + after
+			cells := make([]readline.Cell, 0, len(input))
+			for _, m := range readline.StringToMoji(input) {
+				cells = append(cells, readline.Cell{Moji: m})
+			}
+			b := &readline.Buffer{Buffer: cells}
+			cursor := readline.MojiCountInString(before)
+			context := detectFuzzyContext(before)
+			if context.completionType == 0 {
+				t.Fatalf("input %q did not select argument completion", before)
+			}
+			end := fuzzyArgumentEnd(b.SubString(cursor, len(b.Buffer)), cursor, context.argPrefix)
+			right := b.SubString(end, len(b.Buffer))
+			suffix := context.suffix
+			if tt.suffix != "" {
+				suffix = tt.suffix
+			}
+			inserted := tt.chosen + fuzzyCompletionSuffix(suffix, right)
+			got := b.SubString(0, context.argStartPos) + inserted + right
+			wantBefore, wantAfter, ok := strings.Cut(tt.want, "|")
+			if !ok {
+				t.Fatal("want needs a cursor marker")
+			}
+			if got != wantBefore+wantAfter {
+				t.Errorf("completed input = %q, want %q", got, wantBefore+wantAfter)
+			}
+			gotCursor := context.argStartPos + readline.MojiCountInString(inserted)
+			if gotCursor != readline.MojiCountInString(wantBefore) {
+				t.Errorf("cursor = %d, want %d", gotCursor, readline.MojiCountInString(wantBefore))
+			}
+		})
+	}
+}
+
+func TestFuzzyCompletionSuffixSkipsSQLTrivia(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		right string
+		want  string
+	}{
+		{"block comment", " /* note */ = 'VERTICAL';", ""},
+		{"line comment", " -- note\n = 'VERTICAL';", ""},
+		{"line comment with carriage return", " -- note\r = 'VERTICAL';", ""},
+		{"hash comment", " # note\n = 'VERTICAL';", ""},
+		{"no equals after comment", " /* note = */ value;", " ="},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := fuzzyCompletionSuffix(" = ", tt.right); got != tt.want {
+				t.Errorf("suffix before %q = %q, want %q", tt.right, got, tt.want)
+			}
+		})
+	}
+}
 
 func TestDetectFuzzyContext(t *testing.T) {
 	tests := []struct {

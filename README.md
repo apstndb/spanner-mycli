@@ -283,9 +283,14 @@ $ docker run -it \
 
 ### Interactive mode
 
+Rejected input remains in the editor for correction, including syntax errors and
+multiple statements submitted together. Press Ctrl+C to discard the draft.
+Interactive input accepts one statement at a time; use `\. file.sql` or
+`--file file.sql` to execute a script containing multiple statements.
+
 ```
 $ spanner-mycli -p myproject -i myinstance -d mydb
-Connected.
+Connected: project="myproject", instance="myinstance", database="mydb", role="(default)", endpoint="(client default)"
 spanner> CREATE TABLE users (
       ->   id INT64 NOT NULL,
       ->   name STRING(16) NOT NULL,
@@ -539,7 +544,7 @@ The tee file will NOT contain:
 ```bash
 # Example: Logging a session with CLI_ECHO_INPUT
 $ spanner-mycli --tee session.log -p myproject -i myinstance -d mydb
-Connected.
+Connected: project="myproject", instance="myinstance", database="mydb", role="(default)", endpoint="(client default)"
 spanner> SET CLI_ECHO_INPUT = TRUE;
 Query OK, 0 rows affected (0.00 sec)
 
@@ -697,6 +702,7 @@ and `{A|B|...}` for a mutually exclusive keyword.
 | Show recent statement history                                               | `SHOW HISTORY LIMIT <n>;`                                                                                  | LIMIT n returns the n most recent statements, oldest first within the window.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | Show help                                                                   | `HELP;`                                                                                                    |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | Show help for variables                                                     | `HELP VARIABLES;`                                                                                          |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Show help for a variable or task (OUTPUT or KEYS)                           | `HELP <name>;`                                                                                             |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | Exit CLI                                                                    | `EXIT;`                                                                                                    |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | Compose query using LLM                                                     | `GEMINI "<prompt>";`                                                                                       |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | Execute CQL                                                                 | `CQL ...;`                                                                                                 | EARLY EXPERIMENTAL                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
@@ -713,6 +719,7 @@ Meta commands are special commands that start with a backslash (`\`) and are pro
 
 | Command | Description | Example |
 |---------|-------------|---------|
+| `\?` | Show keyboard shortcuts and meta-command help | `\?` |
 | `\! <shell_command>` | Execute a system shell command | `\! ls -la` |
 | `\. <filename>` | Execute SQL statements from a file | `\. script.sql` |
 | `\R <prompt_string>` | Change the prompt string | `\R mycli> ` |
@@ -744,7 +751,7 @@ Example:
 
 ```
 $ spanner-mycli -p myproject -i myinstance -d mydb --prompt='[%p:%i:%d]%n%t%% '
-Connected.
+Connected: project="myproject", instance="myinstance", database="mydb", role="(default)", endpoint="(client default)"
 [myproject:myinstance:mydb]
 %
 [myproject:myinstance:mydb]
@@ -765,7 +772,16 @@ Query OK, 0 rows affected (0.08 sec)
 (rw txn)% ...
 ```
 
-The default prompt is `spanner%t> `.
+The default prompt is `spanner%t> `: it stays compact and shows transaction
+state without including the database name.
+
+To include the current database (or `*detached*`), opt in with
+`--prompt='spanner:%d%t> '` or `SET CLI_PROMPT = 'spanner:%d%t> ';`.
+Long database names can make this custom prompt wide.
+
+Startup and successful interactive `USE` commands print the project, instance,
+database, role, and configured endpoint regardless of the prompt setting.
+`(client default)` means no endpoint was explicitly configured.
 
 ### Prompt2
 
@@ -963,8 +979,8 @@ You can start spanner-mycli in detached mode using the `--detached` flag:
 
 ```bash
 $ spanner-mycli -p myproject -i myinstance --detached
-Connected in detached mode.
-spanner:*detached*> SHOW DATABASES;
+Connected: project="myproject", instance="myinstance", database="*detached*", role="(default)", endpoint="(client default)"
+spanner> SHOW DATABASES;
 +----------------+
 | Database       |
 +----------------+
@@ -973,7 +989,7 @@ spanner:*detached*> SHOW DATABASES;
 +----------------+
 2 rows in set (18.66 msecs)
 
-spanner:*detached*> CREATE DATABASE mydb;
+spanner> CREATE DATABASE mydb;
 Query OK, 0 rows affected (45.20 sec)
 ```
 
@@ -983,14 +999,14 @@ You can switch between databases and detached mode during an interactive session
 
 ```bash
 # Connect to a database from detached mode
-spanner:*detached*> USE mydb;
-Database changed
-spanner:mydb> 
+spanner> USE mydb;
+Database changed: project="myproject", instance="myinstance", database="mydb", role="(default)", endpoint="(client default)"
+spanner>
 
 # Detach from database and return to detached mode  
-spanner:mydb> DETACH;
+spanner> DETACH;
 Detached from database
-spanner:*detached*>
+spanner>
 ```
 
 ### Database Parameter Priority
@@ -1043,6 +1059,9 @@ SET RPC_PRIORITY = 'HIGH';
 RESET STATEMENT_TIMEOUT;
 RESET ALL;
 HELP VARIABLES;
+HELP CLI_FORMAT;
+HELP OUTPUT;
+HELP KEYS;
 ```
 
 Detailed values, examples, and restrictions are maintained in the variable reference:
@@ -1270,8 +1289,8 @@ spanner-mycli -p PROJECT -i INSTANCE -d DATABASE \
 You can use `--proto-descriptor-file` option to specify proto descriptor file.
 
 ```
-$ spanner-mycli --proto-descriptor-file=testdata/protos/order_descriptors.pb 
-Connected.
+$ spanner-mycli -p myproject -i myinstance -d mydb --proto-descriptor-file=testdata/protos/order_descriptors.pb
+Connected: project="myproject", instance="myinstance", database="mydb", role="(default)", endpoint="(client default)"
 spanner> SHOW LOCAL PROTO;
 +---------------------------------+-------+-------------------+--------------------+
 | full_name                       | kind  | package           | file               |
