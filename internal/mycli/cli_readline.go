@@ -340,12 +340,15 @@ func validateInteractiveInput(statements []inputStatement) (*inputStatement, err
 	case 1:
 		return &statements[0], nil
 	default:
-		return nil, errors.New("sql queries are limited to single statements in interactive mode")
+		return nil, errors.New("sql queries are limited to single statements in interactive mode; use \\. file.sql or --file file.sql for a script")
 	}
 }
 
 func readInteractiveInput(ctx context.Context, ed *multiline.Editor) (*inputStatement, error) {
 	lines, err := ed.Read(ctx)
+	// A submitted draft is consumed once. Only validation failures restore it;
+	// Ctrl+C, EOF and read failures must not bring discarded input back.
+	ed.SetDefault(nil)
 
 	// Handle read errors
 	if stmt, procErr := processInputLines(lines, err); procErr != nil || stmt != nil {
@@ -367,10 +370,15 @@ func readInteractiveInput(ctx context.Context, ed *multiline.Editor) (*inputStat
 
 	statements, err := separateInput(input)
 	if err != nil {
+		ed.SetDefault(lines)
 		return nil, err
 	}
 
-	return validateInteractiveInput(statements)
+	stmt, err := validateInteractiveInput(statements)
+	if err != nil && strings.TrimSpace(input) != "" {
+		ed.SetDefault(lines)
+	}
+	return stmt, err
 }
 
 func isInterrupted(err error) bool {

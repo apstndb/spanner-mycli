@@ -25,7 +25,6 @@ import (
 	"sync"
 	"time"
 	"unicode"
-	"unicode/utf8"
 
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"cloud.google.com/go/spanner"
@@ -138,9 +137,13 @@ func (f *fuzzyFinderCommand) Call(ctx context.Context, B *readline.Buffer) readl
 	}
 
 	var selected string
+	replaceEnd := len(B.Buffer)
 	if result.completionType != 0 {
-		// Argument completion: insert the candidate with optional suffix.
-		selected = chosen + resolveCompletionSuffix(candidates, chosen, result.suffix)
+		// Argument completion replaces only the current token. A value, ROLE
+		// clause, comment, or terminator after the cursor remains in place.
+		replaceEnd = fuzzyArgumentEnd(B.SubString(B.Cursor, len(B.Buffer)), B.Cursor, result.argPrefix)
+		right := B.SubString(replaceEnd, len(B.Buffer))
+		selected = chosen + fuzzyCompletionSuffix(resolveCompletionSuffix(candidates, chosen, result.suffix), right)
 	} else {
 		// Statement name completion: insert the fixed prefix text.
 		// No-arg statements (no trailing space) get a semicolon for immediate submit.
@@ -151,16 +154,105 @@ func (f *fuzzyFinderCommand) Call(ctx context.Context, B *readline.Buffer) readl
 		}
 	}
 
-	// Replace the argument portion: delete from argStartPos to end of buffer,
-	// then insert the selected value.
-	bufLen := len(B.Buffer)
-	if result.argStartPos < bufLen {
-		B.Delete(result.argStartPos, bufLen-result.argStartPos)
+	if result.argStartPos < replaceEnd {
+		B.Delete(result.argStartPos, replaceEnd-result.argStartPos)
 	}
 	B.Cursor = result.argStartPos
 	B.InsertAndRepaint(selected)
 
 	return readline.CONTINUE
+}
+
+// fuzzyArgumentEnd returns the end of the token under the cursor in editor
+// cells. The editor uses one cell per displayed character, which may contain
+// multiple Unicode code points; MojiCountInString keeps positions aligned.
+func fuzzyArgumentEnd(right string, cursor int, prefix string) int {
+	quote, escaped := fuzzyArgumentQuote(prefix)
+	for i, r := range right {
+		if escaped {
+			escaped = false
+			continue
+		}
+		if quote != 0 {
+			switch r {
+			case '\\':
+				escaped = true
+			case quote:
+				quote = 0
+			}
+			continue
+		}
+		if r == '\'' || r == '"' || r == '`' {
+			quote = r
+			continue
+		}
+		if unicode.IsSpace(r) || strings.ContainsRune("=,;()#", r) ||
+			strings.HasPrefix(right[i:], "--") || strings.HasPrefix(right[i:], "/*") {
+			return cursor + readline.MojiCountInString(right[:i])
+		}
+	}
+	return cursor + readline.MojiCountInString(right)
+}
+
+func fuzzyArgumentQuote(prefix string) (rune, bool) {
+	var quote rune
+	escaped := false
+	for _, r := range prefix {
+		if escaped {
+			escaped = false
+			continue
+		}
+		if quote != 0 {
+			switch r {
+			case '\\':
+				escaped = true
+			case quote:
+				quote = 0
+			}
+		} else if r == '\'' || r == '"' || r == '`' {
+			quote = r
+		}
+	}
+	return quote, escaped
+}
+
+// Reuse an existing separator to avoid turning "SET name = value" into
+// "SET name =  = value" when completion runs before the equals sign.
+func fuzzyCompletionSuffix(suffix, right string) string {
+	if suffix == " = " && strings.HasPrefix(fuzzySkipTrivia(right), "=") {
+		return ""
+	}
+	if suffix == " = " && right != "" && unicode.IsSpace([]rune(right)[0]) {
+		return " ="
+	}
+	if suffix == " " && right != "" && unicode.IsSpace([]rune(right)[0]) {
+		return ""
+	}
+	return suffix
+}
+
+// fuzzySkipTrivia looks past SQL whitespace and comments when checking whether
+// an equals sign is already present. It leaves the original text untouched.
+func fuzzySkipTrivia(s string) string {
+	for {
+		s = strings.TrimLeftFunc(s, unicode.IsSpace)
+		switch {
+		case strings.HasPrefix(s, "/*"):
+			end := strings.Index(s[2:], "*/")
+			if end < 0 {
+				return ""
+			}
+			s = s[end+4:]
+		case strings.HasPrefix(s, "--") || strings.HasPrefix(s, "#"):
+			end := strings.IndexAny(s, "\r\n")
+			if end < 0 {
+				return ""
+			}
+			s = s[end+1:]
+		default:
+			return s
+		}
+	}
 }
 
 // resolveCompletionSuffix returns the suffix to append after the chosen
@@ -182,7 +274,7 @@ func resolveCompletionSuffix(candidates []fzfItem, chosen, defaultSuffix string)
 type fuzzyContextResult struct {
 	completionType fuzzyCompletionType // 0 means statement name completion (fallback)
 	argPrefix      string              // partial argument already typed (used as initial fzf query)
-	argStartPos    int                 // position in the current line buffer where the argument starts (in runes)
+	argStartPos    int                 // position in the current line buffer where the argument starts (in editor cells)
 	context        string              // additional context from earlier capture groups (e.g., variable name for value completion)
 	suffix         string              // appended after selected candidate (e.g., " = " for SET variable name)
 }
@@ -202,7 +294,7 @@ func detectFuzzyContext(input string) fuzzyContextResult {
 			numGroups := len(loc)/2 - 1
 			lastIdx := numGroups * 2
 			argPrefix := input[loc[lastIdx]:loc[lastIdx+1]]
-			argStart := utf8.RuneCountInString(input[:loc[lastIdx]])
+			argStart := readline.MojiCountInString(input[:loc[lastIdx]])
 
 			var context string
 			if numGroups > 1 {
@@ -222,7 +314,7 @@ func detectFuzzyContext(input string) fuzzyContextResult {
 	// Fallback: statement name completion.
 	// argPrefix is the trimmed input; argStartPos is after leading spaces.
 	trimmed := strings.TrimLeftFunc(input, unicode.IsSpace)
-	leadingSpaces := len([]rune(input)) - len([]rune(trimmed))
+	leadingSpaces := readline.MojiCountInString(input) - readline.MojiCountInString(trimmed)
 	return fuzzyContextResult{
 		completionType: 0, // statement name completion
 		argPrefix:      trimmed,

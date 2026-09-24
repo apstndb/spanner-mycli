@@ -283,6 +283,11 @@ $ docker run -it \
 
 ### Interactive mode
 
+Rejected input remains in the editor for correction, including syntax errors and
+multiple statements submitted together. Press Ctrl+C to discard the draft.
+Interactive input accepts one statement at a time; use `\. file.sql` or
+`--file file.sql` to execute a script containing multiple statements.
+
 ```
 $ spanner-mycli -p myproject -i myinstance -d mydb
 Connected: project="myproject", instance="myinstance", database="mydb", role="(default)", endpoint="(client default)"
