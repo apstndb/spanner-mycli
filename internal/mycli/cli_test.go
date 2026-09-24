@@ -975,6 +975,58 @@ func TestResultLineTimestampAlias(t *testing.T) {
 	}
 }
 
+func TestCli_connectionSummary(t *testing.T) {
+	t.Setenv("SPANNER_EMULATOR_HOST", "")
+	identity := ConnectionVars{Project: "p", Instance: "i", Database: "db", Role: "reader"}
+	sv, session := newBoundSwitchSession(t, identity)
+	cli := &Cli{SessionHandler: NewSessionHandler(session), SystemVariables: sv}
+	for _, tt := range []struct {
+		name                 string
+		mode                 SessionMode
+		host                 string
+		port                 int
+		wantDB, wantEndpoint string
+	}{
+		{"default", DatabaseConnected, "", 0, "db", "(client default)"},
+		{"custom", DatabaseConnected, "localhost", 9010, "db", "localhost:9010"},
+		{"ipv6", DatabaseConnected, "::1", 9010, "db", "[::1]:9010"},
+		{"detached", Detached, "localhost", 9010, "*detached*", "localhost:9010"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			session.mode = tt.mode
+			sv.Config.Host, sv.Config.Port = tt.host, tt.port
+			want := fmt.Sprintf("project=\"p\", instance=\"i\", database=%q, role=\"reader\", endpoint=%q", tt.wantDB, tt.wantEndpoint)
+			if got := cli.connectionSummary(); got != want {
+				t.Fatalf("summary = %q, want %q", got, want)
+			}
+		})
+	}
+	// The immutable adopted identity wins over an unadopted proposed setting.
+	session.mode = DatabaseConnected
+	sv.Connection.Database = "not-adopted"
+	if got := cli.connectionSummary(); strings.Contains(got, "not-adopted") {
+		t.Fatalf("summary exposed an unadopted identity: %s", got)
+	}
+	sv.Config.Host, sv.Config.Port = "configured.example", 443
+	t.Setenv("SPANNER_EMULATOR_HOST", "localhost:9021")
+	if got := cli.connectionSummary(); !strings.Contains(got, `endpoint="localhost:9021"`) {
+		t.Fatalf("missing emulator endpoint: %s", got)
+	}
+}
+
+func TestCli_defaultPromptShowsDatabase(t *testing.T) {
+	t.Parallel()
+	sv, session := newBoundSwitchSession(t, ConnectionVars{Database: "db"})
+	cli := &Cli{SessionHandler: NewSessionHandler(session), SystemVariables: sv}
+	if got := cli.getInterpolatedPrompt(defaultPrompt); got != "spanner:db> " {
+		t.Fatalf("connected prompt = %q", got)
+	}
+	session.mode = Detached
+	if got := cli.getInterpolatedPrompt(defaultPrompt); got != "spanner:*detached*> " {
+		t.Fatalf("detached prompt = %q", got)
+	}
+}
+
 func TestCli_getInterpolatedPrompt(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

@@ -40,7 +40,7 @@ import (
 )
 
 const (
-	defaultPrompt  = "spanner%t> "
+	defaultPrompt  = "spanner:%d%t> "
 	defaultPrompt2 = "%P%R> "
 	// defaultVertexAIModel / defaultVertexAILocation moved to
 	// internal/mycli/feature/llm (#778); the GEMINI feature supplies them to the
