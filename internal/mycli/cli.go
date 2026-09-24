@@ -119,6 +119,11 @@ func (c *Cli) RunInteractive(ctx context.Context) error {
 		return NewExitCodeError(c.ExitOnError(err))
 	}
 	c.SystemVariables.interactiveHistory = history
+	if c.SystemVariables.Feature.FuzzyFinderKey == "C_T" {
+		fmt.Fprintln(c.GetWriter(), `Tip: HELP OUTPUT; or \? for keys and meta-commands. Ctrl+T completes; Ctrl+C cancels input.`)
+	} else {
+		fmt.Fprintln(c.GetWriter(), `Tip: HELP OUTPUT; or \? for keys and meta-commands. Ctrl+C cancels input.`)
+	}
 
 	// ensure reset
 	c.waitingStatus = ""

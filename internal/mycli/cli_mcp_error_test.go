@@ -36,12 +36,15 @@ func TestMCPExecuteStatementIsError(t *testing.T) {
 		sql       string
 		wantError bool
 		wantText  string
+		wantPart  string
 	}{
 		{name: "success HELP", sql: "HELP", wantError: false},
+		{name: "success HELP KEYS", sql: "HELP KEYS", wantError: false, wantPart: "Ctrl+T"},
 		{name: "parse failure", sql: "SHOW QUERY PROFILE nope", wantError: true},
-		// \q is unsupported and fails in ParseMetaCommand; \R is a supported
-		// local MetaCommandStatement that must hit the dedicated MCP guard.
+		// Both a traditional meta-command and the HELP KEYS shortcut are
+		// rejected by their raw input spelling.
 		{name: "meta command policy", sql: `\R audit`, wantError: true, wantText: metaPolicyText},
+		{name: "help shortcut meta policy", sql: `\?`, wantError: true, wantText: metaPolicyText},
 		{name: "execution failure", sql: "SET CLI_FORMAT = 'not-a-format'", wantError: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -63,7 +66,11 @@ func TestMCPExecuteStatementIsError(t *testing.T) {
 				if text != tc.wantText {
 					t.Fatalf("tool text = %q, want %q", text, tc.wantText)
 				}
-			} else if tc.wantError {
+			}
+			if tc.wantPart != "" && !strings.Contains(text, tc.wantPart) {
+				t.Fatalf("tool text = %q, want substring %q", text, tc.wantPart)
+			}
+			if tc.wantError {
 				if !strings.HasPrefix(text, "ERROR:") {
 					t.Fatalf("error text %q, want ERROR: prefix", text)
 				}
