@@ -161,7 +161,7 @@ Flags:
       --format=STRING                          Output format (table, tab, tsv, vertical, html, xml, csv, jsonl)
   -v, --verbose                                Display verbose output.
       --credential=STRING                      Use the specific credential file
-      --prompt=PROMPT                          Set the prompt to the specified format (default: "spanner:%d%t> ")
+      --prompt=PROMPT                          Set the prompt to the specified format (default: "spanner%t> ")
       --prompt2=PROMPT2                        Set the prompt2 to the specified format (default: "%P%R> ")
       --history=HISTORY                        Set the history file to the specified path (default:
                                                ~/.spanner_mycli_history)
@@ -286,14 +286,14 @@ $ docker run -it \
 ```
 $ spanner-mycli -p myproject -i myinstance -d mydb
 Connected: project="myproject", instance="myinstance", database="mydb", role="(default)", endpoint="(client default)"
-spanner:mydb> CREATE TABLE users (
+spanner> CREATE TABLE users (
       ->   id INT64 NOT NULL,
       ->   name STRING(16) NOT NULL,
       ->   active BOOL NOT NULL
       -> ) PRIMARY KEY (id);
 Query OK, 0 rows affected (30.60 sec)
 
-spanner:mydb> SHOW TABLES;
+spanner> SHOW TABLES;
 +----------------+
 | Tables_in_mydb |
 +----------------+
@@ -301,10 +301,10 @@ spanner:mydb> SHOW TABLES;
 +----------------+
 1 rows in set (18.66 msecs)
 
-spanner:mydb> INSERT INTO users (id, name, active) VALUES (1, "foo", true), (2, "bar", false);
+spanner> INSERT INTO users (id, name, active) VALUES (1, "foo", true), (2, "bar", false);
 Query OK, 2 rows affected (5.08 sec)
 
-spanner:mydb> SELECT * FROM users ORDER BY id ASC;
+spanner> SELECT * FROM users ORDER BY id ASC;
 +----+------+--------+
 | id | name | active |
 +----+------+--------+
@@ -313,7 +313,7 @@ spanner:mydb> SELECT * FROM users ORDER BY id ASC;
 +----+------+--------+
 2 rows in set (3.09 msecs)
 
-spanner:mydb> BEGIN;
+spanner> BEGIN;
 Query OK, 0 rows affected (0.02 sec)
 
 spanner(rw txn)> DELETE FROM users WHERE active = false;
@@ -322,7 +322,7 @@ Query OK, 1 rows affected (0.61 sec)
 spanner(rw txn)> COMMIT;
 Query OK, 0 rows affected (0.20 sec)
 
-spanner:mydb> SELECT * FROM users ORDER BY id ASC;
+spanner> SELECT * FROM users ORDER BY id ASC;
 +----+------+--------+
 | id | name | active |
 +----+------+--------+
@@ -330,13 +330,13 @@ spanner:mydb> SELECT * FROM users ORDER BY id ASC;
 +----+------+--------+
 1 rows in set (2.58 msecs)
 
-spanner:mydb> DROP TABLE users;
+spanner> DROP TABLE users;
 Query OK, 0 rows affected (25.20 sec)
 
-spanner:mydb> SHOW TABLES;
+spanner> SHOW TABLES;
 Empty set (2.02 msecs)
 
-spanner:mydb> EXIT;
+spanner> EXIT;
 Bye
 ```
 
@@ -540,10 +540,10 @@ The tee file will NOT contain:
 # Example: Logging a session with CLI_ECHO_INPUT
 $ spanner-mycli --tee session.log -p myproject -i myinstance -d mydb
 Connected: project="myproject", instance="myinstance", database="mydb", role="(default)", endpoint="(client default)"
-spanner:mydb> SET CLI_ECHO_INPUT = TRUE;
+spanner> SET CLI_ECHO_INPUT = TRUE;
 Query OK, 0 rows affected (0.00 sec)
 
-spanner:mydb> SELECT 1 AS test;
+spanner> SELECT 1 AS test;
 # In session.log:
 # SELECT 1 AS test;
 # +------+
@@ -765,13 +765,16 @@ Query OK, 0 rows affected (0.08 sec)
 (rw txn)% ...
 ```
 
-The default prompt is `spanner:%d%t> `: it shows the current database (or
-`*detached*`) and transaction state. Startup and successful interactive `USE`
-commands also print the project, instance, database, role, and configured endpoint.
-`(client default)` means no endpoint was explicitly configured.
+The default prompt is `spanner%t> `: it stays compact and shows transaction
+state without including the database name.
 
-Use `--prompt='spanner%t> '` to retain the compact prompt used in some examples
-below; existing custom prompts are unchanged.
+To include the current database (or `*detached*`), opt in with
+`--prompt='spanner:%d%t> '` or `SET CLI_PROMPT = 'spanner:%d%t> ';`.
+Long database names can make this custom prompt wide.
+
+Startup and successful interactive `USE` commands print the project, instance,
+database, role, and configured endpoint regardless of the prompt setting.
+`(client default)` means no endpoint was explicitly configured.
 
 ### Prompt2
 
@@ -970,7 +973,7 @@ You can start spanner-mycli in detached mode using the `--detached` flag:
 ```bash
 $ spanner-mycli -p myproject -i myinstance --detached
 Connected: project="myproject", instance="myinstance", database="*detached*", role="(default)", endpoint="(client default)"
-spanner:*detached*> SHOW DATABASES;
+spanner> SHOW DATABASES;
 +----------------+
 | Database       |
 +----------------+
@@ -979,7 +982,7 @@ spanner:*detached*> SHOW DATABASES;
 +----------------+
 2 rows in set (18.66 msecs)
 
-spanner:*detached*> CREATE DATABASE mydb;
+spanner> CREATE DATABASE mydb;
 Query OK, 0 rows affected (45.20 sec)
 ```
 
@@ -989,14 +992,14 @@ You can switch between databases and detached mode during an interactive session
 
 ```bash
 # Connect to a database from detached mode
-spanner:*detached*> USE mydb;
+spanner> USE mydb;
 Database changed: project="myproject", instance="myinstance", database="mydb", role="(default)", endpoint="(client default)"
-spanner:mydb> 
+spanner>
 
 # Detach from database and return to detached mode  
-spanner:mydb> DETACH;
+spanner> DETACH;
 Detached from database
-spanner:*detached*>
+spanner>
 ```
 
 ### Database Parameter Priority
@@ -1278,7 +1281,7 @@ You can use `--proto-descriptor-file` option to specify proto descriptor file.
 ```
 $ spanner-mycli -p myproject -i myinstance -d mydb --proto-descriptor-file=testdata/protos/order_descriptors.pb
 Connected: project="myproject", instance="myinstance", database="mydb", role="(default)", endpoint="(client default)"
-spanner:mydb> SHOW LOCAL PROTO;
+spanner> SHOW LOCAL PROTO;
 +---------------------------------+-------+-------------------+--------------------+
 | full_name                       | kind  | package           | file               |
 +---------------------------------+-------+-------------------+--------------------+
@@ -1289,10 +1292,10 @@ spanner:mydb> SHOW LOCAL PROTO;
 +---------------------------------+-------+-------------------+--------------------+
 4 rows in set (0.00 sec)
 
-spanner:mydb> SET PROTO_DESCRIPTORS_FILE_PATH += "testdata/protos/query_plan_descriptors.pb";
+spanner> SET PROTO_DESCRIPTORS_FILE_PATH += "testdata/protos/query_plan_descriptors.pb";
 Empty set (0.00 sec)
 
-spanner:mydb> SHOW LOCAL PROTO;
+spanner> SHOW LOCAL PROTO;
 +----------------------------------------------------------------+-------+-------------------+-----------------------------------------------+
 | full_name                                                      | kind  | package           | file                                          |
 +----------------------------------------------------------------+-------+-------------------+-----------------------------------------------+
@@ -1314,10 +1317,10 @@ spanner:mydb> SHOW LOCAL PROTO;
 +----------------------------------------------------------------+-------+-------------------+-----------------------------------------------+
 15 rows in set (0.00 sec)
 
-spanner:mydb> CREATE PROTO BUNDLE (`examples.shipping.Order`);
+spanner> CREATE PROTO BUNDLE (`examples.shipping.Order`);
 Query OK, 0 rows affected (6.34 sec)
 
-spanner:mydb> SHOW REMOTE PROTO;
+spanner> SHOW REMOTE PROTO;
 +-------------------------+-------+-------------------+
 | full_name               | kind  | package           |
 +-------------------------+-------+-------------------+
@@ -1325,10 +1328,10 @@ spanner:mydb> SHOW REMOTE PROTO;
 +-------------------------+-------+-------------------+
 1 rows in set (0.94 sec)
 
-spanner:mydb> ALTER PROTO BUNDLE INSERT (`examples.shipping.Order.Item`);
+spanner> ALTER PROTO BUNDLE INSERT (`examples.shipping.Order.Item`);
 Query OK, 0 rows affected (9.25 sec)
 
-spanner:mydb> SHOW REMOTE PROTO;
+spanner> SHOW REMOTE PROTO;
 +------------------------------+-------+-------------------+
 | full_name                    | kind  | package           |
 +------------------------------+-------+-------------------+
@@ -1337,13 +1340,13 @@ spanner:mydb> SHOW REMOTE PROTO;
 +------------------------------+-------+-------------------+
 2 rows in set (0.82 sec)
 
-spanner:mydb> ALTER PROTO BUNDLE UPDATE (`examples.shipping.Order`);
+spanner> ALTER PROTO BUNDLE UPDATE (`examples.shipping.Order`);
 Query OK, 0 rows affected (8.68 sec)
 
-spanner:mydb> ALTER PROTO BUNDLE DELETE (`examples.shipping.Order.Item`);
+spanner> ALTER PROTO BUNDLE DELETE (`examples.shipping.Order.Item`);
 Query OK, 0 rows affected (9.55 sec)
 
-spanner:mydb> SHOW REMOTE PROTO;
+spanner> SHOW REMOTE PROTO;
 +-------------------------+-------+-------------------+
 | full_name               | kind  | package           |
 +-------------------------+-------+-------------------+

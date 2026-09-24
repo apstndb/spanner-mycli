@@ -1014,15 +1014,15 @@ func TestCli_connectionSummary(t *testing.T) {
 	}
 }
 
-func TestCli_defaultPromptShowsDatabase(t *testing.T) {
+func TestCli_defaultPromptStaysCompact(t *testing.T) {
 	t.Parallel()
-	sv, session := newBoundSwitchSession(t, ConnectionVars{Database: "db"})
+	sv, session := newBoundSwitchSession(t, ConnectionVars{Database: "database-with-a-long-name"})
 	cli := &Cli{SessionHandler: NewSessionHandler(session), SystemVariables: sv}
-	if got := cli.getInterpolatedPrompt(defaultPrompt); got != "spanner:db> " {
+	if got := cli.getInterpolatedPrompt(defaultPrompt); got != "spanner> " {
 		t.Fatalf("connected prompt = %q", got)
 	}
 	session.mode = Detached
-	if got := cli.getInterpolatedPrompt(defaultPrompt); got != "spanner:*detached*> " {
+	if got := cli.getInterpolatedPrompt(defaultPrompt); got != "spanner> " {
 		t.Fatalf("detached prompt = %q", got)
 	}
 }
