@@ -24,9 +24,11 @@ import (
 	"io"
 	"log/slog"
 	"math"
+	"net"
 	"os"
 	"os/signal"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -106,14 +108,11 @@ func (c *Cli) RunInteractive(ctx context.Context) error {
 			return NewExitCodeError(c.ExitOnError(err))
 		}
 
-		if exists {
-			fmt.Fprintf(c.GetWriter(), "Connected.\n")
-		} else {
+		if !exists {
 			return NewExitCodeError(c.ExitOnError(fmt.Errorf("unknown database %q", c.SystemVariables.Connection.Database)))
 		}
-	} else {
-		fmt.Fprintf(c.GetWriter(), "Connected in detached mode.\n")
 	}
+	fmt.Fprintf(c.GetWriter(), "Connected: %s\n", c.connectionSummary())
 
 	ed, history, err := initializeMultilineEditor(c)
 	if err != nil {
@@ -151,6 +150,9 @@ func (c *Cli) RunInteractive(ctx context.Context) error {
 
 		stmt, err := c.parseStatement(input)
 		if err != nil {
+			// Keep the original editor text, including comments and delimiters,
+			// available for correction without adding rejected SQL to history.
+			ed.SetDefault(ed.Lines())
 			c.PrintInteractiveError(err)
 			continue
 		}
@@ -179,13 +181,35 @@ func (c *Cli) RunInteractive(ctx context.Context) error {
 	}
 }
 
+// connectionSummary uses the adopted session identity, so failed USE attempts
+// cannot advertise a database or role that was never connected successfully.
+func (c *Cli) connectionSummary() string {
+	session := c.SessionHandler.GetSession()
+	identity := session.connection
+	database := identity.Database
+	if session.IsDetached() {
+		database = "*detached*"
+	}
+	role := identity.Role
+	if role == "" {
+		role = "(default)"
+	}
+	config := session.systemVariables.Config
+	endpoint := "(client default)"
+	// The Spanner client applies the emulator endpoint after caller options,
+	// so it also takes precedence over an explicitly configured host here.
+	if host := os.Getenv("SPANNER_EMULATOR_HOST"); host != "" {
+		endpoint = host
+	} else if config.Host != "" {
+		endpoint = net.JoinHostPort(config.Host, strconv.Itoa(config.Port))
+	}
+	return fmt.Sprintf("project=%q, instance=%q, database=%q, role=%q, endpoint=%q",
+		identity.Project, identity.Instance, database, role, endpoint)
+}
+
 // readInputLine reads and processes an input line from the editor.
 func (c *Cli) readInputLine(ctx context.Context, ed *multiline.Editor) (*inputStatement, error) {
 	input, err := readInteractiveInput(ctx, ed)
-
-	// reset for next input before continue
-	ed.SetDefault(nil)
-
 	if err != nil {
 		return nil, err
 	}
@@ -646,9 +670,13 @@ func (c *Cli) executeStatement(ctx context.Context, stmt Statement, interactive 
 		// Handle special output messages for session-changing statements
 		switch stmt.(type) {
 		case *UseStatement, *UseDatabaseMetaCommand:
-			fmt.Fprintf(w, "Database changed")
+			if interactive {
+				fmt.Fprintf(w, "Database changed: %s\n", c.connectionSummary())
+			} else {
+				fmt.Fprintln(w, "Database changed")
+			}
 		case *DetachStatement:
-			fmt.Fprintf(w, "Detached from database")
+			fmt.Fprintln(w, "Detached from database")
 		}
 	}
 
