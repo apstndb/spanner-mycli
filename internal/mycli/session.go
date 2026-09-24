@@ -557,7 +557,7 @@ func (s *Session) ValidateStatementExecution(stmt Statement) error {
 	if s.IsDetached() {
 		// In Detached mode, only DetachedCompatible statements can be executed
 		if _, ok := stmt.(DetachedCompatible); !ok {
-			return fmt.Errorf("statement %T is not compatible with detached session mode", stmt)
+			return errors.New("no database selected; use USE <database>; to connect, or SHOW DATABASES; to list databases")
 		}
 	}
 	// In DatabaseConnected mode, all statements can be executed

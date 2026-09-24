@@ -113,7 +113,7 @@ func (r *VarRegistry) prepareReset(names []string) (*preparedReset, error) {
 	for _, name := range names {
 		def := r.lookupDef(name)
 		if def == nil {
-			return nil, &ErrUnknownVariable{Name: name}
+			return nil, r.unknownVariable(name)
 		}
 		if _, dup := seen[def.name]; dup {
 			continue

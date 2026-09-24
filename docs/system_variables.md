@@ -12,6 +12,9 @@ There are two families:
 
 They can be used with the following statements and flags:
 
+If a variable name contains a small typo, the error suggests nearby canonical
+names. Suggestions never change a setting automatically.
+
 ```sql
 SHOW VARIABLES;                 -- List all variables with their current values
 SHOW VARIABLE CLI_FORMAT;       -- Show a single variable

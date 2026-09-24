@@ -1,9 +1,59 @@
 package mycli
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
+
+func TestUnknownVariableSuggestions(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"CLI_FORMTA", "cli_formt", "CLI_FORMATT", "CLI_FORMXT"} {
+		t.Run(name, func(t *testing.T) {
+			sv := newSystemVariablesWithDefaultsForTest()
+			before := sv.Display.CLIFormat
+			err := sv.SetFromSimple(name, "VERTICAL")
+			if err == nil || !strings.Contains(err.Error(), "did you mean CLI_FORMAT?") {
+				t.Fatalf("error = %v, want CLI_FORMAT suggestion", err)
+			}
+			if sv.Display.CLIFormat != before {
+				t.Fatal("suggestion changed the setting")
+			}
+			_, err = sv.Registry.Get(name)
+			var unknown *ErrUnknownVariable
+			if !errors.As(err, &unknown) {
+				t.Fatalf("error = %v, want typed unknown variable", err)
+			}
+		})
+	}
+	sv := newSystemVariablesWithDefaultsForTest()
+	err := sv.SetFromSimple("NOT_A_SETTING", "1")
+	if err == nil || strings.Contains(err.Error(), "did you mean") {
+		t.Fatalf("distant name should not suggest a setting: %v", err)
+	}
+}
+
+func TestNearbyVariableName(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		a, b string
+		want bool
+	}{
+		{"", "", true},
+		{"", "A", true},
+		{"", "AB", false},
+		{"AB", "BA", true},
+		{"AB", "CD", false},
+		{"ABC", "AC", true},
+		{"AC", "ABC", true},
+		{"ABC", "ADC", true},
+		{"ABCD", "ACBE", false},
+	} {
+		if got := nearbyVariableName(tt.a, tt.b); got != tt.want {
+			t.Errorf("nearbyVariableName(%q, %q) = %v, want %v", tt.a, tt.b, got, tt.want)
+		}
+	}
+}
 
 // TestSystemVariables_ErrorTypes tests all error type Error() methods for coverage
 func TestSystemVariables_ErrorTypes(t *testing.T) {

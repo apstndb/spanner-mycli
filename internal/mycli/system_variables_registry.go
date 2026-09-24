@@ -33,7 +33,7 @@ func (sv *systemVariables) setFrom(name string, value string, isGoogleSQL bool) 
 	// message callers expect, so they pass through unchanged.
 	var unknownErr *ErrUnknownVariable
 	if errors.As(err, &unknownErr) {
-		return fmt.Errorf("unknown variable name: %v", name)
+		return fmt.Errorf("unknown variable name: %v%s", name, unknownErr.hint())
 	}
 
 	return err
@@ -53,7 +53,7 @@ func (sv *systemVariables) addFrom(name string, value string, isGoogleSQL bool) 
 	}
 	var unknownErr *ErrUnknownVariable
 	if errors.As(err, &unknownErr) {
-		return fmt.Errorf("unknown variable name: %v", name)
+		return fmt.Errorf("unknown variable name: %v%s", name, unknownErr.hint())
 	}
 
 	return err
@@ -79,7 +79,7 @@ func (sv *systemVariables) get(name string) (map[string]string, error) {
 		}
 		var unknownErr *ErrUnknownVariable
 		if errors.As(err, &unknownErr) {
-			return nil, fmt.Errorf("unknown variable name: %v", name)
+			return nil, fmt.Errorf("unknown variable name: %v%s", name, unknownErr.hint())
 		}
 		return nil, err
 	}
