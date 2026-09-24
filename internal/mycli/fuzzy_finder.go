@@ -132,13 +132,17 @@ func (f *fuzzyFinderCommand) Call(ctx context.Context, B *readline.Buffer) readl
 	// Terminal handoff: move cursor below editor, run fzf, then restore
 	rewind := f.editor.GotoEndLine()
 
-	chosen, ok := runFzf(candidates, result.argPrefix, completionHeader(result.completionType), f.cli.SystemVariables.Feature.FuzzyFinderOptions)
+	chosen, ok, outcome := runFzf(candidates, result.argPrefix, completionHeader(result.completionType), f.cli.SystemVariables.Feature.FuzzyFinderOptions)
 
 	rewind()
 	B.RepaintLastLine()
 
 	if !ok {
-		// User cancelled (Escape/Ctrl+C) or no match
+		if outcome == fuzzyPickerNoMatch {
+			f.showCompletionNotice(B, "No matches. Clear the search or adjust the prefix.")
+		} else if outcome == fuzzyPickerFailed {
+			f.showCompletionNotice(B, "Could not run fuzzy finder. Check CLI_FUZZY_FINDER_OPTIONS, then retry.")
+		}
 		return readline.CONTINUE
 	}
 
@@ -166,41 +170,6 @@ func (f *fuzzyFinderCommand) Call(ctx context.Context, B *readline.Buffer) readl
 	B.InsertAndRepaint(selected)
 
 	return readline.CONTINUE
-}
-
-func completionNotice(err error) string {
-	if errors.Is(err, context.Canceled) {
-		return ""
-	}
-	if errors.Is(err, errNoCachedPlan) {
-		return "No cached query plan. Try EXPLAIN or set CLI_QUERY_MODE = 'PLAN'."
-	}
-	if err != nil {
-		return "Could not load completion candidates. Retry, or set CLI_LOG_LEVEL = 'DEBUG' for details."
-	}
-	return "No completion candidates."
-}
-
-// showCompletionNotice writes below the active editor line and then restores
-// it, keeping completion feedback out of the editable input buffer.
-func (f *fuzzyFinderCommand) showCompletionNotice(B *readline.Buffer, message string) {
-	if message == "" || f.editor == nil {
-		return
-	}
-	rewind := f.editor.GotoEndLine()
-	out := f.editor.Out()
-	fmt.Fprintln(out, message)
-	if err := out.Flush(); err != nil {
-		slog.Debug("fuzzy finder: flush completion notice", "err", err)
-	}
-	rewind()
-	// GotoEndLine's rewind accounts for the editor's rows but not the extra
-	// newline printed after the notice. Move back to the input row, then repaint
-	// when the live readline buffer has a terminal writer.
-	fmt.Fprint(out, "\x1b[1F")
-	if B != nil && B.Out != nil {
-		B.RepaintLastLine()
-	}
 }
 
 // resolveCompletionSuffix returns the suffix to append after the chosen
@@ -420,13 +389,23 @@ func extractValue(line string, hasLabels bool) string {
 	return line
 }
 
+type fuzzyPickerOutcome int
+
+const (
+	fuzzyPickerFailed fuzzyPickerOutcome = iota
+	fuzzyPickerSelected
+	fuzzyPickerNoMatch
+	fuzzyPickerCancelled
+)
+
 // runFzf runs the fzf fuzzy finder with the given candidates and optional initial query.
 // When candidates have separate Label and Value, fzf displays/searches the Label
 // but the returned string is the Value (for insertion into the buffer).
 // extraOptions is an optional string of additional fzf flags (from CLI_FUZZY_FINDER_OPTIONS)
 // that are appended after built-in defaults so user options take precedence.
-// Returns the selected Value and true, or ("", false) if cancelled or no match.
-func runFzf(candidates []fzfItem, query string, header string, extraOptions string) (string, bool) {
+// Returns the selected Value and its outcome, distinguishing no match, cancellation,
+// and other failures so only actionable cases are shown to the user.
+func runFzf(candidates []fzfItem, query string, header string, extraOptions string) (string, bool, fuzzyPickerOutcome) {
 	prepared := prepareFzfOptions(candidates, header)
 
 	args := prepared.args
@@ -434,7 +413,7 @@ func runFzf(candidates []fzfItem, query string, header string, extraOptions stri
 		extra, err := shlex.Split(extraOptions)
 		if err != nil {
 			slog.Debug("fuzzy finder: parse extra options", "err", err)
-			return "", false
+			return "", false, fuzzyPickerFailed
 		}
 		args = append(args, extra...)
 	}
@@ -442,7 +421,7 @@ func runFzf(candidates []fzfItem, query string, header string, extraOptions stri
 	opts, err := fzf.ParseOptions(false, args)
 	if err != nil {
 		slog.Debug("fuzzy finder: parse fzf options", "err", err)
-		return "", false
+		return "", false, fuzzyPickerFailed
 	}
 	if query != "" {
 		opts.Query = query
@@ -477,9 +456,15 @@ func runFzf(candidates []fzfItem, query string, header string, extraOptions stri
 
 	if selected {
 		result = extractValue(result, prepared.hasLabels)
+		return result, true, fuzzyPickerSelected
 	}
-
-	return result, selected
+	if code == fzf.ExitNoMatch {
+		return "", false, fuzzyPickerNoMatch
+	}
+	if code == fzf.ExitInterrupt {
+		return "", false, fuzzyPickerCancelled
+	}
+	return "", false, fuzzyPickerFailed
 }
 
 // runFzfFilter runs fzf in non-interactive --filter mode for testing.
@@ -1263,4 +1248,45 @@ func (f *fuzzyFinderCommand) fetchParamCandidates() []fzfItem {
 		})
 	}
 	return items
+}
+
+func completionNotice(err error) string {
+	if errors.Is(err, context.Canceled) {
+		return ""
+	}
+	if errors.Is(err, errNoCachedPlan) {
+		return "No cached query plan. Try EXPLAIN or set CLI_QUERY_MODE = 'PLAN'."
+	}
+	if err != nil {
+		return "Could not load completion candidates. Retry, or set CLI_LOG_LEVEL = 'DEBUG' for details."
+	}
+	return "No completion candidates."
+}
+
+// showCompletionNotice writes below the active editor line and then redraws
+// the visible editor rows, keeping feedback out of the editable input buffer.
+func (f *fuzzyFinderCommand) showCompletionNotice(B *readline.Buffer, message string) {
+	if message == "" || f.editor == nil {
+		return
+	}
+	out := f.editor.Out()
+	if B != nil {
+		f.editor.Sync(B.String())
+	}
+	f.editor.GotoEndLine()
+	fmt.Fprintln(out, message)
+	if err := out.Flush(); err != nil {
+		slog.Debug("fuzzy finder: flush completion notice", "err", err)
+	}
+	rows := f.editor.PrintFromLine(f.editor.Headline())
+	rows -= f.editor.CursorLine() - f.editor.Headline()
+	if rows > 0 {
+		fmt.Fprintf(out, "\x1b[%dF", rows)
+	}
+	if B != nil && B.Out != nil {
+		B.RepaintLastLine()
+	}
+	if err := out.Flush(); err != nil {
+		slog.Debug("fuzzy finder: restore completion input", "err", err)
+	}
 }
