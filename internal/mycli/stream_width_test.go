@@ -51,6 +51,11 @@ func TestTablePreviewProcessorStreamingPreservesValue(t *testing.T) {
 			if err := proc.ProcessRow(toRow(streamWidthFullValue)); err != nil {
 				t.Fatal(err)
 			}
+			// Streaming still waits for the configured width preview. Sparse
+			// consumers need PreviewRows=0/1 or a format without this buffer.
+			if buf.Len() != 0 {
+				t.Fatalf("output before the 50-row preview or EOF: %q", buf.String())
+			}
 			if err := proc.Finish(QueryStats{}, 1); err != nil {
 				t.Fatal(err)
 			}
