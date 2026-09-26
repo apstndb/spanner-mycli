@@ -414,6 +414,8 @@ func (m frozenMutation) Mutation() (*spanner.Mutation, error) {
 		vals[i] = v
 	}
 	switch m.Op {
+	case "SEND", "ACK":
+		return m.queueMutation()
 	case "INSERT":
 		return spanner.Insert(m.Table, m.Columns, vals), nil
 	case "UPDATE":

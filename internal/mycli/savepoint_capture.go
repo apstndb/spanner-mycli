@@ -493,6 +493,9 @@ func freezeMutate(table, op, body string) ([]frozenMutation, []*spanner.Mutation
 	if op == "DELETE" {
 		return freezeDeleteMutate(table, body)
 	}
+	if op == "SEND" || op == "ACK" {
+		return freezeQueueMutate(table, op, body)
+	}
 	columns, values, err := parseLiteralString(body)
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid write mutations: %w", err)

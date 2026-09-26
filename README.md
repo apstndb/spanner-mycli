@@ -696,6 +696,8 @@ and `{A|B|...}` for a mutually exclusive keyword.
 | Unset query parameter                                                       | `UNSET PARAM <name>;`                                                                                      | Names are case-insensitive; UNSET removes the logical parameter.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | Perform write mutations                                                     | `MUTATE <table_fqn> {INSERT\|UPDATE\|REPLACE\|INSERT_OR_UPDATE} ...;`                                      |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | Perform delete mutations                                                    | `MUTATE <table_fqn> DELETE ...;`                                                                           |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Send a queue message                                                        | `MUTATE <queue> SEND (key => <key>, payload => <literal> [, deliver_time => <timestamp_literal>]);`        | One primary key in schema order; requires a queue-capable server.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Acknowledge a queue message                                                 | `MUTATE <queue> ACK (key => <key> [, ignore_not_found => <bool>]);`                                        | Missing messages fail by default; ignore_not_found defaults to FALSE.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | Show sampled query plans                                                    | `SHOW QUERY PROFILES;`                                                                                     | EARLY EXPERIMENTAL                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | Show the single sampled query plan                                          | `SHOW QUERY PROFILE <fingerprint>;`                                                                        | EARLY EXPERIMENTAL                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | Show statement history                                                      | `SHOW HISTORY;`                                                                                            | Lists recorded statements oldest first. Interactive sessions use the live readline history; noninteractive sessions read CLI_HISTORY_FILE.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
@@ -1843,6 +1845,51 @@ Delete keys also accept typed `NUMERIC '1.500000001'` and
 components of composite keys, key lists, and `KEY_RANGE` endpoints. Use a
 typed NUMERIC literal to retain decimal precision instead of a floating-point
 literal. Key components must follow the table's primary-key order.
+
+#### Queue mutations (experimental)
+
+On a queue-capable Spanner/Omni server, use native Send and Ack mutations:
+
+```sql
+MUTATE Tasks SEND (key => (42, 'message-1'), payload => b'hello');
+MUTATE Tasks SEND (
+  key => (42, 'message-2'),
+  payload => b'later',
+  deliver_time => TIMESTAMP '2030-01-02T03:04:05Z'
+);
+MUTATE Tasks ACK (key => (42, 'message-1'));
+MUTATE Tasks ACK (key => (42, 'message-2'), ignore_not_found => TRUE);
+```
+
+Each statement addresses one complete primary key in schema order. Use a scalar
+for a single-column key or a tuple for a composite key. Arrays of keys,
+`KEY_RANGE`, `ALL`, empty keys, and NULL key components are rejected. Argument
+names are case-insensitive; duplicates and unknown arguments are errors.
+
+`payload` is a required literal whose type must match the queue's payload
+column. As with other MUTATE operations, supported typed literals and constant
+casts can be used; query parameters and server-evaluated expressions are not
+supported. The server validates the queue schema and key arity.
+
+`deliver_time` is an optional non-NULL TIMESTAMP literal. Omitting it requests
+immediate delivery. The Go SDK cannot distinguish the zero timestamp
+(`0001-01-01T00:00:00Z`) from an omitted time, so that explicit value is rejected.
+`ignore_not_found` is an optional non-NULL BOOL, defaulting to FALSE: a missing
+message normally fails with NOT_FOUND. Setting it to TRUE requests success
+when the message is absent. ACK addresses the primary key, not a lease token.
+
+Both operations follow ordinary MUTATE transaction rules: they buffer inside
+read-write transactions and commit immediately in the default autocommit mode.
+They respect READONLY and participate in the existing optional savepoint and
+ABORTED retry journal. To group multiple messages atomically, issue several
+MUTATE statements in one explicit read-write transaction. Reading or printing a
+message never automatically runs ACK.
+
+These commands use the current memefish literal syntax and do not require queue
+DDL parser support, including in MEMEFISH_ONLY mode. Queue service semantics
+still depend on the server; the local fake-RPC tests verify mutation encoding
+and transaction replay, not Omni lease or delivery behavior. See the official
+[queue guide](https://docs.cloud.google.com/spanner/docs/queues/queues-using).
 
 #### Examples of mutations
 

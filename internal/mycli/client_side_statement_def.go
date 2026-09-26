@@ -1315,6 +1315,16 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 				Usage:  `Perform delete mutations`,
 				Syntax: `MUTATE <table_fqn> DELETE ...`,
 			},
+			{
+				Usage:  `Send a queue message`,
+				Syntax: `MUTATE <queue> SEND (key => <key>, payload => <literal> [, deliver_time => <timestamp_literal>])`,
+				Note:   `One primary key in schema order; requires a queue-capable server.`,
+			},
+			{
+				Usage:  `Acknowledge a queue message`,
+				Syntax: `MUTATE <queue> ACK (key => <key> [, ignore_not_found => <bool>])`,
+				Note:   `Missing messages fail by default; ignore_not_found defaults to FALSE.`,
+			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^MUTATE(?:\s+(?P<rest>.*))?$`),
 		HandleGroups: func(groups map[string]string) (Statement, error) {

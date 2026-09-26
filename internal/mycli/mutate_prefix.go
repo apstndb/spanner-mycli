@@ -22,7 +22,7 @@ import (
 	"github.com/cloudspannerecosystem/memefish/token"
 )
 
-var mutateOperations = []string{"INSERT", "UPDATE", "INSERT_OR_UPDATE", "REPLACE", "DELETE"}
+var mutateOperations = []string{"INSERT", "UPDATE", "INSERT_OR_UPDATE", "REPLACE", "DELETE", "SEND", "ACK"}
 
 func canonicalMutateOperation(op string) string {
 	return strings.ToUpper(op)
