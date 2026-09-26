@@ -56,6 +56,10 @@ var mergedDefs = mycli.MergedStatementDefs(all.All()...)
 // the test on an unknown placeholder, so this map must be extended alongside
 // new statement definitions.
 var syntaxPlaceholderValues = map[string]string{
+	"<queue>":                "Tasks",
+	"<literal>":              "b'hello'",
+	"<bool>":                 "TRUE",
+	"<timestamp_literal>":    "TIMESTAMP '2030-01-01T00:00:00Z'",
 	"<database>":             "mydb",
 	"<role>":                 "myrole",
 	"<type>":                 "TABLE",
