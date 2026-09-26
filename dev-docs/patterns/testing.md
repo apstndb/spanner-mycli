@@ -107,9 +107,27 @@ acknowledgement, or service restrictions. Those require separate tests and, for
 queue semantics, an explicitly configured queue-capable Spanner/Omni instance.
 The emulator suite is not evidence of Omni queue support.
 
-Existing PTY tests cover terminal detection and dimensions. The bufconn tests
-cancel a context; they do not prove that typing Ctrl+C during RECEIVE restores
-the interactive prompt. That needs a separate CLI/PTY integration test.
+On Unix, `sparse_stream_pty_test.go` runs `Cli.RunInteractive` in an isolated
+child process with a controlling PTY and a bufconn backend. It covers JSONL and
+streaming TABLE (one-row preview), both before the first row and after a row.
+The parent writes the actual Ctrl+C byte and verifies backend cancellation,
+prompt recovery, another successful query, and clean EXIT. The fake backend
+keeps RECEIVE open until cancellation; no Omni instance or credentials are used.
+
+The harness waits for the PTY's raw input state before typing commands. Prompt
+output alone is insufficient: readline can print it before entering raw mode,
+and early Enter bytes can become Ctrl+J through terminal CR-to-LF translation.
+It polls observable terminal state, rather than relying on a fixed typing delay.
+
+Run repeatedly with:
+
+```sh
+go test -short ./internal/mycli -run '^TestSparseStreamPTY$' -count=10 -v
+```
+
+This checks the interactive CLI path and OS terminal/signal behavior on the
+platform running the test. It does not verify queue service semantics or the
+standalone executable's startup/configuration path.
 
 ## Coverage Analysis
 
