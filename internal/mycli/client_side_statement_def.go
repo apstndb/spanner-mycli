@@ -142,6 +142,7 @@ var schemaObjectsReStr = strings.Join(slices.Collect(loi.Map(slices.Values([]str
 	"PLACEMENT",
 	"PROTO BUNDLE",
 	"TABLE",
+	"QUEUE",
 	"INDEX",
 	"SEARCH INDEX",
 	"VIEW",

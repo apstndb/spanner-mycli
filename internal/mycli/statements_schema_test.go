@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
+	"github.com/apstndb/spanner-mycli/enums"
 	"github.com/cloudspannerecosystem/memefish/ast"
 )
 
@@ -112,5 +113,46 @@ func TestShowChangeStreamsClassification(t *testing.T) {
 	session.mode = Detached
 	if err := session.ValidateStatementExecution(stmt); err == nil {
 		t.Fatal("detached session accepted SHOW CHANGE STREAMS")
+	}
+}
+
+// Queue DDL is returned verbatim by the Admin API. SHOW CREATE must not depend
+// on whether the bundled SQL parser supports that DDL (including a trailing
+// comma in a server-normalized column list).
+func TestShowCreateQueueUsesRawDDL(t *testing.T) {
+	t.Parallel()
+	const ddl = "CREATE QUEUE `Tasks` (\n MessageId STRING(36) NOT NULL,\n Payload BYTES(MAX),\n) PRIMARY KEY (MessageId)"
+	for _, input := range []string{"SHOW CREATE QUEUE Tasks", "show create queue `Tasks`"} {
+		t.Run(input, func(t *testing.T) {
+			t.Parallel()
+			stmt, err := BuildStatementWithCommentsWithMode(input, input, enums.ParseModeMemefishOnly)
+			if err != nil {
+				t.Fatal(err)
+			}
+			show, ok := stmt.(*ShowCreateStatement)
+			if !ok || show.ObjectType != "QUEUE" || show.Name != "Tasks" {
+				t.Fatalf("statement = %#v", stmt)
+			}
+			session := newSessionForLocalVarTest(t)
+			session.ddlCache.response = &databasepb.GetDatabaseDdlResponse{Statements: []string{
+				"CREATE TABLE Tasks (MessageId STRING(36) NOT NULL) PRIMARY KEY (MessageId)",
+				"CREATE QUEUE TasksExtra (MessageId STRING(36) NOT NULL) PRIMARY KEY (MessageId)",
+				ddl,
+			}}
+			session.ddlCache.fetchedAt = time.Now()
+			session.ddlCache.schemaGeneration = session.SchemaGeneration()
+			got, err := stmt.Execute(t.Context(), session, OperationOutput{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			rows := got.presentationRows()
+			if got.AffectedRows != 1 || len(rows) != 1 || rows[0][0].RawText() != "Tasks" || rows[0][1].RawText() != ddl {
+				t.Fatalf("SHOW CREATE QUEUE did not preserve DDL: %+v", got)
+			}
+			_, err = (&ShowCreateStatement{ObjectType: "QUEUE", Name: "Missing"}).Execute(t.Context(), session, OperationOutput{})
+			if err == nil {
+				t.Fatal("missing queue accepted")
+			}
+		})
 	}
 }
