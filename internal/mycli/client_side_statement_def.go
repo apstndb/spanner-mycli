@@ -1414,7 +1414,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 	},
 	{
 		Descriptions: []clientSideStatementDescription{
-			{Usage: `Show help for a variable or task (OUTPUT or KEYS)`, Syntax: `HELP <name>`},
+			{Usage: `Show help for a variable or task (OUTPUT, KEYS, QUEUES)`, Syntax: `HELP <name>`},
 		},
 		Pattern: regexp.MustCompile(`(?is)^HELP\s+(?P<topic>[A-Z_][A-Z_0-9]*)$`),
 		HandleGroups: func(groups map[string]string) (Statement, error) {

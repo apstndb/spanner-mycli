@@ -30,6 +30,7 @@ func TestHelpTopicsParse(t *testing.T) {
 		{"HELP CLI_FORMAT", "CLI_FORMAT"},
 		{"help output", "OUTPUT"},
 		{"HELP KEYS", "KEYS"},
+		{"help queues", "QUEUES"},
 		{"HELP UNKNOWN_VARIABLE", "UNKNOWN_VARIABLE"},
 	} {
 		stmt, err := BuildStatement(tc.input)
@@ -87,6 +88,7 @@ func TestHelpTopicsInteractiveExamplesAndMetaEntry(t *testing.T) {
 		input string
 		want  []string
 	}{
+		{"HELP QUEUES", []string{"CLI_TABLE_PREVIEW_ROWS = 1", "50 rows", "STATEMENT_TIMEOUT", "at least once", "does not acknowledge", "NO_MEMEFISH"}},
 		{"HELP OUTPUT", []string{"SET CLI_FORMAT = 'VERTICAL'", `\. file.sql`, `\o results.txt`}},
 		{"HELP KEYS", []string{"Ctrl+T", "Ctrl+C", "Ctrl+J", "Tab", `\?`}},
 		{`\?`, []string{"Ctrl+T", `\?`}},
