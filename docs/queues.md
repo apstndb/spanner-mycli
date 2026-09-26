@@ -1,8 +1,8 @@
-# Working with Spanner queues
+# Calling Spanner queue functions
 
 Queue availability depends on the Spanner/Omni server build. This guide describes
 existing SQL execution and output controls; it does not establish that every
-Omni build supports queues. `HELP QUEUES;` shows the essential settings offline.
+Omni build supports queues.
 
 ## Receive messages without waiting for query completion
 
@@ -35,25 +35,17 @@ streaming enabled. A preview of 1 uses the first row for widths; 0 uses only
 header widths. Later values can be wrapped to fit those widths. `-1` buffers all
 rows. A downstream pager or pipe consumer can also delay visible output.
 
-## Receive is not a passive peek
+## Queue semantics
 
-RECEIVE acquires message leases and delivery is at least once. Printing a row
-does not acknowledge it. spanner-mycli does not automatically renew leases,
-acknowledge messages, or loop to restart the receive query.
+RECEIVE acquires message leases; use `SELECT * FROM Tasks` to inspect stored
+messages without receiving them. Printing a row does not acknowledge it.
+Use ordinary SQL to call `RENEWLEASE_<queue>` and acknowledge messages with
+DML or native mutations.
 
-Use `RENEWLEASE_<queue>` explicitly if processing requires more time, and
-acknowledge only after processing succeeds. Inspect the returned lease tokens
-and expiration times. Cancelling a query or failing to write its output must
-not be interpreted as acknowledgement or rollback of earlier operations.
-
-For transactional acknowledgement with `DELETE ... ASSERT_ROWS_MODIFIED 1`,
-a failed assertion fails that statement; it does not automatically abort the
-transaction. Explicitly roll back when the surrounding transaction must not
-commit earlier work.
-
-See the official [queue guide](https://docs.cloud.google.com/spanner/docs/queues/queues-using)
-and [delivery model](https://docs.cloud.google.com/spanner/docs/queues/queues-overview)
-for lease, acknowledgement, and retry semantics.
+For queue definitions, function arguments, lease tokens, acknowledgement,
+and transaction error handling, see the official
+[queue guide](https://docs.cloud.google.com/spanner/docs/queues/queues-using)
+and [processing guarantees](https://docs.cloud.google.com/spanner/docs/queues/queues-at-most-once).
 
 ## Parser compatibility
 

@@ -53,20 +53,6 @@ func (s *HelpTopicStatement) Execute(ctx context.Context, session *Session, out 
 			{"Copy query output", `\T results.txt tees output to screen and file; \t disables tee.`},
 			{"Run a script", `\. file.sql in the interactive CLI; --file file.sql at startup.`},
 		}
-	case "QUEUES":
-		rows = []helpDetailRow{
-			{"Server support", "Requires a queue-capable Spanner/Omni server; availability depends on the server build."},
-			{"Receive promptly", "SET CLI_FORMAT = 'JSONL'; (or 'CSV', 'TAB', 'VERTICAL') avoids table width buffering."},
-			{"Streaming table", "SET CLI_TABLE_STREAMING = 'TRUE'; SET CLI_TABLE_PREVIEW_ROWS = 1; previews one row; 0 uses header widths only."},
-			{"Default table", "TABLE buffers results by default. Even with streaming enabled, the default width preview waits for 50 rows or query completion."},
-			{"Strong read", "Outside an active transaction: SET READ_ONLY_STALENESS = 'STRONG'; RECEIVE rejects stale reads."},
-			{"Bounded receive", "SET STATEMENT_TIMEOUT = '1m'; SELECT * FROM RECEIVE_Tasks(max_duration => '30s'); replace Tasks with your queue name."},
-			{"Timeout", "max_duration is the server receive window; STATEMENT_TIMEOUT independently bounds the client statement."},
-			{"Delivery semantics", "RECEIVE leases messages; it is not a passive peek. Delivery is at least once. Displaying a row does not acknowledge it."},
-			{"Lease management", "The CLI does not automatically renew or acknowledge messages. Use RENEWLEASE_<queue> explicitly and acknowledge only after processing."},
-			{"Parser compatibility", "If MEMEFISH_ONLY rejects queue DDL or ASSERT_ROWS_MODIFIED, SET CLI_PARSE_MODE = 'NO_MEMEFISH'; passes native SQL using lexical classification."},
-			{"Restore settings", "RESET CLI_FORMAT; RESET CLI_TABLE_STREAMING; RESET CLI_TABLE_PREVIEW_ROWS; RESET READ_ONLY_STALENESS; RESET STATEMENT_TIMEOUT; RESET CLI_PARSE_MODE; restore startup values."},
-		}
 	case "KEYS":
 		rows = []helpDetailRow{
 			{"Complete a statement or argument", "Ctrl+T by default; configured once when the interactive editor starts."},
@@ -102,7 +88,7 @@ func (s *HelpTopicStatement) Execute(ctx context.Context, session *Session, out 
 		}
 		def := sysVars.Registry.lookupDef(topic)
 		if def == nil {
-			return nil, fmt.Errorf("unknown help topic %q; try HELP OUTPUT;, HELP KEYS;, HELP QUEUES;, or HELP VARIABLES;", s.Topic)
+			return nil, fmt.Errorf("unknown help topic %q; try HELP OUTPUT;, HELP KEYS;, or HELP VARIABLES;", s.Topic)
 		}
 		name := def.name
 		info := sysVars.ListVariableInfo()[name]
