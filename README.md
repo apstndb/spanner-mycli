@@ -30,7 +30,7 @@ There are differences between spanner-mycli and spanner-cli that include not onl
   * Experimental Partitioned Query and Data Boost support.
   * GenAI support(`GEMINI` statement).
   * BigQuery support (`BIGQUERY` statement).
-  * Inspect queue definitions with `SHOW CREATE QUEUE queue_name;` (requires a queue-capable server; returns Admin API DDL without parsing it).
+  * Inspect schema object definitions with `SHOW CREATE <type> <fqn>;`.
   * Interactive DDL batching
   * Async DDL execution support (`--async` flag and `DDL_EXECUTION_MODE` / `DDL_ASYNC_WAIT_TIMEOUT` system variables)
   * Experimental Cassandra interface support as `CQL <cql>` statement.
@@ -1069,6 +1069,7 @@ HELP KEYS;
 
 Detailed values, examples, and restrictions are maintained in the variable reference:
 
+- [Queue SQL execution notes](docs/queues.md) (experimental; requires a queue-capable server)
 - [Output formats](docs/system_variables.md#cli_format) and [table streaming](docs/system_variables.md#cli_table_streaming)
 - [Statement timeout](docs/system_variables.md#statement_timeout) and [idle transaction timeout](docs/system_variables.md#cli_idle_transaction_timeout)
 - [Client metrics](docs/system_variables.md#cli_spanner_metrics_exporter--cli_spanner_metrics_endpoint) (opt-in; disabled by default)
