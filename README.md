@@ -30,6 +30,7 @@ There are differences between spanner-mycli and spanner-cli that include not onl
   * Experimental Partitioned Query and Data Boost support.
   * GenAI support(`GEMINI` statement).
   * BigQuery support (`BIGQUERY` statement).
+  * Inspect queue definitions with `SHOW CREATE QUEUE queue_name;` (requires a queue-capable server; returns Admin API DDL without parsing it).
   * Interactive DDL batching
   * Async DDL execution support (`--async` flag and `DDL_EXECUTION_MODE` / `DDL_ASYNC_WAIT_TIMEOUT` system variables)
   * Experimental Cassandra interface support as `CQL <cql>` statement.
