@@ -84,6 +84,51 @@ Assert the error cause and relevant RPC sequence, not merely that an error
 occurred. Isolate environment variables with `t.Setenv`, and synchronize on
 observable events or channels instead of fixed sleeps.
 
+## Sparse and Long-Lived Query Streams
+
+`internal/mycli/sparse_stream_test.go` uses the real Spanner SDK over bufconn.
+The fake server waits on test-controlled response channels, including after the
+first row. Tests must observe output **before releasing EOF**, not just inspect
+bytes after query completion. No fixed sleep is used for stream ordering;
+timeouts only bound failed assertions and cleanup.
+
+The current tests cover:
+
+- Two rows delivered before EOF in CSV, JSONL, TAB, VERTICAL, and streaming
+  TABLE with a zero- or one-row width preview.
+- A value split across two `PartialResultSet` messages.
+- Cancellation while waiting for the first response and after delivering a row.
+- Output failure stopping the still-open RPC.
+
+Use resume tokens at complete row boundaries: the SDK can buffer responses
+until a token or EOF to support transparent resumption. This fixture does not
+validate retry/resume semantics, SQL syntax, queue leases, renewal, redelivery,
+acknowledgement, or service restrictions. Those require separate tests and, for
+queue semantics, an explicitly configured queue-capable Spanner/Omni instance.
+The emulator suite is not evidence of Omni queue support.
+
+On Unix, `sparse_stream_pty_test.go` runs `Cli.RunInteractive` in an isolated
+child process with a controlling PTY and a bufconn backend. It covers JSONL and
+streaming TABLE (one-row preview), both before the first row and after a row.
+The parent writes the actual Ctrl+C byte and verifies backend cancellation,
+prompt recovery, another successful query, and clean EXIT. The fake backend
+keeps RECEIVE open until cancellation; no Omni instance or credentials are used.
+
+The harness waits for the PTY's raw input state before typing commands. Prompt
+output alone is insufficient: readline can print it before entering raw mode,
+and early Enter bytes can become Ctrl+J through terminal CR-to-LF translation.
+It polls observable terminal state, rather than relying on a fixed typing delay.
+
+Run repeatedly with:
+
+```sh
+go test -short ./internal/mycli -run '^TestSparseStreamPTY$' -count=10 -v
+```
+
+This checks the interactive CLI path and OS terminal/signal behavior on the
+platform running the test. It does not verify queue service semantics or the
+standalone executable's startup/configuration path.
+
 ## Coverage Analysis
 
 - `make test-coverage` writes `tmp/coverage.out` / `tmp/coverage.html`
