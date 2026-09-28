@@ -41,7 +41,7 @@ require (
 	github.com/junegunn/fzf v0.74.4
 	github.com/k0kubun/pp/v3 v3.5.2
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
-	github.com/klauspost/compress v1.20.0
+	github.com/klauspost/compress v1.20.1
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/nyaosorg/go-readline-ny v1.16.1
 	github.com/olekukonko/tablewriter v1.1.5
