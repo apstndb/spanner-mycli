@@ -9,9 +9,11 @@ import (
 	"slices"
 	"strings"
 
+	"cloud.google.com/go/spanner"
+	"github.com/apstndb/memebridge"
 	"github.com/apstndb/spancodec"
+	"github.com/apstndb/spantype"
 	"github.com/cloudspannerecosystem/memefish/ast"
-	"github.com/samber/lo"
 )
 
 type ShowParamsStatement struct{}
@@ -20,12 +22,12 @@ func (s *ShowParamsStatement) isDetachedCompatible() {}
 
 func (s *ShowParamsStatement) allowedDuringSavepointRecovery() {}
 
-// paramRow is the row shape for SHOW PARAMS. Param_Value is the memefish
-// SQL rendering of the parameter, so it stays a string by design.
+// paramRow intentionally contains no values: inspecting parameter signatures
+// must not expose retained query results or explicitly supplied secrets.
 type paramRow struct {
-	Name  string `spanner:"Param_Name"`
-	Kind  string `spanner:"Param_Kind"`
-	Value string `spanner:"Param_Value"`
+	Name string `spanner:"Param_Name"`
+	Kind string `spanner:"Param_Kind"`
+	Type string `spanner:"Param_Type"`
 }
 
 var showParamsRowEncoder = spancodec.MustNewRowEncoder[paramRow]()
@@ -39,17 +41,73 @@ func paramKind(v ast.Node) string {
 	}
 }
 
-func (s *ShowParamsStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
-	items := lo.MapToSlice(session.systemVariables.Params, func(k string, v ast.Node) paramRow {
-		return paramRow{
-			Name:  k,
-			Kind:  paramKind(v),
-			Value: v.SQL(),
+// parameterDescription obtains types locally; it never executes an expression
+// on Spanner. Unsupported stored expressions have an unresolved signature.
+func parameterDescription(n ast.Node) (string, *spanner.GenericColumnValue, error) {
+	switch v := n.(type) {
+	case ast.Type:
+		return v.SQL(), nil, nil
+	case ast.Expr:
+		value, err := memebridge.MemefishExprToGCV(v)
+		if err != nil {
+			return "UNKNOWN", nil, err
 		}
-	})
-	slices.SortFunc(items, func(lhs, rhs paramRow) int { return cmp.Compare(lhs.Name, rhs.Name) })
+		return spantype.FormatTypeVerbose(value.Type), &value, nil
+	default:
+		return "UNKNOWN", nil, fmt.Errorf("unsupported parameter representation")
+	}
+}
 
+func (s *ShowParamsStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
+	items := make([]paramRow, 0, len(session.systemVariables.Params))
+	for name, node := range session.systemVariables.Params {
+		// Do not include evaluator errors in the signature listing: they may
+		// quote a secret from the expression. Detail inspection is explicit.
+		typ, _, _ := parameterDescription(node)
+		items = append(items, paramRow{Name: name, Kind: paramKind(node), Type: typ})
+	}
+	slices.SortFunc(items, func(a, b paramRow) int { return cmp.Compare(a.Name, b.Name) })
 	result, err := executeStructRows(showParamsRowEncoder, items, session, out)
+	if err != nil {
+		return nil, err
+	}
+	result.KeepVariables = true
+	return result, nil
+}
+
+type ShowParamStatement struct{ Name string }
+
+func (*ShowParamStatement) isDetachedCompatible()           {}
+func (*ShowParamStatement) allowedDuringSavepointRecovery() {}
+
+func (s *ShowParamStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
+	params := session.systemVariables.Params
+	node, ok, err := lookupParam(params, s.Name)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, fmt.Errorf("unknown parameter: %s", s.Name)
+	}
+	name := paramAliases(params, s.Name)[0]
+	typ, value, err := parameterDescription(node)
+	if err != nil {
+		return nil, fmt.Errorf("cannot evaluate parameter %s: %w", name, err)
+	}
+	displayed := "<unset>"
+	if value != nil {
+		displayed, err = parameterDisplayValue(*value)
+		if err != nil {
+			return nil, fmt.Errorf("format parameter %s: %w", name, err)
+		}
+	}
+	items := []nameValueRow{
+		{Name: "Name", Value: name},
+		{Name: "Kind", Value: paramKind(node)},
+		{Name: "Type", Value: typ},
+		{Name: "Value", Value: displayed},
+	}
+	result, err := executeStructRows(nameValueRowEncoder, items, session, out)
 	if err != nil {
 		return nil, err
 	}

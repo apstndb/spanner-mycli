@@ -124,6 +124,7 @@ var (
 	_ savepointRecoverySafeStatement = (*HelpTopicStatement)(nil)
 	_ savepointRecoverySafeStatement = (*ShowVariableStatement)(nil)
 	_ savepointRecoverySafeStatement = (*ShowVariablesStatement)(nil)
+	_ savepointRecoverySafeStatement = (*ShowParamStatement)(nil)
 	_ savepointRecoverySafeStatement = (*ShowParamsStatement)(nil)
 	_ savepointRecoverySafeStatement = (*ShowTransactionStatement)(nil)
 	_ savepointRecoverySafeStatement = (*ShowHistoryStatement)(nil)

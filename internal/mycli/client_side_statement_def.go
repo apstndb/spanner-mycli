@@ -1280,13 +1280,25 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `Show query parameters`,
 				Syntax: `SHOW PARAMS`,
-				Note:   `Displays the stored spelling of each logical parameter.`,
+				Note:   `Lists names, kinds, and types without values. Use SHOW PARAM <name> to inspect a value.`,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^SHOW\s+PARAMS$`),
 		HandleGroups: func(groups map[string]string) (Statement, error) {
 			return &ShowParamsStatement{}, nil
 		},
+	},
+	{
+		Descriptions: []clientSideStatementDescription{{
+			Usage:  `Show query parameter`,
+			Syntax: `SHOW PARAM <name>`,
+			Note:   `Shows the type and abbreviated value of one parameter. Names are case-insensitive.`,
+		}},
+		Pattern: regexp.MustCompile(`(?is)^SHOW\s+PARAM\s+(?P<name>\S+)$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			return &ShowParamStatement{Name: groups["name"]}, nil
+		},
+		Completion: []fuzzyArgCompletion{{PrefixPattern: regexp.MustCompile(`(?i)^\s*SHOW\s+PARAM\s+(\S*)$`), CompletionType: fuzzyCompleteParam}},
 	},
 	{
 		Descriptions: []clientSideStatementDescription{

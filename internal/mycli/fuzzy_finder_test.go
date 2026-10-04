@@ -736,6 +736,13 @@ func TestDetectFuzzyContext(t *testing.T) {
 			wantArgPrefix:      "",
 			wantArgStartPos:    19,
 		},
+		{
+			name:               "SHOW PARAM with partial name",
+			input:              "SHOW PARAM my_p",
+			wantCompletionType: fuzzyCompleteParam,
+			wantArgPrefix:      "my_p",
+			wantArgStartPos:    11,
+		},
 		// Argument completion: SET PARAM → param
 		{
 			// Without a trailing space the PARAM token itself is still being

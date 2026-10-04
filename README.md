@@ -693,7 +693,8 @@ and `{A|B|...}` for a mutually exclusive keyword.
 | Show variables                                                              | `SHOW VARIABLES;`                                                                                          |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | Show variable                                                               | `SHOW VARIABLE <name>;`                                                                                    |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | Set value query parameter                                                   | `SET PARAM <name> = <value>;`                                                                              | Names are case-insensitive. Later SET PARAM of the same logical name keeps the first stored spelling. Binding uses the first SQL occurrence's spelling without rewriting the statement.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| Show query parameters                                                       | `SHOW PARAMS;`                                                                                             | Displays the stored spelling of each logical parameter.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Show query parameters                                                       | `SHOW PARAMS;`                                                                                             | Lists names, kinds, and types without values. Use SHOW PARAM <name> to inspect a value.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Show query parameter                                                        | `SHOW PARAM <name>;`                                                                                       | Shows the type and abbreviated value of one parameter. Names are case-insensitive.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | Unset query parameter                                                       | `UNSET PARAM <name>;`                                                                                      | Names are case-insensitive; UNSET removes the logical parameter.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | Perform write mutations                                                     | `MUTATE <table_fqn> {INSERT\|UPDATE\|REPLACE\|INSERT_OR_UPDATE} ...;`                                      |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | Perform delete mutations                                                    | `MUTATE <table_fqn> DELETE ...;`                                                                           |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
@@ -2003,22 +2004,41 @@ Note: They are supported on the best effort basis, and type conversions are not 
 ```
 $ spanner-mycli \
                 --param='array_type=ARRAY<STRUCT<FirstName STRING, LastName STRING>>' \
-                --param='array_value=[STRUCT("Marc" AS FirstName, "Richards" AS LastName), ("Catalina", "Smith")]'
+                --param='array_value=ARRAY<STRUCT<FirstName STRING, LastName STRING>>[("Marc", "Richards"), ("Catalina", "Smith")]'
 
 ```
 
-You can see defined query parameters using `SHOW PARAMS;` command.
+`SHOW PARAMS;` lists names, kinds, and types without exposing parameter values.
+Use `SHOW PARAM <name>;` to inspect one parameter, with case-insensitive name matching.
 
 ```
 > SHOW PARAMS;
-+-------------+------------+-------------------------------------------------------------------+
-| Param_Name  | Param_Kind | Param_Value                                                       |
-+-------------+------------+-------------------------------------------------------------------+
-| array_value | VALUE      | [STRUCT("Marc" AS FirstName, "Richards" AS LastName), ("Catalina", "Smith")] |
-| array_type  | TYPE       | ARRAY<STRUCT<FirstName STRING, LastName STRING>>                  |
-+-------------+------------+-------------------------------------------------------------------+
-Empty set (0.00 sec)
++-------------+------------+------------------------------------------------+
+| Param_Name  | Param_Kind | Param_Type                                     |
++-------------+------------+------------------------------------------------+
+| array_type  | TYPE       | ARRAY<STRUCT<FirstName STRING, LastName STRING>> |
+| array_value | VALUE      | ARRAY<STRUCT<FirstName STRING, LastName STRING>> |
++-------------+------------+------------------------------------------------+
+2 rows in set (0.00 sec)
+
+> SHOW PARAM array_value;
++-------+------------------------------------------------+
+| name  | value                                          |
++-------+------------------------------------------------+
+| Name  | array_value                                    |
+| Kind  | VALUE                                          |
+| Type  | ARRAY<STRUCT<FirstName STRING, LastName STRING>> |
+| Value | [('Marc', 'Richards'), ('Catalina', 'Smith')]    |
++-------+------------------------------------------------+
+4 rows in set (0.00 sec)
 ```
+
+The value uses compact display notation because its type is shown separately.
+Strings remain quoted; STRUCTs use parentheses, arrays use brackets, and NULL
+is displayed as `NULL`. A type-only parameter has the value `<unset>`. This
+notation is for inspection, not a standalone SQL expression. Both commands run
+locally. Expressions whose types cannot be determined locally appear as
+`UNKNOWN` in the list.
 
 You can use value query parameters in any statement.
 ```
@@ -2082,14 +2102,14 @@ Empty set (0.00 sec)
 
 > SHOW PARAMS;
 +-------------+------------+-------------+
-| Param_Name  | Param_Kind | Param_Value |
+| Param_Name  | Param_Kind | Param_Type  |
 +-------------+------------+-------------+
 | string_type | TYPE       | STRING      |
 +-------------+------------+-------------+
 Empty set (0.00 sec)
 ```
 
-You can define type query parameters using `SET PARAM param_name = value;` command.
+You can define value query parameters using `SET PARAM param_name = value;` command.
 
 ```
 > SET PARAM bytes_value = b"foo";
@@ -2097,9 +2117,9 @@ Empty set (0.00 sec)
 
 > SHOW PARAMS;
 +-------------+------------+-------------+
-| Param_Name  | Param_Kind | Param_Value |
+| Param_Name  | Param_Kind | Param_Type  |
 +-------------+------------+-------------+
-| bytes_value | VALUE      | B"foo"      |
+| bytes_value | VALUE      | BYTES       |
 +-------------+------------+-------------+
 Empty set (0.00 sec)
 ```
