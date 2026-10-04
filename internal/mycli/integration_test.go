@@ -696,6 +696,32 @@ func paramCasesToStmtResults(paramCases []paramCase) []stmtResult {
 	return result
 }
 
+func TestParameterReferenceRoundTrip(t *testing.T) {
+	runStatementTests(t, []statementTestCase{{
+		desc: "typed snapshots and fields remain usable after source removal",
+		stmtResults: []stmtResult{
+			srKeep("SET PARAM source = STRUCT<Id INT64, Payload BYTES, Empty ARRAY<INT64>, Missing STRING>(9007199254740993, b'hello', [], NULL)"),
+			srKeep("SET PARAM saved = @source"),
+			srKeep("SET PARAM id = @source.Id"),
+			srKeep("UNSET PARAM source"),
+			{
+				"SELECT @saved.Id AS Id, @id AS CopyId, @saved.Payload AS Payload, ARRAY_LENGTH(@saved.Empty) AS EmptySize, @saved.Missing IS NULL AS IsNull",
+				&Result{
+					AffectedRows: 1,
+					TableHeader: toTableHeader(
+						typector.NameTypeToStructTypeField("Id", typector.CodeToSimpleType(sppb.TypeCode_INT64)),
+						typector.NameTypeToStructTypeField("CopyId", typector.CodeToSimpleType(sppb.TypeCode_INT64)),
+						typector.NameTypeToStructTypeField("Payload", typector.CodeToSimpleType(sppb.TypeCode_BYTES)),
+						typector.NameTypeToStructTypeField("EmptySize", typector.CodeToSimpleType(sppb.TypeCode_INT64)),
+						typector.NameTypeToStructTypeField("IsNull", typector.CodeToSimpleType(sppb.TypeCode_BOOL)),
+					),
+					Body: PresentationBody(sliceOf(toRow("9007199254740993", "9007199254740993", "aGVsbG8=", "0", "true"))),
+				},
+			},
+		},
+	}})
+}
+
 // TestParameterStatements tests parameter-related functionality including SET PARAM, SHOW PARAMS, and parameter usage
 func TestParameterStatements(t *testing.T) {
 	tests := []statementTestCase{

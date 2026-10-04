@@ -14,6 +14,7 @@ import (
 	"github.com/apstndb/spancodec"
 	"github.com/apstndb/spantype"
 	"github.com/cloudspannerecosystem/memefish/ast"
+	"google.golang.org/protobuf/proto"
 )
 
 type ShowParamsStatement struct{}
@@ -45,6 +46,8 @@ func paramKind(v ast.Node) string {
 // on Spanner. Unsupported stored expressions have an unresolved signature.
 func parameterDescription(n ast.Node) (string, *spanner.GenericColumnValue, error) {
 	switch v := n.(type) {
+	case *boundParameter:
+		return spantype.FormatTypeVerbose(v.value.Type), &v.value, nil
 	case ast.Type:
 		return v.SQL(), nil, nil
 	case ast.Expr:
@@ -158,7 +161,11 @@ func (s *SetParamValueStatement) Execute(ctx context.Context, session *Session, 
 	if err != nil {
 		return nil, err
 	}
-	if err := setParam(session.systemVariables.Params, s.Name, expr); err != nil {
+	value, err := resolveParameterReference(expr, session.systemVariables.Params)
+	if err != nil {
+		return nil, err
+	}
+	if err := setParam(session.systemVariables.Params, s.Name, value); err != nil {
 		return nil, err
 	}
 	return &Result{KeepVariables: true}, nil
@@ -203,15 +210,26 @@ func paramAliases(params map[string]ast.Node, name string) []string {
 }
 
 // conflictingParamAliases reports an error when aliases of one logical name
-// have different stored identities. Identical aliases (same kind and SQL()
-// rendering) are accepted as one logical parameter.
+// have different stored identities. Expression/type aliases use kind and SQL();
+// bound snapshots use wire equality. Identical aliases share one logical parameter.
 func conflictingParamAliases(name string, aliases []string, params map[string]ast.Node) error {
 	if len(aliases) < 2 {
 		return nil
 	}
-	ident := paramNodeIdentity(params[aliases[0]])
+	first := params[aliases[0]]
 	for _, alias := range aliases[1:] {
-		if paramNodeIdentity(params[alias]) != ident {
+		other := params[alias]
+		left, leftBound := first.(*boundParameter)
+		right, rightBound := other.(*boundParameter)
+		var equal bool
+		if leftBound || rightBound {
+			// Bound values are not expressions. Compare their wire types and
+			// values directly; SQL() is debug text, not a canonical identity.
+			equal = leftBound && rightBound && proto.Equal(left.value.Type, right.value.Type) && proto.Equal(left.value.Value, right.value.Value)
+		} else {
+			equal = paramNodeIdentity(first) == paramNodeIdentity(other)
+		}
+		if !equal {
 			return &ambiguousQueryParameterError{Name: name, Aliases: slices.Clone(aliases)}
 		}
 	}
