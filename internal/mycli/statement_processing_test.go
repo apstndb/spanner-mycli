@@ -1356,6 +1356,11 @@ TABLE Singers (42)
 			want:  &ShowParamsStatement{},
 		},
 		{
+			desc:  "SHOW PARAM statement",
+			input: `sHoW pArAm MyParam`,
+			want:  &ShowParamStatement{Name: "MyParam"},
+		},
+		{
 			desc:  "UNSET PARAM statement",
 			input: `UNSET PARAM my_param`,
 			want:  &UnsetParamStatement{Name: "my_param"},

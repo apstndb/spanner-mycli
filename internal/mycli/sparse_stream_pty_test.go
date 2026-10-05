@@ -97,7 +97,7 @@ func TestSparseStreamPTYHelper(t *testing.T) {
 func TestSparseStreamPTY(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"JSONL", "TABLE"} {
-		for _, phase := range []string{"before-row", "after-row"} {
+		for _, phase := range []string{"before-row", "after-row", "parameters"} {
 			t.Run(mode+"/"+phase, func(t *testing.T) {
 				t.Parallel()
 				exe, err := os.Executable()
@@ -211,6 +211,17 @@ func TestSparseStreamPTY(t *testing.T) {
 					}
 				}
 				waitPrompt()
+				if phase == "parameters" {
+					send("SET PARAM saved = STRUCT<Id INT64, Name STRING>(1, 'Alice');\r")
+					expect("Query OK")
+					waitPrompt()
+					send("SHOW PARAMS;\r")
+					expect("Param_Type")
+					waitPrompt()
+					send("SHOW PARAM SAVED;\r")
+					expect("(1, 'Alice')")
+					waitPrompt()
+				}
 				send("SELECT * FROM RECEIVE_Tasks(max_duration => '20m');\r")
 				if phase == "after-row" {
 					expect("pty-message-delivered")

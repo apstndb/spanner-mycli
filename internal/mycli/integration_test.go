@@ -728,7 +728,7 @@ func TestParameterStatements(t *testing.T) {
 					"SHOW PARAMS",
 					&Result{
 						KeepVariables: true,
-						TableHeader:   typedStringHeader("Param_Name", "Param_Kind", "Param_Value"),
+						TableHeader:   typedStringHeader("Param_Name", "Param_Kind", "Param_Type"),
 
 						AffectedRows: 1, Body: PresentationBody(sliceOf(toRow("i", "TYPE", "INT64"))),
 					},
@@ -752,9 +752,9 @@ func TestParameterStatements(t *testing.T) {
 					"SHOW PARAMS",
 					&Result{
 						KeepVariables: true,
-						TableHeader:   typedStringHeader("Param_Name", "Param_Kind", "Param_Value"),
+						TableHeader:   typedStringHeader("Param_Name", "Param_Kind", "Param_Type"),
 
-						AffectedRows: 1, Body: PresentationBody(sliceOf(toRow("b", "VALUE", "2"))),
+						AffectedRows: 1, Body: PresentationBody(sliceOf(toRow("b", "VALUE", "INT64"))),
 					},
 				},
 			},
@@ -767,9 +767,9 @@ func TestParameterStatements(t *testing.T) {
 					"SHOW PARAMS",
 					&Result{
 						KeepVariables: true,
-						TableHeader:   typedStringHeader("Param_Name", "Param_Kind", "Param_Value"),
+						TableHeader:   typedStringHeader("Param_Name", "Param_Kind", "Param_Type"),
 						AffectedRows:  1,
-						Body:          PresentationBody(sliceOf(toRow("MixedCase", "VALUE", "42"))),
+						Body:          PresentationBody(sliceOf(toRow("MixedCase", "VALUE", "INT64"))),
 					},
 				},
 				srKeep("SET PARAM mixedcase = 99"),
@@ -777,9 +777,9 @@ func TestParameterStatements(t *testing.T) {
 					"SHOW PARAMS",
 					&Result{
 						KeepVariables: true,
-						TableHeader:   typedStringHeader("Param_Name", "Param_Kind", "Param_Value"),
+						TableHeader:   typedStringHeader("Param_Name", "Param_Kind", "Param_Type"),
 						AffectedRows:  1,
-						Body:          PresentationBody(sliceOf(toRow("MixedCase", "VALUE", "99"))),
+						Body:          PresentationBody(sliceOf(toRow("MixedCase", "VALUE", "INT64"))),
 					},
 				},
 				{
@@ -798,7 +798,7 @@ func TestParameterStatements(t *testing.T) {
 					"SHOW PARAMS",
 					&Result{
 						KeepVariables: true,
-						TableHeader:   typedStringHeader("Param_Name", "Param_Kind", "Param_Value"),
+						TableHeader:   typedStringHeader("Param_Name", "Param_Kind", "Param_Type"),
 						Body:          PresentationBody(nil),
 					},
 				},

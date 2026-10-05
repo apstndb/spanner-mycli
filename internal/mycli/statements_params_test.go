@@ -269,25 +269,25 @@ func TestShowParamsCollapsesIdenticalStartupAliases(t *testing.T) {
 	t.Parallel()
 
 	for _, tt := range []struct {
-		name      string
-		flagArgs  []string
-		wantName  string
-		wantKind  string
-		wantValue string
+		name     string
+		flagArgs []string
+		wantName string
+		wantKind string
+		wantType string
 	}{
 		{
-			name:      "value",
-			flagArgs:  []string{"--param", "MixedCase=1", "--param", "mixedcase=1"},
-			wantName:  "MixedCase",
-			wantKind:  "VALUE",
-			wantValue: "1",
+			name:     "value",
+			flagArgs: []string{"--param", "MixedCase=1", "--param", "mixedcase=1"},
+			wantName: "MixedCase",
+			wantKind: "VALUE",
+			wantType: "INT64",
 		},
 		{
-			name:      "type-only",
-			flagArgs:  []string{"--param", "MixedType=INT64", "--param", "mixedtype=INT64"},
-			wantName:  "MixedType",
-			wantKind:  "TYPE",
-			wantValue: "INT64",
+			name:     "type-only",
+			flagArgs: []string{"--param", "MixedType=INT64", "--param", "mixedtype=INT64"},
+			wantName: "MixedType",
+			wantKind: "TYPE",
+			wantType: "INT64",
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -322,8 +322,8 @@ func TestShowParamsCollapsesIdenticalStartupAliases(t *testing.T) {
 			if err := typed.Rows[0].Column(2, &value); err != nil {
 				t.Fatal(err)
 			}
-			got := paramRow{Name: name, Kind: kind, Value: value}
-			want := paramRow{Name: tt.wantName, Kind: tt.wantKind, Value: tt.wantValue}
+			got := paramRow{Name: name, Kind: kind, Type: value}
+			want := paramRow{Name: tt.wantName, Kind: tt.wantKind, Type: tt.wantType}
 			if diff := cmp.Diff(want, got); diff != "" {
 				t.Fatalf("SHOW PARAMS row mismatch (-want +got):\n%s", diff)
 			}
