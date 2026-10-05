@@ -1267,7 +1267,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `Set value query parameter`,
 				Syntax: `SET PARAM <name> = <value>`,
-				Note:   `Names are case-insensitive. Later SET PARAM of the same logical name keeps the first stored spelling. Binding uses the first SQL occurrence's spelling without rewriting the statement.`,
+				Note:   `Names are case-insensitive. Later SET PARAM of the same logical name keeps the first stored spelling. Binding uses the first SQL occurrence's spelling without rewriting the statement. Direct parameter and STRUCT field references copy the current typed value.`,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^SET\s+PARAM\s+(?P<name>[^\s=]+)\s*=\s*(?P<value>.*)$`),

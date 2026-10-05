@@ -933,6 +933,8 @@ func generateParams(paramsNodeMap map[string]ast.Node, includeType bool) (map[st
 	result := make(map[string]any)
 	for k, v := range paramsNodeMap {
 		switch v := v.(type) {
+		case *boundParameter:
+			result[k] = cloneParameterValue(v.value)
 		case ast.Type:
 			if !includeType {
 				continue
