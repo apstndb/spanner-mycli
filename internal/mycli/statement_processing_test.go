@@ -762,6 +762,16 @@ func TestBuildStatement(t *testing.T) {
 			want:  &ShowColumnsStatement{Table: "TABLE"},
 		},
 		{
+			desc:  "SHOW FOREIGN KEYS with an unqualified table",
+			input: "SHOW FOREIGN KEYS FROM t1",
+			want:  &ShowForeignKeysStatement{Table: "t1"},
+		},
+		{
+			desc:  "SHOW FOREIGN KEYS with a quoted qualified table",
+			input: "SHOW FOREIGN KEYS FROM `sch1`.`TABLE`",
+			want:  &ShowForeignKeysStatement{Schema: "sch1", Table: "TABLE"},
+		},
+		{
 			desc:  "SHOW SCHEMA UPDATE OPERATIONS statement",
 			input: "SHOW SCHEMA UPDATE OPERATIONS",
 			want:  &ShowSchemaUpdateOperations{},
@@ -1717,6 +1727,8 @@ func TestBuildStatement_InvalidCase(t *testing.T) {
 		// Object names are limited to [<schema>.]<name>.
 		"SHOW CREATE TABLE a.b.c",
 		"SHOW COLUMNS FROM a.b.c",
+		"SHOW FOREIGN KEYS FROM a.b.c",
+		"SHOW FOREIGN KEYS FROM t1 t2",
 		"SHOW INDEX FROM t1 t2",
 		"TRUNCATE TABLE t1, t2",
 		// Empty elements in the table list previously produced an empty list,

@@ -49,6 +49,7 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"google.golang.org/api/iterator"
 
+	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 
 	"github.com/apstndb/spantype/typector"
@@ -2277,6 +2278,85 @@ func TestShowIndexes(t *testing.T) {
 			Row{p("tbl"), p(""), p("PRIMARY_KEY"), p("PRIMARY_KEY"), p("true"), p("false"), n("NULL")},
 		)),
 	})
+}
+
+func TestShowForeignKeys(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	fields := toTableHeader("constraint_name", "child_table", "child_columns", "parent_table", "parent_columns", "on_delete", "enforced", "spanner_state")
+	for _, test := range []struct {
+		name    string
+		dialect databasepb.DatabaseDialect
+		ddls    []string
+		want    map[string][]Row
+	}{
+		{
+			name:    "GoogleSQL",
+			dialect: databasepb.DatabaseDialect_GOOGLE_STANDARD_SQL,
+			ddls: []string{
+				"CREATE SCHEMA Sales",
+				"CREATE TABLE Parent (K2 INT64 NOT NULL, K1 INT64 NOT NULL) PRIMARY KEY(K2, K1)",
+				"CREATE TABLE Sales.Child (Id INT64 NOT NULL, P1 INT64, P2 INT64, Ancestor INT64) PRIMARY KEY(Id)",
+				"ALTER TABLE Sales.Child ADD CONSTRAINT fk_parent FOREIGN KEY(P2, P1) REFERENCES Parent(K2, K1) NOT ENFORCED",
+				"ALTER TABLE Sales.Child ADD CONSTRAINT fk_self FOREIGN KEY(Ancestor) REFERENCES Sales.Child(Id) ON DELETE CASCADE",
+				"CREATE TABLE Plain (Id INT64 NOT NULL) PRIMARY KEY(Id)",
+			},
+			want: map[string][]Row{
+				"parent": {toRow("fk_parent", "Sales.Child", "[P2, P1]", "Parent", "[K2, K1]", "NO ACTION", "false", "COMMITTED")},
+				"sales.child": {
+					toRow("fk_parent", "Sales.Child", "[P2, P1]", "Parent", "[K2, K1]", "NO ACTION", "false", "COMMITTED"),
+					toRow("fk_self", "Sales.Child", "[Ancestor]", "Sales.Child", "[Id]", "CASCADE", "true", "COMMITTED"),
+				},
+				"plain": {},
+			},
+		},
+		{
+			name:    "PostgreSQL",
+			dialect: databasepb.DatabaseDialect_POSTGRESQL,
+			ddls: []string{
+				"CREATE SCHEMA sales",
+				"CREATE TABLE parent (k2 bigint NOT NULL, k1 bigint NOT NULL, PRIMARY KEY(k2, k1))",
+				"CREATE TABLE sales.child (id bigint PRIMARY KEY, p1 bigint, p2 bigint, ancestor bigint)",
+				"ALTER TABLE sales.child ADD CONSTRAINT fk_parent FOREIGN KEY(p2, p1) REFERENCES parent(k2, k1)",
+				"ALTER TABLE sales.child ADD CONSTRAINT fk_self FOREIGN KEY(ancestor) REFERENCES sales.child(id) ON DELETE CASCADE",
+				"CREATE TABLE plain (id bigint PRIMARY KEY)",
+			},
+			want: map[string][]Row{
+				"parent": {toRow("fk_parent", "sales.child", "[p2, p1]", "public.parent", "[k2, k1]", "NO ACTION", "true", "COMMITTED")},
+				"sales.child": {
+					toRow("fk_parent", "sales.child", "[p2, p1]", "public.parent", "[k2, k1]", "NO ACTION", "true", "COMMITTED"),
+					toRow("fk_self", "sales.child", "[ancestor]", "sales.child", "[id]", "CASCADE", "true", "COMMITTED"),
+				},
+				"plain": {},
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			_, session := initializeWithDB(t, "", test.ddls, nil, spanemuboost.WithDatabaseDialect(test.dialect))
+			session.systemVariables.Feature.DatabaseDialect = test.dialect
+			for table, rows := range test.want {
+				t.Run(table, func(t *testing.T) {
+					stmt, err := BuildStatement("SHOW FOREIGN KEYS FROM " + table)
+					if err != nil {
+						t.Fatal(err)
+					}
+					result, err := session.ExecuteStatement(t.Context(), stmt)
+					if err != nil {
+						t.Fatal(err)
+					}
+					compareResult(t, result, &Result{
+						TableHeader:  fields,
+						AffectedRows: len(rows),
+						Body:         PresentationBody(rows),
+					})
+				})
+			}
+		})
+	}
 }
 
 func TestTruncateTable(t *testing.T) {
