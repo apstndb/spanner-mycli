@@ -352,6 +352,25 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		}},
 	},
 	{
+		Descriptions: []clientSideStatementDescription{{
+			Usage:  "Show index options",
+			Syntax: "SHOW INDEX OPTIONS FROM <table_fqn>",
+			Note:   "Lists visible INDEX_OPTIONS rows, including system-optimized vector index settings. Requires server support for that view.",
+		}},
+		Pattern: regexp.MustCompile(`(?is)^SHOW\s+INDEX\s+OPTIONS\s+FROM\s+(?P<table>.+)$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			schema, table, err := parseSchemaAndName(groups["table"])
+			if err != nil {
+				return nil, fmt.Errorf("invalid table name in SHOW INDEX OPTIONS: %w", err)
+			}
+			return &ShowIndexOptionsStatement{Schema: schema, Table: table}, nil
+		},
+		Completion: []fuzzyArgCompletion{{
+			PrefixPattern:  regexp.MustCompile(`(?i)^\s*SHOW\s+INDEX\s+OPTIONS\s+FROM\s+(\S*)$`),
+			CompletionType: fuzzyCompleteTable,
+		}},
+	},
+	{
 		Descriptions: []clientSideStatementDescription{
 			{
 				Usage:  `SHOW DDLs`,

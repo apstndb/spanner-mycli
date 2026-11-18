@@ -148,6 +148,37 @@ WHERE
 	})
 }
 
+type ShowIndexOptionsStatement struct {
+	Schema string
+	Table  string
+}
+
+func (s *ShowIndexOptionsStatement) query(dialect databasepb.DatabaseDialect) spanner.Statement {
+	const projection = `SELECT index_name, index_type, option_name, option_type, option_value
+FROM information_schema.index_options
+WHERE `
+	const ordering = ` ORDER BY index_name, option_name`
+	if dialect == databasepb.DatabaseDialect_POSTGRESQL {
+		schema := s.Schema
+		if schema == "" {
+			schema = "public"
+		}
+		return spanner.Statement{
+			SQL:    projection + "table_schema = $1 AND table_name = $2" + ordering,
+			Params: map[string]any{"p1": schema, "p2": s.Table},
+		}
+	}
+	return spanner.Statement{
+		SQL:    projection + "LOWER(table_schema) = LOWER(@schema) AND LOWER(table_name) = LOWER(@table)" + ordering,
+		Params: map[string]any{"schema": s.Schema, "table": s.Table},
+	}
+}
+
+func (s *ShowIndexOptionsStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
+	// A visible index can have no explicit options. An empty result is valid.
+	return executeInformationSchemaBasedStatement(ctx, session, "SHOW INDEX OPTIONS", s.query(session.systemVariables.Feature.DatabaseDialect), nil)
+}
+
 type ShowDdlsStatement struct{}
 
 func (s *ShowDdlsStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
