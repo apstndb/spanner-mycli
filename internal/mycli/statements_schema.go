@@ -133,6 +133,7 @@ type ShowForeignKeysStatement struct {
 const showForeignKeysSQL = `WITH fk_columns AS (
   SELECT DISTINCT
     rc.constraint_name,
+    rc.unique_constraint_name AS referenced_constraint_name,
     child.table_schema AS child_schema,
     child.table_name AS child_name,
     child.column_name AS child_column,
@@ -170,9 +171,10 @@ SELECT
   ARRAY_AGG(parent_column ORDER BY child_position) AS parent_columns,
   on_delete,
   enforced,
-  spanner_state
+  spanner_state,
+  referenced_constraint_name
 FROM fk_columns
-GROUP BY constraint_name, child_schema, child_name, parent_schema, parent_name, on_delete, enforced, spanner_state
+GROUP BY constraint_name, child_schema, child_name, parent_schema, parent_name, on_delete, enforced, spanner_state, referenced_constraint_name
 ORDER BY child_schema, child_name, constraint_name, parent_schema, parent_name`
 
 func (s *ShowForeignKeysStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {

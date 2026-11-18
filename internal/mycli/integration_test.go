@@ -2286,7 +2286,7 @@ func TestShowForeignKeys(t *testing.T) {
 		t.Skip("skipping integration test in short mode")
 	}
 
-	fields := toTableHeader("constraint_name", "child_table", "child_columns", "parent_table", "parent_columns", "on_delete", "enforced", "spanner_state")
+	fields := toTableHeader("constraint_name", "child_table", "child_columns", "parent_table", "parent_columns", "on_delete", "enforced", "spanner_state", "referenced_constraint_name")
 	for _, test := range []struct {
 		name    string
 		dialect databasepb.DatabaseDialect
@@ -2305,10 +2305,10 @@ func TestShowForeignKeys(t *testing.T) {
 				"CREATE TABLE Plain (Id INT64 NOT NULL) PRIMARY KEY(Id)",
 			},
 			want: map[string][]Row{
-				"parent": {toRow("fk_parent", "Sales.Child", "[P2, P1]", "Parent", "[K2, K1]", "NO ACTION", "false", "COMMITTED")},
+				"parent": {toRow("fk_parent", "Sales.Child", "[P2, P1]", "Parent", "[K2, K1]", "NO ACTION", "false", "COMMITTED", "PK_Parent")},
 				"sales.child": {
-					toRow("fk_parent", "Sales.Child", "[P2, P1]", "Parent", "[K2, K1]", "NO ACTION", "false", "COMMITTED"),
-					toRow("fk_self", "Sales.Child", "[Ancestor]", "Sales.Child", "[Id]", "CASCADE", "true", "COMMITTED"),
+					toRow("fk_parent", "Sales.Child", "[P2, P1]", "Parent", "[K2, K1]", "NO ACTION", "false", "COMMITTED", "PK_Parent"),
+					toRow("fk_self", "Sales.Child", "[Ancestor]", "Sales.Child", "[Id]", "CASCADE", "true", "COMMITTED", "PK_Child"),
 				},
 				"plain": {},
 			},
@@ -2325,10 +2325,10 @@ func TestShowForeignKeys(t *testing.T) {
 				"CREATE TABLE plain (id bigint PRIMARY KEY)",
 			},
 			want: map[string][]Row{
-				"parent": {toRow("fk_parent", "sales.child", "[p2, p1]", "public.parent", "[k2, k1]", "NO ACTION", "true", "COMMITTED")},
+				"parent": {toRow("fk_parent", "sales.child", "[p2, p1]", "public.parent", "[k2, k1]", "NO ACTION", "true", "COMMITTED", "PK_parent")},
 				"sales.child": {
-					toRow("fk_parent", "sales.child", "[p2, p1]", "public.parent", "[k2, k1]", "NO ACTION", "true", "COMMITTED"),
-					toRow("fk_self", "sales.child", "[ancestor]", "sales.child", "[id]", "CASCADE", "true", "COMMITTED"),
+					toRow("fk_parent", "sales.child", "[p2, p1]", "public.parent", "[k2, k1]", "NO ACTION", "true", "COMMITTED", "PK_parent"),
+					toRow("fk_self", "sales.child", "[ancestor]", "sales.child", "[id]", "CASCADE", "true", "COMMITTED", "PK_child"),
 				},
 				"plain": {},
 			},

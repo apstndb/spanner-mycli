@@ -336,7 +336,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `Show foreign keys`,
 				Syntax: `SHOW FOREIGN KEYS FROM <table_fqn>`,
-				Note:   `Lists incoming and outgoing foreign keys with visible column pairs in child key order, one row per constraint. Permissions can hide constraints or pairs. Omit the schema for the dialect's default schema.`,
+				Note:   `Lists incoming and outgoing foreign keys with visible column pairs in child key order, one row per constraint. referenced_constraint_name identifies the parent primary or unique constraint. Permissions can hide constraints or pairs. Omit the schema for the dialect's default schema.`,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^SHOW\s+FOREIGN\s+KEYS\s+FROM\s+(?P<table>.+)$`),
