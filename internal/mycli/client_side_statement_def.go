@@ -336,6 +336,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `Show indexes`,
 				Syntax: `SHOW INDEX FROM <table_fqn>`,
+				Note:   `Options lists visible name=value pairs in name order, separated by commas. NULL when no options are visible or the server lacks INDEX_OPTIONS.`,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^SHOW\s+(?:INDEX|INDEXES|KEYS)\s+FROM\s+(?P<table>.+)$`),
@@ -348,25 +349,6 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		},
 		Completion: []fuzzyArgCompletion{{
 			PrefixPattern:  regexp.MustCompile(`(?i)^\s*SHOW\s+(?:INDEX|INDEXES|KEYS)\s+FROM\s+(\S*)$`),
-			CompletionType: fuzzyCompleteTable,
-		}},
-	},
-	{
-		Descriptions: []clientSideStatementDescription{{
-			Usage:  "Show index options",
-			Syntax: "SHOW INDEX OPTIONS FROM <table_fqn>",
-			Note:   "Lists visible INDEX_OPTIONS rows, including system-optimized vector index settings. Requires server support for that view.",
-		}},
-		Pattern: regexp.MustCompile(`(?is)^SHOW\s+INDEX\s+OPTIONS\s+FROM\s+(?P<table>.+)$`),
-		HandleGroups: func(groups map[string]string) (Statement, error) {
-			schema, table, err := parseSchemaAndName(groups["table"])
-			if err != nil {
-				return nil, fmt.Errorf("invalid table name in SHOW INDEX OPTIONS: %w", err)
-			}
-			return &ShowIndexOptionsStatement{Schema: schema, Table: table}, nil
-		},
-		Completion: []fuzzyArgCompletion{{
-			PrefixPattern:  regexp.MustCompile(`(?i)^\s*SHOW\s+INDEX\s+OPTIONS\s+FROM\s+(\S*)$`),
 			CompletionType: fuzzyCompleteTable,
 		}},
 	},
