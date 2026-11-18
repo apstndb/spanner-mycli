@@ -34,7 +34,7 @@ func runPartitionedQuery(ctx context.Context, session *Session, sql string, out 
 		return nil, err
 	}
 
-	partitions, batchROTx, err := session.txn.RunPartitionQuery(ctx, stmt)
+	partitions, batchROTx, err := session.partitionQuery(ctx, stmt)
 	if err != nil {
 		return nil, err
 	}
@@ -58,6 +58,15 @@ func runPartitionedQuery(ctx context.Context, session *Session, sql string, out 
 	}
 
 	return bufferPartitionedQuery(ctx, batchROTx, partitions, parallelism, render.ValueFmtMode)
+}
+
+func (s *Session) partitionQuery(ctx context.Context, stmt spanner.Statement) ([]*spanner.Partition, *spanner.BatchReadOnlyTransaction, error) {
+	// PartitionQueryRequest has no RequestOptions, so the planning RPC
+	// cannot carry Secure Context even if partition execution can.
+	if len(s.secureContext) != 0 {
+		return nil, nil, errors.New("partitioned queries require UNSET SECURE CONTEXT")
+	}
+	return s.txn.RunPartitionQuery(ctx, stmt)
 }
 
 // streamPartitionedQuery streams merged partition rows through the same

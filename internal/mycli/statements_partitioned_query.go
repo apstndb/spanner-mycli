@@ -16,7 +16,7 @@ func (s *PartitionStatement) Execute(ctx context.Context, session *Session, out 
 		return nil, err
 	}
 
-	partitions, batchROTx, err := session.txn.RunPartitionQuery(ctx, stmt)
+	partitions, batchROTx, err := session.partitionQuery(ctx, stmt)
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +66,7 @@ func (s *TryPartitionedQueryStatement) Execute(ctx context.Context, session *Ses
 		return nil, err
 	}
 
-	_, batchROTx, err := session.txn.RunPartitionQuery(ctx, stmt)
+	_, batchROTx, err := session.partitionQuery(ctx, stmt)
 	if err != nil {
 		return nil, err
 	}
@@ -116,6 +116,9 @@ func (s *RunPartitionStatement) Execute(ctx context.Context, session *Session, o
 	if err != nil {
 		return nil, err
 	}
+	if len(inspected.QueryReq.GetRequestOptions().GetClientContext().GetSecureContext()) != 0 {
+		return nil, fmt.Errorf("RUN PARTITION does not accept tokens containing Secure Context")
+	}
 
 	var txID spanner.BatchReadOnlyTransactionID
 	if err := txID.UnmarshalBinary(decoded.TxID); err != nil {
@@ -160,6 +163,9 @@ func (s *RunPartitionStatement) Execute(ctx context.Context, session *Session, o
 }
 
 func rejectRunPartitionAdmission(session *Session) error {
+	if session != nil && len(session.secureContext) != 0 {
+		return fmt.Errorf("RUN PARTITION requires UNSET SECURE CONTEXT")
+	}
 	if session != nil && session.batch.IsActive() {
 		return fmt.Errorf("RUN PARTITION requires an idle session without a manual batch; this token is an exported snapshot")
 	}

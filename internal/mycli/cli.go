@@ -157,12 +157,7 @@ func (c *Cli) RunInteractive(ctx context.Context) error {
 			continue
 		}
 
-		// Add to history with appropriate terminator
-		if IsMetaCommand(input.statement) {
-			history.Add(input.statement)
-		} else {
-			history.Add(input.statement + ";")
-		}
+		recordInteractiveHistory(history, stmt, input.statement)
 
 		if exitCode, processed := c.handleSpecialStatements(ctx, stmt); processed {
 			if exitCode >= 0 {
@@ -179,6 +174,18 @@ func (c *Cli) RunInteractive(ctx context.Context) error {
 
 		ed.SetDefault(strings.Split(preInput, "\n"))
 	}
+}
+
+func recordInteractiveHistory(history History, stmt Statement, input string) {
+	// Secure Context belongs to this connection. Do not persist its input
+	// in the history file or offer it for recall on another connection.
+	if _, ok := stmt.(*SetSecureContextStatement); ok {
+		return
+	}
+	if !IsMetaCommand(input) {
+		input += ";"
+	}
+	history.Add(input)
 }
 
 // connectionSummary uses the adopted session identity, so failed USE attempts

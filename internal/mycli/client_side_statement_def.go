@@ -1158,6 +1158,38 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			},
 		},
 	},
+	{
+		Descriptions: []clientSideStatementDescription{{
+			Usage:  `Set a Secure Context value for the current connection`,
+			Syntax: `SET SECURE CONTEXT <name> = <string>`,
+			Note:   `Adds or replaces a case-sensitive key. Requires an idle database connection. USE and DETACH clear these values. This command is omitted from interactive history. Partitioned queries are unavailable while the context is set.`,
+		}},
+		Pattern: regexp.MustCompile(`(?is)^SET\s+SECURE\s+CONTEXT\s+(?P<key>[a-z_][a-z0-9_]*)\s*=\s*(?P<value>.*)$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			return parseSetSecureContext(groups["key"], groups["value"])
+		},
+	},
+	{
+		Descriptions: []clientSideStatementDescription{{
+			Usage:  `Show Secure Context keys and values`,
+			Syntax: `SHOW SECURE CONTEXT`,
+		}},
+		Pattern: regexp.MustCompile(`(?i)^SHOW\s+SECURE\s+CONTEXT$`),
+		HandleGroups: func(_ map[string]string) (Statement, error) {
+			return &ShowSecureContextStatement{}, nil
+		},
+	},
+	{
+		Descriptions: []clientSideStatementDescription{{
+			Usage:  `Remove Secure Context values for the current connection`,
+			Syntax: `UNSET SECURE CONTEXT [<name>]`,
+			Note:   `Removes a case-sensitive key if present. Omit the key to remove all values set by SET SECURE CONTEXT. Requires an idle database connection.`,
+		}},
+		Pattern: regexp.MustCompile(`(?i)^UNSET\s+SECURE\s+CONTEXT(?:\s+(?P<key>[a-z_][a-z0-9_]*))?$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			return &UnsetSecureContextStatement{Key: groups["key"]}, nil
+		},
+	},
 	// Query Parameter
 	{
 		Descriptions: []clientSideStatementDescription{
