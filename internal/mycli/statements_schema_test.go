@@ -67,6 +67,15 @@ func TestShowChangeStreamsPostgreSQLHasNoCatalogPredicate(t *testing.T) {
 	}
 }
 
+func TestShowForeignKeysGoogleSQLParses(t *testing.T) {
+	t.Parallel()
+
+	statement := (&ShowForeignKeysStatement{Schema: "Alpha", Table: "Child"}).metadataStatement(databasepb.DatabaseDialect_GOOGLE_STANDARD_SQL)
+	if _, err := parseMemefishStatement("show-foreign-keys.sql", statement.SQL); err != nil {
+		t.Fatalf("parse GoogleSQL SHOW FOREIGN KEYS: %v", err)
+	}
+}
+
 func TestShowCreateChangeStreamUsesCachedDDL(t *testing.T) {
 	t.Parallel()
 

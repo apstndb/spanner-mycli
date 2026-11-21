@@ -353,6 +353,20 @@ func TestDetectFuzzyContext(t *testing.T) {
 			wantArgPrefix:      "Sin",
 			wantArgStartPos:    18,
 		},
+		{
+			name:               "SHOW FOREIGN KEYS FROM with trailing space",
+			input:              "SHOW FOREIGN KEYS FROM ",
+			wantCompletionType: fuzzyCompleteTable,
+			wantArgPrefix:      "",
+			wantArgStartPos:    len("SHOW FOREIGN KEYS FROM "),
+		},
+		{
+			name:               "SHOW FOREIGN KEYS FROM with partial table",
+			input:              "show foreign keys from sch.C",
+			wantCompletionType: fuzzyCompleteTable,
+			wantArgPrefix:      "sch.C",
+			wantArgStartPos:    len("show foreign keys from "),
+		},
 		// Argument completion: SHOW INDEX FROM → table
 		{
 			name:               "SHOW INDEX FROM with trailing space",
