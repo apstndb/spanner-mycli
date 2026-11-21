@@ -123,6 +123,88 @@ ORDER BY
 	})
 }
 
+type ShowForeignKeysStatement struct {
+	Schema string
+	Table  string
+}
+
+// POSITION_IN_UNIQUE_CONSTRAINT maps a child column to its referenced column.
+// Child and parent ordinals can differ, so both arrays are ordered by the
+// child ordinal after pairing. DISTINCT avoids repeating columns if multiple
+// foreign keys share a referenced backing index in the metadata.
+const showForeignKeysSQL = `WITH fk_columns AS (
+  SELECT DISTINCT
+    rc.constraint_name,
+    rc.unique_constraint_name AS referenced_constraint_name,
+    child.table_schema AS child_schema,
+    child.table_name AS child_name,
+    child.column_name AS child_column,
+    child.ordinal_position AS child_position,
+    parent.table_schema AS parent_schema,
+    parent.table_name AS parent_name,
+    parent.column_name AS parent_column,
+    rc.delete_rule AS on_delete,
+    (tc.enforced = 'YES') AS enforced,
+    rc.spanner_state
+  FROM information_schema.referential_constraints AS rc
+  JOIN information_schema.key_column_usage AS child
+    ON COALESCE(child.constraint_catalog, '') = COALESCE(rc.constraint_catalog, '')
+    AND child.constraint_schema = rc.constraint_schema
+    AND child.constraint_name = rc.constraint_name
+  JOIN information_schema.key_column_usage AS parent
+    ON COALESCE(parent.constraint_catalog, '') = COALESCE(rc.unique_constraint_catalog, '')
+    AND parent.constraint_schema = rc.unique_constraint_schema
+    AND parent.constraint_name = rc.unique_constraint_name
+    AND parent.ordinal_position = child.position_in_unique_constraint
+  JOIN information_schema.table_constraints AS tc
+    ON COALESCE(tc.constraint_catalog, '') = COALESCE(rc.constraint_catalog, '')
+    AND tc.constraint_schema = rc.constraint_schema
+    AND tc.constraint_name = rc.constraint_name
+    AND tc.table_schema = child.table_schema
+    AND tc.table_name = child.table_name
+    AND tc.constraint_type = 'FOREIGN KEY'
+  WHERE (%s) OR (%s)
+)
+SELECT
+  constraint_name,
+  CASE WHEN child_schema = '' THEN child_name ELSE child_schema || '.' || child_name END AS child_table,
+  ARRAY_AGG(child_column ORDER BY child_position) AS child_columns,
+  CASE WHEN parent_schema = '' THEN parent_name ELSE parent_schema || '.' || parent_name END AS parent_table,
+  ARRAY_AGG(parent_column ORDER BY child_position) AS parent_columns,
+  on_delete,
+  enforced,
+  spanner_state,
+  referenced_constraint_name
+FROM fk_columns
+GROUP BY constraint_name, child_schema, child_name, parent_schema, parent_name, on_delete, enforced, spanner_state, referenced_constraint_name
+ORDER BY child_schema, child_name, constraint_name, parent_schema, parent_name`
+
+func (s *ShowForeignKeysStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
+	stmt := s.metadataStatement(session.systemVariables.Feature.DatabaseDialect)
+	return executeInformationSchemaBasedStatement(ctx, session, "SHOW FOREIGN KEYS", stmt, nil)
+}
+
+func (s *ShowForeignKeysStatement) metadataStatement(dialect databasepb.DatabaseDialect) spanner.Statement {
+	if dialect == databasepb.DatabaseDialect_POSTGRESQL {
+		schema := s.Schema
+		if schema == "" {
+			schema = "public"
+		}
+		return spanner.Statement{
+			SQL: fmt.Sprintf(showForeignKeysSQL,
+				"child.table_schema = $1 AND child.table_name = $2",
+				"parent.table_schema = $1 AND parent.table_name = $2"),
+			Params: map[string]any{"p1": schema, "p2": s.Table},
+		}
+	}
+	return spanner.Statement{
+		SQL: fmt.Sprintf(showForeignKeysSQL,
+			"LOWER(child.table_schema) = LOWER(@schema) AND LOWER(child.table_name) = LOWER(@table)",
+			"LOWER(parent.table_schema) = LOWER(@schema) AND LOWER(parent.table_name) = LOWER(@table)"),
+		Params: map[string]any{"schema": s.Schema, "table": s.Table},
+	}
+}
+
 type ShowIndexStatement struct {
 	Schema string
 	Table  string

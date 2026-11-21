@@ -334,6 +334,27 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 	{
 		Descriptions: []clientSideStatementDescription{
 			{
+				Usage:  `Show foreign keys`,
+				Syntax: `SHOW FOREIGN KEYS FROM <table_fqn>`,
+				Note:   `Lists incoming and outgoing foreign keys with visible column pairs in child key order, one row per constraint. referenced_constraint_name identifies the parent primary or unique constraint. Permissions can hide constraints or pairs. Omit the schema for the dialect's default schema.`,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^SHOW\s+FOREIGN\s+KEYS\s+FROM\s+(?P<table>.+)$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			schema, table, err := parseSchemaAndName(groups["table"])
+			if err != nil {
+				return nil, fmt.Errorf("invalid table name in SHOW FOREIGN KEYS: %w", err)
+			}
+			return &ShowForeignKeysStatement{Schema: schema, Table: table}, nil
+		},
+		Completion: []fuzzyArgCompletion{{
+			PrefixPattern:  regexp.MustCompile(`(?i)^\s*SHOW\s+FOREIGN\s+KEYS\s+FROM\s+(\S*)$`),
+			CompletionType: fuzzyCompleteTable,
+		}},
+	},
+	{
+		Descriptions: []clientSideStatementDescription{
+			{
 				Usage:  `Show indexes`,
 				Syntax: `SHOW INDEX FROM <table_fqn>`,
 				Note:   `Options lists visible name=value pairs in name order, separated by commas. NULL when no options are visible or the server lacks INDEX_OPTIONS.`,
