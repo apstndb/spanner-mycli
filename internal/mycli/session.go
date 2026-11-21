@@ -38,6 +38,7 @@ import (
 	"google.golang.org/api/iterator"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/descriptorpb"
+	"google.golang.org/protobuf/types/known/structpb"
 
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
@@ -139,6 +140,10 @@ type Session struct {
 	// administrative resource paths use this copy, not the live registry
 	// Connection on systemVariables.
 	connection ConnectionVars
+
+	// secureContext contains only CLI-set values. A successful connection
+	// switch constructs a new Session, even when Database and Role match.
+	secureContext map[string]*structpb.Value
 
 	batch BatchManager
 
@@ -657,6 +662,7 @@ func (s *Session) Close() {
 		s.client.Close()
 		s.client = nil
 	}
+	s.secureContext = nil
 	if s.adminClient != nil {
 		err := s.adminClient.Close()
 		if err != nil {
@@ -806,6 +812,10 @@ func (s *Session) DatabaseExists(ctx context.Context) (bool, error) {
 // RecreateClient closes the current client and creates a new client for the session.
 // The caller's ctx governs client creation so cancellation is respected.
 func (s *Session) RecreateClient(ctx context.Context) error {
+	return s.replaceDataClient(ctx, s.secureContext)
+}
+
+func (s *Session) replaceDataClient(ctx context.Context, values map[string]*structpb.Value) error {
 	if err := s.ValidateDatabaseOperation(); err != nil {
 		return err
 	}
@@ -813,6 +823,7 @@ func (s *Session) RecreateClient(ctx context.Context) error {
 	cfg := s.clientConfig
 	forceNilDirectedReadOnCopiedClientConfig(&cfg)
 	s.clientConfig.DirectedReadOptions = nil
+	cfg.ClientContext = withSecureContext(cfg.ClientContext, values)
 	c, err := spanner.NewClientWithConfig(ctx, s.DatabasePath(), cfg, s.clientOpts...)
 	if err != nil {
 		return err
@@ -830,6 +841,7 @@ func (s *Session) RecreateClient(ctx context.Context) error {
 	}
 	s.client.Close()
 	s.client = c
+	s.secureContext = values
 	return nil
 }
 
