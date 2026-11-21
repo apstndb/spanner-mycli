@@ -357,6 +357,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `Show indexes`,
 				Syntax: `SHOW INDEX FROM <table_fqn>`,
+				Note:   `Options lists visible name=value pairs in name order, separated by commas. NULL when no options are visible or the server lacks INDEX_OPTIONS.`,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^SHOW\s+(?:INDEX|INDEXES|KEYS)\s+FROM\s+(?P<table>.+)$`),
@@ -1433,6 +1434,26 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 		},
 		Completion: []fuzzyArgCompletion{{
 			PrefixPattern:  regexp.MustCompile(`(?i)^\s*SHOW\s+QUERY\s+PROFILE\s+(-?\d*)$`),
+			CompletionType: fuzzyCompleteQueryProfile,
+		}},
+	},
+	{
+		Descriptions: []clientSideStatementDescription{
+			{
+				Usage:  `Show estimated query latency percentiles over the last hour`,
+				Syntax: `SHOW QUERY STATS <fingerprint>`,
+			},
+		},
+		Pattern: regexp.MustCompile(`(?is)^SHOW\s+QUERY\s+STATS(?:\s+(?P<fingerprint>.*))?$`),
+		HandleGroups: func(groups map[string]string) (Statement, error) {
+			fprint, err := strconv.ParseInt(strings.TrimSpace(groups["fingerprint"]), 10, 64)
+			if err != nil {
+				return nil, err
+			}
+			return &ShowQueryStatsStatement{Fprint: fprint}, nil
+		},
+		Completion: []fuzzyArgCompletion{{
+			PrefixPattern:  regexp.MustCompile(`(?i)^\s*SHOW\s+QUERY\s+STATS\s+([+-]?\d*)$`),
 			CompletionType: fuzzyCompleteQueryProfile,
 		}},
 	},

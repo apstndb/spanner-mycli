@@ -42,6 +42,9 @@ func TestQueryProfileCompletionContext(t *testing.T) {
 		{"SHOW QUERY PROFILE -", "-"},
 		{"SHOW QUERY PROFILE -6422424748333414178", "-6422424748333414178"},
 		{"\nSHOW QUERY PROFILE 0", "0"},
+		{"SHOW QUERY STATS ", ""},
+		{"  show\tquery\tstats\t-6422424748333414178", "-6422424748333414178"},
+		{"SHOW QUERY STATS +12", "+12"},
 	} {
 		t.Run(tt.input, func(t *testing.T) {
 			got := detectFuzzyContext(tt.input)
@@ -59,6 +62,9 @@ func TestQueryProfileCompletionContext(t *testing.T) {
 		"SHOW QUERY PROFILE abc",
 		"SELECT 'SHOW QUERY PROFILE 1'",
 		"SHOW QUERY PROFILE",
+		"SHOW QUERY STATS 1;",
+		"SHOW QUERY STATS xyz",
+		"SHOW QUERY STATS",
 	} {
 		if got := detectFuzzyContext(input); got.completionType == fuzzyCompleteQueryProfile {
 			t.Fatalf("unexpected query-profile completion for %q: %+v", input, got)

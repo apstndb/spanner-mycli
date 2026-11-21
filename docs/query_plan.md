@@ -397,6 +397,26 @@ optimizer version:    7
 optimizer statistics: auto_20250527_16_21_42UTC
 ```
 
+## Show query latency statistics
+
+```sql
+SHOW QUERY STATS -6422424748333414178;
+```
+
+The command returns one row with the signed query fingerprint, UTC window end,
+window length in minutes (60), observed minutes, histogram sample count, and
+estimated p50, p95, and p99 in milliseconds.
+
+Spanner merges the positive-count latency histograms for the fingerprint in
+`SPANNER_SYS.QUERY_STATS_TOP_MINUTE`. Observed minutes count distinct
+`INTERVAL_END` values represented by those histograms. Samples sum their
+histogram counts. Spanner tracks top queries for each minute, so a fingerprint
+can have partial coverage even if it ran throughout the hour. If there are no
+positive-count histograms, both counts are zero and the percentiles are `NULL`.
+The command supports GoogleSQL and PostgreSQL databases. It requires access
+to the query statistics table and runs outside read-write transactions.
+See [Spanner's query statistics reference](https://docs.cloud.google.com/spanner/docs/introspection/query-statistics).
+
 ## More concise format of `EXPLAIN` and `EXPLAIN ANALYZE`
 
 spanner-mycli prioritizes the density of `EXPLAIN` and `EXPLAIN ANALYZE` information, and may sometimes change to a more concise format, even if it involves breaking changes.

@@ -2272,10 +2272,10 @@ func TestShowIndexes(t *testing.T) {
 	}
 
 	compareResult(t, result, &Result{
-		TableHeader: toTableHeader("Table", "Parent_table", "Index_name", "Index_type", "Is_unique", "Is_null_filtered", "Index_state"),
+		TableHeader: toTableHeader("Table", "Parent_table", "Index_name", "Index_type", "Is_unique", "Is_null_filtered", "Index_state", "Options"),
 
 		AffectedRows: 1, Body: PresentationBody(sliceOf(
-			Row{p("tbl"), p(""), p("PRIMARY_KEY"), p("PRIMARY_KEY"), p("true"), p("false"), n("NULL")},
+			Row{p("tbl"), p(""), p("PRIMARY_KEY"), p("PRIMARY_KEY"), p("true"), p("false"), n("NULL"), n("NULL")},
 		)),
 	})
 }
