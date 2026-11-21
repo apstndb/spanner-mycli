@@ -2310,6 +2310,11 @@ set, the Google Gen AI SDK uses `GOOGLE_API_KEY`:
 SET CLI_GENAI_BACKEND = "GEMINI_API";
 ```
 
+The Gemini Developer API uses `v1` by default. To use a preview model or
+`*-latest` alias that requires `v1beta`, set `GOOGLE_GENAI_API_VERSION=beta`
+before starting spanner-mycli. See the [Google Gen AI Go SDK's Gemini API
+environment variables](https://github.com/googleapis/go-genai/blob/5f935b2bf679867326d94032ab121c5d44dc66b8/client.go#L528-L536).
+
 The canonical backend values are `GEMINI_ENTERPRISE` and `GEMINI_API`.
 `VERTEX_AI` remains accepted as an alias for `GEMINI_ENTERPRISE`.
 
