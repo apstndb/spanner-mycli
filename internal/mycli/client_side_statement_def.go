@@ -357,6 +357,7 @@ var clientSideStatementDefs = []*clientSideStatementDef{
 			{
 				Usage:  `Show indexes`,
 				Syntax: `SHOW INDEX FROM <table_fqn>`,
+				Note:   `Options lists visible name=value pairs in name order, separated by commas. NULL when no options are visible or the server lacks INDEX_OPTIONS.`,
 			},
 		},
 		Pattern: regexp.MustCompile(`(?is)^SHOW\s+(?:INDEX|INDEXES|KEYS)\s+FROM\s+(?P<table>.+)$`),
