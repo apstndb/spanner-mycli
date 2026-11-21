@@ -1,6 +1,6 @@
 module github.com/apstndb/spanner-mycli
 
-go 1.26.8
+go 1.26.11
 
 require (
 	cloud.google.com/go v0.123.0
@@ -41,7 +41,7 @@ require (
 	github.com/junegunn/fzf v0.74.4
 	github.com/k0kubun/pp/v3 v3.5.2
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
-	github.com/klauspost/compress v1.20.1
+	github.com/klauspost/compress v1.20.3
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/nyaosorg/go-readline-ny v1.16.1
 	github.com/olekukonko/tablewriter v1.1.5
@@ -200,7 +200,7 @@ require (
 	golang.org/x/crypto v0.57.0 // indirect
 	golang.org/x/exp v0.0.0-20260908205506-85c1c2202aba // indirect
 	golang.org/x/mod v0.41.0 // indirect
-	golang.org/x/net v0.59.0 // indirect
+	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/oauth2 v0.37.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
