@@ -105,6 +105,19 @@ func (s *Session) checkSecureContextChange() error {
 	return nil
 }
 
+func (s *Session) checkPartitionSecureContext() error {
+	if s == nil {
+		return nil
+	}
+	if len(s.clientConfig.ClientContext.GetSecureContext()) != 0 {
+		return errors.New("partitioned queries are unavailable with an embedded Secure Context")
+	}
+	if len(s.secureContext) != 0 {
+		return errors.New("partitioned queries require UNSET SECURE CONTEXT")
+	}
+	return nil
+}
+
 // The SDK supplies ClientConfig.ClientContext as a default for request
 // options, including DML, plan inspection, and transaction RPCs. Keep the
 // baseline intact for embedded callers and build a fresh context on update.

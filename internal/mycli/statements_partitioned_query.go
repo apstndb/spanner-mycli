@@ -163,8 +163,8 @@ func (s *RunPartitionStatement) Execute(ctx context.Context, session *Session, o
 }
 
 func rejectRunPartitionAdmission(session *Session) error {
-	if session != nil && len(session.secureContext) != 0 {
-		return fmt.Errorf("RUN PARTITION requires UNSET SECURE CONTEXT")
+	if err := session.checkPartitionSecureContext(); err != nil {
+		return err
 	}
 	if session != nil && session.batch.IsActive() {
 		return fmt.Errorf("RUN PARTITION requires an idle session without a manual batch; this token is an exported snapshot")

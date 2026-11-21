@@ -18,6 +18,7 @@ import (
 	"strings"
 	"testing"
 
+	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/google/go-cmp/cmp"
 	"github.com/nyaosorg/go-readline-ny/simplehistory"
@@ -176,6 +177,27 @@ func TestSecureContextRejectsUnsupportedOperations(t *testing.T) {
 	requireError("RUN PARTITION '"+mustEncode(t, db, tx, part)+"'", "does not accept tokens containing Secure Context")
 	if requests := server.takeRequests(); len(requests) != 0 {
 		t.Fatalf("unexpected SQL requests: %v", requests)
+	}
+}
+
+func TestPartitionAdmissionWithEmbeddedSecureContext(t *testing.T) {
+	t.Parallel()
+	server, opts := startDirectedReadDial(t)
+	vars := newDirectedReadVars(t)
+	vars.Config.EmbeddedClientConfig = &spanner.ClientConfig{
+		ClientContext: &sppb.RequestOptions_ClientContext{
+			SecureContext: map[string]*structpb.Value{"tenant": structpb.NewStringValue("embedded")},
+		},
+	}
+	session, _ := newDirectedReadProductSession(t, opts, vars)
+	for _, sql := range []string{"PARTITION SELECT 1", "RUN PARTITION 'test'"} {
+		_, err := execSQL(t, t.Context(), session, sql)
+		if err == nil || !strings.Contains(err.Error(), "embedded Secure Context") {
+			t.Fatalf("%s: got %v, want embedded Secure Context error", sql, err)
+		}
+	}
+	if requests := server.takePartitionQueries(); len(requests) != 0 {
+		t.Fatalf("unexpected partition requests: %v", requests)
 	}
 }
 

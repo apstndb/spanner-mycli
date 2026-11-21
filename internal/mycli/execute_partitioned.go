@@ -63,8 +63,8 @@ func runPartitionedQuery(ctx context.Context, session *Session, sql string, out 
 func (s *Session) partitionQuery(ctx context.Context, stmt spanner.Statement) ([]*spanner.Partition, *spanner.BatchReadOnlyTransaction, error) {
 	// PartitionQueryRequest has no RequestOptions, so the planning RPC
 	// cannot carry Secure Context even if partition execution can.
-	if len(s.secureContext) != 0 {
-		return nil, nil, errors.New("partitioned queries require UNSET SECURE CONTEXT")
+	if err := s.checkPartitionSecureContext(); err != nil {
+		return nil, nil, err
 	}
 	return s.txn.RunPartitionQuery(ctx, stmt)
 }
