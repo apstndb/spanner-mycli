@@ -13,6 +13,8 @@ import (
 	"github.com/apstndb/spanvalue"
 	"github.com/samber/lo"
 	loi "github.com/samber/lo/it"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // showChangeStreamsGoogleSQL lists change streams for GoogleSQL-dialect databases.
@@ -208,26 +210,61 @@ type ShowIndexStatement struct {
 	Table  string
 }
 
-func (s *ShowIndexStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
-	stmt := spanner.Statement{
-		SQL: `SELECT
-  TABLE_NAME as Table,
-  PARENT_TABLE_NAME as Parent_table,
-  INDEX_NAME as Index_name,
-  INDEX_TYPE as Index_type,
-  IS_UNIQUE as Is_unique,
-  IS_NULL_FILTERED as Is_null_filtered,
-  INDEX_STATE as Index_state
-FROM
-  INFORMATION_SCHEMA.INDEXES I
-WHERE
-  LOWER(I.TABLE_SCHEMA) = LOWER(@table_schema) AND LOWER(TABLE_NAME) = LOWER(@table_name)`,
-		Params: map[string]any{"table_name": s.Table, "table_schema": s.Schema},
-	}
+// Aggregate only the options for this index. Primary keys share an index name
+// across tables, so the lookup includes the table and schema as well.
+const indexOptionsExpression = `(SELECT STRING_AGG(o.option_name || '=' || o.option_value, ', ' ORDER BY o.option_name)
+  FROM information_schema.index_options AS o
+  WHERE o.table_schema = i.table_schema AND o.table_name = i.table_name
+    AND o.index_name = i.index_name AND o.index_type = i.index_type)`
 
-	return executeInformationSchemaBasedStatement(ctx, session, "SHOW INDEX", stmt, func() error {
+func (s *ShowIndexStatement) query(dialect databasepb.DatabaseDialect, withOptions bool) spanner.Statement {
+	const projection = `SELECT i.table_name AS "Table", i.parent_table_name AS "Parent_table",
+  i.index_name AS "Index_name", i.index_type AS "Index_type", i.is_unique AS "Is_unique",
+  i.is_null_filtered AS "Is_null_filtered", i.index_state AS "Index_state", %s AS "Options"
+FROM information_schema.indexes AS i WHERE `
+	options := indexOptionsExpression
+	if !withOptions {
+		options = "NULLIF('', '')"
+	}
+	selectSQL := fmt.Sprintf(projection, options)
+	if dialect == databasepb.DatabaseDialect_POSTGRESQL {
+		schema := s.Schema
+		if schema == "" {
+			schema = "public"
+		}
+		return spanner.Statement{
+			SQL:    selectSQL + "i.table_schema = $1 AND i.table_name = $2",
+			Params: map[string]any{"p1": schema, "p2": s.Table},
+		}
+	}
+	// The double quotes in this static projection delimit output aliases.
+	return spanner.Statement{
+		SQL:    strings.ReplaceAll(selectSQL, `"`, "`") + "LOWER(i.table_schema) = LOWER(@schema) AND LOWER(i.table_name) = LOWER(@table)",
+		Params: map[string]any{"schema": s.Schema, "table": s.Table},
+	}
+}
+
+func missingIndexOptionsView(err error) bool {
+	st := status.Convert(err)
+	if st.Code() != codes.InvalidArgument && st.Code() != codes.NotFound {
+		return false
+	}
+	firstLine, _, _ := strings.Cut(strings.ToLower(st.Message()), "\n")
+	return strings.HasPrefix(firstLine, "table not found: information_schema.index_options [at ") ||
+		firstLine == "table not found: information_schema.index_options" ||
+		firstLine == `relation "information_schema.index_options" does not exist`
+}
+
+func (s *ShowIndexStatement) Execute(ctx context.Context, session *Session, out OperationOutput) (*Result, error) {
+	dialect := session.systemVariables.Feature.DatabaseDialect
+	empty := func() error {
 		return fmt.Errorf("table %q doesn't exist in schema %q", s.Table, s.Schema)
-	})
+	}
+	result, err := executeInformationSchemaBasedStatement(ctx, session, "SHOW INDEX", s.query(dialect, true), empty)
+	if err != nil && missingIndexOptionsView(err) {
+		return executeInformationSchemaBasedStatement(ctx, session, "SHOW INDEX", s.query(dialect, false), empty)
+	}
+	return result, err
 }
 
 type ShowDdlsStatement struct{}
