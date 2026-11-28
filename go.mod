@@ -16,8 +16,8 @@ require (
 	github.com/apstndb/go-grpcinterceptors v0.0.0-20241120095005-f07edaf5bdfe
 	github.com/apstndb/go-tabwrap v0.1.4
 	github.com/apstndb/gsqlutils v0.0.0-20260813143423-9e5dff7c7357
-	github.com/apstndb/memebridge v0.7.0
-	github.com/apstndb/protoyaml v0.1.1
+	github.com/apstndb/memebridge v0.8.0
+	github.com/apstndb/protoyaml v0.2.0
 	github.com/apstndb/spancodec v0.1.2
 	github.com/apstndb/spanemuboost v0.4.11
 	github.com/apstndb/spaniter v0.3.1
@@ -73,7 +73,7 @@ require (
 )
 
 require (
-	cel.dev/expr v0.25.3 // indirect
+	cel.dev/expr v0.26.0 // indirect
 	cloud.google.com/go/auth v0.24.4 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.3.1 // indirect
 	cloud.google.com/go/compute/metadata v0.10.0 // indirect
